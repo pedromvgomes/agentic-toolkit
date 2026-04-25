@@ -1,0 +1,29 @@
+# Example configuration. Place a copy at the repo root as `.code-panel-review.yaml`
+# to override panel defaults. All fields are optional.
+#
+# Model names are fuzzy-matched against the SDK's listModels() output:
+# exact > case-insensitive exact > prefix > substring. Ambiguous matches error out.
+# If unsure of the exact model id available on your subscription, prefer the fully
+# qualified version string (e.g. "claude-opus-4.6" rather than "claude-opus").
+
+reviewers:
+  security:
+    model: "claude-opus-4.6"
+    # prompt: "./custom-prompts/my-security.md"   # path relative to repo root
+    enabled: true
+  performance:
+    model: "gpt-5.4"
+    enabled: true
+  resilience:
+    model: "claude-opus-4.6"
+    enabled: true
+  bugs:
+    model: "gpt-5.4"
+    enabled: true
+  compliance:
+    model: "gpt-5.4"
+    enabled: true
+
+settings:
+  timeout_seconds: 120          # per-agent timeout
+  parallel: true                # run reviewers concurrently

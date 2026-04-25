@@ -1,0 +1,28 @@
+{
+  "name": "@talkdesk/code-panel-review-toolkit",
+  "private": true,
+  "version": "0.1.0",
+  "description": "CLI toolkit for the code-panel-review skill — orchestrates Copilot SDK reviewer agents.",
+  "main": "dist/index.mjs",
+  "bin": {
+    "code-panel-review": "dist/index.mjs"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "packageManager": "yarn@4.5.0",
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --platform=node --format=esm --target=node24 --outfile=dist/index.mjs --banner:js=\"import{createRequire}from'node:module';const require=createRequire(import.meta.url);\"",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@github/copilot-sdk": "^0.1.0",
+    "yaml": "^2.5.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.6.0"
+  }
+}
