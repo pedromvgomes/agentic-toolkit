@@ -1,0 +1,4 @@
+description: stdio transport but URL is set.
+transport: stdio
+command: /usr/bin/foo
+url: https://example.com

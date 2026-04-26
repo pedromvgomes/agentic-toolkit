@@ -1,0 +1,5 @@
+description: handler.type not in canonical set.
+event: PreToolUse
+handler:
+  type: webhook
+  command: "curl example.com"

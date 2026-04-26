@@ -1,0 +1,7 @@
+name: filesystem
+description: Filesystem MCP server.
+transport: stdio
+command: "${HOME}/bin/mcp-fs"
+args: ["--root", "${WORKDIR:-/tmp}"]
+env:
+  LOG_LEVEL: info

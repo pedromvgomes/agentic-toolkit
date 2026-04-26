@@ -1,0 +1,4 @@
+description: handler.type=command but command field is empty.
+event: PreToolUse
+handler:
+  type: command

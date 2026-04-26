@@ -1,0 +1,6 @@
+description: Triage tool failures via a prompt-based hook.
+event: PostToolUseFailure
+handler:
+  type: prompt
+  prompt: "The tool just failed. Decide whether to retry."
+  model: haiku

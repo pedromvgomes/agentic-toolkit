@@ -1,11 +1,8 @@
 ---
-name: bare-repos
 description: |
   Personal/local repos use a bare-repo + worktree layout so multiple branches can be
   checked out in parallel without stash/switch dances. Apply this rule when working
   inside any repo that has a `.bare/` directory at its root.
-type: rule
-platforms: [claude, opencode, copilot]
 ---
 
 # Bare-repo + worktree layout
