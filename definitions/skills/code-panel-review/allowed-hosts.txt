@@ -1,0 +1,46 @@
+# Hostnames reviewer agents may fetch via the Copilot SDK's url tool.
+# One hostname per line. Blank lines and lines starting with '#' are ignored.
+# Subdomains are implicitly allowed: "example.com" also matches "docs.example.com".
+#
+# Keep this list tight — the agents should only need authoritative reference
+# material (language/framework docs, public API references). Any URL to a
+# hostname not in this list is denied at runtime.
+
+# --- Language / runtime docs ---
+developer.mozilla.org
+docs.python.org
+docs.oracle.com
+kotlinlang.org
+docs.rs
+pkg.go.dev
+nodejs.org
+tc39.es
+
+# --- Framework / library docs ---
+docs.spring.io
+spring.io
+reactjs.org
+react.dev
+nextjs.org
+vuejs.org
+angular.io
+docs.nestjs.com
+fastapi.tiangolo.com
+docs.djangoproject.com
+
+# --- Standards bodies ---
+www.w3.org
+www.rfc-editor.org
+datatracker.ietf.org
+html.spec.whatwg.org
+
+# --- Package registries (for README / version info) ---
+www.npmjs.com
+pypi.org
+crates.io
+central.sonatype.com
+
+# --- GitHub (READMEs, public source) ---
+github.com
+raw.githubusercontent.com
+docs.github.com
