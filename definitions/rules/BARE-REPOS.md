@@ -34,13 +34,17 @@ Repos that follow this convention have this shape at their root:
    # from any existing worktree (e.g. main/)
    git worktree add ../feature/my-thing -b feature/my-thing
    ```
-5. **Removing a worktree is a three-step sequence, in this order:**
+5. **Removing a worktree is a sequence, in this order:**
    ```bash
-   git worktree remove ../feature/my-thing   # 1. unregister the worktree from .bare/
-   git branch -d feature/my-thing            # 2. delete the local branch (-D if not merged)
-   rm -rf ../feature/my-thing                # 3. remove the directory if anything remains
+   git worktree remove ../feature/my-thing       # 1. unregister the worktree from .bare/
+   git branch -D feature/my-thing                # 2. delete the local branch (-D since merge SHAs differ for squash/rebase merges)
+   git push origin --delete feature/my-thing     # 3. delete the remote branch (may fail harmlessly — see below)
+   git fetch --prune origin                      # 4. drop the stale remote-tracking ref
+   rm -rf ../feature/my-thing                    # 5. remove the directory if anything remains
    ```
-   Order matters: never `rm -rf` first — that leaves a dangling worktree entry in `.bare/` that you'd then have to clean up with `git worktree prune`. And never leave the branch behind after removing the worktree; stale local branches accumulate fast.
+   - **Order matters:** never `rm -rf` first — that leaves a dangling worktree entry in `.bare/` that you'd then have to clean up with `git worktree prune`. And never leave the branch behind after removing the worktree; stale local branches accumulate fast.
+   - **Step 3 often fails with `remote ref does not exist` — that's expected.** GitHub's "Automatically delete head branches" setting (on by default for new repos) deletes the remote branch the moment a PR is merged. The push-delete is a no-op in that case. Treat this exit code as success and continue to step 4.
+   - **Step 4 (`fetch --prune`) is mandatory**, not optional. Without it, the local `remotes/origin/<branch>` tracking ref lingers and shows up in `git branch -a`, making the cleanup look incomplete.
 6. **List worktrees with `git worktree list`** before creating a new one to avoid duplicates.
 
 ## Why
