@@ -1,0 +1,9 @@
+name: log-tools
+description: Log every tool invocation to a file.
+event: PreToolUse
+matcher: "Bash|Edit|Write"
+handler:
+  type: command
+  command: "echo $TOOL >> /tmp/agtk-tools.log"
+fail_closed: false
+timeout: 2000

@@ -1,0 +1,9 @@
+description: Remote MCP server with OAuth.
+transport: http
+url: https://mcp.example.com/v1
+headers:
+  X-Client: agtk
+oauth:
+  client_id: example-client
+  callback_port: 8421
+  scopes: [read, write]
