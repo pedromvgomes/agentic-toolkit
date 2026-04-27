@@ -380,3 +380,35 @@ env:
 
 **Variable expansion.** Field values may use `${VAR}` and `${VAR:-default}` (canonical, matches Claude). Adapters translate to per-platform syntax (Cursor `${env:VAR}`, Copilot `${input:VAR}`/`${env:VAR}`).
 
+## Presets
+
+**Path:** `definitions/presets/<name>.yaml`  
+**Shape:** YAML manifest (no body)
+
+A preset is a named bundle of definition references — toolkit-side metadata that consumers select by name in their config. Presets are not renderable themselves; the resolver expands each preset's `definitions` list against the available sources. Presets are not in the Category enum and do not embed `Common`.
+
+### Frontmatter fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | `string` | no | Optional. If present, must equal the filename stem. |
+| `description` | `string` | **yes** | One-line summary used in tooling and discovery. |
+| `definitions` | `[]string` | **yes** | Ordered list of definition refs. Local form: 'skills/foo' (or 'commands/git/commit' for nested). External form: 'skills::github.com/owner/repo/path[@ref]'. |
+
+### Reference grammar
+
+Each entry in `definitions` is one of:
+
+- **Local**: `<plural-dir>/<name>` — e.g. `skills/challenge`, `commands/git/commit`.
+- **External**: `<plural-dir>::<url>[@<ref>]` — e.g. `skills::github.com/anthropics/skills/skills/skill-creator@main`. The optional `<ref>` is anything git accepts (branch, tag, sha); the parser does not classify it — that is the resolver's job.
+
+### Example
+
+```yaml
+description: Default toolkit bundle.
+definitions:
+  - skills/challenge
+  - rules/bare-repos
+  - skills::github.com/anthropics/skills/skills/skill-creator@main
+```
+

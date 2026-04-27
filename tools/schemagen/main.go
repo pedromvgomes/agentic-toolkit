@@ -1,6 +1,7 @@
-// schemagen renders definitions/SCHEMA.md from the Go struct definitions
-// in internal/definitions. The structs are the canonical schema; this tool
-// keeps the human-facing documentation in lockstep with them.
+// schemagen renders the human-facing schema docs from the Go struct
+// definitions in internal/definitions, internal/config, and
+// internal/lockfile. The structs are the canonical schema; this tool keeps
+// the documentation in lockstep with them.
 //
 // Run via:
 //
@@ -10,7 +11,9 @@
 //
 //	go run ./tools/schemagen
 //
-// Output is written to definitions/SCHEMA.md at the module root.
+// Output:
+//   - definitions/SCHEMA.md         — toolkit-side definitions schema
+//   - definitions/CONFIG-SCHEMA.md  — consumer-side config + lockfile schema
 package main
 
 import (
@@ -22,7 +25,9 @@ import (
 	"sort"
 	"strings"
 
+	cfg "github.com/pedromvgomes/agentic-toolkit/internal/config"
 	defs "github.com/pedromvgomes/agentic-toolkit/internal/definitions"
+	lock "github.com/pedromvgomes/agentic-toolkit/internal/lockfile"
 )
 
 // categoryDoc carries the hand-written prose for a category alongside the
@@ -109,21 +114,29 @@ var categories = []categoryDoc{
 }
 
 func main() {
-	out, err := render()
+	root, err := moduleRoot()
 	if err != nil {
 		fail(err)
 	}
-	target, err := schemaPath()
-	if err != nil {
-		fail(err)
+	for _, doc := range []struct {
+		path string
+		gen  func() ([]byte, error)
+	}{
+		{filepath.Join(root, "definitions", "SCHEMA.md"), render},
+		{filepath.Join(root, "definitions", "CONFIG-SCHEMA.md"), renderConfig},
+	} {
+		out, err := doc.gen()
+		if err != nil {
+			fail(err)
+		}
+		if err := os.MkdirAll(filepath.Dir(doc.path), 0o755); err != nil {
+			fail(err)
+		}
+		if err := os.WriteFile(doc.path, out, 0o644); err != nil {
+			fail(err)
+		}
+		fmt.Printf("schemagen: wrote %s (%d bytes)\n", doc.path, len(out))
 	}
-	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-		fail(err)
-	}
-	if err := os.WriteFile(target, out, 0o644); err != nil {
-		fail(err)
-	}
-	fmt.Printf("schemagen: wrote %s (%d bytes)\n", target, len(out))
 }
 
 func fail(err error) {
@@ -131,9 +144,9 @@ func fail(err error) {
 	os.Exit(1)
 }
 
-// schemaPath finds the module root (containing go.mod) and returns the
-// canonical SCHEMA.md path under definitions/.
-func schemaPath() (string, error) {
+// moduleRoot walks up from the current working directory until it finds a
+// go.mod file and returns that directory.
+func moduleRoot() (string, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return "", err
@@ -141,7 +154,7 @@ func schemaPath() (string, error) {
 	dir := cwd
 	for {
 		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return filepath.Join(dir, "definitions", "SCHEMA.md"), nil
+			return dir, nil
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
@@ -183,6 +196,130 @@ func render() ([]byte, error) {
 			return nil, err
 		}
 	}
+
+	renderPresetSection(&b)
+
+	return b.Bytes(), nil
+}
+
+// renderPresetSection documents the Preset shape. Presets sit alongside —
+// not inside — the seven category enum, so they have their own section
+// and a hand-written intro rather than going through categoryDoc.
+func renderPresetSection(b *bytes.Buffer) {
+	fmt.Fprintln(b, "## Presets")
+	fmt.Fprintln(b)
+	fmt.Fprintln(b, "**Path:** `definitions/presets/<name>.yaml`  ")
+	fmt.Fprintln(b, "**Shape:** YAML manifest (no body)")
+	fmt.Fprintln(b)
+	fmt.Fprintln(b, "A preset is a named bundle of definition references — toolkit-side metadata that consumers select by name in their config. Presets are not renderable themselves; the resolver expands each preset's `definitions` list against the available sources. Presets are not in the Category enum and do not embed `Common`.")
+	fmt.Fprintln(b)
+	fmt.Fprintln(b, "### Frontmatter fields")
+	fmt.Fprintln(b)
+	presetDoc := docForType(reflect.TypeOf(defs.Preset{}))
+	writeFieldTable(b, presetDoc.Fields)
+	fmt.Fprintln(b)
+	fmt.Fprintln(b, "### Reference grammar")
+	fmt.Fprintln(b)
+	fmt.Fprintln(b, "Each entry in `definitions` is one of:")
+	fmt.Fprintln(b)
+	fmt.Fprintln(b, "- **Local**: `<plural-dir>/<name>` — e.g. `skills/challenge`, `commands/git/commit`.")
+	fmt.Fprintln(b, "- **External**: `<plural-dir>::<url>[@<ref>]` — e.g. `skills::github.com/anthropics/skills/skills/skill-creator@main`. The optional `<ref>` is anything git accepts (branch, tag, sha); the parser does not classify it — that is the resolver's job.")
+	fmt.Fprintln(b)
+	fmt.Fprintln(b, "### Example")
+	fmt.Fprintln(b)
+	fmt.Fprintln(b, "```yaml")
+	fmt.Fprintln(b, "description: Default toolkit bundle.")
+	fmt.Fprintln(b, "definitions:")
+	fmt.Fprintln(b, "  - skills/challenge")
+	fmt.Fprintln(b, "  - rules/bare-repos")
+	fmt.Fprintln(b, "  - skills::github.com/anthropics/skills/skills/skill-creator@main")
+	fmt.Fprintln(b, "```")
+	fmt.Fprintln(b)
+}
+
+// renderConfig produces CONFIG-SCHEMA.md, the consumer-facing schema for
+// .agentic-toolkit/config.yaml and .agentic-toolkit/lock.yaml.
+func renderConfig() ([]byte, error) {
+	var b bytes.Buffer
+
+	fmt.Fprintln(&b, "# agentic-toolkit consumer config schema")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "<!-- DO NOT EDIT — generated by tools/schemagen from internal/config and internal/lockfile struct definitions. Run `go generate ./...` to refresh. -->")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "A consumer repo opts into the toolkit by committing two files under `.agentic-toolkit/`:")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "- `config.yaml` — declares the toolkit source(s), target platforms, and preset bundles to render. Hand-edited.")
+	fmt.Fprintln(&b, "- `lock.yaml` — pinned record of what the resolver actually fetched. Resolver-written; commit it.")
+	fmt.Fprintln(&b)
+
+	fmt.Fprintln(&b, "## ConsumerConfig")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "**Path:** `.agentic-toolkit/config.yaml`")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "### Fields")
+	fmt.Fprintln(&b)
+	writeFieldTable(&b, docForType(reflect.TypeOf(cfg.ConsumerConfig{})).Fields)
+	fmt.Fprintln(&b)
+
+	fmt.Fprintln(&b, "### `Source`")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "`source` and each entry in `externals` deserialise into the same `Source` struct. Two YAML forms are accepted:")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "- **Shorthand**: `<url>[@<ref>]` — e.g. `github.com/owner/repo@main`. Empty `<ref>` (or no `@`) means the resolver chooses the default branch.")
+	fmt.Fprintln(&b, "- **Mapping**: `{ url: <url>, ref: <ref> }`.")
+	fmt.Fprintln(&b)
+	writeFieldTable(&b, docForType(reflect.TypeOf(cfg.Source{})).Fields)
+	fmt.Fprintln(&b)
+
+	fmt.Fprintln(&b, "### `presets` semantics")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "Presets are applied in declared order. If two entries reference the same definition, the later one wins. Slice-1 only resolves preset names against the **primary** source — external presets are not supported yet. The parser validates name format only; existence is the resolver's responsibility.")
+	fmt.Fprintln(&b)
+
+	fmt.Fprintln(&b, "### Example")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "```yaml")
+	fmt.Fprintln(&b, "source: github.com/pedromvgomes/agentic-toolkit@main")
+	fmt.Fprintln(&b, "platforms:")
+	fmt.Fprintln(&b, "  - claude")
+	fmt.Fprintln(&b, "  - cursor")
+	fmt.Fprintln(&b, "externals:")
+	fmt.Fprintln(&b, "  - github.com/anthropics/skills@main")
+	fmt.Fprintln(&b, "presets:")
+	fmt.Fprintln(&b, "  - default")
+	fmt.Fprintln(&b, "  - bare-repos")
+	fmt.Fprintln(&b, "```")
+	fmt.Fprintln(&b)
+
+	fmt.Fprintln(&b, "## Lockfile")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "**Path:** `.agentic-toolkit/lock.yaml`")
+	fmt.Fprintln(&b)
+	fmt.Fprintf(&b, "The resolver writes the lockfile after a successful sync. It pins every source the run touched (primary + declared externals + sources implied by external preset refs) so subsequent runs can reproduce the exact fetch graph. The current schema version is **%d**.\n", lock.Version)
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "### Top-level fields")
+	fmt.Fprintln(&b)
+	writeFieldTable(&b, docForType(reflect.TypeOf(lock.Lockfile{})).Fields)
+	fmt.Fprintln(&b)
+
+	fmt.Fprintln(&b, "### `sources` entry (`ResolvedSource`)")
+	fmt.Fprintln(&b)
+	writeFieldTable(&b, docForType(reflect.TypeOf(lock.ResolvedSource{})).Fields)
+	fmt.Fprintln(&b)
+
+	fmt.Fprintln(&b, "### Example")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "```yaml")
+	fmt.Fprintln(&b, "version: 1")
+	fmt.Fprintln(&b, "sources:")
+	fmt.Fprintln(&b, "  - url: github.com/pedromvgomes/agentic-toolkit")
+	fmt.Fprintln(&b, "    ref: main")
+	fmt.Fprintln(&b, "    sha: 0123456789abcdef0123456789abcdef01234567")
+	fmt.Fprintln(&b, "  - url: github.com/anthropics/skills")
+	fmt.Fprintln(&b, "    ref: main")
+	fmt.Fprintln(&b, "    sha: fedcba9876543210fedcba9876543210fedcba98")
+	fmt.Fprintln(&b, "```")
+	fmt.Fprintln(&b)
 
 	return b.Bytes(), nil
 }

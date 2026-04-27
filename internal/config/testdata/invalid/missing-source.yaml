@@ -1,0 +1,4 @@
+platforms:
+  - claude
+presets:
+  - default

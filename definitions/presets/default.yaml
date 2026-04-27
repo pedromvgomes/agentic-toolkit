@@ -1,0 +1,7 @@
+description: Default toolkit bundle — workflow-agnostic skills/instructions plus skill-creator.
+definitions:
+  - skills/challenge
+  - skills/code-panel-review
+  - skills/pr-review-resolver
+  - skills::github.com/anthropics/skills/skills/skill-creator
+  - instructions/plan-approval

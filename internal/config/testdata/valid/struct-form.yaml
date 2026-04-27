@@ -1,0 +1,8 @@
+source:
+  url: github.com/pedromvgomes/agentic-toolkit
+  ref: main
+externals:
+  - url: github.com/anthropics/skills
+    ref: main
+presets:
+  - default
