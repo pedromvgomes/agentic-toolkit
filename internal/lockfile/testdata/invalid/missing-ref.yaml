@@ -1,0 +1,5 @@
+version: 1
+sources:
+  - url: github.com/x/y
+    ref: ""
+    sha: 0123456789abcdef0123456789abcdef01234567

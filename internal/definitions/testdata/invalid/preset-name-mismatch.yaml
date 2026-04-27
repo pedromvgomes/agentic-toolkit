@@ -1,0 +1,4 @@
+name: not-the-filename-stem
+description: Name in frontmatter contradicts the filename.
+definitions:
+  - skills/challenge

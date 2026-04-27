@@ -37,6 +37,7 @@ const (
 	ErrPlatformExtension ErrorKind = "platform_extension"
 	ErrHandlerShape      ErrorKind = "handler_shape"
 	ErrUnknownCategory   ErrorKind = "unknown_category"
+	ErrPresetMalformedRef ErrorKind = "preset_malformed_ref"
 )
 
 func (e *ParseError) Error() string {

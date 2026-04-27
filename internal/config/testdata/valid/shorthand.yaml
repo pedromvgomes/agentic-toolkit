@@ -1,0 +1,10 @@
+source: github.com/pedromvgomes/agentic-toolkit@main
+platforms:
+  - claude
+  - cursor
+externals:
+  - github.com/anthropics/skills@main
+  - github.com/some/other/repo
+presets:
+  - default
+  - bare-repos
