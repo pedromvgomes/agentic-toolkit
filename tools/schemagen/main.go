@@ -74,9 +74,9 @@ var categories = []categoryDoc{
 	{
 		Category:    defs.CategoryAgent,
 		Title:       "Agents (subagents)",
-		PathPattern: "definitions/agents/<name>.md",
+		PathPattern: "definitions/agents/<name>/AGENT.md",
 		FileShape:   "Markdown + YAML frontmatter",
-		Intro:       "An agent is a named subagent the parent agent can delegate to. Canonical fields cover the common ground across Claude/Cursor/OpenCode; platform-specific knobs (memory, isolation, sampling, etc.) sit under `extensions`.",
+		Intro:       "An agent is a named subagent the parent agent can delegate to. Canonical fields cover the common ground across Claude/Cursor/OpenCode; platform-specific knobs (memory, isolation, sampling, etc.) sit under `extensions`. Agents live in their own subdirectory so they can ship companion files (prompts, tools, fixtures) alongside AGENT.md.",
 		Sample:      &defs.Agent{},
 		Example: "---\ndescription: Code-review subagent.\nmodel: sonnet\ntools: [Read, Grep, Glob]\ncolor: blue\nextensions:\n  claude:\n    permission_mode: plan\n---\n\nYou are a careful code reviewer.\n",
 		Notes: "**Tools** uses the Claude tool-name vocabulary (Read, Grep, Bash, Edit, Write, Agent, …). Adapters map to other platforms' tool names where possible and warn-and-skip on unmapped names.",

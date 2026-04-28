@@ -1,13 +1,14 @@
-package config
+package tests
 
 import (
 	"testing"
 
+	"github.com/pedromvgomes/agentic-toolkit/internal/config"
 	"github.com/pedromvgomes/agentic-toolkit/internal/definitions"
 )
 
 func TestParse_Shorthand(t *testing.T) {
-	cfg, err := ParseFile("testdata/valid/shorthand.yaml")
+	cfg, err := config.ParseFile("testdata/valid/shorthand.yaml")
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -35,7 +36,7 @@ func TestParse_Shorthand(t *testing.T) {
 }
 
 func TestParse_StructForm(t *testing.T) {
-	cfg, err := ParseFile("testdata/valid/struct-form.yaml")
+	cfg, err := config.ParseFile("testdata/valid/struct-form.yaml")
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -48,7 +49,7 @@ func TestParse_StructForm(t *testing.T) {
 }
 
 func TestParse_Minimal(t *testing.T) {
-	cfg, err := ParseFile("testdata/valid/minimal.yaml")
+	cfg, err := config.ParseFile("testdata/valid/minimal.yaml")
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -64,7 +65,7 @@ func TestParse_Minimal(t *testing.T) {
 }
 
 func TestParse_NoRef(t *testing.T) {
-	cfg, err := ParseFile("testdata/valid/no-ref.yaml")
+	cfg, err := config.ParseFile("testdata/valid/no-ref.yaml")
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -80,21 +81,21 @@ func TestParse_InvalidCases(t *testing.T) {
 	cases := []struct {
 		name string
 		path string
-		want ErrorKind
+		want config.ErrorKind
 	}{
-		{"missing-source", "testdata/invalid/missing-source.yaml", ErrMissingRequired},
-		{"empty-source-shorthand", "testdata/invalid/empty-source-shorthand.yaml", ErrYAMLSyntax},
-		{"external-empty-url", "testdata/invalid/external-empty-url.yaml", ErrInvalidSource},
-		{"unknown-platform", "testdata/invalid/unknown-platform.yaml", ErrUnknownPlatform},
-		{"unknown-field", "testdata/invalid/unknown-field.yaml", ErrUnknownField},
+		{"missing-source", "testdata/invalid/missing-source.yaml", config.ErrMissingRequired},
+		{"empty-source-shorthand", "testdata/invalid/empty-source-shorthand.yaml", config.ErrYAMLSyntax},
+		{"external-empty-url", "testdata/invalid/external-empty-url.yaml", config.ErrInvalidSource},
+		{"unknown-platform", "testdata/invalid/unknown-platform.yaml", config.ErrUnknownPlatform},
+		{"unknown-field", "testdata/invalid/unknown-field.yaml", config.ErrUnknownField},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := ParseFile(tc.path)
+			_, err := config.ParseFile(tc.path)
 			if err == nil {
 				t.Fatalf("expected error of kind %s, got nil", tc.want)
 			}
-			if !IsKind(err, tc.want) {
+			if !config.IsKind(err, tc.want) {
 				t.Errorf("got error kind != %s\n  err: %v", tc.want, err)
 			}
 		})
