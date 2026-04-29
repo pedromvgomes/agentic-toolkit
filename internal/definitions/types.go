@@ -294,17 +294,17 @@ type HookExtensions struct {
 }
 
 type ClaudeHookExt struct {
-	HTTPHandler   *ClaudeHTTPHandler `yaml:"http,omitempty"           agtkdoc:"Claude-only http handler config."`
+	HTTPHandler    *ClaudeHTTPHandler    `yaml:"http,omitempty"           agtkdoc:"Claude-only http handler config."`
 	MCPToolHandler *ClaudeMCPToolHandler `yaml:"mcp_tool,omitempty"  agtkdoc:"Claude-only mcp_tool handler config."`
-	AgentHandler  *ClaudeAgentHandler `yaml:"agent,omitempty"        agtkdoc:"Claude-only agent handler config."`
-	StatusMessage string             `yaml:"status_message,omitempty" agtkdoc:"UI message shown while the hook runs."`
-	Once          bool               `yaml:"once,omitempty"           agtkdoc:"Fire only once per session."`
+	AgentHandler   *ClaudeAgentHandler   `yaml:"agent,omitempty"        agtkdoc:"Claude-only agent handler config."`
+	StatusMessage  string                `yaml:"status_message,omitempty" agtkdoc:"UI message shown while the hook runs."`
+	Once           bool                  `yaml:"once,omitempty"           agtkdoc:"Fire only once per session."`
 }
 
 type ClaudeHTTPHandler struct {
-	URL             string            `yaml:"url"`
-	Headers         map[string]string `yaml:"headers,omitempty"`
-	AllowedEnvVars  []string          `yaml:"allowed_env_vars,omitempty"`
+	URL            string            `yaml:"url"`
+	Headers        map[string]string `yaml:"headers,omitempty"`
+	AllowedEnvVars []string          `yaml:"allowed_env_vars,omitempty"`
 }
 
 type ClaudeMCPToolHandler struct {

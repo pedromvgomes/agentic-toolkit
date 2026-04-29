@@ -20,10 +20,10 @@ type ParseError struct {
 type ErrorKind string
 
 const (
-	ErrIO                ErrorKind = "io"
-	ErrYAMLSyntax        ErrorKind = "yaml_syntax"
-	ErrUnknownField      ErrorKind = "unknown_field"
-	ErrMissingRequired   ErrorKind = "missing_required"
+	ErrIO                 ErrorKind = "io"
+	ErrYAMLSyntax         ErrorKind = "yaml_syntax"
+	ErrUnknownField       ErrorKind = "unknown_field"
+	ErrMissingRequired    ErrorKind = "missing_required"
 	ErrUnsupportedVersion ErrorKind = "unsupported_version"
 )
 

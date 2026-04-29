@@ -393,7 +393,7 @@ A preset is a named bundle of definition references — toolkit-side metadata th
 |-------|------|----------|-------------|
 | `name` | `string` | no | Optional. If present, must equal the filename stem. |
 | `description` | `string` | **yes** | One-line summary used in tooling and discovery. |
-| `definitions` | `[]string` | **yes** | Ordered list of definition refs. Local form: 'skills/foo' (or 'commands/git/commit' for nested). External form: 'skills::github.com/owner/repo/path[@ref]'. |
+| `definitions` | `[]string` | **yes** | Ordered list of definition refs. Local form: 'skills/foo' (or 'commands/git/commit' for nested). External form: 'skills::<repo-url>.git/<bundle-path>[@<ref>]' — the '.git/' substring is the explicit boundary between repository URL and in-repo bundle path (e.g. 'skills::github.com/owner/repo.git/skills/foo@main'). |
 
 ### Reference grammar
 

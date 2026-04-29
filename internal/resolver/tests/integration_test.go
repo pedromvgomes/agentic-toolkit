@@ -32,9 +32,9 @@ func TestResolve_Integration_DirFS(t *testing.T) {
 	}
 
 	wantDefs := map[string]definitions.Category{
-		"skill-creator":  definitions.CategorySkill,
-		"challenge":      definitions.CategorySkill,
-		"plan-approval":  definitions.CategoryInstruction,
+		"skill-creator": definitions.CategorySkill,
+		"challenge":     definitions.CategorySkill,
+		"plan-approval": definitions.CategoryInstruction,
 	}
 	if len(plan.Definitions) != len(wantDefs) {
 		t.Fatalf("definitions = %d, want %d (%v)", len(plan.Definitions), len(wantDefs), plan.Definitions)
