@@ -2,9 +2,10 @@ package definitions
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io/fs"
-	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -96,45 +97,31 @@ func splitAtRef(s string) (left, right string) {
 	return s, ""
 }
 
-// ParsePresetFile parses a single preset YAML file. The canonical name is
-// derived from the filename stem.
-func ParsePresetFile(path string) (*Preset, error) {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return nil, &ParseError{Path: path, Kind: ErrIO, Message: err.Error(), Wrapped: err}
-	}
-	derivedName := stripExt(filepath.Base(path))
-	return parsePresetBytes(path, derivedName, raw)
-}
+// PresetsDir is the canonical (forward-slash) location of preset files
+// inside a source filesystem.
+const PresetsDir = "definitions/presets"
 
-// ParsePresetInCatalog parses a preset file at path inside a catalog rooted
-// at root. The path must live directly under definitions/presets/ — nesting
-// is rejected.
-func ParsePresetInCatalog(root, path string) (*Preset, error) {
-	absRoot, err := filepath.Abs(root)
-	if err != nil {
-		return nil, &ParseError{Path: path, Kind: ErrIO, Message: err.Error(), Wrapped: err}
+// ParsePresetInCatalog parses a preset file at fsPath inside a source
+// filesystem. fsPath is forward-slash, relative to the source root, and
+// must live directly under definitions/presets/ — nesting is rejected.
+func ParsePresetInCatalog(fsys fs.FS, fsPath string) (*Preset, error) {
+	fsPath = path.Clean(filepath.ToSlash(fsPath))
+	prefix := PresetsDir + "/"
+	if !strings.HasPrefix(fsPath, prefix) {
+		return nil, newErr(fsPath, ErrInvalidName,
+			"path is not inside %s", PresetsDir)
 	}
-	absPath, err := filepath.Abs(path)
-	if err != nil {
-		return nil, &ParseError{Path: path, Kind: ErrIO, Message: err.Error(), Wrapped: err}
-	}
-	presetsDir := filepath.Join(absRoot, "definitions", "presets")
-	rel, err := filepath.Rel(presetsDir, absPath)
-	if err != nil || strings.HasPrefix(rel, "..") {
-		return nil, newErr(path, ErrInvalidName,
-			"path is not inside %s", presetsDir)
-	}
-	if strings.Contains(filepath.ToSlash(rel), "/") {
-		return nil, newErr(path, ErrInvalidName,
+	rel := strings.TrimPrefix(fsPath, prefix)
+	if rel == "" || strings.Contains(rel, "/") {
+		return nil, newErr(fsPath, ErrInvalidName,
 			"presets must be flat (got nested path %q)", rel)
 	}
-	raw, err := os.ReadFile(absPath)
+	raw, err := fs.ReadFile(fsys, fsPath)
 	if err != nil {
-		return nil, &ParseError{Path: path, Kind: ErrIO, Message: err.Error(), Wrapped: err}
+		return nil, &ParseError{Path: fsPath, Kind: ErrIO, Message: err.Error(), Wrapped: err}
 	}
-	derivedName := stripExt(filepath.Base(absPath))
-	return parsePresetBytes(path, derivedName, raw)
+	derivedName := stripExt(rel)
+	return parsePresetBytes(fsPath, derivedName, raw)
 }
 
 func parsePresetBytes(path, derivedName string, raw []byte) (*Preset, error) {
@@ -174,26 +161,33 @@ func parsePresetBytes(path, derivedName string, raw []byte) (*Preset, error) {
 	return &p, nil
 }
 
-// WalkPresets walks definitions/presets/ under root and returns one path per
-// preset entry-point file. A missing presets/ directory is not an error.
-func WalkPresets(root string) ([]string, error) {
-	presetsDir := filepath.Join(root, "definitions", "presets")
-	if _, err := os.Stat(presetsDir); os.IsNotExist(err) {
+// WalkPresets walks definitions/presets/ in fsys and returns one fs-relative
+// path per preset entry-point file (".yaml" or ".yml"). A missing presets/
+// directory is not an error.
+func WalkPresets(fsys fs.FS) ([]string, error) {
+	info, err := fs.Stat(fsys, PresetsDir)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if !info.IsDir() {
 		return nil, nil
 	}
 	var out []string
-	err := filepath.WalkDir(presetsDir, func(path string, d fs.DirEntry, err error) error {
+	err = fs.WalkDir(fsys, PresetsDir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if d.IsDir() {
 			return nil
 		}
-		ext := strings.ToLower(filepath.Ext(path))
+		ext := strings.ToLower(filepath.Ext(p))
 		if ext != ".yaml" && ext != ".yml" {
 			return nil
 		}
-		out = append(out, path)
+		out = append(out, p)
 		return nil
 	})
 	return out, err

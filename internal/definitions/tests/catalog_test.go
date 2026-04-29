@@ -1,9 +1,11 @@
-package definitions
+package tests
 
 import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/pedromvgomes/agentic-toolkit/internal/definitions"
 )
 
 // TestCatalogParses walks the real definitions/ tree at the repo root and
@@ -17,7 +19,8 @@ func TestCatalogParses(t *testing.T) {
 		t.Skipf("no definitions/ at %s: %v", defsDir, err)
 	}
 
-	entries, err := WalkCatalog(root)
+	fsys := os.DirFS(root)
+	entries, err := definitions.WalkCatalog(fsys)
 	if err != nil {
 		t.Fatalf("walk: %v", err)
 	}
@@ -26,9 +29,8 @@ func TestCatalogParses(t *testing.T) {
 	}
 
 	for _, e := range entries {
-		rel, _ := filepath.Rel(root, e.Path)
-		t.Run(rel, func(t *testing.T) {
-			def, err := ParseInCatalog(root, e.Path)
+		t.Run(e.Path, func(t *testing.T) {
+			def, err := definitions.ParseInCatalog(fsys, e.Path)
 			if err != nil {
 				t.Fatalf("parse failed: %v", err)
 			}

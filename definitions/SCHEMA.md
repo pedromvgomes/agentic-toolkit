@@ -11,7 +11,7 @@ Every asset in `definitions/` parses into one of seven category structs. The str
 | skill | `definitions/skills/<name>/SKILL.md` | Markdown + YAML frontmatter |
 | rule | `definitions/rules/<name>.md` | Markdown + YAML frontmatter |
 | instruction | `definitions/instructions/<name>.md` | Markdown + YAML frontmatter |
-| agent | `definitions/agents/<name>.md` | Markdown + YAML frontmatter |
+| agent | `definitions/agents/<name>/AGENT.md` | Markdown + YAML frontmatter |
 | command | `definitions/commands/<name>.md  (nesting allowed: definitions/commands/<group>/<name>.md)` | Markdown + YAML frontmatter |
 | hook | `definitions/hooks/<name>.yaml` | YAML manifest (no body) |
 | mcp | `definitions/mcp/<name>.yaml` | YAML manifest (no body) |
@@ -112,10 +112,10 @@ Always commit with a Co-Authored-By trailer.
 
 ## Agents (subagents)
 
-**Path:** `definitions/agents/<name>.md`  
+**Path:** `definitions/agents/<name>/AGENT.md`  
 **Shape:** Markdown + YAML frontmatter
 
-An agent is a named subagent the parent agent can delegate to. Canonical fields cover the common ground across Claude/Cursor/OpenCode; platform-specific knobs (memory, isolation, sampling, etc.) sit under `extensions`.
+An agent is a named subagent the parent agent can delegate to. Canonical fields cover the common ground across Claude/Cursor/OpenCode; platform-specific knobs (memory, isolation, sampling, etc.) sit under `extensions`. Agents live in their own subdirectory so they can ship companion files (prompts, tools, fixtures) alongside AGENT.md.
 
 ### Frontmatter fields beyond Common
 

@@ -3,7 +3,8 @@ package definitions
 import (
 	"bytes"
 	"fmt"
-	"os"
+	"io/fs"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -11,63 +12,59 @@ import (
 	"github.com/goccy/go-yaml"
 )
 
-// ParseFile parses a single definition file. cat selects the target struct
-// type. Use this when the caller already knows the category (tests, or a
-// resolver that has indexed definitions some other way).
-func ParseFile(path string, cat Category) (Definition, error) {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return nil, &ParseError{Path: path, Kind: ErrIO, Message: err.Error(), Wrapped: err}
-	}
-	derivedName, err := deriveName(cat, path, "")
-	if err != nil {
-		return nil, err
-	}
-	return parseBytes(path, cat, derivedName, raw)
-}
-
-// ParseInCatalog parses a definition file at path inside a catalog rooted
-// at root. The category is derived from the path (root/<category-dir>/...)
-// and the canonical name is derived from the path layout per category rules.
-func ParseInCatalog(root, path string) (Definition, error) {
-	absRoot, err := filepath.Abs(root)
-	if err != nil {
-		return nil, &ParseError{Path: path, Kind: ErrIO, Message: err.Error(), Wrapped: err}
-	}
-	absPath, err := filepath.Abs(path)
-	if err != nil {
-		return nil, &ParseError{Path: path, Kind: ErrIO, Message: err.Error(), Wrapped: err}
-	}
-	defsDir := filepath.Join(absRoot, "definitions")
-	rel, err := filepath.Rel(defsDir, absPath)
-	if err != nil || strings.HasPrefix(rel, "..") {
-		return nil, newErr(path, ErrUnknownCategory,
-			"path is not inside %s", defsDir)
-	}
-	parts := strings.Split(filepath.ToSlash(rel), "/")
-	if len(parts) < 2 {
-		return nil, newErr(path, ErrUnknownCategory,
+// ParseInCatalog parses one entry-point file at fsPath inside a source
+// filesystem. fsPath is forward-slash, relative to the source root, and
+// must be of the form "definitions/<category>/...". Category and the
+// canonical name are derived from fsPath.
+func ParseInCatalog(fsys fs.FS, fsPath string) (Definition, error) {
+	fsPath = path.Clean(filepath.ToSlash(fsPath))
+	parts := strings.Split(fsPath, "/")
+	if len(parts) < 3 || parts[0] != "definitions" {
+		return nil, newErr(fsPath, ErrUnknownCategory,
 			"expected definitions/<category>/...")
 	}
-	cat := CategoryFromDir(parts[0])
+	cat := CategoryFromDir(parts[1])
 	if cat == "" {
-		return nil, newErr(path, ErrUnknownCategory,
-			"unknown category directory %q", parts[0])
+		return nil, newErr(fsPath, ErrUnknownCategory,
+			"unknown category directory %q", parts[1])
 	}
-	relWithinCat := filepath.ToSlash(filepath.Join(parts[1:]...))
-	raw, err := os.ReadFile(absPath)
+	relWithinCat := strings.Join(parts[2:], "/")
+	raw, err := fs.ReadFile(fsys, fsPath)
 	if err != nil {
-		return nil, &ParseError{Path: path, Kind: ErrIO, Message: err.Error(), Wrapped: err}
+		return nil, &ParseError{Path: fsPath, Kind: ErrIO, Message: err.Error(), Wrapped: err}
 	}
-	derivedName, err := deriveName(cat, absPath, relWithinCat)
+	derivedName, err := deriveName(cat, fsPath, relWithinCat)
 	if err != nil {
-		// Replace the path on the error with the user-facing path.
-		if pe, ok := err.(*ParseError); ok {
-			pe.Path = path
-		}
 		return nil, err
 	}
-	return parseBytes(path, cat, derivedName, raw)
+	return parseBytes(fsPath, cat, derivedName, raw)
+}
+
+// ParseBundle parses a folder-shaped definition where fsys is rooted at
+// the bundle directory itself — the parent folder containing the entry-
+// point file (SKILL.md or AGENT.md) plus any bundled resources. name is
+// the canonical name to validate the entry's frontmatter `name:` field
+// against; it is typically derived from the URL last segment by callers
+// resolving an external preset ref.
+//
+// Only the bundle-shaped categories (skill, agent) are supported. Other
+// categories return an ErrUnknownCategory error.
+func ParseBundle(fsys fs.FS, cat Category, name string) (Definition, error) {
+	var entry string
+	switch cat {
+	case CategorySkill:
+		entry = "SKILL.md"
+	case CategoryAgent:
+		entry = "AGENT.md"
+	default:
+		return nil, newErr(name, ErrUnknownCategory,
+			"ParseBundle: only skill and agent are bundle-shaped (got %q)", cat)
+	}
+	raw, err := fs.ReadFile(fsys, entry)
+	if err != nil {
+		return nil, &ParseError{Path: entry, Kind: ErrIO, Message: err.Error(), Wrapped: err}
+	}
+	return parseBytes(entry, cat, name, raw)
 }
 
 // parseBytes is the shared core: classify file shape, run the decode, run
@@ -241,22 +238,10 @@ func cleanYAMLMessage(err error) string {
 
 // ===== name derivation =====
 
+// deriveName computes the canonical name from a category-relative path.
+// Callers must pass a non-empty relWithinCat (the segment of the file path
+// that follows definitions/<category>/).
 func deriveName(cat Category, path, relWithinCat string) (string, error) {
-	if relWithinCat == "" {
-		// caller didn't supply a category-relative path — derive from
-		// the absolute path's tail using category-specific rules.
-		switch cat {
-		case CategorySkill:
-			// .../skills/<name>/SKILL.md → name = parent dir
-			return filepath.Base(filepath.Dir(path)), nil
-		case CategoryAgent, CategoryRule, CategoryInstruction, CategoryHook, CategoryMCP:
-			return stripExt(filepath.Base(path)), nil
-		case CategoryCommand:
-			// Without a category-relative path we can only derive the leaf.
-			return stripExt(filepath.Base(path)), nil
-		}
-		return "", newErr(path, ErrUnknownCategory, "category %q not supported", cat)
-	}
 	switch cat {
 	case CategorySkill:
 		// <name>/SKILL.md
@@ -266,15 +251,15 @@ func deriveName(cat Category, path, relWithinCat string) (string, error) {
 				"skills must live at <name>/SKILL.md (got %q)", relWithinCat)
 		}
 		return parts[0], nil
-	case CategoryAgent, CategoryRule, CategoryInstruction:
-		// flat <name>.md
-		if strings.Contains(relWithinCat, "/") {
+	case CategoryAgent:
+		// <name>/AGENT.md
+		parts := strings.Split(relWithinCat, "/")
+		if len(parts) != 2 || strings.ToUpper(parts[1]) != "AGENT.MD" {
 			return "", newErr(path, ErrInvalidName,
-				"%s definitions must be flat (got nested path %q)", cat, relWithinCat)
+				"agents must live at <name>/AGENT.md (got %q)", relWithinCat)
 		}
-		return stripExt(relWithinCat), nil
-	case CategoryHook, CategoryMCP:
-		// flat <name>.yaml
+		return parts[0], nil
+	case CategoryRule, CategoryInstruction, CategoryHook, CategoryMCP:
 		if strings.Contains(relWithinCat, "/") {
 			return "", newErr(path, ErrInvalidName,
 				"%s definitions must be flat (got nested path %q)", cat, relWithinCat)
@@ -323,8 +308,9 @@ func validateCommon(path string, def Definition, derivedName string) error {
 	return nil
 }
 
-// validateExtensionsAgainstPlatforms enforces Q12: when platforms is set
-// explicitly, populated extension blocks must reference a listed platform.
+// validateExtensionsAgainstPlatforms enforces the rule that when platforms
+// is set explicitly, populated extension blocks must reference a listed
+// platform.
 func validateExtensionsAgainstPlatforms(path string, def Definition) error {
 	listed := map[Platform]bool{}
 	for _, p := range def.GetCommon().Platforms {
