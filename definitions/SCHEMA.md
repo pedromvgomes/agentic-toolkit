@@ -393,14 +393,19 @@ A preset is a named bundle of definition references — toolkit-side metadata th
 |-------|------|----------|-------------|
 | `name` | `string` | no | Optional. If present, must equal the filename stem. |
 | `description` | `string` | **yes** | One-line summary used in tooling and discovery. |
-| `definitions` | `[]string` | **yes** | Ordered list of definition refs. Local form: 'skills/foo' (or 'commands/git/commit' for nested). External form: 'skills::<repo-url>.git/<bundle-path>[@<ref>]' — the '.git/' substring is the explicit boundary between repository URL and in-repo bundle path (e.g. 'skills::github.com/owner/repo.git/skills/foo@main'). |
+| `definitions` | `[]string` | **yes** | Ordered list of definition refs. Local form: 'skills/foo' (or 'commands/git/commit' for nested). External form: '<plural>::<repo-url>.git/<in-repo-path>[@<ref>]'. For skill/agent the path points to the bundle directory (e.g. 'skills::github.com/owner/repo.git/skills/foo@main'); for rule/instruction/command/hook/mcp it points to the file itself, including extension (e.g. 'rules::github.com/owner/repo.git/rules/style.md@main'). |
 
 ### Reference grammar
 
 Each entry in `definitions` is one of:
 
 - **Local**: `<plural-dir>/<name>` — e.g. `skills/challenge`, `commands/git/commit`.
-- **External**: `<plural-dir>::<url>[@<ref>]` — e.g. `skills::github.com/anthropics/skills/skills/skill-creator@main`. The optional `<ref>` is anything git accepts (branch, tag, sha); the parser does not classify it — that is the resolver's job.
+- **External**: `<plural-dir>::<repo-url>.git/<in-repo-path>[@<ref>]`. The `.git/` substring is the explicit boundary between the repository URL and the in-repo path. The optional `<ref>` is anything git accepts (branch, tag, sha); the parser does not classify it — that is the resolver's job.
+
+External refs come in two artifact shapes, by category:
+
+- **Bundle (skill, agent)** — `<in-repo-path>` points to the bundle directory; the parser reads the fixed entry file (`SKILL.md` / `AGENT.md`) from inside. The bundle directory's last segment is the canonical name. Example: `skills::github.com/owner/repo.git/skills/foo@main`.
+- **File (rule, instruction, command, hook, mcp)** — `<in-repo-path>` points to the file itself, extension included. The remote layout is irrelevant; the canonical name comes from the file's `name:` field, falling back to the filename stem. Example: `rules::github.com/owner/repo.git/rules/style.md@main`. Nested names (e.g. `git/commit` for commands) are declared in the file's frontmatter — non-command file categories must remain flat.
 
 ### Example
 
@@ -409,6 +414,7 @@ description: Default toolkit bundle.
 definitions:
   - skills/challenge
   - rules/bare-repos
-  - skills::github.com/anthropics/skills/skills/skill-creator@main
+  - skills::github.com/anthropics/skills.git/skills/skill-creator@main
+  - rules::github.com/owner/repo.git/rules/style.md@main
 ```
 

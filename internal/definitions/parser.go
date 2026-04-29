@@ -37,7 +37,7 @@ func ParseInCatalog(fsys fs.FS, fsPath string) (Definition, error) {
 	if err != nil {
 		return nil, err
 	}
-	return parseBytes(fsPath, cat, derivedName, raw)
+	return parseBytes(fsPath, cat, derivedName, raw, true)
 }
 
 // ParseBundle parses a folder-shaped definition where fsys is rooted at
@@ -64,12 +64,45 @@ func ParseBundle(fsys fs.FS, cat Category, name string) (Definition, error) {
 	if err != nil {
 		return nil, &ParseError{Path: entry, Kind: ErrIO, Message: err.Error(), Wrapped: err}
 	}
-	return parseBytes(entry, cat, name, raw)
+	return parseBytes(entry, cat, name, raw, true)
+}
+
+// ParseFile parses one file-shaped definition. fsys is rooted at the
+// file's parent directory and filename is the entry-point file's basename
+// (e.g. "style.md", "transport.yaml"). Layout-agnostic: nothing about
+// path prefixes or wrapping directories is enforced.
+//
+// The canonical name comes from the file's top-level `name:` field. If
+// absent, it falls back to the filename stem (extension stripped).
+// Per-category nesting rules apply: rule, instruction, hook, mcp must
+// have flat names; command may contain '/'.
+//
+// Only file-shaped categories are supported. Skill/agent return
+// ErrUnknownCategory — use ParseBundle.
+func ParseFile(fsys fs.FS, cat Category, filename string) (Definition, error) {
+	switch cat {
+	case CategoryRule, CategoryInstruction, CategoryCommand, CategoryHook, CategoryMCP:
+		// ok
+	default:
+		return nil, newErr(filename, ErrUnknownCategory,
+			"ParseFile: only file-shaped categories are supported (got %q)", cat)
+	}
+	raw, err := fs.ReadFile(fsys, filename)
+	if err != nil {
+		return nil, &ParseError{Path: filename, Kind: ErrIO, Message: err.Error(), Wrapped: err}
+	}
+	fallback := stripExt(filename)
+	return parseBytes(filename, cat, fallback, raw, false)
 }
 
 // parseBytes is the shared core: classify file shape, run the decode, run
 // validation, attach the body for prose categories.
-func parseBytes(path string, cat Category, derivedName string, raw []byte) (Definition, error) {
+//
+// strictName=true (ParseInCatalog, ParseBundle): the file's `name:` field,
+// if set, must equal derivedName.
+// strictName=false (ParseFile): the file's `name:` field wins;
+// derivedName is used only as a fallback when the file omits `name:`.
+func parseBytes(path string, cat Category, derivedName string, raw []byte, strictName bool) (Definition, error) {
 	def := newDef(cat)
 	if def == nil {
 		return nil, newErr(path, ErrUnknownCategory, "no struct registered for category %q", cat)
@@ -99,7 +132,7 @@ func parseBytes(path string, cat Category, derivedName string, raw []byte) (Defi
 		setBody(def, string(body))
 	}
 
-	if err := validateCommon(path, def, derivedName); err != nil {
+	if err := validateCommon(path, def, derivedName, strictName); err != nil {
 		return nil, err
 	}
 	if err := def.validate(path); err != nil {
@@ -277,9 +310,35 @@ func stripExt(name string) string {
 	return strings.TrimSuffix(name, ext)
 }
 
+// validateNameForCategory enforces per-category name shape on the
+// already-resolved canonical name. For ParseInCatalog these checks are
+// redundant with deriveName's path-based logic but harmless; for
+// ParseFile (where the name comes from frontmatter or filename stem)
+// this is the gate.
+func validateNameForCategory(path string, cat Category, name string) error {
+	if name == "" {
+		return newErr(path, ErrInvalidName, "name is empty")
+	}
+	if strings.HasPrefix(name, "/") || strings.HasSuffix(name, "/") {
+		return newErr(path, ErrInvalidName,
+			"name %q must not start or end with '/'", name)
+	}
+	for _, seg := range strings.Split(name, "/") {
+		if seg == "" || seg == "." || seg == ".." {
+			return newErr(path, ErrInvalidName,
+				"name %q contains invalid segment %q", name, seg)
+		}
+	}
+	if cat != CategoryCommand && strings.Contains(name, "/") {
+		return newErr(path, ErrInvalidName,
+			"%s names must be flat (got %q)", cat, name)
+	}
+	return nil
+}
+
 // ===== Common-level validation =====
 
-func validateCommon(path string, def Definition, derivedName string) error {
+func validateCommon(path string, def Definition, derivedName string, strictName bool) error {
 	c := def.GetCommon()
 
 	if c.Description == "" {
@@ -288,9 +347,13 @@ func validateCommon(path string, def Definition, derivedName string) error {
 
 	if c.Name == "" {
 		c.Name = derivedName
-	} else if c.Name != derivedName {
+	} else if strictName && c.Name != derivedName {
 		return newErr(path, ErrInvalidName,
 			"name %q does not match path-derived name %q", c.Name, derivedName)
+	}
+
+	if err := validateNameForCategory(path, def.Category(), c.Name); err != nil {
+		return err
 	}
 
 	for _, p := range c.Platforms {
