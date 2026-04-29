@@ -20,7 +20,7 @@ import (
 type Preset struct {
 	Name        string   `yaml:"name,omitempty"  agtkdoc:"Optional. If present, must equal the filename stem."`
 	Description string   `yaml:"description"     agtkdoc:"required;One-line summary used in tooling and discovery."`
-	Definitions []string `yaml:"definitions"     agtkdoc:"required;Ordered list of definition refs. Local form: 'skills/foo' (or 'commands/git/commit' for nested). External form: 'skills::github.com/owner/repo/path[@ref]'."`
+	Definitions []string `yaml:"definitions"     agtkdoc:"required;Ordered list of definition refs. Local form: 'skills/foo' (or 'commands/git/commit' for nested). External form: 'skills::<repo-url>.git/<bundle-path>[@<ref>]' — the '.git/' substring is the explicit boundary between repository URL and in-repo bundle path (e.g. 'skills::github.com/owner/repo.git/skills/foo@main')."`
 }
 
 // PresetRef is the parsed form of one entry in Preset.Definitions.

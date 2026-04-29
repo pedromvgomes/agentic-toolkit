@@ -51,7 +51,7 @@ var categories = []categoryDoc{
 		FileShape:   "Markdown + YAML frontmatter",
 		Intro:       "A skill is a reusable, self-contained piece of agent capability — a prose body that an adapter renders into the platform's native skill format. Skills live in their own subdirectory so they can ship bundled resources (templates, allowlists, scripts) alongside SKILL.md.",
 		Sample:      &defs.Skill{},
-		Example: "---\nname: my-skill\ndescription: Short description shown in tooling.\n---\n\n# Skill body\n\nMarkdown content rendered into the platform skill format.\n",
+		Example:     "---\nname: my-skill\ndescription: Short description shown in tooling.\n---\n\n# Skill body\n\nMarkdown content rendered into the platform skill format.\n",
 	},
 	{
 		Category:    defs.CategoryRule,
@@ -60,7 +60,7 @@ var categories = []categoryDoc{
 		FileShape:   "Markdown + YAML frontmatter",
 		Intro:       "A rule is a guidance document that platforms attach to the agent's context — either always-on or scoped to matching files. Canonical scoping uses doublestar globs in the `paths` field; adapters translate to per-platform syntax.",
 		Sample:      &defs.Rule{},
-		Example: "---\ndescription: Use 4-space indentation in TSX files.\npaths:\n  - \"**/*.tsx\"\n---\n\nWhen editing TSX, prefer 4-space indentation.\n",
+		Example:     "---\ndescription: Use 4-space indentation in TSX files.\npaths:\n  - \"**/*.tsx\"\n---\n\nWhen editing TSX, prefer 4-space indentation.\n",
 	},
 	{
 		Category:    defs.CategoryInstruction,
@@ -69,7 +69,7 @@ var categories = []categoryDoc{
 		FileShape:   "Markdown + YAML frontmatter",
 		Intro:       "An instruction is prose concatenated into the platform's top-level instruction file (CLAUDE.md, AGENTS.md, copilot-instructions.md) inside an `agtk:start`/`agtk:end` managed region. Instructions carry no scoping or extensions — they are global by design.",
 		Sample:      &defs.Instruction{},
-		Example: "---\ndescription: Standing instruction concatenated into AGENTS.md.\n---\n\nAlways commit with a Co-Authored-By trailer.\n",
+		Example:     "---\ndescription: Standing instruction concatenated into AGENTS.md.\n---\n\nAlways commit with a Co-Authored-By trailer.\n",
 	},
 	{
 		Category:    defs.CategoryAgent,
@@ -78,8 +78,8 @@ var categories = []categoryDoc{
 		FileShape:   "Markdown + YAML frontmatter",
 		Intro:       "An agent is a named subagent the parent agent can delegate to. Canonical fields cover the common ground across Claude/Cursor/OpenCode; platform-specific knobs (memory, isolation, sampling, etc.) sit under `extensions`. Agents live in their own subdirectory so they can ship companion files (prompts, tools, fixtures) alongside AGENT.md.",
 		Sample:      &defs.Agent{},
-		Example: "---\ndescription: Code-review subagent.\nmodel: sonnet\ntools: [Read, Grep, Glob]\ncolor: blue\nextensions:\n  claude:\n    permission_mode: plan\n---\n\nYou are a careful code reviewer.\n",
-		Notes: "**Tools** uses the Claude tool-name vocabulary (Read, Grep, Bash, Edit, Write, Agent, …). Adapters map to other platforms' tool names where possible and warn-and-skip on unmapped names.",
+		Example:     "---\ndescription: Code-review subagent.\nmodel: sonnet\ntools: [Read, Grep, Glob]\ncolor: blue\nextensions:\n  claude:\n    permission_mode: plan\n---\n\nYou are a careful code reviewer.\n",
+		Notes:       "**Tools** uses the Claude tool-name vocabulary (Read, Grep, Bash, Edit, Write, Agent, …). Adapters map to other platforms' tool names where possible and warn-and-skip on unmapped names.",
 	},
 	{
 		Category:    defs.CategoryCommand,
@@ -88,8 +88,8 @@ var categories = []categoryDoc{
 		FileShape:   "Markdown + YAML frontmatter",
 		Intro:       "A command is a reusable prompt template invoked via slash syntax. Nested directories produce namespaced names: `commands/git/commit.md` is referenced as `commands/git/commit` in cross-references and translated to `/git:commit` (Claude) or `/git/commit` (OpenCode).",
 		Sample:      &defs.Command{},
-		Example: "---\ndescription: Run the project linter.\nargument_hint: \"[paths...]\"\ntools: [Bash]\n---\n\nRun lint on $ARGUMENTS.\n",
-		Notes: "**Body interpolation portability:**\n\n- `$ARGUMENTS` — portable across Claude and OpenCode; Cursor appends free text after the command name.\n- `$1`, `$2` (positional) — OpenCode-only.\n- `` !`cmd` `` (shell) and `@filename` (file injection) — OpenCode-only.\n\nThe parser does not validate body content — these are notes for portable authoring.\n\n**Cursor caveat:** Cursor commands carry no frontmatter at all. The Cursor adapter strips frontmatter and writes the body verbatim, dropping `description`, `tools`, `model`, and `argument_hint` with a doctor-time warning.",
+		Example:     "---\ndescription: Run the project linter.\nargument_hint: \"[paths...]\"\ntools: [Bash]\n---\n\nRun lint on $ARGUMENTS.\n",
+		Notes:       "**Body interpolation portability:**\n\n- `$ARGUMENTS` — portable across Claude and OpenCode; Cursor appends free text after the command name.\n- `$1`, `$2` (positional) — OpenCode-only.\n- `` !`cmd` `` (shell) and `@filename` (file injection) — OpenCode-only.\n\nThe parser does not validate body content — these are notes for portable authoring.\n\n**Cursor caveat:** Cursor commands carry no frontmatter at all. The Cursor adapter strips frontmatter and writes the body verbatim, dropping `description`, `tools`, `model`, and `argument_hint` with a doctor-time warning.",
 	},
 	{
 		Category:    defs.CategoryHook,
@@ -98,8 +98,8 @@ var categories = []categoryDoc{
 		FileShape:   "YAML manifest (no body)",
 		Intro:       "A hook attaches a handler to a lifecycle event. Canonical handler types are `command` (shell) and `prompt` (LLM call) — the universal pair across declarative-hook platforms. Claude-specific handler kinds (http, mcp_tool, agent) live under `extensions.claude`.",
 		Sample:      &defs.Hook{},
-		Example: "name: log-tools\ndescription: Log every tool invocation.\nevent: PreToolUse\nmatcher: \"Bash|Edit|Write\"\nhandler:\n  type: command\n  command: \"echo $TOOL >> /tmp/agtk-tools.log\"\nfail_closed: false\ntimeout: 2000\n",
-		Notes: "**Event vocabulary.** The parser does not validate event names; adapters do at render time and skip-with-warn for events they don't support. Three rough sets:\n\n- **Portable** (Claude ∩ Cursor, normalized to Claude's CamelCase): `SessionStart`, `SessionEnd`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `SubagentStart`, `SubagentStop`, `Stop`, `PreCompact`, `UserPromptSubmit`.\n- **Claude-only** (examples): `PostToolBatch`, `Notification`, `TaskCreated`, `PostCompact`, `PermissionRequest`, `PermissionDenied`, `StopFailure`, `InstructionsLoaded`, `ConfigChange`, `FileChanged`, `WorktreeCreate`, `WorktreeRemove`.\n- **Cursor-only** (examples): `beforeShellExecution`, `afterShellExecution`, `beforeReadFile`, `afterFileEdit`, `afterAgentResponse`, `afterAgentThought`.\n\n**OpenCode** does not support declarative hooks; OpenCode adapter generates a TS plugin shim from each hook definition (future slice).",
+		Example:     "name: log-tools\ndescription: Log every tool invocation.\nevent: PreToolUse\nmatcher: \"Bash|Edit|Write\"\nhandler:\n  type: command\n  command: \"echo $TOOL >> /tmp/agtk-tools.log\"\nfail_closed: false\ntimeout: 2000\n",
+		Notes:       "**Event vocabulary.** The parser does not validate event names; adapters do at render time and skip-with-warn for events they don't support. Three rough sets:\n\n- **Portable** (Claude ∩ Cursor, normalized to Claude's CamelCase): `SessionStart`, `SessionEnd`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `SubagentStart`, `SubagentStop`, `Stop`, `PreCompact`, `UserPromptSubmit`.\n- **Claude-only** (examples): `PostToolBatch`, `Notification`, `TaskCreated`, `PostCompact`, `PermissionRequest`, `PermissionDenied`, `StopFailure`, `InstructionsLoaded`, `ConfigChange`, `FileChanged`, `WorktreeCreate`, `WorktreeRemove`.\n- **Cursor-only** (examples): `beforeShellExecution`, `afterShellExecution`, `beforeReadFile`, `afterFileEdit`, `afterAgentResponse`, `afterAgentThought`.\n\n**OpenCode** does not support declarative hooks; OpenCode adapter generates a TS plugin shim from each hook definition (future slice).",
 	},
 	{
 		Category:    defs.CategoryMCP,
@@ -108,8 +108,8 @@ var categories = []categoryDoc{
 		FileShape:   "YAML manifest (no body)",
 		Intro:       "An MCP server definition declares one Model Context Protocol server. Canonical transports are `stdio`, `http`, and `sse`; transport-specific fields are mutually exclusive (parser-enforced). Adapters merge the selected MCP definitions into each platform's native config (`.mcp.json`, `.cursor/mcp.json`, `.vscode/mcp.json`, `opencode.json`).",
 		Sample:      &defs.MCPServer{},
-		Example: "name: filesystem\ndescription: Filesystem MCP server.\ntransport: stdio\ncommand: \"${HOME}/bin/mcp-fs\"\nargs: [\"--root\", \"${WORKDIR:-/tmp}\"]\nenv:\n  LOG_LEVEL: info\n",
-		Notes: "**Server scope** (local/project/user) is decided by the consumer at sync time via `.agentic-toolkit/config.yaml`, not by the definition. A single MCP definition can be installed at any scope.\n\n**Variable expansion.** Field values may use `${VAR}` and `${VAR:-default}` (canonical, matches Claude). Adapters translate to per-platform syntax (Cursor `${env:VAR}`, Copilot `${input:VAR}`/`${env:VAR}`).",
+		Example:     "name: filesystem\ndescription: Filesystem MCP server.\ntransport: stdio\ncommand: \"${HOME}/bin/mcp-fs\"\nargs: [\"--root\", \"${WORKDIR:-/tmp}\"]\nenv:\n  LOG_LEVEL: info\n",
+		Notes:       "**Server scope** (local/project/user) is decided by the consumer at sync time via `.agentic-toolkit/config.yaml`, not by the definition. A single MCP definition can be installed at any scope.\n\n**Variable expansion.** Field values may use `${VAR}` and `${VAR:-default}` (canonical, matches Claude). Adapters translate to per-platform syntax (Cursor `${env:VAR}`, Copilot `${input:VAR}`/`${env:VAR}`).",
 	},
 }
 

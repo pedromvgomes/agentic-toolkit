@@ -252,9 +252,9 @@ func TestResolve_ExternalSkillDeclared(t *testing.T) {
 
 func TestResolve_OverrideEmitsDiagnostic(t *testing.T) {
 	primary := makeMapFS(map[string]string{
-		"definitions/skills/foo/SKILL.md":  validSkillBody("Local foo."),
-		"definitions/presets/first.yaml":   validPresetBody("First.", "skills/foo"),
-		"definitions/presets/second.yaml":  validPresetBody("Second.", "skills::ext.example.com/skills/foo"),
+		"definitions/skills/foo/SKILL.md": validSkillBody("Local foo."),
+		"definitions/presets/first.yaml":  validPresetBody("First.", "skills/foo"),
+		"definitions/presets/second.yaml": validPresetBody("Second.", "skills::ext.example.com/skills/foo"),
 	})
 	bundle := makeMapFS(map[string]string{
 		"SKILL.md": validSkillBody("External foo."),

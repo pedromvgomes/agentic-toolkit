@@ -22,22 +22,22 @@ type ParseError struct {
 type ErrorKind string
 
 const (
-	ErrIO                ErrorKind = "io"
-	ErrFrontmatterMissing ErrorKind = "frontmatter_missing"
+	ErrIO                  ErrorKind = "io"
+	ErrFrontmatterMissing  ErrorKind = "frontmatter_missing"
 	ErrFrontmatterUnclosed ErrorKind = "frontmatter_unclosed"
-	ErrYAMLSyntax        ErrorKind = "yaml_syntax"
-	ErrUnknownField      ErrorKind = "unknown_field"
-	ErrMissingRequired   ErrorKind = "missing_required"
-	ErrUnknownPlatform   ErrorKind = "unknown_platform"
-	ErrUnknownColor      ErrorKind = "unknown_color"
-	ErrUnknownTransport  ErrorKind = "unknown_transport"
-	ErrUnknownHandler    ErrorKind = "unknown_handler"
-	ErrInvalidName       ErrorKind = "invalid_name"
-	ErrTransportConflict ErrorKind = "transport_conflict"
-	ErrPlatformExtension ErrorKind = "platform_extension"
-	ErrHandlerShape      ErrorKind = "handler_shape"
-	ErrUnknownCategory   ErrorKind = "unknown_category"
-	ErrPresetMalformedRef ErrorKind = "preset_malformed_ref"
+	ErrYAMLSyntax          ErrorKind = "yaml_syntax"
+	ErrUnknownField        ErrorKind = "unknown_field"
+	ErrMissingRequired     ErrorKind = "missing_required"
+	ErrUnknownPlatform     ErrorKind = "unknown_platform"
+	ErrUnknownColor        ErrorKind = "unknown_color"
+	ErrUnknownTransport    ErrorKind = "unknown_transport"
+	ErrUnknownHandler      ErrorKind = "unknown_handler"
+	ErrInvalidName         ErrorKind = "invalid_name"
+	ErrTransportConflict   ErrorKind = "transport_conflict"
+	ErrPlatformExtension   ErrorKind = "platform_extension"
+	ErrHandlerShape        ErrorKind = "handler_shape"
+	ErrUnknownCategory     ErrorKind = "unknown_category"
+	ErrPresetMalformedRef  ErrorKind = "preset_malformed_ref"
 )
 
 func (e *ParseError) Error() string {
