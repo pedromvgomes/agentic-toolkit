@@ -297,29 +297,6 @@ func TestResolve_OverrideEmitsDiagnostic(t *testing.T) {
 	}
 }
 
-// ===== external non-skill/agent: error =====
-
-func TestResolve_ExternalNonBundleCategoryErrors(t *testing.T) {
-	primary := makeMapFS(map[string]string{
-		"definitions/presets/default.yaml": validPresetBody("Bundle.",
-			"rules::ext.example.com/rules/foo"),
-	})
-	cfg := &config.ConsumerConfig{
-		Source:  config.Source{URL: "primary.example.com/repo", Ref: "main"},
-		Presets: []string{"default"},
-	}
-	provider := newFakeProvider().
-		register("primary.example.com/repo", "main", primary)
-
-	_, err := resolver.Resolve(cfg, provider)
-	if err == nil {
-		t.Fatalf("expected error for external rules ref")
-	}
-	if !strings.Contains(err.Error(), "external refs are only supported for skills and agents") {
-		t.Errorf("error message: %v", err)
-	}
-}
-
 // ===== error joining =====
 
 func TestResolve_JoinsMultipleEntryErrors(t *testing.T) {

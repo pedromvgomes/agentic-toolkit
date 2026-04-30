@@ -4,19 +4,26 @@
 // definition that resolved, and any diagnostics worth surfacing to the
 // caller.
 //
-// Slice-1 scope:
-//   - Local preset refs are fully resolved and parsed against the primary
-//     source.
-//   - External preset refs are resolved against the source returned by
-//     SourceProvider. Only skill and agent categories are bundle-shaped
-//     and therefore supported externally; other category external refs
-//     fail resolution.
-//   - The lockfile projection records every source touched, in the
-//     deterministic order: primary, then declared externals (config
-//     order), then implicit externals (sorted by URL,Ref).
+// External-ref shapes:
+//   - Bundle categories (skill, agent) are folder-shaped: the preset
+//     ref URL points to the bundle directory and the parser reads the
+//     fixed entry file (SKILL.md / AGENT.md) from inside.
+//   - File categories (rule, instruction, command, hook, mcp) are
+//     file-shaped: the preset ref URL points to the file itself
+//     (extension included). The resolver lops the URL last segment
+//     off, asks the provider for the parent directory, and parses the
+//     named file. The canonical name comes from the file's frontmatter
+//     `name:` field (with filename-stem fallback) — remote layout is
+//     irrelevant.
 //
-// Out of scope: network fetching (slice 2), CLI wiring (slice 3),
-// rendering to platforms (slice 4), Common.Requires expansion.
+// The lockfile projection records every source touched, in the
+// deterministic order: primary, then declared externals (config
+// order), then implicit externals (sorted by URL,Ref). Each external
+// preset ref produces one source entry keyed on the URL the consumer
+// wrote — bundle dir for bundles, file URL for files.
+//
+// Out of scope: Common.Requires expansion, render-time platform
+// filtering.
 package resolver
 
 import (

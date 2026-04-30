@@ -178,60 +178,7 @@ func walkRef(
 	diags *[]Diagnostic,
 ) (*walkedDef, error) {
 	if ref.IsExternal() {
-		if ref.Category != definitions.CategorySkill && ref.Category != definitions.CategoryAgent {
-			return nil, fmt.Errorf("resolver: preset %q entry %q: external refs are only supported for skills and agents (got %s)", presetName, refStr, ref.Category)
-		}
-
-		k := srcKey{URL: ref.URL, Ref: ref.Ref}
-		// Classify against declared externals: exact (URL, Ref) match.
-		kind := SourceImplicit
-		if _, isDeclared := declaredFS[k]; isDeclared {
-			kind = SourceDeclared
-		} else if declaredFailed[k] {
-			// Declared but its provider failed — suppress further
-			// processing for this entry to avoid cascading "missing
-			// definition" noise on top of the provider error.
-			return nil, nil
-		}
-
-		var extFS fs.FS
-		if kind == SourceDeclared {
-			extFS = declaredFS[k]
-		} else {
-			fsys, rr, err := provider.Provide(config.Source{URL: ref.URL, Ref: ref.Ref})
-			if err != nil {
-				return nil, fmt.Errorf("resolver: preset %q entry %q: provider: %w", presetName, refStr, err)
-			}
-			extFS = fsys
-			if srcs.add(ref.URL, rr.Ref, rr.SHA, SourceImplicit) {
-				*diags = append(*diags, Diagnostic{
-					Kind:       DiagImplicitExternal,
-					Message:    fmt.Sprintf("source %s pulled in implicitly via preset %q", ref.URL, presetName),
-					SourceURL:  ref.URL,
-					PresetName: presetName,
-				})
-			}
-		}
-
-		name := lastURLSeg(ref.URL)
-		def, err := definitions.ParseBundle(extFS, ref.Category, name)
-		if err != nil {
-			return nil, fmt.Errorf("resolver: preset %q entry %q: %w", presetName, refStr, err)
-		}
-
-		entry := "SKILL.md"
-		if ref.Category == definitions.CategoryAgent {
-			entry = "AGENT.md"
-		}
-		return &walkedDef{
-			Category:   ref.Category,
-			Name:       name,
-			Definition: def,
-			SourceURL:  ref.URL,
-			SourceRef:  ref.Ref,
-			PresetName: presetName,
-			EntryPath:  entry,
-		}, nil
+		return walkExternal(provider, ref, refStr, presetName, declaredFS, declaredFailed, srcs, diags)
 	}
 
 	// Local ref: resolve against primary.
@@ -251,6 +198,95 @@ func walkRef(
 		SourceRef:  cfg.Source.Ref,
 		PresetName: presetName,
 		EntryPath:  path,
+	}, nil
+}
+
+// walkExternal handles an external preset ref. Bundle categories
+// (skill, agent) call the provider with the bundle URL; file categories
+// (rule, instruction, command, hook, mcp) lop the URL last segment off
+// and call the provider with the parent URL, then ParseFile the file by
+// name. Either way, the URL recorded in srcs and on the walkedDef is the
+// URL the consumer wrote — bundle dir for bundles, file URL for files.
+func walkExternal(
+	provider SourceProvider,
+	ref definitions.PresetRef,
+	refStr, presetName string,
+	declaredFS map[srcKey]fs.FS,
+	declaredFailed map[srcKey]bool,
+	srcs *sourceTable,
+	diags *[]Diagnostic,
+) (*walkedDef, error) {
+	isBundle := ref.Category == definitions.CategorySkill || ref.Category == definitions.CategoryAgent
+
+	var providerURL, filename, entryPath string
+	if isBundle {
+		providerURL = ref.URL
+		if ref.Category == definitions.CategorySkill {
+			entryPath = "SKILL.md"
+		} else {
+			entryPath = "AGENT.md"
+		}
+	} else {
+		parent, last, ok := splitURLLastSeg(ref.URL)
+		if !ok {
+			return nil, fmt.Errorf("resolver: preset %q entry %q: external file ref must include a filename in the URL path (e.g. .git/path/to/file.md)", presetName, refStr)
+		}
+		providerURL = parent
+		filename = last
+		entryPath = last
+	}
+
+	// Classify against declared externals: exact (URL, Ref) match on the
+	// URL the consumer wrote. File-URL declarations are unusual but the
+	// match logic stays uniform; in practice file refs almost always
+	// classify as Implicit.
+	k := srcKey{URL: ref.URL, Ref: ref.Ref}
+	var extFS fs.FS
+	if fsys, isDeclared := declaredFS[k]; isDeclared {
+		extFS = fsys
+	} else if declaredFailed[k] {
+		// Declared but its provider failed — suppress further processing
+		// for this entry to avoid cascading "missing definition" noise on
+		// top of the provider error.
+		return nil, nil
+	} else {
+		fsys, rr, err := provider.Provide(config.Source{URL: providerURL, Ref: ref.Ref})
+		if err != nil {
+			return nil, fmt.Errorf("resolver: preset %q entry %q: provider: %w", presetName, refStr, err)
+		}
+		extFS = fsys
+		if srcs.add(ref.URL, rr.Ref, rr.SHA, SourceImplicit) {
+			*diags = append(*diags, Diagnostic{
+				Kind:       DiagImplicitExternal,
+				Message:    fmt.Sprintf("source %s pulled in implicitly via preset %q", ref.URL, presetName),
+				SourceURL:  ref.URL,
+				PresetName: presetName,
+			})
+		}
+	}
+
+	var (
+		def definitions.Definition
+		err error
+	)
+	if isBundle {
+		name := lastURLSeg(ref.URL)
+		def, err = definitions.ParseBundle(extFS, ref.Category, name)
+	} else {
+		def, err = definitions.ParseFile(extFS, ref.Category, filename)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("resolver: preset %q entry %q: %w", presetName, refStr, err)
+	}
+
+	return &walkedDef{
+		Category:   ref.Category,
+		Name:       def.GetCommon().Name,
+		Definition: def,
+		SourceURL:  ref.URL,
+		SourceRef:  ref.Ref,
+		PresetName: presetName,
+		EntryPath:  entryPath,
 	}, nil
 }
 
@@ -308,4 +344,21 @@ func lastURLSeg(s string) string {
 		return s[i+1:]
 	}
 	return s
+}
+
+// splitURLLastSeg splits an external file ref URL into (parent, filename).
+// Requires the URL to contain `.git/` followed by at least one path
+// segment — i.e. the URL identifies an in-repo file. Returns ok=false
+// otherwise.
+func splitURLLastSeg(u string) (parent, last string, ok bool) {
+	const sep = ".git/"
+	i := strings.Index(u, sep)
+	if i < 0 || i+len(sep) >= len(u) {
+		return "", "", false
+	}
+	j := strings.LastIndex(u, "/")
+	if j < 0 || j+1 >= len(u) {
+		return "", "", false
+	}
+	return u[:j], u[j+1:], true
 }
