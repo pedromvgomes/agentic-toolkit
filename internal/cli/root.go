@@ -8,6 +8,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -51,7 +52,7 @@ func NewRootCmd(env *Env) *cobra.Command {
 	root.SetIn(env.Stdin)
 	root.SetOut(env.Stdout)
 	root.SetErr(env.Stderr)
-	root.AddCommand(newInitCmd(env), newLockCmd(env), newFetchCmd(env), newPlanCmd(env), newRenderCmd(env))
+	root.AddCommand(newInitCmd(env), newLockCmd(env), newFetchCmd(env), newPlanCmd(env), newRenderCmd(env), newStatusCmd(env))
 	return root
 }
 
@@ -65,7 +66,13 @@ func Execute() int {
 	}
 	env := &Env{Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr, WorkDir: wd}
 	if err := NewRootCmd(env).Execute(); err != nil {
-		fmt.Fprintln(env.Stderr, "agtk:", err)
+		// `agtk status` prints its own structured drift report and
+		// returns errStatusDrift to flip the exit code; suppress the
+		// generic error prefix in that case so users see only the
+		// bucket lines.
+		if !errors.Is(err, errStatusDrift) {
+			fmt.Fprintln(env.Stderr, "agtk:", err)
+		}
 		return 1
 	}
 	return 0

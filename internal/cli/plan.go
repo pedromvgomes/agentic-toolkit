@@ -11,7 +11,11 @@ import (
 )
 
 func newPlanCmd(env *Env) *cobra.Command {
-	var cacheRoot string
+	var (
+		cacheRoot string
+		jsonOut   bool
+		quiet     bool
+	)
 	cmd := &cobra.Command{
 		Use:   "plan",
 		Short: "Print the resolved plan for the current config + lockfile",
@@ -19,17 +23,22 @@ func newPlanCmd(env *Env) *cobra.Command {
 			"entry against the cache (frozen-lockfile mode — no network, no ref\n" +
 			"resolution), and prints the resulting plan: every source touched and\n" +
 			"every definition that would render. Errors if the lockfile is missing\n" +
-			"or any source in the config is not pinned (run `agtk lock`).",
+			"or any source in the config is not pinned (run `agtk lock`).\n" +
+			"\n" +
+			"Diagnostics (override losers, implicit-external sources) print to stderr\n" +
+			"by default; --quiet suppresses them.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runPlan(env, cacheRoot)
+			return runPlan(env, cacheRoot, jsonOut, quiet)
 		},
 	}
 	cmd.Flags().StringVar(&cacheRoot, "cache", "", "override cache root (defaults to $XDG_CACHE_HOME/agentic-toolkit)")
+	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit machine-readable JSON output")
+	cmd.Flags().BoolVar(&quiet, "quiet", false, "suppress diagnostics on stderr")
 	return cmd
 }
 
-func runPlan(env *Env, cacheRoot string) error {
+func runPlan(env *Env, cacheRoot string, jsonOut, quiet bool) error {
 	cfg, err := loadConfig(env.WorkDir)
 	if err != nil {
 		return err
@@ -46,11 +55,14 @@ func runPlan(env *Env, cacheRoot string) error {
 	if err != nil {
 		return fmt.Errorf("resolve: %w", err)
 	}
-	printPlan(env, plan)
+	if jsonOut {
+		return writeJSON(env, planToJSON(plan))
+	}
+	printPlan(env, plan, quiet)
 	return nil
 }
 
-func printPlan(env *Env, plan *resolver.Plan) {
+func printPlan(env *Env, plan *resolver.Plan, quiet bool) {
 	fmt.Fprintln(env.Stdout, "sources:")
 	for _, s := range plan.Sources {
 		fmt.Fprintf(env.Stdout, "  - [%s] %s@%s (%s)\n", s.Kind, s.URL, s.Ref, shortSHA(s.SHA))
@@ -72,7 +84,7 @@ func printPlan(env *Env, plan *resolver.Plan) {
 			fmt.Fprintf(env.Stdout, "    - %s (preset:%s, source:%s)\n", d.Name, d.PresetName, d.SourceURL)
 		}
 	}
-	if len(plan.Diagnostics) > 0 {
+	if !quiet && len(plan.Diagnostics) > 0 {
 		fmt.Fprintln(env.Stderr, "diagnostics:")
 		for _, d := range plan.Diagnostics {
 			fmt.Fprintf(env.Stderr, "  [%s] %s\n", d.Kind, d.Message)
