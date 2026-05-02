@@ -1,6 +1,6 @@
 # Plan — generic settings, Claude adapter, CLI ergonomics, auto-update
 
-Status: Slice A0 merged (PR #10). Slice A merged (this PR). B/C unstarted.
+Status: Slice A0 merged (PR #10). Slice A merged (PR #11). Slice B merged (this PR). C unstarted.
 Created: 2026-04-30. Last updated: 2026-05-02.
 
 Four sequential PRs that turn the current Plan-producing pipeline into a renderable, observable, self-updating CLI. Order is **A0 → A → B → C**; each builds on the previous, do not skip ahead.

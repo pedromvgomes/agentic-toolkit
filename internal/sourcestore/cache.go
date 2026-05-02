@@ -56,6 +56,17 @@ func (c *Cache) has(repoURL, sha string) bool {
 	return err == nil && info.IsDir()
 }
 
+// HasSource reports whether the cache already holds a worktree for the
+// given source URL + sha. URL parsing matches the rest of the package:
+// the `.git/` boundary separates the repo from any in-repo path, and
+// the cache layout is keyed on the repo half. Public surface for
+// status-style checks that need to know whether an `agtk fetch` is
+// pending without doing the fetch.
+func (c *Cache) HasSource(url, sha string) bool {
+	repoURL, _ := splitURL(url)
+	return c.has(repoURL, sha)
+}
+
 // open returns an fs.FS over the cached worktree for (repoURL, sha),
 // optionally rooted at subPath inside that worktree.
 func (c *Cache) open(repoURL, sha, subPath string) (fs.FS, error) {
