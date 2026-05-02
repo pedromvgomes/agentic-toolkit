@@ -87,7 +87,7 @@ func isEntryPoint(cat Category, relWithinCat string) bool {
 	case CategoryCommand:
 		// any depth, must end in .md
 		return strings.EqualFold(filepath.Ext(parts[len(parts)-1]), ".md")
-	case CategoryHook, CategoryMCP:
+	case CategoryHook, CategoryMCP, CategorySetting:
 		ext := strings.ToLower(filepath.Ext(parts[len(parts)-1]))
 		return len(parts) == 1 && (ext == ".yaml" || ext == ".yml")
 	}
