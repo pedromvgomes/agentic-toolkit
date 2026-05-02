@@ -15,10 +15,13 @@ The installer downloads the latest release archive for your platform, verifies i
 curl -fsSL https://raw.githubusercontent.com/pedromvgomes/agentic-toolkit/main/install.sh | sh
 ```
 
+The script also installs shell completion for `bash`, `zsh`, or `fish` based on `$SHELL` (no-op for other shells; opt out with `AGTK_NO_COMPLETION=1`).
+
 Environment overrides:
 
 - `AGTK_VERSION=v0.1.0` — pin a specific tag instead of the latest release.
 - `AGTK_INSTALL_DIR=$HOME/bin` — pick the install dir. Default: `/usr/local/bin` if writable, else `~/.local/bin`.
+- `AGTK_NO_COMPLETION=1` — skip the shell-completion install.
 - `AGTK_OS` / `AGTK_ARCH` — override platform detection (rarely needed).
 
 After install, `agtk update` upgrades in place from the same release archives — no `curl | sh` needed for follow-ups.

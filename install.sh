@@ -7,11 +7,13 @@
 #   curl -fsSL .../install.sh | AGTK_INSTALL_DIR=$HOME/bin sh
 #
 # Environment overrides (all optional):
-#   AGTK_VERSION       Tag to install (e.g. v0.1.0). Default: latest release.
-#   AGTK_INSTALL_DIR   Where to put the binary. Default: /usr/local/bin if
-#                      writable, else $HOME/.local/bin (with a PATH hint).
-#   AGTK_OS            Override detected OS (darwin or linux).
-#   AGTK_ARCH          Override detected arch (amd64 or arm64).
+#   AGTK_VERSION         Tag to install (e.g. v0.1.0). Default: latest release.
+#   AGTK_INSTALL_DIR     Where to put the binary. Default: /usr/local/bin if
+#                        writable, else $HOME/.local/bin (with a PATH hint).
+#   AGTK_OS              Override detected OS (darwin or linux).
+#   AGTK_ARCH            Override detected arch (amd64 or arm64).
+#   AGTK_NO_COMPLETION   Skip shell-completion install. Default: install for
+#                        bash/zsh/fish based on $SHELL.
 #
 # After install, run `agtk --version` to confirm. Use `agtk update` for
 # subsequent upgrades — the installed binary self-replaces from the same
@@ -171,6 +173,59 @@ if [ "$hint_path" = 1 ]; then
 			;;
 	esac
 fi
+
+# ===== shell completion =====
+
+install_completion() {
+	if [ "${AGTK_NO_COMPLETION:-0}" = "1" ]; then
+		return 0
+	fi
+	shell_name=$(basename "${SHELL:-}")
+	case "$shell_name" in
+		bash)
+			comp_dir="${BASH_COMPLETION_USER_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion/completions}"
+			comp_file="$comp_dir/$binary"
+			mkdir -p "$comp_dir" || return 0
+			"$target" completion bash >"$comp_file" 2>/dev/null || return 0
+			info ""
+			info "installed bash completion → $comp_file"
+			info "  (requires the bash-completion package; restart your shell to pick it up)"
+			;;
+		zsh)
+			comp_dir="${XDG_DATA_HOME:-$HOME/.local/share}/zsh/site-functions"
+			comp_file="$comp_dir/_$binary"
+			mkdir -p "$comp_dir" || return 0
+			"$target" completion zsh >"$comp_file" 2>/dev/null || return 0
+			info ""
+			info "installed zsh completion → $comp_file"
+			info "  ensure your ~/.zshrc has '$comp_dir' on \$fpath, e.g."
+			info "    fpath=($comp_dir \$fpath)"
+			info "    autoload -U compinit && compinit"
+			;;
+		fish)
+			comp_dir="${XDG_CONFIG_HOME:-$HOME/.config}/fish/completions"
+			comp_file="$comp_dir/$binary.fish"
+			mkdir -p "$comp_dir" || return 0
+			"$target" completion fish >"$comp_file" 2>/dev/null || return 0
+			info ""
+			info "installed fish completion → $comp_file"
+			info "  (fish auto-loads completions from this directory)"
+			;;
+		"")
+			info ""
+			info "could not detect your shell; run '$binary completion <shell>' to set up"
+			info "  completion manually. Supported: bash, zsh, fish, powershell."
+			;;
+		*)
+			info ""
+			info "shell '$shell_name' detected — no automatic completion install."
+			info "  run '$binary completion <shell>' for a shell agtk supports"
+			info "  (bash, zsh, fish, powershell)."
+			;;
+	esac
+}
+
+install_completion
 
 info ""
 info "run '$binary --version' to confirm. 'agtk update' upgrades in place."
