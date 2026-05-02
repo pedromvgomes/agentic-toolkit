@@ -81,7 +81,7 @@ func ParseBundle(fsys fs.FS, cat Category, name string) (Definition, error) {
 // ErrUnknownCategory — use ParseBundle.
 func ParseFile(fsys fs.FS, cat Category, filename string) (Definition, error) {
 	switch cat {
-	case CategoryRule, CategoryInstruction, CategoryCommand, CategoryHook, CategoryMCP:
+	case CategoryRule, CategoryInstruction, CategoryCommand, CategoryHook, CategoryMCP, CategorySetting:
 		// ok
 	default:
 		return nil, newErr(filename, ErrUnknownCategory,
@@ -158,6 +158,8 @@ func newDef(cat Category) Definition {
 		return &Hook{}
 	case CategoryMCP:
 		return &MCPServer{}
+	case CategorySetting:
+		return &Setting{}
 	}
 	return nil
 }
@@ -292,7 +294,7 @@ func deriveName(cat Category, path, relWithinCat string) (string, error) {
 				"agents must live at <name>/AGENT.md (got %q)", relWithinCat)
 		}
 		return parts[0], nil
-	case CategoryRule, CategoryInstruction, CategoryHook, CategoryMCP:
+	case CategoryRule, CategoryInstruction, CategoryHook, CategoryMCP, CategorySetting:
 		if strings.Contains(relWithinCat, "/") {
 			return "", newErr(path, ErrInvalidName,
 				"%s definitions must be flat (got nested path %q)", cat, relWithinCat)
@@ -518,6 +520,14 @@ func (m *MCPServer) validate(path string) error {
 			return newErr(path, ErrTransportConflict,
 				"stdio fields (command, args, env) are not allowed when transport is %q", m.Transport)
 		}
+	}
+	return nil
+}
+
+func (s *Setting) validate(path string) error {
+	if len(s.Value) == 0 {
+		return newErr(path, ErrMissingRequired,
+			"value is required and must contain at least one top-level key")
 	}
 	return nil
 }

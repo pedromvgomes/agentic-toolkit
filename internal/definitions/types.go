@@ -19,9 +19,10 @@ const (
 	CategoryInstruction Category = "instruction"
 	CategoryHook        Category = "hook"
 	CategoryMCP         Category = "mcp"
+	CategorySetting     Category = "setting"
 )
 
-// AllCategories lists the seven category kinds in their canonical order.
+// AllCategories lists the eight category kinds in their canonical order.
 var AllCategories = []Category{
 	CategorySkill,
 	CategoryAgent,
@@ -30,6 +31,7 @@ var AllCategories = []Category{
 	CategoryInstruction,
 	CategoryHook,
 	CategoryMCP,
+	CategorySetting,
 }
 
 // CategoryDir returns the directory name (under definitions/) for a category.
@@ -49,6 +51,8 @@ func (c Category) CategoryDir() string {
 		return "hooks"
 	case CategoryMCP:
 		return "mcp"
+	case CategorySetting:
+		return "settings"
 	}
 	return ""
 }
@@ -374,3 +378,20 @@ type OpenCodeMCPExt struct {
 
 func (m *MCPServer) GetCommon() *Common { return &m.Common }
 func (*MCPServer) Category() Category   { return CategoryMCP }
+
+// ===== Setting =====
+
+// Setting carries an arbitrary fragment that adapters merge into the
+// platform's settings file (Claude's settings.json, etc.). The fragment is
+// intentionally untyped: agtk does not validate the platform's settings
+// vocabulary — adapters do, at render time. Top-level keys in Value map
+// 1:1 to top-level keys in the rendered settings file; agtk's
+// last-preset-wins dedupe applies to the whole Setting definition (not to
+// individual keys inside Value).
+type Setting struct {
+	Common `yaml:",inline"`
+	Value  map[string]any `yaml:"value" agtkdoc:"required;Settings fragment merged into the platform's settings file. Top-level keys map 1:1 to settings keys (e.g. permissions, env, model). Adapters validate the platform-specific vocabulary at render time."`
+}
+
+func (s *Setting) GetCommon() *Common { return &s.Common }
+func (*Setting) Category() Category   { return CategorySetting }

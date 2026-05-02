@@ -1,0 +1,3 @@
+name: empty-value
+description: Setting with empty value map.
+value: {}

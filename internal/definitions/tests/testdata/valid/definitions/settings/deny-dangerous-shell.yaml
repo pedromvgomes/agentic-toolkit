@@ -1,0 +1,9 @@
+name: deny-dangerous-shell
+description: Block destructive shell commands and seed default env.
+value:
+  permissions:
+    deny:
+      - "Bash(rm -rf:*)"
+      - "Bash(sudo rm:*)"
+  env:
+    AGTK_DEBUG: "1"

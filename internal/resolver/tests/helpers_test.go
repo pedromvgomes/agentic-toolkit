@@ -99,6 +99,10 @@ func validHookBody(description string) string {
 	return "description: " + description + "\nevent: PreToolUse\nhandler:\n  type: command\n  command: \"echo\"\n"
 }
 
+func validSettingBody(description string) string {
+	return "description: " + description + "\nvalue:\n  permissions:\n    deny:\n      - \"Bash(rm -rf:*)\"\n"
+}
+
 func validPresetBody(description string, defs ...string) string {
 	out := "description: " + description + "\ndefinitions:\n"
 	for _, d := range defs {

@@ -308,6 +308,8 @@ func localEntryPath(cat definitions.Category, name string, fsys fs.FS) (string, 
 		return resolveYAMLOrYML(fsys, "definitions/hooks/"+name)
 	case definitions.CategoryMCP:
 		return resolveYAMLOrYML(fsys, "definitions/mcp/"+name)
+	case definitions.CategorySetting:
+		return resolveYAMLOrYML(fsys, "definitions/settings/"+name)
 	}
 	return "", fmt.Errorf("unsupported category %q", cat)
 }

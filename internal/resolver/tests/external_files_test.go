@@ -128,6 +128,41 @@ func TestResolve_ExternalHookYAML(t *testing.T) {
 	}
 }
 
+// ===== external setting (.yaml) =====
+
+func TestResolve_ExternalSettingYAML(t *testing.T) {
+	primary := makeMapFS(map[string]string{
+		"definitions/presets/default.yaml": validPresetBody("Bundle.",
+			"settings::ext.example.com/repo.git/settings/deny.yaml"),
+	})
+	parent := makeMapFS(map[string]string{
+		"deny.yaml": validSettingBody("Deny dangerous shell."),
+	})
+
+	cfg := &config.ConsumerConfig{
+		Source:  config.Source{URL: "primary.example.com/repo", Ref: "main"},
+		Presets: []string{"default"},
+	}
+	provider := newFakeProvider().
+		register("primary.example.com/repo", "main", primary).
+		register("ext.example.com/repo.git/settings", "", parent)
+
+	plan, err := resolver.Resolve(cfg, provider)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if len(plan.Definitions) != 1 {
+		t.Fatalf("definitions = %d, want 1", len(plan.Definitions))
+	}
+	d := plan.Definitions[0]
+	if d.Category != definitions.CategorySetting || d.Name != "deny" {
+		t.Errorf("def = %s/%s, want setting/deny", d.Category, d.Name)
+	}
+	if d.SourceURL != "ext.example.com/repo.git/settings/deny.yaml" {
+		t.Errorf("SourceURL = %q (want full file URL)", d.SourceURL)
+	}
+}
+
 // ===== two file refs in same repo+ref → two source entries (D4β) =====
 
 func TestResolve_MultipleFileRefsSameRepoTwoSources(t *testing.T) {
