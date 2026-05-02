@@ -27,6 +27,8 @@
 package resolver
 
 import (
+	"io/fs"
+
 	"github.com/pedromvgomes/agentic-toolkit/internal/config"
 	"github.com/pedromvgomes/agentic-toolkit/internal/definitions"
 	"github.com/pedromvgomes/agentic-toolkit/internal/lockfile"
@@ -114,6 +116,14 @@ type PlannedDefinition struct {
 	// agent) this is "SKILL.md" or "AGENT.md" — the source filesystem is
 	// rooted at the bundle directory itself.
 	EntryPath string
+
+	// SourceFS is the filesystem the entry was parsed from. It is rooted
+	// such that EntryPath is the path to the parsed entry-point file.
+	// Adapters consume this for bundle companion-file copy: walk
+	// path.Dir(EntryPath) and copy every file except EntryPath itself.
+	// For file categories there is nothing to copy; the field is still
+	// populated for uniformity.
+	SourceFS fs.FS
 }
 
 // DiagnosticKind enumerates the structured diagnostics the resolver

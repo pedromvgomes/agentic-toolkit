@@ -118,6 +118,7 @@ func Resolve(cfg *config.ConsumerConfig, provider SourceProvider) (*Plan, error)
 			SourceRef:  w.SourceRef,
 			PresetName: w.PresetName,
 			EntryPath:  w.EntryPath,
+			SourceFS:   w.SourceFS,
 		})
 	}
 	sort.Slice(defs, func(i, j int) bool {
@@ -152,6 +153,7 @@ type walkedDef struct {
 	SourceRef  string
 	PresetName string
 	EntryPath  string
+	SourceFS   fs.FS
 }
 
 type defKey struct {
@@ -198,6 +200,7 @@ func walkRef(
 		SourceRef:  cfg.Source.Ref,
 		PresetName: presetName,
 		EntryPath:  path,
+		SourceFS:   primaryFS,
 	}, nil
 }
 
@@ -287,6 +290,7 @@ func walkExternal(
 		SourceRef:  ref.Ref,
 		PresetName: presetName,
 		EntryPath:  entryPath,
+		SourceFS:   extFS,
 	}, nil
 }
 

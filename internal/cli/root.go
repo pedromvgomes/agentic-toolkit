@@ -51,7 +51,7 @@ func NewRootCmd(env *Env) *cobra.Command {
 	root.SetIn(env.Stdin)
 	root.SetOut(env.Stdout)
 	root.SetErr(env.Stderr)
-	root.AddCommand(newInitCmd(env), newLockCmd(env), newFetchCmd(env), newPlanCmd(env))
+	root.AddCommand(newInitCmd(env), newLockCmd(env), newFetchCmd(env), newPlanCmd(env), newRenderCmd(env))
 	return root
 }
 
