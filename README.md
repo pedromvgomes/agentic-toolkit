@@ -15,7 +15,7 @@ The installer downloads the latest release archive for your platform, verifies i
 curl -fsSL https://raw.githubusercontent.com/pedromvgomes/agentic-toolkit/main/install.sh | sh
 ```
 
-The script also installs shell completion for `bash`, `zsh`, or `fish` based on `$SHELL` (no-op for other shells; opt out with `AGTK_NO_COMPLETION=1`).
+The script also installs shell completion for `bash`, `zsh`, or `fish` based on `$SHELL` to a path the shell already loads from when possible: brew's `share/zsh/site-functions/` for zsh-on-brew users, otherwise `~/.zsh/completions/` (with an `fpath` hint), `~/.local/share/bash-completion/completions/` for bash, `~/.config/fish/completions/` for fish. Opt out with `AGTK_NO_COMPLETION=1`.
 
 Environment overrides:
 

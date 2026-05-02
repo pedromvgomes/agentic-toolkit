@@ -175,6 +175,55 @@ if [ "$hint_path" = 1 ]; then
 fi
 
 # ===== shell completion =====
+#
+# Path strategy mirrors github.com/pedromvgomes/gt's installer: pick a
+# location the shell already loads from when one is available, fall
+# back to a conventional dir with an explicit fpath/source hint when
+# not. The previous version used XDG paths that, while tidy, are not
+# on zsh's default $fpath — files landed but completions never loaded.
+#
+# zsh:
+#   - $(brew --prefix)/share/zsh/site-functions/_agtk when brew is
+#     present and the dir is writable (already on default $fpath for
+#     brew-installed zsh).
+#   - else ~/.zsh/completions/_agtk (with a hint to add it to $fpath
+#     in ~/.zshrc before compinit).
+# bash:
+#   - ~/.local/share/bash-completion/completions/agtk
+#     (auto-loaded by the bash-completion package).
+# fish:
+#   - ~/.config/fish/completions/agtk.fish (fish auto-loads).
+
+completion_path() {
+	case "$1" in
+		zsh)
+			if command -v brew >/dev/null 2>&1; then
+				brew_prefix=$(brew --prefix 2>/dev/null || true)
+				if [ -n "$brew_prefix" ] && [ -d "$brew_prefix/share/zsh/site-functions" ] && [ -w "$brew_prefix/share/zsh/site-functions" ]; then
+					echo "$brew_prefix/share/zsh/site-functions/_$binary"
+					return 0
+				fi
+			fi
+			echo "$HOME/.zsh/completions/_$binary"
+			;;
+		bash) echo "$HOME/.local/share/bash-completion/completions/$binary" ;;
+		fish) echo "$HOME/.config/fish/completions/$binary.fish" ;;
+		*) return 1 ;;
+	esac
+}
+
+completion_note() {
+	case "$1" in
+		zsh)
+			case "$2" in
+				*/site-functions/_*) echo "restart your shell (e.g. 'exec zsh') to load completions" ;;
+				*) echo "add 'fpath=(~/.zsh/completions \$fpath)' to ~/.zshrc before 'compinit', then restart your shell" ;;
+			esac
+			;;
+		bash) echo "ensure the bash-completion package is installed; restart your shell to load" ;;
+		fish) echo "fish auto-loads from this directory; new shells pick it up immediately" ;;
+	esac
+}
 
 install_completion() {
 	if [ "${AGTK_NO_COMPLETION:-0}" = "1" ]; then
@@ -182,47 +231,29 @@ install_completion() {
 	fi
 	shell_name=$(basename "${SHELL:-}")
 	case "$shell_name" in
-		bash)
-			comp_dir="${BASH_COMPLETION_USER_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion/completions}"
-			comp_file="$comp_dir/$binary"
-			mkdir -p "$comp_dir" || return 0
-			"$target" completion bash >"$comp_file" 2>/dev/null || return 0
-			info ""
-			info "installed bash completion → $comp_file"
-			info "  (requires the bash-completion package; restart your shell to pick it up)"
-			;;
-		zsh)
-			comp_dir="${XDG_DATA_HOME:-$HOME/.local/share}/zsh/site-functions"
-			comp_file="$comp_dir/_$binary"
-			mkdir -p "$comp_dir" || return 0
-			"$target" completion zsh >"$comp_file" 2>/dev/null || return 0
-			info ""
-			info "installed zsh completion → $comp_file"
-			info "  ensure your ~/.zshrc has '$comp_dir' on \$fpath, e.g."
-			info "    fpath=($comp_dir \$fpath)"
-			info "    autoload -U compinit && compinit"
-			;;
-		fish)
-			comp_dir="${XDG_CONFIG_HOME:-$HOME/.config}/fish/completions"
-			comp_file="$comp_dir/$binary.fish"
-			mkdir -p "$comp_dir" || return 0
-			"$target" completion fish >"$comp_file" 2>/dev/null || return 0
-			info ""
-			info "installed fish completion → $comp_file"
-			info "  (fish auto-loads completions from this directory)"
-			;;
+		bash|zsh|fish) ;;
 		"")
 			info ""
 			info "could not detect your shell; run '$binary completion <shell>' to set up"
 			info "  completion manually. Supported: bash, zsh, fish, powershell."
+			return 0
 			;;
 		*)
 			info ""
 			info "shell '$shell_name' detected — no automatic completion install."
 			info "  run '$binary completion <shell>' for a shell agtk supports"
 			info "  (bash, zsh, fish, powershell)."
+			return 0
 			;;
 	esac
+	[ -n "${HOME:-}" ] || return 0
+	comp_path=$(completion_path "$shell_name") || return 0
+	mkdir -p "$(dirname "$comp_path")" || return 0
+	"$target" completion "$shell_name" >"$comp_path" || return 0
+	info ""
+	info "installed $shell_name completion → $comp_path"
+	note=$(completion_note "$shell_name" "$comp_path")
+	[ -z "$note" ] || info "  note: $note"
 }
 
 install_completion
