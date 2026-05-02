@@ -12,9 +12,15 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
+	"github.com/pedromvgomes/agentic-toolkit/internal/updatecheck"
+	"github.com/pedromvgomes/agentic-toolkit/internal/updater"
+	"github.com/pedromvgomes/agentic-toolkit/internal/updatestate"
+	"github.com/pedromvgomes/agentic-toolkit/internal/userconfig"
 	"github.com/pedromvgomes/agentic-toolkit/internal/version"
 )
 
@@ -26,6 +32,21 @@ type Env struct {
 	Stdout  io.Writer
 	Stderr  io.Writer
 	WorkDir string
+
+	// UpdateProvider, when non-nil, replaces the default GitHub-backed
+	// LatestVersionProvider. Tests inject stubs to keep the network
+	// out of unit tests.
+	UpdateProvider updatecheck.LatestVersionProvider
+
+	// UpdateInstaller, when non-nil, replaces the default GitHub-backed
+	// installer. Tests inject stubs to assert on Install calls without
+	// touching the running binary.
+	UpdateInstaller updater.Installer
+
+	// UpdateResult, when non-nil, is the channel the persistent
+	// pre-run hook posts background-check results to. The post-run
+	// hook drains it non-blockingly to surface a one-liner.
+	UpdateResult <-chan updatecheck.UpdateInfo
 }
 
 // ConfigFileName is the canonical filename for the consumer config in
@@ -45,15 +66,96 @@ func NewRootCmd(env *Env) *cobra.Command {
 		Use:           "agtk",
 		Short:         "agentic toolkit",
 		Long:          "agtk drives the agentic-toolkit consumer workflow: init a config, lock its sources, fetch them into a cache, and inspect the resolved plan.",
-		Version:       version.Version,
+		Version:       version.Current(),
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
 	root.SetIn(env.Stdin)
 	root.SetOut(env.Stdout)
 	root.SetErr(env.Stderr)
-	root.AddCommand(newInitCmd(env), newLockCmd(env), newFetchCmd(env), newPlanCmd(env), newRenderCmd(env), newStatusCmd(env))
+
+	// Persistent pre-run: spawn the background update checker once for
+	// the whole invocation. The result channel is drained in
+	// PersistentPostRunE so a slow network never delays exit.
+	root.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		if env.UpdateResult == nil && cmd.Name() != "update" {
+			env.UpdateResult = startBackgroundCheck(env)
+		}
+		return nil
+	}
+	root.PersistentPostRunE = func(cmd *cobra.Command, args []string) error {
+		drainBackgroundCheck(env)
+		return nil
+	}
+
+	root.AddCommand(
+		newInitCmd(env), newLockCmd(env), newFetchCmd(env), newPlanCmd(env),
+		newRenderCmd(env), newStatusCmd(env), newUpdateCmd(env),
+	)
 	return root
+}
+
+// startBackgroundCheck applies the throttle gates and, if all pass,
+// spawns one Checker goroutine. Returns the result channel; nil when
+// any gate is closed.
+func startBackgroundCheck(env *Env) <-chan updatecheck.UpdateInfo {
+	current := version.Current()
+	if current == "dev" {
+		return nil
+	}
+	cfg, err := userconfig.Load()
+	if err != nil {
+		// Misconfigured user file: don't crash, just skip.
+		return nil
+	}
+	state, _ := updatestate.Load()
+	gate := updatecheck.Gate{
+		Now:            time.Now(),
+		IsTerminal:     stdoutIsTerminal(env),
+		CurrentVersion: current,
+		Config:         cfg.AutoUpdate,
+		State:          state,
+	}
+	if !updatecheck.ShouldCheck(gate) {
+		return nil
+	}
+	provider := env.UpdateProvider
+	if provider == nil {
+		provider = updatecheck.NewGitHubProvider(githubOwner, githubRepo)
+	}
+	checker := updatecheck.NewChecker(provider, current)
+	statePath, _ := updatestate.Path()
+	checker.Start(statePath)
+	return checker.Result
+}
+
+// drainBackgroundCheck does a non-blocking select on env.UpdateResult.
+// If a positive UpdateInfo is already there, prints a one-liner to
+// stderr; otherwise drops the result silently.
+func drainBackgroundCheck(env *Env) {
+	if env.UpdateResult == nil {
+		return
+	}
+	select {
+	case info, ok := <-env.UpdateResult:
+		if !ok || !info.Available {
+			return
+		}
+		fmt.Fprintf(env.Stderr, "agtk %s is available (you're on %s). Run 'agtk update' to install.\n",
+			info.Latest, info.Current)
+	default:
+		return
+	}
+}
+
+// stdoutIsTerminal returns true when env.Stdout is the process's real
+// stdout AND that stdout is a terminal. Tests pass buffers and get
+// false here, which is what we want.
+func stdoutIsTerminal(env *Env) bool {
+	if env.Stdout != os.Stdout {
+		return false
+	}
+	return term.IsTerminal(int(os.Stdout.Fd()))
 }
 
 // Execute runs the CLI with the process's standard streams and cwd.
@@ -70,9 +172,18 @@ func Execute() int {
 		// returns errStatusDrift to flip the exit code; suppress the
 		// generic error prefix in that case so users see only the
 		// bucket lines.
-		if !errors.Is(err, errStatusDrift) {
-			fmt.Fprintln(env.Stderr, "agtk:", err)
+		if errors.Is(err, errStatusDrift) {
+			return 1
 		}
+		// `agtk update --check` returns updateNewerErr when newer is
+		// available; map that to UpdateCheckExitCode without the
+		// generic prefix so scripts can read the message verbatim.
+		var newerErr *updateNewerErr
+		if errors.As(err, &newerErr) {
+			fmt.Fprintln(env.Stdout, newerErr.Error())
+			return UpdateCheckExitCode
+		}
+		fmt.Fprintln(env.Stderr, "agtk:", err)
 		return 1
 	}
 	return 0

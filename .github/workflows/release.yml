@@ -1,0 +1,39 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  goreleaser:
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: setup go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: stage hand-written release notes (if present)
+        # If docs/releases/v<X.Y.Z>.md exists, surface it via $RELEASE_NOTES
+        # so goreleaser uses it instead of auto-generated notes.
+        run: |
+          tag="${GITHUB_REF##*/}"
+          notes="docs/releases/${tag}.md"
+          if [ -f "$notes" ]; then
+            echo "RELEASE_NOTES=$notes" >> "$GITHUB_ENV"
+          fi
+      - name: goreleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: latest
+          args: release --clean ${{ env.RELEASE_NOTES && format('--release-notes={0}', env.RELEASE_NOTES) || '' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

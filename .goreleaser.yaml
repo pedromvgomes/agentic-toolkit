@@ -1,0 +1,56 @@
+version: 2
+
+project_name: agentic-toolkit
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: agtk
+    binary: agtk
+    main: ./cmd/agtk
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/pedromvgomes/agentic-toolkit/internal/version.Version={{ .Version }}
+
+archives:
+  - id: agtk
+    name_template: "agtk_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+# Release notes: prefer a hand-written file at docs/releases/v<Version>.md
+# when present, else let goreleaser generate from commit history.
+release:
+  draft: false
+  prerelease: auto
+  name_template: "v{{ .Version }}"
+  footer: |
+    **Full Changelog**: https://github.com/{{ .Env.GITHUB_REPOSITORY }}/compare/{{ .PreviousTag }}...{{ .Tag }}
+
+snapshot:
+  version_template: "{{ .Tag }}-SNAPSHOT-{{ .ShortCommit }}"
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
