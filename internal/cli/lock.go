@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"path/filepath"
 
 	"github.com/goccy/go-yaml"
 	"github.com/spf13/cobra"
@@ -46,7 +45,7 @@ func newLockCmd(env *Env) *cobra.Command {
 }
 
 func runLock(env *Env, cacheRoot string, frozen, jsonOut bool) error {
-	st, entryFS, entryName, err := loadStack(env.WorkDir)
+	st, entryFS, entryName, err := loadStack(env)
 	if err != nil {
 		return err
 	}
@@ -68,7 +67,7 @@ func runLock(env *Env, cacheRoot string, frozen, jsonOut bool) error {
 	if err != nil {
 		return fmt.Errorf("marshal lockfile: %w", err)
 	}
-	path := filepath.Join(env.WorkDir, LockFileName)
+	path := lockfilePath(env)
 
 	if frozen {
 		return runLockFrozen(env, path, data, resolved, jsonOut)
@@ -132,20 +131,22 @@ func runLockFrozen(env *Env, path string, resolved []byte, lock *lockfile.Lockfi
 	return fmt.Errorf("--frozen: %s would change; run `agtk lock` to update", path)
 }
 
-// loadStack reads the entry-point stack file (.agentic-toolkit.yaml) from
-// workDir. It returns the parsed stack, an fs.FS rooted at workDir for
-// resolving local paths, and the entry-point's name within that FS.
+// loadStack reads the entry-point stack file. With --config set, that's
+// whatever path the user passed; otherwise it's `<WorkDir>/.agentic-
+// toolkit.yaml`. The returned fs.FS is rooted at the manifest's
+// directory so local `./...` refs in the manifest resolve from the
+// right place — that's the config dir, not the apply dir.
 //
 // stack.ParseFile already returns a *ParseError whose Error() includes
 // the path; we propagate it as-is to avoid duplicating the path in the
 // rendered message.
-func loadStack(workDir string) (*stack.Stack, fs.FS, string, error) {
-	path := filepath.Join(workDir, ConfigFileName)
+func loadStack(env *Env) (*stack.Stack, fs.FS, string, error) {
+	path := configFilePath(env)
 	st, err := stack.ParseFile(path)
 	if err != nil {
 		return nil, nil, "", err
 	}
-	return st, os.DirFS(workDir), ConfigFileName, nil
+	return st, os.DirFS(configDir(env)), entryFileName(env), nil
 }
 
 // buildCache resolves the cache root: explicit override wins, otherwise

@@ -35,13 +35,16 @@ func newInitCmd(env *Env) *cobra.Command {
 }
 
 func runInit(env *Env, extendsURL string, force bool) error {
-	path := filepath.Join(env.WorkDir, ConfigFileName)
+	path := configFilePath(env)
 	if !force {
 		if _, err := os.Stat(path); err == nil {
-			return fmt.Errorf("%s already exists; pass --force to overwrite", ConfigFileName)
+			return fmt.Errorf("%s already exists; pass --force to overwrite", path)
 		} else if !errors.Is(err, fs.ErrNotExist) {
 			return fmt.Errorf("stat %s: %w", path, err)
 		}
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("mkdir %s: %w", filepath.Dir(path), err)
 	}
 	body := scaffold(extendsURL)
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {

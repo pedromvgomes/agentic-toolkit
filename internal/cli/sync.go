@@ -54,7 +54,7 @@ func runSync(env *Env, cacheRoot, scopeFlag string, dryRun, force bool) error {
 	if err != nil {
 		return err
 	}
-	st, entryFS, entryName, err := loadStack(env.WorkDir)
+	st, entryFS, entryName, err := loadStack(env)
 	if err != nil {
 		return err
 	}
@@ -63,8 +63,8 @@ func runSync(env *Env, cacheRoot, scopeFlag string, dryRun, force bool) error {
 		return err
 	}
 
-	configPath := filepath.Join(env.WorkDir, ConfigFileName)
-	lockPath := filepath.Join(env.WorkDir, LockFileName)
+	configPath := configFilePath(env)
+	lockPath := lockfilePath(env)
 	stale, err := lockIsStale(configPath, lockPath)
 	if err != nil {
 		return err
@@ -88,7 +88,7 @@ func runSync(env *Env, cacheRoot, scopeFlag string, dryRun, force bool) error {
 		}
 	}
 
-	lock, err := loadLockfile(env.WorkDir)
+	lock, err := loadLockfile(env)
 	if err != nil {
 		return err
 	}

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -32,7 +31,7 @@ func newFetchCmd(env *Env) *cobra.Command {
 }
 
 func runFetch(env *Env, cacheRoot string) error {
-	lock, err := loadLockfile(env.WorkDir)
+	lock, err := loadLockfile(env)
 	if err != nil {
 		return err
 	}
@@ -48,15 +47,16 @@ func runFetch(env *Env, cacheRoot string) error {
 	return nil
 }
 
-// loadLockfile reads LockFileName from workDir. A missing lockfile is
-// reported with a clear "run agtk lock" hint so downstream commands
-// don't have to repeat the message.
-func loadLockfile(workDir string) (*lockfile.Lockfile, error) {
-	path := filepath.Join(workDir, LockFileName)
+// loadLockfile reads the lockfile from the same directory as the
+// entry manifest (configDir). A missing lockfile is reported with a
+// clear "run agtk lock" hint so downstream commands don't have to
+// repeat the message.
+func loadLockfile(env *Env) (*lockfile.Lockfile, error) {
+	path := lockfilePath(env)
 	lock, err := lockfile.ParseFile(path)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, os.ErrNotExist) {
-			return nil, fmt.Errorf("%s not found; run `agtk lock` first", LockFileName)
+			return nil, fmt.Errorf("%s not found; run `agtk lock` first", path)
 		}
 		return nil, fmt.Errorf("read %s: %w", path, err)
 	}

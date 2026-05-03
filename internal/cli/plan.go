@@ -39,11 +39,11 @@ func newPlanCmd(env *Env) *cobra.Command {
 }
 
 func runPlan(env *Env, cacheRoot string, jsonOut, quiet bool) error {
-	st, entryFS, entryName, err := loadStack(env.WorkDir)
+	st, entryFS, entryName, err := loadStack(env)
 	if err != nil {
 		return err
 	}
-	lock, err := loadLockfile(env.WorkDir)
+	lock, err := loadLockfile(env)
 	if err != nil {
 		return err
 	}
