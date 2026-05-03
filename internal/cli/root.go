@@ -191,10 +191,19 @@ func Execute() int {
 	return 0
 }
 
-// renderTopLevelError prints err to w in the standard "agtk: …" form,
-// but when the chain unwraps to a *stack.ParseError it renders the
-// location, kind, and message on separate indented lines so they don't
-// smush into one wall of text.
+// renderTopLevelError prints err to w in a multi-line form so the
+// reader doesn't have to parse a single colon-joined wall of text.
+//
+// Two paths:
+//
+//   - If the chain unwraps to a *stack.ParseError, render its
+//     structured fields (file, reason, detail) on labelled rows.
+//   - Otherwise walk the wrap chain via errors.Unwrap and print each
+//     layer on its own indented row. Each layer's "own" message is
+//     recovered by trimming the inner error's text from the outer's
+//     Error() output (which is what `%w` produces). The inner-most
+//     layer is often what the user actually needs to read; surfacing
+//     it on its own line is the whole point.
 func renderTopLevelError(w io.Writer, err error) {
 	var pe *stack.ParseError
 	if errors.As(err, &pe) {
@@ -217,5 +226,68 @@ func renderTopLevelError(w io.Writer, err error) {
 		}
 		return
 	}
-	fmt.Fprintln(w, "agtk:", err)
+
+	layers := flattenError(err)
+	if len(layers) <= 1 {
+		fmt.Fprintln(w, "agtk:", err)
+		return
+	}
+	fmt.Fprintln(w, "agtk: command failed")
+	for _, layer := range layers {
+		for i, line := range strings.Split(layer, "\n") {
+			label := "  → "
+			if i > 0 {
+				label = "    "
+			}
+			fmt.Fprintf(w, "%s%s\n", label, line)
+		}
+	}
+}
+
+// flattenError turns an arbitrarily-wrapped error chain into an
+// ordered list of human-readable layers. It handles three shapes:
+//
+//   - Standard `%w`-wrapped errors (errors.Unwrap returns one inner).
+//     The wrapper's "own" message is recovered by trimming the inner
+//     error's text off the end of the outer's Error() output.
+//   - Joined errors (errors.Join, returns []error). Each child is
+//     flattened recursively and concatenated with a separator marker
+//     so the caller can see they were sibling failures, not nested.
+//   - Leaf errors. Surfaced as-is.
+//
+// Empty layers (a wrapper that adds no prefix of its own) are dropped.
+func flattenError(err error) []string {
+	var out []string
+	var walk func(err error)
+	walk = func(err error) {
+		for err != nil {
+			if multi, ok := err.(interface{ Unwrap() []error }); ok {
+				children := multi.Unwrap()
+				for i, child := range children {
+					if i > 0 {
+						out = append(out, "— and —")
+					}
+					walk(child)
+				}
+				return
+			}
+			msg := err.Error()
+			inner := errors.Unwrap(err)
+			if inner != nil {
+				innerMsg := inner.Error()
+				trimmed := strings.TrimSuffix(msg, innerMsg)
+				trimmed = strings.TrimSuffix(trimmed, ": ")
+				if s := strings.TrimSpace(trimmed); s != "" {
+					out = append(out, s)
+				}
+			} else {
+				if s := strings.TrimSpace(msg); s != "" {
+					out = append(out, s)
+				}
+			}
+			err = inner
+		}
+	}
+	walk(err)
+	return out
 }

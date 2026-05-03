@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -58,5 +59,48 @@ func TestRenderTopLevelError_PlainError(t *testing.T) {
 	got := buf.String()
 	if got != "agtk: boom\n" {
 		t.Errorf("plain error render = %q, want %q", got, "agtk: boom\n")
+	}
+}
+
+func TestRenderTopLevelError_WrappedChain(t *testing.T) {
+	// Most common shape: cli wraps resolver wraps provider wraps
+	// runGit. flattenError should walk the %w chain and produce one
+	// labelled row per layer instead of one ":"-joined wall of text.
+	leaf := errors.New("repository not found")
+	mid := fmt.Errorf("ls-remote https://x.example/repo: %w", leaf)
+	top := fmt.Errorf("resolve: %w", mid)
+
+	var buf bytes.Buffer
+	renderTopLevelError(&buf, top)
+	got := buf.String()
+
+	for _, want := range []string{
+		"agtk: command failed",
+		"  → resolve",
+		"  → ls-remote https://x.example/repo",
+		"  → repository not found",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("output missing %q\nfull:\n%s", want, got)
+		}
+	}
+}
+
+func TestRenderTopLevelError_JoinedSiblings(t *testing.T) {
+	// errors.Join produces siblings, not nested wrappers. flattenError
+	// should walk both and emit a "— and —" separator so the user can
+	// tell they're parallel failures rather than a single chain.
+	a := fmt.Errorf("stack A: %w", errors.New("missing repo"))
+	b := fmt.Errorf("stack B: %w", errors.New("auth required"))
+	joined := errors.Join(a, b)
+
+	var buf bytes.Buffer
+	renderTopLevelError(&buf, joined)
+	got := buf.String()
+
+	for _, want := range []string{"stack A", "missing repo", "— and —", "stack B", "auth required"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("output missing %q\nfull:\n%s", want, got)
+		}
 	}
 }
