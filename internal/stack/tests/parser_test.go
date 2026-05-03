@@ -117,6 +117,111 @@ func TestParseBytes_FlatRuleNameWithSlash_Rejected(t *testing.T) {
 	if !stack.IsKind(err, stack.ErrInvalidEntry) {
 		t.Errorf("error kind != invalid_entry: %v", err)
 	}
+	// Wording check — "flat" is jargon; the message should say what the
+	// concrete restriction is.
+	if !strings.Contains(err.Error(), "cannot contain '/'") {
+		t.Errorf("error should explain '/' restriction in plain words: %v", err)
+	}
+}
+
+func TestParseBytes_URLShapedBareName_HintsAtGitBoundary(t *testing.T) {
+	// gitlab.com is intentionally NOT in the allowlist (nested groups make
+	// owner/repo ambiguous). The error should still be helpful: detect the
+	// host shape and tell the user to add `.git/`.
+	body := "skills:\n  - gitlab.com/group/repo/path/to/skill\n"
+	_, err := stack.ParseBytes("t.yaml", []byte(body))
+	if err == nil {
+		t.Fatal("expected error for URL-shaped bare name")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, ".git/") {
+		t.Errorf("error should mention .git/ boundary: %v", err)
+	}
+	if !strings.Contains(msg, "looks like a URL") {
+		t.Errorf("error should call out the URL shape: %v", err)
+	}
+}
+
+func TestParseBytes_ProviderAutoSplit(t *testing.T) {
+	// github.com / bitbucket.org / codeberg.org URLs without an explicit
+	// `.git/` boundary are auto-normalised: agtk infers it after
+	// owner/repo so users can paste the form they see in a browser.
+	cases := []struct {
+		name    string
+		entry   string
+		wantURL string
+		wantRef string
+	}{
+		{
+			name:    "github with subpath",
+			entry:   "github.com/pedromvgomes/gt/agentic/skills/use-gt",
+			wantURL: "github.com/pedromvgomes/gt.git/agentic/skills/use-gt",
+		},
+		{
+			name:    "github with @ref",
+			entry:   "github.com/foo/bar/skills/x@v1.2",
+			wantURL: "github.com/foo/bar.git/skills/x",
+			wantRef: "v1.2",
+		},
+		{
+			name:    "github bare repo (no subpath)",
+			entry:   "github.com/foo/bar",
+			wantURL: "github.com/foo/bar.git",
+		},
+		{
+			name:    "bitbucket with subpath",
+			entry:   "bitbucket.org/team/proj/rules/style.md",
+			wantURL: "bitbucket.org/team/proj.git/rules/style.md",
+		},
+		{
+			name:    "codeberg with subpath",
+			entry:   "codeberg.org/owner/repo/agents/foo",
+			wantURL: "codeberg.org/owner/repo.git/agents/foo",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			body := "skills:\n  - " + tc.entry + "\n"
+			s, err := stack.ParseBytes("t.yaml", []byte(body))
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(s.Skills) != 1 {
+				t.Fatalf("skills = %+v", s.Skills)
+			}
+			got := s.Skills[0]
+			if got.Kind != stack.RefURL {
+				t.Errorf("kind = %v, want RefURL", got.Kind)
+			}
+			if got.URL != tc.wantURL {
+				t.Errorf("URL = %q, want %q", got.URL, tc.wantURL)
+			}
+			if got.Ref != tc.wantRef {
+				t.Errorf("Ref = %q, want %q", got.Ref, tc.wantRef)
+			}
+		})
+	}
+}
+
+func TestParseBytes_ProviderAutoSplit_Extends(t *testing.T) {
+	body := "extends:\n  - github.com/foo/bar/stacks/default.yaml@main\n"
+	s, err := stack.ParseBytes("t.yaml", []byte(body))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(s.Extends) != 1 {
+		t.Fatalf("extends = %+v", s.Extends)
+	}
+	got := s.Extends[0]
+	if got.Kind != stack.RefURL {
+		t.Errorf("kind = %v, want RefURL", got.Kind)
+	}
+	if got.URL != "github.com/foo/bar.git/stacks/default.yaml" {
+		t.Errorf("URL = %q", got.URL)
+	}
+	if got.Ref != "main" {
+		t.Errorf("Ref = %q", got.Ref)
+	}
 }
 
 func TestParseBytes_UnknownField_Rejected(t *testing.T) {
