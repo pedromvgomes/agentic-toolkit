@@ -18,7 +18,7 @@ import (
 func TestLock_ConfigFlag_LockfileLandsNextToConfig(t *testing.T) {
 	url, _ := fixtureRepoFromDir(t, "testdata/primary")
 	root := t.TempDir()
-	apply := root            // simulate "bare repo root" — cwd
+	apply := root // simulate "bare repo root" — cwd
 	worktree := filepath.Join(root, "main")
 	if err := os.MkdirAll(worktree, 0o755); err != nil {
 		t.Fatalf("mkdir worktree: %v", err)
