@@ -21,7 +21,7 @@ func gitResolveRef(repoURL, ref string) (sha, resolvedRef string, err error) {
 	if probe == "" {
 		probe = "HEAD"
 	}
-	out, err := runGit("", "ls-remote", "--symref", repoURL, probe)
+	out, err := runGit("", "ls-remote", "--symref", gitTransportURL(repoURL), probe)
 	if err != nil {
 		return "", "", err
 	}
@@ -73,7 +73,7 @@ func gitFetch(repoURL, ref, expectedSHA, dest string) error {
 	if _, err := runGit(tmp, "init", "--quiet"); err != nil {
 		return err
 	}
-	if _, err := runGit(tmp, "fetch", "--quiet", "--depth", "1", repoURL, ref); err != nil {
+	if _, err := runGit(tmp, "fetch", "--quiet", "--depth", "1", gitTransportURL(repoURL), ref); err != nil {
 		return fmt.Errorf("fetch %s ref %q: %w", repoURL, ref, err)
 	}
 	if _, err := runGit(tmp, "checkout", "--quiet", "FETCH_HEAD"); err != nil {
@@ -96,7 +96,9 @@ func gitFetch(repoURL, ref, expectedSHA, dest string) error {
 }
 
 // runGit invokes `git <args...>`, optionally inside dir. Stdout is
-// returned (untrimmed); stderr is folded into the returned error.
+// returned (untrimmed); on failure stderr is wrapped as its own layer
+// (via errors.Join) so the multi-line CLI renderer surfaces it on its
+// own row instead of folding it into the wrapper's line.
 func runGit(dir string, args ...string) (string, error) {
 	cmd := exec.Command("git", args...)
 	if dir != "" {
@@ -106,11 +108,12 @@ func runGit(dir string, args ...string) (string, error) {
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
+		wrapped := fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
 		msg := strings.TrimSpace(stderr.String())
 		if msg == "" {
-			return "", fmt.Errorf("git %s: %w", strings.Join(args, " "), err)
+			return "", wrapped
 		}
-		return "", fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, msg)
+		return "", errors.Join(wrapped, errors.New(msg))
 	}
 	return stdout.String(), nil
 }
@@ -120,3 +123,33 @@ func runGit(dir string, args ...string) (string, error) {
 // a hard failure: the caller should not silently proceed because the
 // upstream history has been rewritten or the ref points elsewhere.
 var ErrSHAMismatch = errors.New("sha mismatch")
+
+// gitTransportURL returns repoURL with a transport scheme suitable for
+// `git ls-remote` / `git fetch`. The canonical form stored in
+// EntryRef.URL and the cache key (`github.com/owner/repo.git`) is
+// scheme-less so it round-trips cleanly through YAML and lockfiles, but
+// git itself needs an explicit transport — without a scheme it
+// interprets the input as a filesystem path and fails with the
+// misleading "does not appear to be a git repository".
+//
+// Detection: any input that already specifies a transport — a URI
+// scheme like `https://`/`http://`/`ssh://`/`git://`/`file://`, or the
+// scp-like SSH form `user@host:path` — is returned unchanged. Anything
+// else is prefixed with `https://`, which works for github, bitbucket,
+// codeberg, gitlab, and the great majority of self-hosted forges.
+//
+// Users who need a different transport (private SSH-only forges, etc.)
+// can supply the explicit form in their stack manifest; the parser
+// preserves the raw string verbatim.
+func gitTransportURL(repoURL string) string {
+	if strings.Contains(repoURL, "://") {
+		return repoURL
+	}
+	// scp-like SSH: `user@host:path`. Detect by '@' before any '/'.
+	if at := strings.IndexByte(repoURL, '@'); at > 0 {
+		if slash := strings.IndexByte(repoURL, '/'); slash < 0 || at < slash {
+			return repoURL
+		}
+	}
+	return "https://" + repoURL
+}
