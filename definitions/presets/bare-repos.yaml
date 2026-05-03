@@ -1,3 +1,0 @@
-description: Bare-repo + worktree workflow rule. Stack on top of the default preset when adopting that layout.
-definitions:
-  - rules/bare-repos

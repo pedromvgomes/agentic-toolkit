@@ -11,10 +11,10 @@ import (
 	"github.com/goccy/go-yaml"
 	"github.com/spf13/cobra"
 
-	"github.com/pedromvgomes/agentic-toolkit/internal/config"
 	"github.com/pedromvgomes/agentic-toolkit/internal/lockfile"
 	"github.com/pedromvgomes/agentic-toolkit/internal/resolver"
 	"github.com/pedromvgomes/agentic-toolkit/internal/sourcestore"
+	"github.com/pedromvgomes/agentic-toolkit/internal/stack"
 )
 
 func newLockCmd(env *Env) *cobra.Command {
@@ -46,7 +46,7 @@ func newLockCmd(env *Env) *cobra.Command {
 }
 
 func runLock(env *Env, cacheRoot string, frozen, jsonOut bool) error {
-	cfg, err := loadConfig(env.WorkDir)
+	st, entryFS, entryName, err := loadStack(env.WorkDir)
 	if err != nil {
 		return err
 	}
@@ -54,7 +54,7 @@ func runLock(env *Env, cacheRoot string, frozen, jsonOut bool) error {
 	if err != nil {
 		return err
 	}
-	plan, err := resolver.Resolve(cfg, sourcestore.NewLiveProvider(cache))
+	plan, err := resolver.Resolve(st, entryFS, entryName, sourcestore.NewLiveProvider(cache))
 	if err != nil {
 		return fmt.Errorf("resolve: %w", err)
 	}
@@ -132,15 +132,17 @@ func runLockFrozen(env *Env, path string, resolved []byte, lock *lockfile.Lockfi
 	return fmt.Errorf("--frozen: %s would change; run `agtk lock` to update", path)
 }
 
-// loadConfig reads ConfigFileName from workDir. Returned errors carry
-// the absolute path so users see a debuggable message.
-func loadConfig(workDir string) (*config.ConsumerConfig, error) {
+// loadStack reads the entry-point stack file (.agentic-toolkit.yaml) from
+// workDir. It returns the parsed stack, an fs.FS rooted at workDir for
+// resolving local paths, and the entry-point's name within that FS.
+// Errors carry the absolute path so users see a debuggable message.
+func loadStack(workDir string) (*stack.Stack, fs.FS, string, error) {
 	path := filepath.Join(workDir, ConfigFileName)
-	cfg, err := config.ParseFile(path)
+	st, err := stack.ParseFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", path, err)
+		return nil, nil, "", fmt.Errorf("read %s: %w", path, err)
 	}
-	return cfg, nil
+	return st, os.DirFS(workDir), ConfigFileName, nil
 }
 
 // buildCache resolves the cache root: explicit override wins, otherwise

@@ -293,19 +293,19 @@ func collectMCPs(plan *resolver.Plan) map[string]any {
 }
 
 // collectSettingFragments returns the union of every setting
-// definition's value, with last-preset-wins resolution at the top-level
-// key. Preset order comes from plan.Config.Presets; Definitions in the
-// plan are sorted by name (not by preset), so we re-derive ordering
-// here.
+// definition's value, with last-stack-wins resolution at the top-level
+// key. Stack order comes from plan.StackOrder (depth-first post-order;
+// later index = applied later = wins). Definitions in the plan are
+// sorted by name (not by stack), so we re-derive ordering here.
 func collectSettingFragments(plan *resolver.Plan) map[string]any {
 	type contribution struct {
-		PresetIdx int
-		DefName   string
-		Value     map[string]any
+		StackIdx int
+		DefName  string
+		Value    map[string]any
 	}
-	presetIdx := map[string]int{}
-	for i, p := range plan.Config.Presets {
-		presetIdx[p] = i
+	stackIdx := map[string]int{}
+	for i, id := range plan.StackOrder {
+		stackIdx[id] = i
 	}
 	var contribs []contribution
 	for _, d := range plan.Definitions {
@@ -313,20 +313,20 @@ func collectSettingFragments(plan *resolver.Plan) map[string]any {
 			continue
 		}
 		s := d.Definition.(*definitions.Setting)
-		idx, ok := presetIdx[d.PresetName]
+		idx, ok := stackIdx[d.StackName]
 		if !ok {
 			idx = -1
 		}
-		contribs = append(contribs, contribution{PresetIdx: idx, DefName: d.Name, Value: s.Value})
+		contribs = append(contribs, contribution{StackIdx: idx, DefName: d.Name, Value: s.Value})
 	}
 	if len(contribs) == 0 {
 		return nil
 	}
-	// Stable sort: lowest preset index first, name as tiebreak. Later
+	// Stable sort: lowest stack index first, name as tiebreak. Later
 	// contributions overwrite earlier at the top-level key.
 	sort.SliceStable(contribs, func(i, j int) bool {
-		if contribs[i].PresetIdx != contribs[j].PresetIdx {
-			return contribs[i].PresetIdx < contribs[j].PresetIdx
+		if contribs[i].StackIdx != contribs[j].StackIdx {
+			return contribs[i].StackIdx < contribs[j].StackIdx
 		}
 		return contribs[i].DefName < contribs[j].DefName
 	})

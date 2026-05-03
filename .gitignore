@@ -1,4 +1,5 @@
 /agtk
+/bin/
 /dist/
 *.exe
 *.test

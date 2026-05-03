@@ -1,0 +1,8 @@
+description: Default toolkit stack — workflow-agnostic skills plus the plan-approval instruction and the upstream skill-creator skill.
+skills:
+  - challenge
+  - code-panel-review
+  - pr-review-resolver
+  - github.com/anthropics/skills.git/skills/skill-creator@main
+instructions:
+  - plan-approval

@@ -43,19 +43,19 @@ type sourceJSON struct {
 type defJSON struct {
 	Category  string `json:"category"`
 	Name      string `json:"name"`
-	Preset    string `json:"preset"`
+	Stack     string `json:"stack"`
 	SourceURL string `json:"source_url"`
 	SourceRef string `json:"source_ref"`
 	EntryPath string `json:"entry_path"`
 }
 
 type diagJSON struct {
-	Kind       string `json:"kind"`
-	Message    string `json:"message"`
-	Category   string `json:"category,omitempty"`
-	Name       string `json:"name,omitempty"`
-	SourceURL  string `json:"source_url,omitempty"`
-	PresetName string `json:"preset_name,omitempty"`
+	Kind      string `json:"kind"`
+	Message   string `json:"message"`
+	Category  string `json:"category,omitempty"`
+	Name      string `json:"name,omitempty"`
+	SourceURL string `json:"source_url,omitempty"`
+	StackName string `json:"stack_name,omitempty"`
 }
 
 func planToJSON(p *resolver.Plan) planJSON {
@@ -69,7 +69,7 @@ func planToJSON(p *resolver.Plan) planJSON {
 		out.Definitions = append(out.Definitions, defJSON{
 			Category:  string(d.Category),
 			Name:      d.Name,
-			Preset:    d.PresetName,
+			Stack:     d.StackName,
 			SourceURL: d.SourceURL,
 			SourceRef: d.SourceRef,
 			EntryPath: d.EntryPath,
@@ -77,12 +77,12 @@ func planToJSON(p *resolver.Plan) planJSON {
 	}
 	for _, d := range p.Diagnostics {
 		out.Diagnostics = append(out.Diagnostics, diagJSON{
-			Kind:       d.Kind.String(),
-			Message:    d.Message,
-			Category:   string(d.Category),
-			Name:       d.Name,
-			SourceURL:  d.SourceURL,
-			PresetName: d.PresetName,
+			Kind:      d.Kind.String(),
+			Message:   d.Message,
+			Category:  string(d.Category),
+			Name:      d.Name,
+			SourceURL: d.SourceURL,
+			StackName: d.StackName,
 		})
 	}
 	return out

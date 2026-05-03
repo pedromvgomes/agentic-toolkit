@@ -1,4 +1,0 @@
-description: Has a field that the schema does not declare.
-mystery: 42
-definitions:
-  - skills/challenge

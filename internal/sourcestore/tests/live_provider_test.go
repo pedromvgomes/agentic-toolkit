@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pedromvgomes/agentic-toolkit/internal/config"
+	"github.com/pedromvgomes/agentic-toolkit/internal/sourceref"
 	"github.com/pedromvgomes/agentic-toolkit/internal/sourcestore"
 )
 
@@ -19,7 +19,7 @@ func TestLiveProvider_WholeSourceURL_RootedAtRepoTop(t *testing.T) {
 	cache := sourcestore.NewCache(t.TempDir())
 	provider := sourcestore.NewLiveProvider(cache)
 
-	fsys, rr, err := provider.Provide(config.Source{URL: url, Ref: "main"})
+	fsys, rr, err := provider.Provide(sourceref.Source{URL: url, Ref: "main"})
 	if err != nil {
 		t.Fatalf("Provide: %v", err)
 	}
@@ -47,7 +47,7 @@ func TestLiveProvider_DirectRefURL_RootedAtBundleDir(t *testing.T) {
 
 	// Direct-ref form: <repo-url>/skills/foo (URL ends in `.git/skills/foo`).
 	directURL := url + "/skills/foo"
-	fsys, _, err := provider.Provide(config.Source{URL: directURL, Ref: "main"})
+	fsys, _, err := provider.Provide(sourceref.Source{URL: directURL, Ref: "main"})
 	if err != nil {
 		t.Fatalf("Provide: %v", err)
 	}
@@ -64,7 +64,7 @@ func TestLiveProvider_EmptyRef_FillsInDefaultBranch(t *testing.T) {
 	cache := sourcestore.NewCache(t.TempDir())
 	provider := sourcestore.NewLiveProvider(cache)
 
-	_, rr, err := provider.Provide(config.Source{URL: url}) // empty ref
+	_, rr, err := provider.Provide(sourceref.Source{URL: url}) // empty ref
 	if err != nil {
 		t.Fatalf("Provide: %v", err)
 	}
@@ -81,7 +81,7 @@ func TestLiveProvider_CacheHit_OnSecondProvide(t *testing.T) {
 	cacheRoot := t.TempDir()
 	provider := sourcestore.NewLiveProvider(sourcestore.NewCache(cacheRoot))
 
-	if _, _, err := provider.Provide(config.Source{URL: url, Ref: "main"}); err != nil {
+	if _, _, err := provider.Provide(sourceref.Source{URL: url, Ref: "main"}); err != nil {
 		t.Fatalf("first Provide: %v", err)
 	}
 
@@ -93,7 +93,7 @@ func TestLiveProvider_CacheHit_OnSecondProvide(t *testing.T) {
 		t.Fatalf("rename bare: %v", err)
 	}
 
-	_, rr, err := provider.Provide(config.Source{URL: url, Ref: "main"})
+	_, rr, err := provider.Provide(sourceref.Source{URL: url, Ref: "main"})
 	if err == nil {
 		t.Fatalf("expected ls-remote to fail after remote moved, got success with SHA %s", rr.SHA)
 	}
@@ -138,7 +138,7 @@ func TestLiveProvider_UnknownRef_Errors(t *testing.T) {
 	url, _ := fixtureRepo(t, map[string]string{"README.md": "x"})
 	provider := sourcestore.NewLiveProvider(sourcestore.NewCache(t.TempDir()))
 
-	_, _, err := provider.Provide(config.Source{URL: url, Ref: "no-such-ref"})
+	_, _, err := provider.Provide(sourceref.Source{URL: url, Ref: "no-such-ref"})
 	if err == nil {
 		t.Fatal("expected error for unknown ref, got nil")
 	}

@@ -1,7 +1,0 @@
-description: Example preset mixing local and external definition refs.
-definitions:
-  - skills/challenge
-  - rules/bare-repos
-  - commands/git/commit
-  - skills::github.com/anthropics/skills/skills/skill-creator@main
-  - skills::github.com/some/other/repo/path/to/thing

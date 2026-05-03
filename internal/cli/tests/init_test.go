@@ -20,23 +20,24 @@ func TestInit_WritesScaffold(t *testing.T) {
 	if !strings.Contains(body, "TODO") {
 		t.Errorf("default scaffold should carry a TODO placeholder; got:\n%s", body)
 	}
-	if !strings.Contains(body, "presets:") || !strings.Contains(body, "- default") {
-		t.Errorf("scaffold should seed presets list; got:\n%s", body)
+	if !strings.Contains(body, "extends:") {
+		t.Errorf("scaffold should seed an extends list; got:\n%s", body)
 	}
 }
 
-func TestInit_WithSourceFlag_SeedsURL(t *testing.T) {
+func TestInit_WithExtendsFlag_SeedsURL(t *testing.T) {
 	work := t.TempDir()
-	_, _, err := runCLI(t, work, "init", "--source", "github.com/owner/repo")
+	url := "github.com/owner/repo.git/stacks/default.yaml@main"
+	_, _, err := runCLI(t, work, "init", "--extends", url)
 	if err != nil {
 		t.Fatalf("init: %v", err)
 	}
 	body := readFile(t, filepath.Join(work, ".agentic-toolkit.yaml"))
-	if !strings.Contains(body, "source: github.com/owner/repo") {
-		t.Errorf("--source should set the source line; got:\n%s", body)
+	if !strings.Contains(body, url) {
+		t.Errorf("--extends should seed the extends entry; got:\n%s", body)
 	}
 	if strings.Contains(body, "TODO") {
-		t.Errorf("explicit --source should suppress TODO placeholder; got:\n%s", body)
+		t.Errorf("explicit --extends should suppress TODO placeholder; got:\n%s", body)
 	}
 }
 
@@ -63,11 +64,12 @@ func TestInit_OverwritesWithForce(t *testing.T) {
 	configPath := filepath.Join(work, ".agentic-toolkit.yaml")
 	writeFile(t, configPath, "existing: content\n")
 
-	if _, _, err := runCLI(t, work, "init", "--force", "--source", "github.com/x/y"); err != nil {
+	url := "github.com/x/y.git/stacks/default.yaml@main"
+	if _, _, err := runCLI(t, work, "init", "--force", "--extends", url); err != nil {
 		t.Fatalf("init --force: %v", err)
 	}
 	body := readFile(t, configPath)
-	if !strings.Contains(body, "github.com/x/y") {
+	if !strings.Contains(body, url) {
 		t.Errorf("--force should overwrite the file; got:\n%s", body)
 	}
 }

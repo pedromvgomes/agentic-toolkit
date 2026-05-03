@@ -1,5 +1,5 @@
 // schemagen renders the human-facing schema docs from the Go struct
-// definitions in internal/definitions, internal/config, and
+// definitions in internal/definitions, internal/stack, and
 // internal/lockfile. The structs are the canonical schema; this tool keeps
 // the documentation in lockstep with them.
 //
@@ -13,7 +13,7 @@
 //
 // Output:
 //   - definitions/SCHEMA.md         — toolkit-side definitions schema
-//   - definitions/CONFIG-SCHEMA.md  — consumer-side config + lockfile schema
+//   - definitions/CONFIG-SCHEMA.md  — consumer-side stack + lockfile schema
 package main
 
 import (
@@ -25,9 +25,10 @@ import (
 	"sort"
 	"strings"
 
-	cfg "github.com/pedromvgomes/agentic-toolkit/internal/config"
 	defs "github.com/pedromvgomes/agentic-toolkit/internal/definitions"
 	lock "github.com/pedromvgomes/agentic-toolkit/internal/lockfile"
+	"github.com/pedromvgomes/agentic-toolkit/internal/sourceref"
+	stk "github.com/pedromvgomes/agentic-toolkit/internal/stack"
 )
 
 // categoryDoc carries the hand-written prose for a category alongside the
@@ -109,7 +110,7 @@ var categories = []categoryDoc{
 		Intro:       "An MCP server definition declares one Model Context Protocol server. Canonical transports are `stdio`, `http`, and `sse`; transport-specific fields are mutually exclusive (parser-enforced). Adapters merge the selected MCP definitions into each platform's native config (`.mcp.json`, `.cursor/mcp.json`, `.vscode/mcp.json`, `opencode.json`).",
 		Sample:      &defs.MCPServer{},
 		Example:     "name: filesystem\ndescription: Filesystem MCP server.\ntransport: stdio\ncommand: \"${HOME}/bin/mcp-fs\"\nargs: [\"--root\", \"${WORKDIR:-/tmp}\"]\nenv:\n  LOG_LEVEL: info\n",
-		Notes:       "**Server scope** (local/project/user) is decided by the consumer at sync time via `.agentic-toolkit/config.yaml`, not by the definition. A single MCP definition can be installed at any scope.\n\n**Variable expansion.** Field values may use `${VAR}` and `${VAR:-default}` (canonical, matches Claude). Adapters translate to per-platform syntax (Cursor `${env:VAR}`, Copilot `${input:VAR}`/`${env:VAR}`).",
+		Notes:       "**Server scope** (local/project/user) is decided by the consumer at sync time via `.agentic-toolkit.yaml`, not by the definition. A single MCP definition can be installed at any scope.\n\n**Variable expansion.** Field values may use `${VAR}` and `${VAR:-default}` (canonical, matches Claude). Adapters translate to per-platform syntax (Cursor `${env:VAR}`, Copilot `${input:VAR}`/`${env:VAR}`).",
 	},
 	{
 		Category:    defs.CategorySetting,
@@ -207,111 +208,77 @@ func render() ([]byte, error) {
 		}
 	}
 
-	renderPresetSection(&b)
-
 	return b.Bytes(), nil
 }
 
-// renderPresetSection documents the Preset shape. Presets sit alongside —
-// not inside — the seven category enum, so they have their own section
-// and a hand-written intro rather than going through categoryDoc.
-func renderPresetSection(b *bytes.Buffer) {
-	fmt.Fprintln(b, "## Presets")
-	fmt.Fprintln(b)
-	fmt.Fprintln(b, "**Path:** `definitions/presets/<name>.yaml`  ")
-	fmt.Fprintln(b, "**Shape:** YAML manifest (no body)")
-	fmt.Fprintln(b)
-	fmt.Fprintln(b, "A preset is a named bundle of definition references — toolkit-side metadata that consumers select by name in their config. Presets are not renderable themselves; the resolver expands each preset's `definitions` list against the available sources. Presets are not in the Category enum and do not embed `Common`.")
-	fmt.Fprintln(b)
-	fmt.Fprintln(b, "### Frontmatter fields")
-	fmt.Fprintln(b)
-	presetDoc := docForType(reflect.TypeOf(defs.Preset{}))
-	writeFieldTable(b, presetDoc.Fields)
-	fmt.Fprintln(b)
-	fmt.Fprintln(b, "### Reference grammar")
-	fmt.Fprintln(b)
-	fmt.Fprintln(b, "Each entry in `definitions` is one of:")
-	fmt.Fprintln(b)
-	fmt.Fprintln(b, "- **Local**: `<plural-dir>/<name>` — e.g. `skills/challenge`, `commands/git/commit`.")
-	fmt.Fprintln(b, "- **External**: `<plural-dir>::<repo-url>.git/<in-repo-path>[@<ref>]`. The `.git/` substring is the explicit boundary between the repository URL and the in-repo path. The optional `<ref>` is anything git accepts (branch, tag, sha); the parser does not classify it — that is the resolver's job.")
-	fmt.Fprintln(b)
-	fmt.Fprintln(b, "External refs come in two artifact shapes, by category:")
-	fmt.Fprintln(b)
-	fmt.Fprintln(b, "- **Bundle (skill, agent)** — `<in-repo-path>` points to the bundle directory; the parser reads the fixed entry file (`SKILL.md` / `AGENT.md`) from inside. The bundle directory's last segment is the canonical name. Example: `skills::github.com/owner/repo.git/skills/foo@main`.")
-	fmt.Fprintln(b, "- **File (rule, instruction, command, hook, mcp)** — `<in-repo-path>` points to the file itself, extension included. The remote layout is irrelevant; the canonical name comes from the file's `name:` field, falling back to the filename stem. Example: `rules::github.com/owner/repo.git/rules/style.md@main`. Nested names (e.g. `git/commit` for commands) are declared in the file's frontmatter — non-command file categories must remain flat.")
-	fmt.Fprintln(b)
-	fmt.Fprintln(b, "### Example")
-	fmt.Fprintln(b)
-	fmt.Fprintln(b, "```yaml")
-	fmt.Fprintln(b, "description: Default toolkit bundle.")
-	fmt.Fprintln(b, "definitions:")
-	fmt.Fprintln(b, "  - skills/challenge")
-	fmt.Fprintln(b, "  - rules/bare-repos")
-	fmt.Fprintln(b, "  - skills::github.com/anthropics/skills.git/skills/skill-creator@main")
-	fmt.Fprintln(b, "  - rules::github.com/owner/repo.git/rules/style.md@main")
-	fmt.Fprintln(b, "```")
-	fmt.Fprintln(b)
-}
-
 // renderConfig produces CONFIG-SCHEMA.md, the consumer-facing schema for
-// .agentic-toolkit/config.yaml and .agentic-toolkit/lock.yaml.
+// .agentic-toolkit.yaml (the entry-point stack manifest) and
+// .agentic-toolkit.lock.yaml.
 func renderConfig() ([]byte, error) {
 	var b bytes.Buffer
 
-	fmt.Fprintln(&b, "# agentic-toolkit consumer config schema")
+	fmt.Fprintln(&b, "# agentic-toolkit consumer schema")
 	fmt.Fprintln(&b)
-	fmt.Fprintln(&b, "<!-- DO NOT EDIT — generated by tools/schemagen from internal/config and internal/lockfile struct definitions. Run `go generate ./...` to refresh. -->")
+	fmt.Fprintln(&b, "<!-- DO NOT EDIT — generated by tools/schemagen from internal/stack and internal/lockfile struct definitions. Run `go generate ./...` to refresh. -->")
 	fmt.Fprintln(&b)
-	fmt.Fprintln(&b, "A consumer repo opts into the toolkit by committing two files under `.agentic-toolkit/`:")
+	fmt.Fprintln(&b, "A consumer repo opts into the toolkit by committing two files at the repo root:")
 	fmt.Fprintln(&b)
-	fmt.Fprintln(&b, "- `config.yaml` — declares the toolkit source(s), target platforms, and preset bundles to render. Hand-edited.")
-	fmt.Fprintln(&b, "- `lock.yaml` — pinned record of what the resolver actually fetched. Resolver-written; commit it.")
+	fmt.Fprintln(&b, "- `.agentic-toolkit.yaml` — entry-point **stack manifest**: declares which other stacks to extend and which definitions to layer on top. Hand-edited.")
+	fmt.Fprintln(&b, "- `.agentic-toolkit.lock.yaml` — pinned record of what the resolver actually fetched. Resolver-written; commit it.")
 	fmt.Fprintln(&b)
 
-	fmt.Fprintln(&b, "## ConsumerConfig")
+	fmt.Fprintln(&b, "## Stack manifest")
 	fmt.Fprintln(&b)
-	fmt.Fprintln(&b, "**Path:** `.agentic-toolkit/config.yaml`")
+	fmt.Fprintln(&b, "**Path:** `.agentic-toolkit.yaml` at the repo root, or any `stacks/<name>.yaml` file in any repo published for sharing.")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "The same shape is used everywhere: the consumer's entry-point file is just a stack with no extra ceremony. There is no \"preset\" / \"consumer config\" distinction.")
 	fmt.Fprintln(&b)
 	fmt.Fprintln(&b, "### Fields")
 	fmt.Fprintln(&b)
-	writeFieldTable(&b, docForType(reflect.TypeOf(cfg.ConsumerConfig{})).Fields)
+	writeFieldTable(&b, docForType(reflect.TypeOf(stk.Stack{})).Fields)
 	fmt.Fprintln(&b)
 
-	fmt.Fprintln(&b, "### `Source`")
+	fmt.Fprintln(&b, "### Per-entry resolution")
 	fmt.Fprintln(&b)
-	fmt.Fprintln(&b, "`source` and each entry in `externals` deserialise into the same `Source` struct. Two YAML forms are accepted:")
+	fmt.Fprintln(&b, "Each entry in `extends:` and in the per-category lists (`skills`, `agents`, `rules`, `instructions`, `commands`, `hooks`, `mcp`, `settings`) is a string that the parser disambiguates by shape:")
 	fmt.Fprintln(&b)
-	fmt.Fprintln(&b, "- **Shorthand**: `<url>[@<ref>]` — e.g. `github.com/owner/repo@main`. Empty `<ref>` (or no `@`) means the resolver chooses the default branch.")
-	fmt.Fprintln(&b, "- **Mapping**: `{ url: <url>, ref: <ref> }`.")
+	fmt.Fprintln(&b, "- **External URL** — contains `.git/` as the boundary between repo URL and in-repo path. Optional `@<ref>` selects a git ref (branch, tag, sha). Example: `github.com/owner/repo.git/skills/foo@main`. The resolver fetches the repo and locates the bundle/file at the in-repo path.")
+	fmt.Fprintln(&b, "- **Local path** — starts with `./` or `/`. Resolved relative to the directory holding the stack file itself. Example: `./team-skills/foo` in a stack at `repo/stacks/team.yaml` resolves to `repo/stacks/team-skills/foo`.")
+	fmt.Fprintln(&b, "- **Bare name** — anything else. Resolved under `<root>/<plural>/<name>...` in the stack file's source FS. The default `root` is `definitions`; override it with the top-level `root:` field.")
 	fmt.Fprintln(&b)
-	writeFieldTable(&b, docForType(reflect.TypeOf(cfg.Source{})).Fields)
+	fmt.Fprintln(&b, "Bare names are not permitted in `extends:` — every extends entry must be either a URL or a `./path`.")
 	fmt.Fprintln(&b)
 
-	fmt.Fprintln(&b, "### `presets` semantics")
+	fmt.Fprintln(&b, "### Override semantics")
 	fmt.Fprintln(&b)
-	fmt.Fprintln(&b, "Presets are applied in declared order. If two entries reference the same definition, the later one wins. Slice-1 only resolves preset names against the **primary** source — external presets are not supported yet. The parser validates name format only; existence is the resolver's responsibility.")
+	fmt.Fprintln(&b, "`extends:` is processed depth-first, post-order: each imported stack's entries apply before the importing stack's own entries, so the **importing** stack always wins on `(category, name)` collisions. Sibling extends apply in declared order, so later siblings override earlier ones. The entry-point file's own entries always win last.")
+	fmt.Fprintln(&b)
+
+	fmt.Fprintln(&b, "### `Source` (URL extends entries)")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "Source identifies a fetchable git source. Currently only used internally by the resolver; consumers write URLs as plain strings inside per-category lists and `extends:`.")
+	fmt.Fprintln(&b)
+	writeFieldTable(&b, docForType(reflect.TypeOf(sourceref.Source{})).Fields)
 	fmt.Fprintln(&b)
 
 	fmt.Fprintln(&b, "### Example")
 	fmt.Fprintln(&b)
 	fmt.Fprintln(&b, "```yaml")
-	fmt.Fprintln(&b, "source: github.com/pedromvgomes/agentic-toolkit@main")
-	fmt.Fprintln(&b, "platforms:")
-	fmt.Fprintln(&b, "  - claude")
-	fmt.Fprintln(&b, "  - cursor")
-	fmt.Fprintln(&b, "externals:")
-	fmt.Fprintln(&b, "  - github.com/anthropics/skills@main")
-	fmt.Fprintln(&b, "presets:")
-	fmt.Fprintln(&b, "  - default")
-	fmt.Fprintln(&b, "  - bare-repos")
+	fmt.Fprintln(&b, "extends:")
+	fmt.Fprintln(&b, "  - github.com/pedromvgomes/agentic-toolkit.git/stacks/default.yaml@main")
+	fmt.Fprintln(&b, "skills:")
+	fmt.Fprintln(&b, "  - ./local-skills/internal-helper")
+	fmt.Fprintln(&b, "  - github.com/some-team/their-skills.git/skills/lint-helper@v1")
+	fmt.Fprintln(&b, "rules:")
+	fmt.Fprintln(&b, "  - github.com/some-team/their-rules.git/rules/style.md@v1")
 	fmt.Fprintln(&b, "```")
 	fmt.Fprintln(&b)
 
 	fmt.Fprintln(&b, "## Lockfile")
 	fmt.Fprintln(&b)
-	fmt.Fprintln(&b, "**Path:** `.agentic-toolkit/lock.yaml`")
+	fmt.Fprintln(&b, "**Path:** `.agentic-toolkit.lock.yaml`")
 	fmt.Fprintln(&b)
-	fmt.Fprintf(&b, "The resolver writes the lockfile after a successful sync. It pins every source the run touched (primary + declared externals + sources implied by external preset refs) so subsequent runs can reproduce the exact fetch graph. The current schema version is **%d**.\n", lock.Version)
+	fmt.Fprintf(&b, "The resolver writes the lockfile after a successful sync. It pins every source the run touched — every URL reached via the entry-point stack's `extends:` graph plus every URL reached via per-category URL entries. The current schema version is **%d**.\n", lock.Version)
 	fmt.Fprintln(&b)
 	fmt.Fprintln(&b, "### Top-level fields")
 	fmt.Fprintln(&b)
@@ -326,7 +293,7 @@ func renderConfig() ([]byte, error) {
 	fmt.Fprintln(&b, "### Example")
 	fmt.Fprintln(&b)
 	fmt.Fprintln(&b, "```yaml")
-	fmt.Fprintln(&b, "version: 1")
+	fmt.Fprintf(&b, "version: %d\n", lock.Version)
 	fmt.Fprintln(&b, "sources:")
 	fmt.Fprintln(&b, "  - url: github.com/pedromvgomes/agentic-toolkit")
 	fmt.Fprintln(&b, "    ref: main")

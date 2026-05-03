@@ -1,5 +1,0 @@
-description: Integration-test preset bundling local + external skill.
-definitions:
-  - skills/challenge
-  - instructions/plan-approval
-  - skills::ext.example.com/skills/skill-creator

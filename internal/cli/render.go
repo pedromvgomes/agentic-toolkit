@@ -48,7 +48,7 @@ func runRender(env *Env, cacheRoot, scopeFlag string, dryRun, force bool) error 
 	if err != nil {
 		return err
 	}
-	cfg, err := loadConfig(env.WorkDir)
+	st, entryFS, entryName, err := loadStack(env.WorkDir)
 	if err != nil {
 		return err
 	}
@@ -60,7 +60,7 @@ func runRender(env *Env, cacheRoot, scopeFlag string, dryRun, force bool) error 
 	if err != nil {
 		return err
 	}
-	plan, err := resolver.Resolve(cfg, sourcestore.NewFrozenProvider(cache, lock))
+	plan, err := resolver.Resolve(st, entryFS, entryName, sourcestore.NewFrozenProvider(cache, lock))
 	if err != nil {
 		return fmt.Errorf("resolve: %w", err)
 	}

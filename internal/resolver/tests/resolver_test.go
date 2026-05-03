@@ -1,478 +1,367 @@
 package tests
 
 import (
-	"errors"
 	"strings"
 	"testing"
 
-	"github.com/pedromvgomes/agentic-toolkit/internal/config"
 	"github.com/pedromvgomes/agentic-toolkit/internal/definitions"
-	"github.com/pedromvgomes/agentic-toolkit/internal/lockfile"
 	"github.com/pedromvgomes/agentic-toolkit/internal/resolver"
+	"github.com/pedromvgomes/agentic-toolkit/internal/stack"
 )
 
-// ===== happy path: local refs only =====
+// ===== bare-name resolution =====
 
-func TestResolve_LocalRefsHappyPath(t *testing.T) {
-	primary := makeMapFS(map[string]string{
-		"definitions/skills/foo/SKILL.md":  validSkillBody("Skill foo."),
-		"definitions/agents/bar/AGENT.md":  validAgentBody("Agent bar."),
-		"definitions/rules/baz.md":         validRuleBody("Rule baz."),
-		"definitions/instructions/quux.md": validInstructionBody("Instruction quux."),
-		"definitions/hooks/h1.yaml":        validHookBody("Hook one."),
-		"definitions/presets/default.yaml": validPresetBody("Default bundle.",
-			"skills/foo", "agents/bar", "rules/baz", "instructions/quux", "hooks/h1"),
+func TestResolve_BareSkillFromEntry(t *testing.T) {
+	entryFS := makeMapFS(map[string]string{
+		".agentic-toolkit.yaml": stackBody(nil, map[string][]string{
+			"skills": {"challenge"},
+		}),
+		"definitions/skills/challenge/SKILL.md": validSkillBody("Challenge skill"),
 	})
-
-	cfg := &config.ConsumerConfig{
-		Source:  config.Source{URL: "primary.example.com/repo", Ref: "main"},
-		Presets: []string{"default"},
-	}
-	provider := newFakeProvider().register("primary.example.com/repo", "main", primary)
-
-	plan, err := resolver.Resolve(cfg, provider)
+	st, err := stack.ParseInFS(entryFS, ".agentic-toolkit.yaml")
 	if err != nil {
-		t.Fatalf("Resolve: %v", err)
+		t.Fatalf("parse stack: %v", err)
 	}
 
-	if len(plan.Definitions) != 5 {
-		t.Fatalf("definitions = %d, want 5", len(plan.Definitions))
-	}
-	// Sorted by (Category, Name).
-	want := []struct {
-		cat  definitions.Category
-		name string
-	}{
-		{definitions.CategorySkill, "foo"},
-		{definitions.CategoryAgent, "bar"},
-		{definitions.CategoryRule, "baz"},
-		{definitions.CategoryInstruction, "quux"},
-		{definitions.CategoryHook, "h1"},
-	}
-	// The actual category constants are strings; ensure the sort order
-	// the resolver picked matches alphabetical of the string values.
-	gotNames := make([]string, len(plan.Definitions))
-	for i, d := range plan.Definitions {
-		gotNames[i] = string(d.Category) + "/" + d.Name
-	}
-	wantNames := make([]string, len(want))
-	for i, w := range want {
-		wantNames[i] = string(w.cat) + "/" + w.name
-	}
-	// Re-sort wantNames the way the resolver would.
-	expectSorted := []string{
-		string(definitions.CategoryAgent) + "/bar",
-		string(definitions.CategoryHook) + "/h1",
-		string(definitions.CategoryInstruction) + "/quux",
-		string(definitions.CategoryRule) + "/baz",
-		string(definitions.CategorySkill) + "/foo",
-	}
-	if !strSliceEqual(gotNames, expectSorted) {
-		t.Errorf("definition order = %v, want %v", gotNames, expectSorted)
-	}
-
-	if len(plan.Diagnostics) != 0 {
-		t.Errorf("diagnostics = %v, want none", plan.Diagnostics)
-	}
-	if len(plan.Sources) != 1 {
-		t.Fatalf("sources = %d, want 1", len(plan.Sources))
-	}
-	if plan.Sources[0].Kind != resolver.SourcePrimary {
-		t.Errorf("primary kind = %v, want SourcePrimary", plan.Sources[0].Kind)
-	}
-	if plan.Sources[0].SHA == "" {
-		t.Errorf("primary SHA empty")
-	}
-}
-
-// ===== empty presets: lockfile still includes primary + declared =====
-
-func TestResolve_EmptyPresetsLocksDeclaredSources(t *testing.T) {
-	primary := makeMapFS(map[string]string{})
-	external := makeMapFS(map[string]string{})
-
-	cfg := &config.ConsumerConfig{
-		Source: config.Source{URL: "primary.example.com/repo", Ref: "main"},
-		Externals: []config.Source{
-			{URL: "ext.example.com/skills", Ref: "v1"},
-		},
-	}
-	provider := newFakeProvider().
-		register("primary.example.com/repo", "main", primary).
-		register("ext.example.com/skills", "v1", external)
-
-	plan, err := resolver.Resolve(cfg, provider)
+	plan, err := resolver.Resolve(st, entryFS, ".agentic-toolkit.yaml", newFakeProvider())
 	if err != nil {
-		t.Fatalf("Resolve: %v", err)
-	}
-	if len(plan.Definitions) != 0 {
-		t.Errorf("definitions = %d, want 0", len(plan.Definitions))
-	}
-	if len(plan.Sources) != 2 {
-		t.Fatalf("sources = %d, want 2", len(plan.Sources))
-	}
-	if plan.Sources[0].Kind != resolver.SourcePrimary || plan.Sources[1].Kind != resolver.SourceDeclared {
-		t.Errorf("kinds = [%v, %v], want [primary, declared]", plan.Sources[0].Kind, plan.Sources[1].Kind)
-	}
-}
-
-// ===== default-branch propagation =====
-
-func TestResolve_DefaultBranchPropagatesIntoPlan(t *testing.T) {
-	primary := makeMapFS(map[string]string{})
-	cfg := &config.ConsumerConfig{
-		Source: config.Source{URL: "primary.example.com/repo"}, // no ref
-	}
-	// Provider returns Ref="trunk" when asked for empty ref.
-	p := newFakeProvider().register("primary.example.com/repo", "", primary)
-	// Override the default-branch echo to a non-default name.
-	p.entries[fakeKey{URL: "primary.example.com/repo"}] = fakeEntry{
-		FS:  primary,
-		Ref: "trunk",
-		SHA: "deadbeef",
-	}
-
-	plan, err := resolver.Resolve(cfg, p)
-	if err != nil {
-		t.Fatalf("Resolve: %v", err)
-	}
-	if len(plan.Sources) != 1 || plan.Sources[0].Ref != "trunk" {
-		t.Errorf("primary ref = %q, want trunk", plan.Sources[0].Ref)
-	}
-	if plan.Sources[0].SHA != "deadbeef" {
-		t.Errorf("primary sha = %q, want deadbeef", plan.Sources[0].SHA)
-	}
-}
-
-// ===== external skill: implicit classification + diagnostic =====
-
-func TestResolve_ExternalSkillImplicit(t *testing.T) {
-	primary := makeMapFS(map[string]string{
-		"definitions/presets/default.yaml": validPresetBody("Bundle.",
-			"skills::ext.example.com/skills/skill-creator"),
-	})
-	bundle := makeMapFS(map[string]string{
-		"SKILL.md": validSkillBody("External skill."),
-	})
-
-	cfg := &config.ConsumerConfig{
-		Source:  config.Source{URL: "primary.example.com/repo", Ref: "main"},
-		Presets: []string{"default"},
-	}
-	provider := newFakeProvider().
-		register("primary.example.com/repo", "main", primary).
-		register("ext.example.com/skills/skill-creator", "", bundle)
-
-	plan, err := resolver.Resolve(cfg, provider)
-	if err != nil {
-		t.Fatalf("Resolve: %v", err)
+		t.Fatalf("resolve: %v", err)
 	}
 	if len(plan.Definitions) != 1 {
-		t.Fatalf("definitions = %d, want 1", len(plan.Definitions))
+		t.Fatalf("definitions len = %d, want 1", len(plan.Definitions))
 	}
 	d := plan.Definitions[0]
-	if d.Category != definitions.CategorySkill || d.Name != "skill-creator" {
-		t.Errorf("def = %s/%s, want skill/skill-creator", d.Category, d.Name)
+	if d.Category != definitions.CategorySkill {
+		t.Errorf("category = %s, want skill", d.Category)
 	}
-	if d.SourceURL != "ext.example.com/skills/skill-creator" {
-		t.Errorf("def SourceURL = %q", d.SourceURL)
+	if d.Name != "challenge" {
+		t.Errorf("name = %q, want challenge", d.Name)
 	}
-	if d.EntryPath != "SKILL.md" {
-		t.Errorf("def EntryPath = %q, want SKILL.md", d.EntryPath)
-	}
-
-	// Source is in lockfile, classified Implicit.
-	var implicit *resolver.PlannedSource
-	for i := range plan.Sources {
-		if plan.Sources[i].Kind == resolver.SourceImplicit {
-			implicit = &plan.Sources[i]
-		}
-	}
-	if implicit == nil {
-		t.Fatalf("no implicit source in plan; sources=%v", plan.Sources)
-	}
-	if implicit.URL != "ext.example.com/skills/skill-creator" {
-		t.Errorf("implicit URL = %q", implicit.URL)
-	}
-
-	// Diagnostic emitted.
-	var found bool
-	for _, dg := range plan.Diagnostics {
-		if dg.Kind == resolver.DiagImplicitExternal && dg.SourceURL == "ext.example.com/skills/skill-creator" {
-			found = true
-		}
-	}
-	if !found {
-		t.Errorf("missing DiagImplicitExternal; got %v", plan.Diagnostics)
+	if d.StackName != "" {
+		t.Errorf("stack = %q, want \"\" (entry-point)", d.StackName)
 	}
 }
 
-// ===== external skill matching declared external by exact (URL, Ref) =====
-
-func TestResolve_ExternalSkillDeclared(t *testing.T) {
-	primary := makeMapFS(map[string]string{
-		"definitions/presets/default.yaml": validPresetBody("Bundle.",
-			"skills::ext.example.com/skills/foo@main"),
+func TestResolve_BareWithCustomRoot(t *testing.T) {
+	entryFS := makeMapFS(map[string]string{
+		".agentic-toolkit.yaml": "root: ./agentic\n" + stackBody(nil, map[string][]string{
+			"skills": {"foo"},
+		}),
+		"agentic/skills/foo/SKILL.md": validSkillBody("Foo skill"),
 	})
-	bundle := makeMapFS(map[string]string{
-		"SKILL.md": validSkillBody("Foo skill."),
-	})
-
-	cfg := &config.ConsumerConfig{
-		Source: config.Source{URL: "primary.example.com/repo", Ref: "main"},
-		Externals: []config.Source{
-			{URL: "ext.example.com/skills/foo", Ref: "main"},
-		},
-		Presets: []string{"default"},
-	}
-	provider := newFakeProvider().
-		register("primary.example.com/repo", "main", primary).
-		register("ext.example.com/skills/foo", "main", bundle)
-
-	plan, err := resolver.Resolve(cfg, provider)
+	st, err := stack.ParseInFS(entryFS, ".agentic-toolkit.yaml")
 	if err != nil {
-		t.Fatalf("Resolve: %v", err)
+		t.Fatalf("parse stack: %v", err)
 	}
 
-	// No DiagImplicitExternal — the source matched a declared external.
-	for _, dg := range plan.Diagnostics {
-		if dg.Kind == resolver.DiagImplicitExternal {
-			t.Errorf("unexpected implicit diagnostic: %v", dg)
-		}
+	plan, err := resolver.Resolve(st, entryFS, ".agentic-toolkit.yaml", newFakeProvider())
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
 	}
-	// Sources: primary + declared (no implicit).
-	for _, s := range plan.Sources {
-		if s.Kind == resolver.SourceImplicit {
-			t.Errorf("unexpected implicit source: %v", s)
-		}
+	if len(plan.Definitions) != 1 || plan.Definitions[0].Name != "foo" {
+		t.Errorf("definitions = %+v", plan.Definitions)
 	}
 }
 
-// ===== override / dedupe =====
+// ===== local-path resolution =====
 
-func TestResolve_OverrideEmitsDiagnostic(t *testing.T) {
-	primary := makeMapFS(map[string]string{
-		"definitions/skills/foo/SKILL.md": validSkillBody("Local foo."),
-		"definitions/presets/first.yaml":  validPresetBody("First.", "skills/foo"),
-		"definitions/presets/second.yaml": validPresetBody("Second.", "skills::ext.example.com/skills/foo"),
+func TestResolve_PathSkill(t *testing.T) {
+	entryFS := makeMapFS(map[string]string{
+		".agentic-toolkit.yaml": stackBody(nil, map[string][]string{
+			"skills": {"./elsewhere/foo"},
+		}),
+		"elsewhere/foo/SKILL.md": validSkillBody("Foo skill"),
 	})
-	bundle := makeMapFS(map[string]string{
-		"SKILL.md": validSkillBody("External foo."),
-	})
-
-	cfg := &config.ConsumerConfig{
-		Source:  config.Source{URL: "primary.example.com/repo", Ref: "main"},
-		Presets: []string{"first", "second"},
-	}
-	provider := newFakeProvider().
-		register("primary.example.com/repo", "main", primary).
-		register("ext.example.com/skills/foo", "", bundle)
-
-	plan, err := resolver.Resolve(cfg, provider)
+	st, err := stack.ParseInFS(entryFS, ".agentic-toolkit.yaml")
 	if err != nil {
-		t.Fatalf("Resolve: %v", err)
+		t.Fatalf("parse stack: %v", err)
+	}
+
+	plan, err := resolver.Resolve(st, entryFS, ".agentic-toolkit.yaml", newFakeProvider())
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if len(plan.Definitions) != 1 || plan.Definitions[0].Name != "foo" {
+		t.Errorf("definitions = %+v", plan.Definitions)
+	}
+}
+
+func TestResolve_PathRule(t *testing.T) {
+	entryFS := makeMapFS(map[string]string{
+		".agentic-toolkit.yaml": stackBody(nil, map[string][]string{
+			"rules": {"./team/style.md"},
+		}),
+		"team/style.md": validRuleBody("Team style"),
+	})
+	st, err := stack.ParseInFS(entryFS, ".agentic-toolkit.yaml")
+	if err != nil {
+		t.Fatalf("parse stack: %v", err)
+	}
+
+	plan, err := resolver.Resolve(st, entryFS, ".agentic-toolkit.yaml", newFakeProvider())
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if len(plan.Definitions) != 1 || plan.Definitions[0].Category != definitions.CategoryRule {
+		t.Errorf("definitions = %+v", plan.Definitions)
+	}
+}
+
+// ===== external URL resolution =====
+
+func TestResolve_URLSkillBundle(t *testing.T) {
+	repoFS := makeMapFS(map[string]string{
+		"skills/upstream/SKILL.md": validSkillBody("Upstream skill"),
+	})
+	provider := newFakeProvider().register("github.com/foo/bar.git", "main", repoFS)
+
+	entryFS := makeMapFS(map[string]string{
+		".agentic-toolkit.yaml": stackBody(nil, map[string][]string{
+			"skills": {"github.com/foo/bar.git/skills/upstream@main"},
+		}),
+	})
+	st, err := stack.ParseInFS(entryFS, ".agentic-toolkit.yaml")
+	if err != nil {
+		t.Fatalf("parse stack: %v", err)
+	}
+
+	plan, err := resolver.Resolve(st, entryFS, ".agentic-toolkit.yaml", provider)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if len(plan.Definitions) != 1 || plan.Definitions[0].Name != "upstream" {
+		t.Fatalf("definitions = %+v", plan.Definitions)
+	}
+	if plan.Definitions[0].SourceURL != "github.com/foo/bar.git" {
+		t.Errorf("source url = %q", plan.Definitions[0].SourceURL)
+	}
+	if len(plan.Sources) != 1 || plan.Sources[0].Kind != resolver.SourceDefinition {
+		t.Errorf("sources = %+v", plan.Sources)
+	}
+}
+
+func TestResolve_URLRuleFile(t *testing.T) {
+	repoFS := makeMapFS(map[string]string{
+		"rules/style.md": validRuleBody("Upstream style"),
+	})
+	provider := newFakeProvider().register("github.com/foo/bar.git", "v1", repoFS)
+
+	entryFS := makeMapFS(map[string]string{
+		".agentic-toolkit.yaml": stackBody(nil, map[string][]string{
+			"rules": {"github.com/foo/bar.git/rules/style.md@v1"},
+		}),
+	})
+	st, err := stack.ParseInFS(entryFS, ".agentic-toolkit.yaml")
+	if err != nil {
+		t.Fatalf("parse stack: %v", err)
+	}
+
+	plan, err := resolver.Resolve(st, entryFS, ".agentic-toolkit.yaml", provider)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if len(plan.Definitions) != 1 || plan.Definitions[0].Category != definitions.CategoryRule {
+		t.Fatalf("definitions = %+v", plan.Definitions)
+	}
+}
+
+// ===== extends DAG =====
+
+func TestResolve_ExtendsExternalStack(t *testing.T) {
+	upstreamFS := makeMapFS(map[string]string{
+		"stacks/default.yaml": stackBody(nil, map[string][]string{
+			"skills": {"upstream"},
+		}),
+		"definitions/skills/upstream/SKILL.md": validSkillBody("Upstream skill"),
+	})
+	provider := newFakeProvider().register("github.com/foo/bar.git", "main", upstreamFS)
+
+	entryFS := makeMapFS(map[string]string{
+		".agentic-toolkit.yaml": stackBody(
+			[]string{"github.com/foo/bar.git/stacks/default.yaml@main"},
+			nil,
+		),
+	})
+	st, err := stack.ParseInFS(entryFS, ".agentic-toolkit.yaml")
+	if err != nil {
+		t.Fatalf("parse stack: %v", err)
+	}
+
+	plan, err := resolver.Resolve(st, entryFS, ".agentic-toolkit.yaml", provider)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if len(plan.Definitions) != 1 || plan.Definitions[0].Name != "upstream" {
+		t.Fatalf("definitions = %+v", plan.Definitions)
+	}
+	// Stack order: child first, entry-point last.
+	if len(plan.StackOrder) != 2 {
+		t.Fatalf("stack order = %+v", plan.StackOrder)
+	}
+	if plan.StackOrder[1] != "" {
+		t.Errorf("entry-point should be last in stack order, got %v", plan.StackOrder)
+	}
+	// Sources include the imported stack source.
+	if len(plan.Sources) != 1 || plan.Sources[0].URL != "github.com/foo/bar.git" {
+		t.Errorf("sources = %+v", plan.Sources)
+	}
+	if plan.Sources[0].Kind != resolver.SourceStack {
+		t.Errorf("source kind = %v, want SourceStack", plan.Sources[0].Kind)
+	}
+}
+
+func TestResolve_ExtendsLocalStack(t *testing.T) {
+	entryFS := makeMapFS(map[string]string{
+		".agentic-toolkit.yaml": stackBody(
+			[]string{"./stacks/team.yaml"},
+			nil,
+		),
+		"stacks/team.yaml": stackBody(nil, map[string][]string{
+			"skills": {"team-skill"},
+		}),
+		"definitions/skills/team-skill/SKILL.md": validSkillBody("Team skill"),
+	})
+	st, err := stack.ParseInFS(entryFS, ".agentic-toolkit.yaml")
+	if err != nil {
+		t.Fatalf("parse stack: %v", err)
+	}
+
+	plan, err := resolver.Resolve(st, entryFS, ".agentic-toolkit.yaml", newFakeProvider())
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if len(plan.Definitions) != 1 || plan.Definitions[0].Name != "team-skill" {
+		t.Errorf("definitions = %+v", plan.Definitions)
+	}
+}
+
+// ===== override semantics =====
+
+func TestResolve_EntryPointWinsOverExtends(t *testing.T) {
+	upstreamFS := makeMapFS(map[string]string{
+		"stacks/default.yaml": stackBody(nil, map[string][]string{
+			"skills": {"upstream"},
+		}),
+		"definitions/skills/upstream/SKILL.md": validSkillBody("Upstream version"),
+	})
+	provider := newFakeProvider().register("github.com/foo/bar.git", "main", upstreamFS)
+
+	// Entry-point overrides "upstream" with its own local definition.
+	entryFS := makeMapFS(map[string]string{
+		".agentic-toolkit.yaml": stackBody(
+			[]string{"github.com/foo/bar.git/stacks/default.yaml@main"},
+			map[string][]string{"skills": {"upstream"}},
+		),
+		"definitions/skills/upstream/SKILL.md": validSkillBody("Override version"),
+	})
+	st, err := stack.ParseInFS(entryFS, ".agentic-toolkit.yaml")
+	if err != nil {
+		t.Fatalf("parse stack: %v", err)
+	}
+
+	plan, err := resolver.Resolve(st, entryFS, ".agentic-toolkit.yaml", provider)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
 	}
 	if len(plan.Definitions) != 1 {
-		t.Fatalf("definitions = %d, want 1", len(plan.Definitions))
+		t.Fatalf("definitions = %+v", plan.Definitions)
 	}
-	d := plan.Definitions[0]
-	if d.SourceURL != "ext.example.com/skills/foo" {
-		t.Errorf("winner SourceURL = %q, want external", d.SourceURL)
+	skill := plan.Definitions[0].Definition.(*definitions.Skill)
+	if skill.Description != "Override version" {
+		t.Errorf("description = %q, want \"Override version\"", skill.Description)
 	}
-
-	var override *resolver.Diagnostic
-	for i := range plan.Diagnostics {
-		if plan.Diagnostics[i].Kind == resolver.DiagOverride {
-			override = &plan.Diagnostics[i]
+	if plan.Definitions[0].StackName != "" {
+		t.Errorf("winner should be from entry-point, got stack %q", plan.Definitions[0].StackName)
+	}
+	// One DiagOverride is expected.
+	overrideCount := 0
+	for _, d := range plan.Diagnostics {
+		if d.Kind == resolver.DiagOverride {
+			overrideCount++
 		}
 	}
-	if override == nil {
-		t.Fatalf("no DiagOverride in %v", plan.Diagnostics)
-	}
-	if override.Category != definitions.CategorySkill || override.Name != "foo" {
-		t.Errorf("override key = %s/%s, want skill/foo", override.Category, override.Name)
-	}
-	if override.SourceURL != "primary.example.com/repo" {
-		t.Errorf("override SourceURL (loser) = %q, want primary", override.SourceURL)
+	if overrideCount != 1 {
+		t.Errorf("override diagnostics = %d, want 1", overrideCount)
 	}
 }
 
-// ===== error joining =====
+// ===== cycle detection =====
 
-func TestResolve_JoinsMultipleEntryErrors(t *testing.T) {
-	primary := makeMapFS(map[string]string{
-		"definitions/presets/default.yaml": validPresetBody("Bundle.",
-			"skills/missing-1", "skills/missing-2"),
+func TestResolve_CycleInExtends(t *testing.T) {
+	// Two repos extend each other.
+	repoAFS := makeMapFS(map[string]string{
+		"stacks/a.yaml": stackBody(
+			[]string{"github.com/repo/b.git/stacks/b.yaml@main"},
+			nil,
+		),
 	})
-	cfg := &config.ConsumerConfig{
-		Source:  config.Source{URL: "primary.example.com/repo", Ref: "main"},
-		Presets: []string{"default"},
-	}
-	provider := newFakeProvider().register("primary.example.com/repo", "main", primary)
-
-	_, err := resolver.Resolve(cfg, provider)
-	if err == nil {
-		t.Fatalf("expected error")
-	}
-	msg := err.Error()
-	if !strings.Contains(msg, "missing-1") || !strings.Contains(msg, "missing-2") {
-		t.Errorf("expected both entry errors in joined message; got %q", msg)
-	}
-}
-
-// ===== primary provider failure is fatal =====
-
-func TestResolve_PrimaryProviderFailureIsFatal(t *testing.T) {
-	cfg := &config.ConsumerConfig{
-		Source: config.Source{URL: "primary.example.com/repo", Ref: "main"},
-	}
-	provider := newFakeProvider().fail("primary.example.com/repo", "main", errors.New("network down"))
-
-	_, err := resolver.Resolve(cfg, provider)
-	if err == nil {
-		t.Fatalf("expected error")
-	}
-	if !strings.Contains(err.Error(), "primary source") {
-		t.Errorf("error should mention primary; got %q", err)
-	}
-}
-
-// ===== declared-external provider failure is non-fatal, suppresses cascade =====
-
-func TestResolve_DeclaredExternalFailureSuppressesCascade(t *testing.T) {
-	primary := makeMapFS(map[string]string{
-		"definitions/presets/default.yaml": validPresetBody("Bundle.",
-			"skills::ext.example.com/skills/foo@main"),
+	repoBFS := makeMapFS(map[string]string{
+		"stacks/b.yaml": stackBody(
+			[]string{"github.com/repo/a.git/stacks/a.yaml@main"},
+			nil,
+		),
 	})
-	cfg := &config.ConsumerConfig{
-		Source: config.Source{URL: "primary.example.com/repo", Ref: "main"},
-		Externals: []config.Source{
-			{URL: "ext.example.com/skills/foo", Ref: "main"},
-		},
-		Presets: []string{"default"},
-	}
 	provider := newFakeProvider().
-		register("primary.example.com/repo", "main", primary).
-		fail("ext.example.com/skills/foo", "main", errors.New("clone failed"))
+		register("github.com/repo/a.git", "main", repoAFS).
+		register("github.com/repo/b.git", "main", repoBFS)
 
-	_, err := resolver.Resolve(cfg, provider)
+	entryFS := makeMapFS(map[string]string{
+		".agentic-toolkit.yaml": stackBody(
+			[]string{"github.com/repo/a.git/stacks/a.yaml@main"},
+			nil,
+		),
+	})
+	st, err := stack.ParseInFS(entryFS, ".agentic-toolkit.yaml")
+	if err != nil {
+		t.Fatalf("parse stack: %v", err)
+	}
+
+	_, err = resolver.Resolve(st, entryFS, ".agentic-toolkit.yaml", provider)
 	if err == nil {
-		t.Fatalf("expected error from failed declared external")
+		t.Fatal("expected cycle error, got nil")
 	}
-	msg := err.Error()
-	// Provider error present.
-	if !strings.Contains(msg, "clone failed") {
-		t.Errorf("expected provider error in joined message; got %q", msg)
-	}
-	// Cascading "missing definition" / "ParseBundle" noise NOT present:
-	// the declared-external failure should suppress the per-entry ref
-	// processing.
-	if strings.Contains(msg, "ParseBundle") || strings.Contains(msg, "SKILL.md") {
-		t.Errorf("did not expect cascading parse error; got %q", msg)
+	if !strings.Contains(err.Error(), "cycle") {
+		t.Errorf("error should mention cycle, got: %v", err)
 	}
 }
 
 // ===== source ordering =====
 
-func TestResolve_SourceOrdering(t *testing.T) {
-	primary := makeMapFS(map[string]string{
-		"definitions/presets/default.yaml": validPresetBody("Bundle.",
-			"skills::ext.example.com/skills/zzz",
-			"skills::ext.example.com/skills/aaa",
+func TestResolve_SourcesOrderedStacksFirst(t *testing.T) {
+	stackRepoFS := makeMapFS(map[string]string{
+		"stacks/default.yaml": stackBody(nil, map[string][]string{
+			"skills": {"github.com/defs/x.git/skills/foo@main"},
+		}),
+	})
+	defsRepoFS := makeMapFS(map[string]string{
+		"skills/foo/SKILL.md": validSkillBody("Foo"),
+	})
+	provider := newFakeProvider().
+		register("github.com/stk/repo.git", "main", stackRepoFS).
+		register("github.com/defs/x.git", "main", defsRepoFS)
+
+	entryFS := makeMapFS(map[string]string{
+		".agentic-toolkit.yaml": stackBody(
+			[]string{"github.com/stk/repo.git/stacks/default.yaml@main"},
+			nil,
 		),
 	})
-	cfg := &config.ConsumerConfig{
-		Source: config.Source{URL: "p.example.com/repo", Ref: "main"},
-		Externals: []config.Source{
-			{URL: "decl-second.example.com/x", Ref: "v1"},
-			{URL: "decl-first.example.com/y", Ref: "v2"},
-		},
-		Presets: []string{"default"},
-	}
-	bundle := makeMapFS(map[string]string{"SKILL.md": validSkillBody("z")})
-
-	provider := newFakeProvider().
-		register("p.example.com/repo", "main", primary).
-		register("decl-second.example.com/x", "v1", makeMapFS(nil)).
-		register("decl-first.example.com/y", "v2", makeMapFS(nil)).
-		register("ext.example.com/skills/zzz", "", bundle).
-		register("ext.example.com/skills/aaa", "", bundle)
-
-	plan, err := resolver.Resolve(cfg, provider)
+	st, err := stack.ParseInFS(entryFS, ".agentic-toolkit.yaml")
 	if err != nil {
-		t.Fatalf("Resolve: %v", err)
+		t.Fatalf("parse stack: %v", err)
 	}
-	if len(plan.Sources) != 5 {
-		t.Fatalf("sources = %d, want 5", len(plan.Sources))
-	}
-	if plan.Sources[0].Kind != resolver.SourcePrimary {
-		t.Errorf("[0] kind = %v, want primary", plan.Sources[0].Kind)
-	}
-	// Declared in cfg.Externals order (NOT alphabetical).
-	if plan.Sources[1].URL != "decl-second.example.com/x" {
-		t.Errorf("[1] URL = %q, want decl-second.example.com/x", plan.Sources[1].URL)
-	}
-	if plan.Sources[2].URL != "decl-first.example.com/y" {
-		t.Errorf("[2] URL = %q, want decl-first.example.com/y", plan.Sources[2].URL)
-	}
-	// Implicit, sorted alphabetically by URL.
-	if plan.Sources[3].URL != "ext.example.com/skills/aaa" {
-		t.Errorf("[3] URL = %q, want ext.example.com/skills/aaa", plan.Sources[3].URL)
-	}
-	if plan.Sources[4].URL != "ext.example.com/skills/zzz" {
-		t.Errorf("[4] URL = %q, want ext.example.com/skills/zzz", plan.Sources[4].URL)
-	}
-}
 
-// ===== Plan.Lockfile() projection =====
-
-func TestPlan_LockfileProjection(t *testing.T) {
-	primary := makeMapFS(map[string]string{})
-	cfg := &config.ConsumerConfig{
-		Source: config.Source{URL: "primary.example.com/repo", Ref: "main"},
-	}
-	provider := newFakeProvider().register("primary.example.com/repo", "main", primary)
-
-	plan, err := resolver.Resolve(cfg, provider)
+	plan, err := resolver.Resolve(st, entryFS, ".agentic-toolkit.yaml", provider)
 	if err != nil {
-		t.Fatalf("Resolve: %v", err)
+		t.Fatalf("resolve: %v", err)
 	}
-	lf := plan.Lockfile()
-	if lf.Version != lockfile.Version {
-		t.Errorf("lockfile version = %d, want %d", lf.Version, lockfile.Version)
+	if len(plan.Sources) != 2 {
+		t.Fatalf("sources = %+v", plan.Sources)
 	}
-	if len(lf.Sources) != 1 {
-		t.Fatalf("lockfile sources = %d, want 1", len(lf.Sources))
+	if plan.Sources[0].Kind != resolver.SourceStack {
+		t.Errorf("first source should be stack, got %v", plan.Sources[0].Kind)
 	}
-	if lf.Sources[0].URL != "primary.example.com/repo" || lf.Sources[0].Ref != "main" {
-		t.Errorf("lockfile source = %+v", lf.Sources[0])
+	if plan.Sources[1].Kind != resolver.SourceDefinition {
+		t.Errorf("second source should be definition, got %v", plan.Sources[1].Kind)
 	}
-	if lf.Sources[0].SHA == "" {
-		t.Errorf("lockfile sha empty")
-	}
-}
-
-// ===== nil-arg safety =====
-
-func TestResolve_NilArgs(t *testing.T) {
-	if _, err := resolver.Resolve(nil, newFakeProvider()); err == nil {
-		t.Errorf("expected error for nil cfg")
-	}
-	if _, err := resolver.Resolve(&config.ConsumerConfig{}, nil); err == nil {
-		t.Errorf("expected error for nil provider")
-	}
-}
-
-// ===== helpers =====
-
-func strSliceEqual(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }

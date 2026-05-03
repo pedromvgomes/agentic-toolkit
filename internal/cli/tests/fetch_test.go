@@ -69,7 +69,7 @@ func TestFetch_Idempotent_OnSecondRun(t *testing.T) {
 // invoking the resolver here so fetch_test.go is independent of lock_test.go.
 func writeLockfile(t *testing.T, path, url, ref, sha string) {
 	t.Helper()
-	body := "version: 1\nsources:\n  - url: " + url + "\n    ref: " + ref + "\n    sha: " + sha + "\n"
+	body := "version: 2\nsources:\n  - url: " + url + "\n    ref: " + ref + "\n    sha: " + sha + "\n"
 	writeFile(t, path, body)
 }
 

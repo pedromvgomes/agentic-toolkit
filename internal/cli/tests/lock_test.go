@@ -15,8 +15,7 @@ func TestLock_ResolvesPrimaryAndWritesLockfile(t *testing.T) {
 	work := t.TempDir()
 	cache := t.TempDir()
 
-	writeFile(t, filepath.Join(work, ".agentic-toolkit.yaml"),
-		"source: "+url+"@main\npresets:\n  - default\n")
+	writeEntryStack(t, work, url, "main")
 
 	stdout, _, err := runCLI(t, work, "lock", "--cache", cache)
 	if err != nil {

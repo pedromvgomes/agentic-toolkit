@@ -5,8 +5,8 @@ import (
 	"io/fs"
 	"testing/fstest"
 
-	"github.com/pedromvgomes/agentic-toolkit/internal/config"
 	"github.com/pedromvgomes/agentic-toolkit/internal/resolver"
+	"github.com/pedromvgomes/agentic-toolkit/internal/sourceref"
 )
 
 // fakeProvider serves predetermined fs.FS + ResolvedRef pairs keyed by
@@ -23,7 +23,6 @@ type fakeEntry struct {
 	FS  fs.FS
 	Ref string // resolved ref (echoes input when input is non-empty)
 	SHA string
-	// Err, if set, is returned instead of a successful Provide.
 	Err error
 }
 
@@ -47,13 +46,7 @@ func (p *fakeProvider) register(url, ref string, fsys fs.FS) *fakeProvider {
 	return p
 }
 
-// fail makes Provide return an error for (url, ref).
-func (p *fakeProvider) fail(url, ref string, err error) *fakeProvider {
-	p.entries[fakeKey{URL: url, Ref: ref}] = fakeEntry{Err: err}
-	return p
-}
-
-func (p *fakeProvider) Provide(s config.Source) (fs.FS, resolver.ResolvedRef, error) {
+func (p *fakeProvider) Provide(s sourceref.Source) (fs.FS, resolver.ResolvedRef, error) {
 	e, ok := p.entries[fakeKey{URL: s.URL, Ref: s.Ref}]
 	if !ok {
 		return nil, resolver.ResolvedRef{}, fmt.Errorf("fakeProvider: no entry for %q@%q", s.URL, s.Ref)
@@ -75,10 +68,6 @@ func makeMapFS(files map[string]string) fstest.MapFS {
 
 // ===== reusable file bodies =====
 
-// validSkill returns a SKILL.md body whose name matches the given name.
-// Use as "definitions/skills/<name>/SKILL.md" inside a primary or as
-// "SKILL.md" inside an external bundle (frontmatter does not need to
-// declare name explicitly — the parser derives it).
 func validSkillBody(description string) string {
 	return "---\ndescription: " + description + "\n---\n\nbody\n"
 }
@@ -95,18 +84,26 @@ func validInstructionBody(description string) string {
 	return "---\ndescription: " + description + "\n---\n\nbody\n"
 }
 
-func validHookBody(description string) string {
-	return "description: " + description + "\nevent: PreToolUse\nhandler:\n  type: command\n  command: \"echo\"\n"
-}
-
-func validSettingBody(description string) string {
-	return "description: " + description + "\nvalue:\n  permissions:\n    deny:\n      - \"Bash(rm -rf:*)\"\n"
-}
-
-func validPresetBody(description string, defs ...string) string {
-	out := "description: " + description + "\ndefinitions:\n"
-	for _, d := range defs {
-		out += "  - " + d + "\n"
+// stackBody renders a stack manifest from the given category-keyed entry
+// lists. extends entries go under `extends:`. Use empty values to omit
+// fields.
+func stackBody(extends []string, entries map[string][]string) string {
+	out := ""
+	if len(extends) > 0 {
+		out += "extends:\n"
+		for _, e := range extends {
+			out += "  - " + e + "\n"
+		}
+	}
+	for _, key := range []string{"skills", "agents", "rules", "instructions", "commands", "hooks", "mcp", "settings"} {
+		list, ok := entries[key]
+		if !ok || len(list) == 0 {
+			continue
+		}
+		out += key + ":\n"
+		for _, e := range list {
+			out += "  - " + e + "\n"
+		}
 	}
 	return out
 }

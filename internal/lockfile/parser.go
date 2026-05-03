@@ -39,8 +39,12 @@ func parseBytes(path string, raw []byte) (*Lockfile, error) {
 		return nil, newErr(path, ErrMissingRequired, "version is required")
 	}
 	if lf.Version != Version {
+		hint := ""
+		if lf.Version == 1 {
+			hint = " (v1 was the consumer-config + preset schema; run `agtk lock` to regenerate as v2)"
+		}
 		return nil, newErr(path, ErrUnsupportedVersion,
-			"lockfile version %d is not supported (this build supports %d)", lf.Version, Version)
+			"lockfile version %d is not supported (this build supports %d)%s", lf.Version, Version, hint)
 	}
 	for i, s := range lf.Sources {
 		if s.URL == "" {
