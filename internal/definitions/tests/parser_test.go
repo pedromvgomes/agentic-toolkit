@@ -67,6 +67,47 @@ func TestParse_ValidRuleAlways(t *testing.T) {
 	}
 }
 
+// Rules accept a bare-markdown form: no `---` frontmatter at all. The
+// whole file is the body, the name comes from the filename, and the
+// description is empty. Other markdown categories (skills, agents,
+// instructions, commands) still require frontmatter.
+func TestParse_RuleBareMarkdown(t *testing.T) {
+	def, err := definitions.ParseInCatalog(validFS(), "definitions/rules/bare.md")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	r := def.(*definitions.Rule)
+	if r.Name != "bare" {
+		t.Errorf("derived name = %q, want %q", r.Name, "bare")
+	}
+	if r.Description != "" {
+		t.Errorf("description = %q, want empty for bare-markdown rule", r.Description)
+	}
+	if !strings.Contains(r.Body, "Just a plain markdown rule") {
+		t.Errorf("body should contain entire file contents, got %q", r.Body)
+	}
+	// Body must NOT have a synthesized frontmatter block prepended.
+	if strings.HasPrefix(r.Body, "---") {
+		t.Errorf("bare-markdown body should not start with `---`, got %q", r.Body[:20])
+	}
+}
+
+// Rules also accept frontmatter that omits the description. Other
+// metadata (paths/always) still parses.
+func TestParse_RuleFrontmatterWithoutDescription(t *testing.T) {
+	def, err := definitions.ParseInCatalog(validFS(), "definitions/rules/empty-description.md")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	r := def.(*definitions.Rule)
+	if r.Description != "" {
+		t.Errorf("description = %q, want empty", r.Description)
+	}
+	if len(r.Paths) != 1 || r.Paths[0] != "src/**" {
+		t.Errorf("paths = %v, want [src/**]", r.Paths)
+	}
+}
+
 func TestParse_ValidInstruction(t *testing.T) {
 	def, err := definitions.ParseInCatalog(validFS(), "definitions/instructions/notes.md")
 	if err != nil {
