@@ -12,11 +12,13 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
+	"github.com/pedromvgomes/agentic-toolkit/internal/stack"
 	"github.com/pedromvgomes/agentic-toolkit/internal/updatecheck"
 	"github.com/pedromvgomes/agentic-toolkit/internal/updater"
 	"github.com/pedromvgomes/agentic-toolkit/internal/updatestate"
@@ -183,8 +185,37 @@ func Execute() int {
 			fmt.Fprintln(env.Stdout, newerErr.Error())
 			return UpdateCheckExitCode
 		}
-		fmt.Fprintln(env.Stderr, "agtk:", err)
+		renderTopLevelError(env.Stderr, err)
 		return 1
 	}
 	return 0
+}
+
+// renderTopLevelError prints err to w in the standard "agtk: …" form,
+// but when the chain unwraps to a *stack.ParseError it renders the
+// location, kind, and message on separate indented lines so they don't
+// smush into one wall of text.
+func renderTopLevelError(w io.Writer, err error) {
+	var pe *stack.ParseError
+	if errors.As(err, &pe) {
+		fmt.Fprintln(w, "agtk: failed to parse stack manifest")
+		loc := pe.Path
+		if pe.Line > 0 {
+			loc = fmt.Sprintf("%s:%d", pe.Path, pe.Line)
+			if pe.Column > 0 {
+				loc = fmt.Sprintf("%s:%d:%d", pe.Path, pe.Line, pe.Column)
+			}
+		}
+		fmt.Fprintf(w, "  file:    %s\n", loc)
+		fmt.Fprintf(w, "  reason:  %s\n", pe.Kind)
+		for i, line := range strings.Split(pe.Message, "\n") {
+			label := "  detail:  "
+			if i > 0 {
+				label = "           "
+			}
+			fmt.Fprintf(w, "%s%s\n", label, line)
+		}
+		return
+	}
+	fmt.Fprintln(w, "agtk:", err)
 }

@@ -135,12 +135,15 @@ func runLockFrozen(env *Env, path string, resolved []byte, lock *lockfile.Lockfi
 // loadStack reads the entry-point stack file (.agentic-toolkit.yaml) from
 // workDir. It returns the parsed stack, an fs.FS rooted at workDir for
 // resolving local paths, and the entry-point's name within that FS.
-// Errors carry the absolute path so users see a debuggable message.
+//
+// stack.ParseFile already returns a *ParseError whose Error() includes
+// the path; we propagate it as-is to avoid duplicating the path in the
+// rendered message.
 func loadStack(workDir string) (*stack.Stack, fs.FS, string, error) {
 	path := filepath.Join(workDir, ConfigFileName)
 	st, err := stack.ParseFile(path)
 	if err != nil {
-		return nil, nil, "", fmt.Errorf("read %s: %w", path, err)
+		return nil, nil, "", err
 	}
 	return st, os.DirFS(workDir), ConfigFileName, nil
 }

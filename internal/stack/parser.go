@@ -133,19 +133,33 @@ func (e *ExtendsRef) UnmarshalYAML(unmarshal func(interface{}) error) error {
 }
 
 // ParseEntryRef parses one per-category entry string into an EntryRef.
-// Disambiguation:
+// Disambiguation, in order:
 //
-//   - contains `.git/` → URL ref (with optional `@<ref>`)
 //   - starts with `./` or `/` → Path ref
+//   - contains `.git/` → URL ref (with optional `@<ref>`)
+//   - starts with a known provider host (github.com/, bitbucket.org/,
+//     codeberg.org/) followed by at least owner/repo → URL ref, with the
+//     `.git/` boundary inferred. Lets users write the natural form they
+//     copy out of a browser.
 //   - otherwise → Bare name
 //
 // `cat` is consulted only to decide whether '/' inside a bare name is
-// permitted (commands accept nested namespacing; everything else is flat).
+// permitted (commands accept nested namespacing; everything else is a
+// single segment).
 func ParseEntryRef(raw string, cat definitions.Category) (EntryRef, error) {
 	if raw == "" {
 		return EntryRef{}, fmt.Errorf("entry is empty")
 	}
 	out := EntryRef{Raw: raw}
+
+	if strings.HasPrefix(raw, "./") || strings.HasPrefix(raw, "/") {
+		out.Kind = RefPath
+		out.Path = path.Clean(filepath.ToSlash(raw))
+		if out.Path == "" || out.Path == "." {
+			return EntryRef{}, fmt.Errorf("path entry %q resolves to empty", raw)
+		}
+		return out, nil
+	}
 
 	if strings.Contains(raw, gitBoundary) {
 		url, ref := splitAtRef(raw)
@@ -158,12 +172,11 @@ func ParseEntryRef(raw string, cat definitions.Category) (EntryRef, error) {
 		return out, nil
 	}
 
-	if strings.HasPrefix(raw, "./") || strings.HasPrefix(raw, "/") {
-		out.Kind = RefPath
-		out.Path = path.Clean(filepath.ToSlash(raw))
-		if out.Path == "" || out.Path == "." {
-			return EntryRef{}, fmt.Errorf("path entry %q resolves to empty", raw)
-		}
+	if normalised, ok := inferProviderURL(raw); ok {
+		url, ref := splitAtRef(normalised)
+		out.Kind = RefURL
+		out.URL = url
+		out.Ref = ref
 		return out, nil
 	}
 
@@ -178,11 +191,24 @@ func ParseEntryRef(raw string, cat definitions.Category) (EntryRef, error) {
 // ParseExtendsRef parses one entry from a stack's `extends:` list. Only
 // URL and Path forms are valid — bare names are rejected, since the
 // convention root is for definition lookups, not stack imports.
+//
+// Provider auto-split applies the same way as ParseEntryRef: an entry
+// like `github.com/owner/repo/stacks/foo.yaml` is accepted and the
+// `.git/` boundary is inferred.
 func ParseExtendsRef(raw string) (ExtendsRef, error) {
 	if raw == "" {
 		return ExtendsRef{}, fmt.Errorf("extends entry is empty")
 	}
 	out := ExtendsRef{Raw: raw}
+
+	if strings.HasPrefix(raw, "./") || strings.HasPrefix(raw, "/") {
+		out.Kind = RefPath
+		out.Path = path.Clean(filepath.ToSlash(raw))
+		if out.Path == "" || out.Path == "." {
+			return ExtendsRef{}, fmt.Errorf("path extends entry %q resolves to empty", raw)
+		}
+		return out, nil
+	}
 
 	if strings.Contains(raw, gitBoundary) {
 		url, ref := splitAtRef(raw)
@@ -195,15 +221,17 @@ func ParseExtendsRef(raw string) (ExtendsRef, error) {
 		return out, nil
 	}
 
-	if strings.HasPrefix(raw, "./") || strings.HasPrefix(raw, "/") {
-		out.Kind = RefPath
-		out.Path = path.Clean(filepath.ToSlash(raw))
-		if out.Path == "" || out.Path == "." {
-			return ExtendsRef{}, fmt.Errorf("path extends entry %q resolves to empty", raw)
-		}
+	if normalised, ok := inferProviderURL(raw); ok {
+		url, ref := splitAtRef(normalised)
+		out.Kind = RefURL
+		out.URL = url
+		out.Ref = ref
 		return out, nil
 	}
 
+	if hint := providerURLHint(raw); hint != "" {
+		return ExtendsRef{}, fmt.Errorf("extends entry %q looks like a URL but is missing the %q boundary. Did you mean %q? Bare names are not permitted in extends", raw, gitBoundary, hint)
+	}
 	return ExtendsRef{}, fmt.Errorf("extends entry %q must be a URL (containing %q) or a local path (./ or /); bare names are not permitted in extends", raw, gitBoundary)
 }
 
@@ -221,8 +249,13 @@ func splitAtRef(s string) (left, right string) {
 }
 
 // validateBareName enforces per-category name shape on a bare entry name.
-// Commands accept nested namespacing (group/cmd); every other category
-// must be flat.
+// Commands accept nested names like "group/cmd"; every other category
+// must be a single segment with no '/' separators.
+//
+// When the input looks like it was meant to be a URL (host with a dot
+// before the first '/'), the error includes a corrected suggestion so
+// the user doesn't have to dig through docs to figure out what '.git/'
+// is for.
 func validateBareName(name string, cat definitions.Category) error {
 	if name == "" {
 		return fmt.Errorf("bare name is empty")
@@ -236,9 +269,87 @@ func validateBareName(name string, cat definitions.Category) error {
 		}
 	}
 	if cat != definitions.CategoryCommand && strings.Contains(name, "/") {
-		return fmt.Errorf("%s names must be flat (got %q); only commands accept nested namespacing", cat, name)
+		if _, ok := inferProviderURL(name); ok {
+			// Should never reach here — ParseEntryRef auto-splits these
+			// before validateBareName runs. Kept as a defensive guard.
+			return fmt.Errorf("internal error: provider URL %q reached bare-name validation", name)
+		}
+		if hint := providerURLHint(name); hint != "" {
+			return fmt.Errorf("%s name %q looks like a URL but is missing the %q boundary that separates the repo URL from the in-repo path. Add %q after the repo name — for example: %q", cat, name, gitBoundary, gitBoundary, hint)
+		}
+		return fmt.Errorf("%s name %q cannot contain '/'; only commands support nested names like 'group/cmd'", cat, name)
 	}
 	return nil
+}
+
+// knownProviderHosts lists the git hosts where the repo URL is
+// conventionally exactly host/owner/repo. For these, agtk infers the
+// `.git/` boundary so users can copy the form they see in a browser.
+//
+// gitlab.com is intentionally excluded because nested groups
+// (gitlab.com/group/subgroup/repo) make owner/repo segment-counting
+// ambiguous; gitlab users still need an explicit `.git/`.
+var knownProviderHosts = []string{
+	"github.com",
+	"bitbucket.org",
+	"codeberg.org",
+}
+
+// inferProviderURL returns a normalised URL — with an explicit `.git/`
+// boundary inserted after owner/repo — when raw starts with a known
+// provider host followed by at least owner/repo. The optional `@<ref>`
+// suffix is preserved. Returns ("", false) for inputs that don't match.
+func inferProviderURL(raw string) (string, bool) {
+	base, ref := splitAtRef(raw)
+	for _, host := range knownProviderHosts {
+		prefix := host + "/"
+		if !strings.HasPrefix(base, prefix) {
+			continue
+		}
+		rest := base[len(prefix):]
+		owner, afterOwner, hasOwner := strings.Cut(rest, "/")
+		if !hasOwner || owner == "" {
+			return "", false
+		}
+		repo, sub, _ := strings.Cut(afterOwner, "/")
+		if repo == "" {
+			return "", false
+		}
+		out := host + "/" + owner + "/" + repo + ".git"
+		if sub != "" {
+			out += "/" + sub
+		}
+		if ref != "" {
+			out += "@" + ref
+		}
+		return out, true
+	}
+	return "", false
+}
+
+// providerURLHint returns a "did you mean…" suggestion for inputs that
+// look like a URL but are missing the `.git/` boundary. For known
+// providers we can build the exact corrected form via inferProviderURL;
+// for any other host-shaped input (a '.' before the first '/') we fall
+// back to a generic instruction.
+func providerURLHint(raw string) string {
+	if normalised, ok := inferProviderURL(raw); ok {
+		return normalised
+	}
+	if firstSlash := strings.Index(raw, "/"); firstSlash > 0 {
+		host := raw[:firstSlash]
+		if strings.Contains(host, ".") {
+			rest := raw[firstSlash+1:]
+			owner, after, hasOwner := strings.Cut(rest, "/")
+			if hasOwner && owner != "" {
+				repo, sub, _ := strings.Cut(after, "/")
+				if repo != "" && sub != "" {
+					return host + "/" + owner + "/" + repo + ".git/" + sub
+				}
+			}
+		}
+	}
+	return ""
 }
 
 // ===== legacy-format detection =====
