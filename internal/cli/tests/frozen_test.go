@@ -14,8 +14,7 @@ func TestLockFrozen_CleanLockfile_Succeeds(t *testing.T) {
 	work := t.TempDir()
 	cache := t.TempDir()
 
-	writeFile(t, filepath.Join(work, ".agentic-toolkit.yaml"),
-		"source: "+url+"@main\npresets:\n  - default\n")
+	writeEntryStack(t, work, url, "main")
 	if _, _, err := runCLI(t, work, "lock", "--cache", cache); err != nil {
 		t.Fatalf("seed lock: %v", err)
 	}
@@ -37,8 +36,7 @@ func TestLockFrozen_DriftedLockfile_Errors(t *testing.T) {
 	work := t.TempDir()
 	cache := t.TempDir()
 
-	writeFile(t, filepath.Join(work, ".agentic-toolkit.yaml"),
-		"source: "+url+"@main\npresets:\n  - default\n")
+	writeEntryStack(t, work, url, "main")
 	// Hand-write a lockfile with a wrong SHA.
 	writeLockfile(t, filepath.Join(work, ".agentic-toolkit.lock.yaml"),
 		url, "main", "0000000000000000000000000000000000000000")
@@ -59,8 +57,7 @@ func TestLockFrozen_MissingLockfile_Errors(t *testing.T) {
 	work := t.TempDir()
 	cache := t.TempDir()
 
-	writeFile(t, filepath.Join(work, ".agentic-toolkit.yaml"),
-		"source: "+url+"@main\npresets:\n  - default\n")
+	writeEntryStack(t, work, url, "main")
 
 	_, _, err := runCLI(t, work, "lock", "--cache", cache, "--frozen")
 	if err == nil {
@@ -77,8 +74,7 @@ func TestLockJSON_WroteAction(t *testing.T) {
 	work := t.TempDir()
 	cache := t.TempDir()
 
-	writeFile(t, filepath.Join(work, ".agentic-toolkit.yaml"),
-		"source: "+url+"@main\npresets:\n  - default\n")
+	writeEntryStack(t, work, url, "main")
 
 	stdout, _, err := runCLI(t, work, "lock", "--cache", cache, "--json")
 	if err != nil {

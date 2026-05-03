@@ -13,8 +13,7 @@ func TestPlanJSON_Schema(t *testing.T) {
 	work := t.TempDir()
 	cache := t.TempDir()
 
-	writeFile(t, filepath.Join(work, ".agentic-toolkit.yaml"),
-		"source: "+url+"@main\npresets:\n  - default\n")
+	writeEntryStack(t, work, url, "main")
 	writeLockfile(t, filepath.Join(work, ".agentic-toolkit.lock.yaml"), url, "main", sha)
 
 	stdout, _, err := runCLI(t, work, "plan", "--cache", cache, "--json")
@@ -54,8 +53,7 @@ func TestPlanQuiet_DoesNotBreak(t *testing.T) {
 	work := t.TempDir()
 	cache := t.TempDir()
 
-	writeFile(t, filepath.Join(work, ".agentic-toolkit.yaml"),
-		"source: "+url+"@main\npresets:\n  - default\n")
+	writeEntryStack(t, work, url, "main")
 	writeLockfile(t, filepath.Join(work, ".agentic-toolkit.lock.yaml"), url, "main", sha)
 
 	if _, _, err := runCLI(t, work, "plan", "--cache", cache, "--quiet"); err != nil {

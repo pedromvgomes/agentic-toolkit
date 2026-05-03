@@ -377,7 +377,7 @@ env:
 
 ### Notes
 
-**Server scope** (local/project/user) is decided by the consumer at sync time via `.agentic-toolkit/config.yaml`, not by the definition. A single MCP definition can be installed at any scope.
+**Server scope** (local/project/user) is decided by the consumer at sync time via `.agentic-toolkit.yaml`, not by the definition. A single MCP definition can be installed at any scope.
 
 **Variable expansion.** Field values may use `${VAR}` and `${VAR:-default}` (canonical, matches Claude). Adapters translate to per-platform syntax (Cursor `${env:VAR}`, Copilot `${input:VAR}`/`${env:VAR}`).
 
@@ -413,42 +413,4 @@ value:
 **Pass-through.** The `value` map is decoded as `map[string]any`; agtk performs no platform-specific validation. Adapters validate keys against the target platform's settings schema and skip-with-warn on unsupported keys.
 
 **Granularity.** A single Setting definition is the dedupe unit. To split ownership of multiple top-level keys across presets, use one Setting definition per concern.
-
-## Presets
-
-**Path:** `definitions/presets/<name>.yaml`  
-**Shape:** YAML manifest (no body)
-
-A preset is a named bundle of definition references — toolkit-side metadata that consumers select by name in their config. Presets are not renderable themselves; the resolver expands each preset's `definitions` list against the available sources. Presets are not in the Category enum and do not embed `Common`.
-
-### Frontmatter fields
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `name` | `string` | no | Optional. If present, must equal the filename stem. |
-| `description` | `string` | **yes** | One-line summary used in tooling and discovery. |
-| `definitions` | `[]string` | **yes** | Ordered list of definition refs. Local form: 'skills/foo' (or 'commands/git/commit' for nested). External form: '<plural>::<repo-url>.git/<in-repo-path>[@<ref>]'. For skill/agent the path points to the bundle directory (e.g. 'skills::github.com/owner/repo.git/skills/foo@main'); for rule/instruction/command/hook/mcp it points to the file itself, including extension (e.g. 'rules::github.com/owner/repo.git/rules/style.md@main'). |
-
-### Reference grammar
-
-Each entry in `definitions` is one of:
-
-- **Local**: `<plural-dir>/<name>` — e.g. `skills/challenge`, `commands/git/commit`.
-- **External**: `<plural-dir>::<repo-url>.git/<in-repo-path>[@<ref>]`. The `.git/` substring is the explicit boundary between the repository URL and the in-repo path. The optional `<ref>` is anything git accepts (branch, tag, sha); the parser does not classify it — that is the resolver's job.
-
-External refs come in two artifact shapes, by category:
-
-- **Bundle (skill, agent)** — `<in-repo-path>` points to the bundle directory; the parser reads the fixed entry file (`SKILL.md` / `AGENT.md`) from inside. The bundle directory's last segment is the canonical name. Example: `skills::github.com/owner/repo.git/skills/foo@main`.
-- **File (rule, instruction, command, hook, mcp)** — `<in-repo-path>` points to the file itself, extension included. The remote layout is irrelevant; the canonical name comes from the file's `name:` field, falling back to the filename stem. Example: `rules::github.com/owner/repo.git/rules/style.md@main`. Nested names (e.g. `git/commit` for commands) are declared in the file's frontmatter — non-command file categories must remain flat.
-
-### Example
-
-```yaml
-description: Default toolkit bundle.
-definitions:
-  - skills/challenge
-  - rules/bare-repos
-  - skills::github.com/anthropics/skills.git/skills/skill-creator@main
-  - rules::github.com/owner/repo.git/rules/style.md@main
-```
 

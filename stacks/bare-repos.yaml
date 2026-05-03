@@ -1,0 +1,3 @@
+description: Bare-repo + worktree workflow rule. Stack on top of `default.yaml` when adopting that layout.
+rules:
+  - bare-repos

@@ -39,7 +39,7 @@ func newPlanCmd(env *Env) *cobra.Command {
 }
 
 func runPlan(env *Env, cacheRoot string, jsonOut, quiet bool) error {
-	cfg, err := loadConfig(env.WorkDir)
+	st, entryFS, entryName, err := loadStack(env.WorkDir)
 	if err != nil {
 		return err
 	}
@@ -51,7 +51,7 @@ func runPlan(env *Env, cacheRoot string, jsonOut, quiet bool) error {
 	if err != nil {
 		return err
 	}
-	plan, err := resolver.Resolve(cfg, sourcestore.NewFrozenProvider(cache, lock))
+	plan, err := resolver.Resolve(st, entryFS, entryName, sourcestore.NewFrozenProvider(cache, lock))
 	if err != nil {
 		return fmt.Errorf("resolve: %w", err)
 	}
@@ -81,7 +81,7 @@ func printPlan(env *Env, plan *resolver.Plan, quiet bool) {
 	for _, cat := range cats {
 		fmt.Fprintf(env.Stdout, "  %s:\n", cat)
 		for _, d := range byCat[cat] {
-			fmt.Fprintf(env.Stdout, "    - %s (preset:%s, source:%s)\n", d.Name, d.PresetName, d.SourceURL)
+			fmt.Fprintf(env.Stdout, "    - %s (stack:%s, source:%s)\n", d.Name, displayStack(d.StackName), d.SourceURL)
 		}
 	}
 	if !quiet && len(plan.Diagnostics) > 0 {
@@ -99,4 +99,14 @@ func shortSHA(sha string) string {
 		return sha
 	}
 	return sha[:12]
+}
+
+// displayStack renders a stack identifier for human-readable output.
+// The empty string identifies the entry-point stack; rendered as
+// "<entry>".
+func displayStack(id string) string {
+	if id == "" {
+		return "<entry>"
+	}
+	return id
 }

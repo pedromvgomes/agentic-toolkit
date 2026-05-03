@@ -1,15 +1,19 @@
-// Package lockfile models .agentic-toolkit/lock.yaml — the resolved-state
-// counterpart to internal/config. The resolver writes it; later runs read
+// Package lockfile models .agentic-toolkit.lock.yaml — the resolved-state
+// counterpart to internal/stack. The resolver writes it; later runs read
 // it to reproduce the same fetch graph deterministically.
 //
-// Slice-1 schema is intentionally minimal: a version tag and the list of
-// sources touched (primary, declared externals, and any implicit sources
-// pulled in via preset refs). No timestamp, no content hash, no resolved-
-// definition manifest.
+// The schema is intentionally minimal: a version tag and the list of
+// sources touched. Sources include every URL reached via the entry-point
+// stack's `extends:` graph plus every URL reached via per-category URL
+// entries. No timestamp, no content hash, no resolved-definition manifest.
 package lockfile
 
-// Version is the only currently-supported lockfile schema version.
-const Version = 1
+// Version is the lockfile schema version this build emits and accepts.
+// Bumped to 2 when the consumer config + preset format collapsed into
+// the single stack manifest (internal/stack). Lockfiles emitted by
+// previous versions are rejected with a clear error directing the user
+// to regenerate via `agtk lock`.
+const Version = 2
 
 // Lockfile is the deserialised .agentic-toolkit/lock.yaml.
 type Lockfile struct {

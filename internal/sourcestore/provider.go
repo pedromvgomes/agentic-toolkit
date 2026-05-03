@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"io/fs"
 
-	"github.com/pedromvgomes/agentic-toolkit/internal/config"
 	"github.com/pedromvgomes/agentic-toolkit/internal/lockfile"
 	"github.com/pedromvgomes/agentic-toolkit/internal/resolver"
+	"github.com/pedromvgomes/agentic-toolkit/internal/sourceref"
 )
 
 // LiveProvider implements resolver.SourceProvider against a live remote.
@@ -28,7 +28,7 @@ func NewLiveProvider(cache *Cache) *LiveProvider {
 // URL shape (whole-source vs direct-ref). The returned ResolvedRef
 // always carries a non-empty Ref — empty input refs are filled in with
 // the remote's default branch name.
-func (p *LiveProvider) Provide(s config.Source) (fs.FS, resolver.ResolvedRef, error) {
+func (p *LiveProvider) Provide(s sourceref.Source) (fs.FS, resolver.ResolvedRef, error) {
 	repoURL, subPath := splitURL(s.URL)
 	sha, resolvedRef, err := gitResolveRef(repoURL, s.Ref)
 	if err != nil {
@@ -81,7 +81,7 @@ func NewFrozenProvider(cache *Cache, lock *lockfile.Lockfile) *FrozenProvider {
 // Errors with ErrPinNotFound if no pin matches. Hydrates the cache from
 // the pinned SHA on miss; downstream rev-parse verifies the fetched
 // commit is exactly the pin (ErrSHAMismatch on divergence).
-func (p *FrozenProvider) Provide(s config.Source) (fs.FS, resolver.ResolvedRef, error) {
+func (p *FrozenProvider) Provide(s sourceref.Source) (fs.FS, resolver.ResolvedRef, error) {
 	pin, ok := p.lookup(s)
 	if !ok {
 		return nil, resolver.ResolvedRef{}, fmt.Errorf("%w: %s@%s", ErrPinNotFound, s.URL, s.Ref)
@@ -99,7 +99,7 @@ func (p *FrozenProvider) Provide(s config.Source) (fs.FS, resolver.ResolvedRef, 
 	return fsys, resolver.ResolvedRef{Ref: pin.Ref, SHA: pin.SHA}, nil
 }
 
-func (p *FrozenProvider) lookup(s config.Source) (lockfile.ResolvedSource, bool) {
+func (p *FrozenProvider) lookup(s sourceref.Source) (lockfile.ResolvedSource, bool) {
 	if pin, ok := p.byKey[srcKey{URL: s.URL, Ref: s.Ref}]; ok {
 		return pin, true
 	}

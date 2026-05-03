@@ -13,28 +13,28 @@ import (
 
 func newInitCmd(env *Env) *cobra.Command {
 	var (
-		source string
-		force  bool
+		extendsURL string
+		force      bool
 	)
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Write a starter " + ConfigFileName + " to the working directory",
 		Long: "Write a starter " + ConfigFileName + " to the working directory.\n\n" +
 			"Refuses to overwrite an existing file unless --force is given. The\n" +
-			"--source flag seeds the primary toolkit source URL; if omitted, the\n" +
+			"--extends flag seeds the first stack import URL; if omitted, the\n" +
 			"scaffold is written with a placeholder the user must edit before\n" +
-			"running `agtk lock`.",
+			"running `agtk lock` or `agtk sync`.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runInit(env, source, force)
+			return runInit(env, extendsURL, force)
 		},
 	}
-	cmd.Flags().StringVar(&source, "source", "", "primary source URL to seed in the scaffold (e.g. github.com/owner/repo)")
+	cmd.Flags().StringVar(&extendsURL, "extends", "", "stack URL to seed in the scaffold's extends list (e.g. github.com/owner/repo.git/stacks/default.yaml@main)")
 	cmd.Flags().BoolVarP(&force, "force", "f", false, "overwrite an existing "+ConfigFileName)
 	return cmd
 }
 
-func runInit(env *Env, source string, force bool) error {
+func runInit(env *Env, extendsURL string, force bool) error {
 	path := filepath.Join(env.WorkDir, ConfigFileName)
 	if !force {
 		if _, err := os.Stat(path); err == nil {
@@ -43,7 +43,7 @@ func runInit(env *Env, source string, force bool) error {
 			return fmt.Errorf("stat %s: %w", path, err)
 		}
 	}
-	body := scaffold(source)
+	body := scaffold(extendsURL)
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
@@ -51,28 +51,29 @@ func runInit(env *Env, source string, force bool) error {
 	return nil
 }
 
-// scaffold returns the YAML body for a fresh consumer config. When
-// source is empty, the URL field carries a TODO placeholder and a
-// comment instructs the user to edit it.
-func scaffold(source string) string {
-	urlLine := "source: " + source
-	notes := ""
-	if source == "" {
-		urlLine = "source: TODO/replace-with-toolkit-source-url"
-		notes = "# TODO: replace `source` with your toolkit repository URL\n" +
-			"#       (e.g. github.com/your-org/agentic-toolkit), then run `agtk lock`.\n\n"
-	}
+// scaffold returns the YAML body for a fresh entry-point stack manifest.
+// When extendsURL is empty, the file carries a TODO placeholder line and
+// a comment instructing the user to edit it.
+func scaffold(extendsURL string) string {
 	var b strings.Builder
-	b.WriteString("# .agentic-toolkit.yaml — agentic-toolkit consumer config.\n")
-	b.WriteString("# Run `agtk lock` after editing to produce " + LockFileName + ".\n\n")
-	b.WriteString(notes)
-	b.WriteString(urlLine + "\n")
-	b.WriteString("# ref: main         # optional; default branch if omitted\n\n")
-	b.WriteString("# platforms:\n")
-	b.WriteString("#   - claude-code\n\n")
-	b.WriteString("# externals:\n")
-	b.WriteString("#   - github.com/another-org/their-toolkit@v1.0.0\n\n")
-	b.WriteString("presets:\n")
-	b.WriteString("  - default\n")
+	b.WriteString("# .agentic-toolkit.yaml — entry-point stack manifest.\n")
+	b.WriteString("# Run `agtk sync` to fetch and render in one step, or\n")
+	b.WriteString("# `agtk lock && agtk render` for the two-pass workflow.\n\n")
+	if extendsURL == "" {
+		b.WriteString("# TODO: replace the extends entry below with a real stack URL\n")
+		b.WriteString("#       (e.g. github.com/your-org/agentic-toolkit.git/stacks/default.yaml@main),\n")
+		b.WriteString("#       then run `agtk lock`.\n\n")
+		b.WriteString("extends:\n")
+		b.WriteString("  - TODO/replace-with-stack-url.git/stacks/default.yaml@main\n")
+	} else {
+		b.WriteString("extends:\n")
+		b.WriteString("  - " + extendsURL + "\n")
+	}
+	b.WriteString("\n")
+	b.WriteString("# Add definitions on top of the imported stack(s):\n")
+	b.WriteString("# skills:\n")
+	b.WriteString("#   - ./local-skills/my-skill\n")
+	b.WriteString("# rules:\n")
+	b.WriteString("#   - github.com/owner/repo.git/rules/style.md@main\n")
 	return b.String()
 }

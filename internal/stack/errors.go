@@ -1,12 +1,13 @@
-package config
+package stack
 
 import (
 	"errors"
 	"fmt"
 )
 
-// ParseError carries the source path and (when known) line/column for any
-// failure when reading a consumer config file.
+// ParseError is returned for any failure when reading or validating a stack
+// manifest. It carries the source path and (when known) line/column inside
+// the file.
 type ParseError struct {
 	Path    string
 	Line    int
@@ -25,8 +26,9 @@ const (
 	ErrYAMLSyntax      ErrorKind = "yaml_syntax"
 	ErrUnknownField    ErrorKind = "unknown_field"
 	ErrMissingRequired ErrorKind = "missing_required"
-	ErrUnknownPlatform ErrorKind = "unknown_platform"
-	ErrInvalidSource   ErrorKind = "invalid_source"
+	ErrInvalidEntry    ErrorKind = "invalid_entry"
+	ErrInvalidExtends  ErrorKind = "invalid_extends"
+	ErrLegacyConfig    ErrorKind = "legacy_config"
 )
 
 func (e *ParseError) Error() string {

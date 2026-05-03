@@ -4,119 +4,72 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"path"
 	"sort"
 	"strings"
 
-	"github.com/pedromvgomes/agentic-toolkit/internal/config"
 	"github.com/pedromvgomes/agentic-toolkit/internal/definitions"
+	"github.com/pedromvgomes/agentic-toolkit/internal/sourceref"
+	"github.com/pedromvgomes/agentic-toolkit/internal/stack"
 )
 
-// Resolve walks cfg's preset stack against the primary source (and any
-// external sources reached via preset refs) and returns a Plan. On any
-// failure during preset/definition resolution, errors are joined and no
-// Plan is returned. A failure to provide the primary source is fatal and
-// returned immediately; failures to provide a single declared external or
-// to resolve a single preset entry are accumulated and the resolver
-// continues.
-func Resolve(cfg *config.ConsumerConfig, provider SourceProvider) (*Plan, error) {
-	if cfg == nil {
-		return nil, errors.New("resolver: nil ConsumerConfig")
+// Resolve walks an entry-point stack against the SourceProvider and
+// returns a Plan.
+//
+// entry is the parsed entry-point stack (typically the consumer's
+// .agentic-toolkit.yaml). entryFS is the filesystem that holds the
+// entry-point file: bare-name and ./path lookups in the entry-point
+// stack resolve against entryFS, with the entry-point file at
+// entryPathInFS within it. Tests can pass arbitrary fs.FS values; the
+// CLI passes os.DirFS(filepath.Dir(configPath)) and the basename as
+// entryPathInFS.
+//
+// On any failure during DAG traversal or definition resolution, errors
+// are joined and no Plan is returned. A failure to provide a source is
+// surfaced as an error against the entry that triggered the fetch; the
+// resolver continues with the rest of the work to give a complete
+// failure picture.
+func Resolve(entry *stack.Stack, entryFS fs.FS, entryPathInFS string, provider SourceProvider) (*Plan, error) {
+	if entry == nil {
+		return nil, errors.New("resolver: nil entry stack")
+	}
+	if entryFS == nil {
+		return nil, errors.New("resolver: nil entryFS")
 	}
 	if provider == nil {
 		return nil, errors.New("resolver: nil SourceProvider")
 	}
 
-	// 1. Acquire primary. Failure is fatal: without it we can't load
-	//    presets, so reporting any other error would be cascade noise.
-	primaryFS, primaryRR, err := provider.Provide(cfg.Source)
-	if err != nil {
-		return nil, fmt.Errorf("resolver: primary source %q: %w", cfg.Source.URL, err)
+	st := newTraversalState(provider)
+
+	// Entry-point stack uses the empty string as its identifier and "" for
+	// its source URL/Ref (it lives in the consumer's local FS, not in any
+	// fetched source).
+	entryCtx := stackCtx{
+		Identifier:    "",
+		SourceURL:     "",
+		SourceRef:     "",
+		FS:            entryFS,
+		FilePathInFS:  entryPathInFS,
+	}
+	if err := st.loadStack(entry, entryCtx); err != nil {
+		st.errs = append(st.errs, err)
 	}
 
-	srcs := newSourceTable()
-	srcs.add(cfg.Source.URL, primaryRR.Ref, primaryRR.SHA, SourcePrimary)
-
-	var errs []error
-
-	// 2. Acquire each declared external. Failures collect; a missing
-	//    declared external suppresses the sub-walk for that source but
-	//    does not abort other sources.
-	declaredFS := make(map[srcKey]fs.FS, len(cfg.Externals))
-	declaredFailed := make(map[srcKey]bool, len(cfg.Externals))
-	for _, ext := range cfg.Externals {
-		k := srcKey{URL: ext.URL, Ref: ext.Ref}
-		extFS, extRR, perr := provider.Provide(ext)
-		if perr != nil {
-			errs = append(errs, fmt.Errorf("resolver: declared external %q: %w", ext.URL, perr))
-			declaredFailed[k] = true
-			continue
-		}
-		declaredFS[k] = extFS
-		srcs.add(ext.URL, extRR.Ref, extRR.SHA, SourceDeclared)
+	if len(st.errs) > 0 {
+		return nil, errors.Join(st.errs...)
 	}
 
-	// 3. Walk presets in stacking order. Each entry produces an
-	//    intermediate `walked` record; dedupe + ordering happen after.
-	var walked []walkedDef
-	var diags []Diagnostic
-
-	for _, presetName := range cfg.Presets {
-		preset, perr := readPreset(primaryFS, presetName)
-		if perr != nil {
-			errs = append(errs, fmt.Errorf("resolver: preset %q: %w", presetName, perr))
-			continue
-		}
-		for i, refStr := range preset.Definitions {
-			ref, rerr := definitions.ParsePresetRef(refStr)
-			if rerr != nil {
-				// ParsePresetInCatalog already validated each ref, so
-				// reaching here means the preset file changed shape
-				// underneath us. Surface it as an error against this
-				// preset entry.
-				errs = append(errs, fmt.Errorf("resolver: preset %q entry %d (%q): %w", presetName, i, refStr, rerr))
-				continue
-			}
-			w, werr := walkRef(provider, primaryFS, cfg, ref, refStr, presetName, declaredFS, declaredFailed, srcs, &diags)
-			if werr != nil {
-				errs = append(errs, werr)
-				continue
-			}
-			if w != nil {
-				walked = append(walked, *w)
-			}
-		}
-	}
-
-	// 4. Dedupe by (Category, Name): last entry wins, losers emit
-	//    DiagOverride. Walk order respects (preset order, in-preset
-	//    entry order).
-	winners := make(map[defKey]walkedDef)
-	for _, w := range walked {
-		k := defKey{Category: w.Category, Name: w.Name}
-		if prev, ok := winners[k]; ok {
-			diags = append(diags, Diagnostic{
-				Kind: DiagOverride,
-				Message: fmt.Sprintf("%s/%s from %s was overridden by entry from %s via preset %q",
-					w.Category.CategoryDir(), w.Name, prev.SourceURL, w.SourceURL, w.PresetName),
-				Category:   w.Category,
-				Name:       w.Name,
-				SourceURL:  prev.SourceURL,
-				PresetName: w.PresetName,
-			})
-		}
-		winners[k] = w
-	}
-
-	// 5. Materialize ordered Definitions.
-	defs := make([]PlannedDefinition, 0, len(winners))
-	for _, w := range winners {
+	// Collect winners → ordered Definitions.
+	defs := make([]PlannedDefinition, 0, len(st.overlay))
+	for _, w := range st.overlay {
 		defs = append(defs, PlannedDefinition{
 			Category:   w.Category,
 			Name:       w.Name,
 			Definition: w.Definition,
 			SourceURL:  w.SourceURL,
 			SourceRef:  w.SourceRef,
-			PresetName: w.PresetName,
+			StackName:  w.StackName,
 			EntryPath:  w.EntryPath,
 			SourceFS:   w.SourceFS,
 		})
@@ -128,30 +81,74 @@ func Resolve(cfg *config.ConsumerConfig, provider SourceProvider) (*Plan, error)
 		return defs[i].Name < defs[j].Name
 	})
 
-	// 6. Order sources: Primary, Declared (config order), Implicit
-	//    (sorted by (URL, Ref)).
-	plannedSources := srcs.ordered(cfg)
+	// Order sources: SourceStack first (in visit order), then
+	// SourceDefinition sorted by (URL, Ref).
+	plannedSources := st.orderedSources()
 
-	if len(errs) > 0 {
-		return nil, errors.Join(errs...)
-	}
 	return &Plan{
-		Config:      cfg,
+		Stack:       entry,
+		StackOrder:  st.order,
 		Sources:     plannedSources,
 		Definitions: defs,
-		Diagnostics: diags,
+		Diagnostics: st.diags,
 	}, nil
 }
 
-// walkedDef is the intermediate per-entry record built during the preset
-// walk. Promoted to PlannedDefinition after dedupe.
+// ===== traversal state =====
+
+type traversalState struct {
+	provider SourceProvider
+	visited  map[string]bool       // stack identifiers fully processed
+	inDFS    map[string]bool       // stack identifiers on the current DFS path
+	order    []string              // identifiers in post-order visit
+	overlay  map[defKey]walkedDef  // current (category, name) → winner
+	sources  *sourceTable
+	diags    []Diagnostic
+	errs     []error
+}
+
+func newTraversalState(provider SourceProvider) *traversalState {
+	return &traversalState{
+		provider: provider,
+		visited:  map[string]bool{},
+		inDFS:    map[string]bool{},
+		overlay:  map[defKey]walkedDef{},
+		sources:  newSourceTable(),
+	}
+}
+
+// stackCtx is the context for a single stack file: where it lives in
+// which FS, what its provenance is for definitions loaded from it.
+type stackCtx struct {
+	// Identifier is the unique key for this stack in the visit graph. For
+	// external stacks: "<url>@<ref>". For local-path stacks reached via a
+	// path-extends: "<parentSourceURL>@<parentSourceRef>:<filePath>". For
+	// the entry-point: "".
+	Identifier string
+
+	// SourceURL/SourceRef record this stack file's source for downstream
+	// PlannedDefinition.SourceURL/SourceRef on entries loaded from it.
+	// Empty for the entry-point.
+	SourceURL string
+	SourceRef string
+
+	// FS is the filesystem this stack file lives in. Used for resolving
+	// the stack's bare-name and ./path entries and ./path extends.
+	FS fs.FS
+
+	// FilePathInFS is the path of the stack file within FS. Used as the
+	// base directory for ./path resolution.
+	FilePathInFS string
+}
+
+// walkedDef is the intermediate per-entry record during traversal.
 type walkedDef struct {
 	Category   definitions.Category
 	Name       string
 	Definition definitions.Definition
 	SourceURL  string
 	SourceRef  string
-	PresetName string
+	StackName  string
 	EntryPath  string
 	SourceFS   fs.FS
 }
@@ -161,210 +158,324 @@ type defKey struct {
 	Name     string
 }
 
-// walkRef resolves one preset entry against the appropriate source. It
-// records sources/diagnostics into the shared srcs table and diags slice
-// and returns either a walkedDef (success) or an error.
-//
-// nil, nil is returned when the entry was skipped silently (e.g. its
-// declared external failed to provide and we suppressed cascading
-// errors).
-func walkRef(
-	provider SourceProvider,
-	primaryFS fs.FS,
-	cfg *config.ConsumerConfig,
-	ref definitions.PresetRef,
-	refStr, presetName string,
-	declaredFS map[srcKey]fs.FS,
-	declaredFailed map[srcKey]bool,
-	srcs *sourceTable,
-	diags *[]Diagnostic,
-) (*walkedDef, error) {
-	if ref.IsExternal() {
-		return walkExternal(provider, ref, refStr, presetName, declaredFS, declaredFailed, srcs, diags)
+// loadStack runs depth-first post-order: extends children first, then
+// this stack's own entries, then record the visit. Cycle detection via
+// the inDFS set; already-visited stacks are skipped.
+func (s *traversalState) loadStack(st *stack.Stack, ctx stackCtx) error {
+	if s.visited[ctx.Identifier] && ctx.Identifier != "" {
+		return nil
+	}
+	if s.inDFS[ctx.Identifier] && ctx.Identifier != "" {
+		return fmt.Errorf("resolver: extends cycle detected at %q", ctx.Identifier)
+	}
+	s.inDFS[ctx.Identifier] = true
+	defer func() {
+		s.inDFS[ctx.Identifier] = false
+		s.visited[ctx.Identifier] = true
+	}()
+
+	for i, ext := range st.Extends {
+		if err := s.loadExtends(ext, ctx); err != nil {
+			s.errs = append(s.errs, fmt.Errorf("stack %q extends[%d] (%q): %w", displayID(ctx.Identifier), i, ext.Raw, err))
+		}
 	}
 
-	// Local ref: resolve against primary.
-	path, err := localEntryPath(ref.Category, ref.Name, primaryFS)
-	if err != nil {
-		return nil, fmt.Errorf("resolver: preset %q entry %q: %w", presetName, refStr, err)
+	root := st.EffectiveRoot()
+	for _, cat := range definitions.AllCategories {
+		entries := st.EntriesFor(cat)
+		for i, entry := range entries {
+			w, err := s.resolveEntry(entry, cat, root, ctx)
+			if err != nil {
+				s.errs = append(s.errs, fmt.Errorf("stack %q %s[%d] (%q): %w", displayID(ctx.Identifier), cat.CategoryDir(), i, entry.Raw, err))
+				continue
+			}
+			if w == nil {
+				continue
+			}
+			key := defKey{Category: w.Category, Name: w.Name}
+			if prev, exists := s.overlay[key]; exists {
+				s.diags = append(s.diags, Diagnostic{
+					Kind: DiagOverride,
+					Message: fmt.Sprintf("%s/%s from %s was overridden by entry from stack %q",
+						w.Category.CategoryDir(), w.Name, prev.SourceURL, displayID(w.StackName)),
+					Category:  w.Category,
+					Name:      w.Name,
+					SourceURL: prev.SourceURL,
+					StackName: w.StackName,
+				})
+			}
+			s.overlay[key] = *w
+		}
 	}
-	def, err := definitions.ParseInCatalog(primaryFS, path)
-	if err != nil {
-		return nil, fmt.Errorf("resolver: preset %q entry %q: %w", presetName, refStr, err)
-	}
-	return &walkedDef{
-		Category:   ref.Category,
-		Name:       ref.Name,
-		Definition: def,
-		SourceURL:  cfg.Source.URL,
-		SourceRef:  cfg.Source.Ref,
-		PresetName: presetName,
-		EntryPath:  path,
-		SourceFS:   primaryFS,
-	}, nil
+
+	s.order = append(s.order, ctx.Identifier)
+	return nil
 }
 
-// walkExternal handles an external preset ref. Bundle categories
-// (skill, agent) call the provider with the bundle URL; file categories
-// (rule, instruction, command, hook, mcp) lop the URL last segment off
-// and call the provider with the parent URL, then ParseFile the file by
-// name. Either way, the URL recorded in srcs and on the walkedDef is the
-// URL the consumer wrote — bundle dir for bundles, file URL for files.
-func walkExternal(
-	provider SourceProvider,
-	ref definitions.PresetRef,
-	refStr, presetName string,
-	declaredFS map[srcKey]fs.FS,
-	declaredFailed map[srcKey]bool,
-	srcs *sourceTable,
-	diags *[]Diagnostic,
-) (*walkedDef, error) {
-	isBundle := ref.Category == definitions.CategorySkill || ref.Category == definitions.CategoryAgent
-
-	var providerURL, filename, entryPath string
-	if isBundle {
-		providerURL = ref.URL
-		if ref.Category == definitions.CategorySkill {
-			entryPath = "SKILL.md"
-		} else {
-			entryPath = "AGENT.md"
+// loadExtends resolves one extends entry (URL or path) and recurses.
+func (s *traversalState) loadExtends(ext stack.ExtendsRef, parent stackCtx) error {
+	switch ext.Kind {
+	case stack.RefURL:
+		repoURL, inRepoPath := splitGitURL(ext.URL)
+		if inRepoPath == "" {
+			return fmt.Errorf("URL extends must include an in-repo path after .git/ (got %q)", ext.URL)
 		}
-	} else {
-		parent, last, ok := splitURLLastSeg(ref.URL)
-		if !ok {
-			return nil, fmt.Errorf("resolver: preset %q entry %q: external file ref must include a filename in the URL path (e.g. .git/path/to/file.md)", presetName, refStr)
-		}
-		providerURL = parent
-		filename = last
-		entryPath = last
-	}
-
-	// Classify against declared externals: exact (URL, Ref) match on the
-	// URL the consumer wrote. File-URL declarations are unusual but the
-	// match logic stays uniform; in practice file refs almost always
-	// classify as Implicit.
-	k := srcKey{URL: ref.URL, Ref: ref.Ref}
-	var extFS fs.FS
-	if fsys, isDeclared := declaredFS[k]; isDeclared {
-		extFS = fsys
-	} else if declaredFailed[k] {
-		// Declared but its provider failed — suppress further processing
-		// for this entry to avoid cascading "missing definition" noise on
-		// top of the provider error.
-		return nil, nil
-	} else {
-		fsys, rr, err := provider.Provide(config.Source{URL: providerURL, Ref: ref.Ref})
+		childFS, rr, err := s.provider.Provide(sourceref.Source{URL: repoURL, Ref: ext.Ref})
 		if err != nil {
-			return nil, fmt.Errorf("resolver: preset %q entry %q: provider: %w", presetName, refStr, err)
+			return fmt.Errorf("provider: %w", err)
 		}
-		extFS = fsys
-		if srcs.add(ref.URL, rr.Ref, rr.SHA, SourceImplicit) {
-			*diags = append(*diags, Diagnostic{
-				Kind:       DiagImplicitExternal,
-				Message:    fmt.Sprintf("source %s pulled in implicitly via preset %q", ref.URL, presetName),
-				SourceURL:  ref.URL,
-				PresetName: presetName,
+		if s.sources.add(repoURL, rr.Ref, rr.SHA, SourceStack) {
+			s.diags = append(s.diags, Diagnostic{
+				Kind:      DiagImplicitSource,
+				Message:   fmt.Sprintf("source %s pulled in via stack extends from %q", repoURL, displayID(parent.Identifier)),
+				SourceURL: repoURL,
+				StackName: parent.Identifier,
 			})
 		}
+
+		identifier := ext.URL + "@" + ext.Ref
+		childStack, err := stack.ParseInFS(childFS, inRepoPath)
+		if err != nil {
+			return fmt.Errorf("parse stack: %w", err)
+		}
+		childCtx := stackCtx{
+			Identifier:   identifier,
+			SourceURL:    repoURL,
+			SourceRef:    rr.Ref,
+			FS:           childFS,
+			FilePathInFS: inRepoPath,
+		}
+		return s.loadStack(childStack, childCtx)
+
+	case stack.RefPath:
+		childPath := joinFromFile(parent.FilePathInFS, ext.Path)
+		identifier := parent.SourceURL + "@" + parent.SourceRef + ":" + childPath
+		if parent.SourceURL == "" {
+			identifier = "local:" + childPath
+		}
+		childStack, err := stack.ParseInFS(parent.FS, childPath)
+		if err != nil {
+			return fmt.Errorf("parse stack: %w", err)
+		}
+		childCtx := stackCtx{
+			Identifier:   identifier,
+			SourceURL:    parent.SourceURL,
+			SourceRef:    parent.SourceRef,
+			FS:           parent.FS,
+			FilePathInFS: childPath,
+		}
+		return s.loadStack(childStack, childCtx)
+	}
+	return fmt.Errorf("unsupported extends kind %v", ext.Kind)
+}
+
+// resolveEntry loads one per-category entry into a walkedDef.
+func (s *traversalState) resolveEntry(entry stack.EntryRef, cat definitions.Category, root string, ctx stackCtx) (*walkedDef, error) {
+	switch entry.Kind {
+	case stack.RefBare:
+		return s.resolveBare(entry, cat, root, ctx)
+	case stack.RefPath:
+		return s.resolvePath(entry, cat, ctx)
+	case stack.RefURL:
+		return s.resolveURL(entry, cat, ctx)
+	}
+	return nil, fmt.Errorf("unsupported entry kind %v", entry.Kind)
+}
+
+// resolveBare looks up a bare name under <root>/<plural>/<name>... in
+// the stack's source FS.
+func (s *traversalState) resolveBare(entry stack.EntryRef, cat definitions.Category, root string, ctx stackCtx) (*walkedDef, error) {
+	bundleDir, fileName, err := bareLayout(root, cat, entry.Name, ctx.FS)
+	if err != nil {
+		return nil, err
+	}
+	return s.parseFromFS(ctx.FS, bundleDir, fileName, cat, entry.Name, ctx)
+}
+
+// resolvePath resolves a ./relative entry against the stack file's
+// parent directory.
+func (s *traversalState) resolvePath(entry stack.EntryRef, cat definitions.Category, ctx stackCtx) (*walkedDef, error) {
+	resolved := joinFromFile(ctx.FilePathInFS, entry.Path)
+	bundleDir, fileName, err := pathLayout(cat, resolved)
+	if err != nil {
+		return nil, err
+	}
+	return s.parseFromFS(ctx.FS, bundleDir, fileName, cat, "", ctx)
+}
+
+// resolveURL resolves an external URL entry. The URL must contain
+// `.git/` plus an in-repo path; the resolver fetches the repo, then
+// parses the bundle/file at the in-repo path.
+func (s *traversalState) resolveURL(entry stack.EntryRef, cat definitions.Category, ctx stackCtx) (*walkedDef, error) {
+	repoURL, inRepoPath := splitGitURL(entry.URL)
+	if inRepoPath == "" {
+		return nil, fmt.Errorf("URL entry must include an in-repo path after .git/ (got %q)", entry.URL)
+	}
+	repoFS, rr, err := s.provider.Provide(sourceref.Source{URL: repoURL, Ref: entry.Ref})
+	if err != nil {
+		return nil, fmt.Errorf("provider: %w", err)
+	}
+	if s.sources.add(repoURL, rr.Ref, rr.SHA, SourceDefinition) {
+		s.diags = append(s.diags, Diagnostic{
+			Kind:      DiagImplicitSource,
+			Message:   fmt.Sprintf("source %s pulled in via %s entry from stack %q", repoURL, cat.CategoryDir(), displayID(ctx.Identifier)),
+			SourceURL: repoURL,
+			StackName: ctx.Identifier,
+		})
+	}
+
+	bundleDir, fileName, err := pathLayout(cat, inRepoPath)
+	if err != nil {
+		return nil, err
+	}
+	urlCtx := stackCtx{
+		Identifier:   ctx.Identifier,
+		SourceURL:    repoURL,
+		SourceRef:    rr.Ref,
+		FS:           repoFS,
+		FilePathInFS: ctx.FilePathInFS,
+	}
+	return s.parseFromFS(repoFS, bundleDir, fileName, cat, "", urlCtx)
+}
+
+// parseFromFS reads the entry from rootFS at (bundleDir, fileName) and
+// builds a walkedDef. For bundle categories fileName is the entry file
+// (SKILL.md / AGENT.md) and bundleDir is the bundle directory itself.
+// For file categories bundleDir is the parent directory and fileName is
+// the file's basename.
+//
+// Empty bundleDir means rootFS is already at the right level — used for
+// path-form entries that resolve to the FS root.
+func (s *traversalState) parseFromFS(rootFS fs.FS, bundleDir, fileName string, cat definitions.Category, expectedName string, ctx stackCtx) (*walkedDef, error) {
+	dirFS := rootFS
+	if bundleDir != "" && bundleDir != "." {
+		sub, err := fs.Sub(rootFS, bundleDir)
+		if err != nil {
+			return nil, fmt.Errorf("fs.Sub %q: %w", bundleDir, err)
+		}
+		dirFS = sub
 	}
 
 	var (
 		def definitions.Definition
 		err error
 	)
-	if isBundle {
-		name := lastURLSeg(ref.URL)
-		def, err = definitions.ParseBundle(extFS, ref.Category, name)
+	if isBundleCategory(cat) {
+		name := expectedName
+		if name == "" {
+			name = path.Base(bundleDir)
+		}
+		def, err = definitions.ParseBundle(dirFS, cat, name)
 	} else {
-		def, err = definitions.ParseFile(extFS, ref.Category, filename)
+		def, err = definitions.ParseFile(dirFS, cat, fileName)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("resolver: preset %q entry %q: %w", presetName, refStr, err)
+		return nil, err
 	}
 
 	return &walkedDef{
-		Category:   ref.Category,
+		Category:   cat,
 		Name:       def.GetCommon().Name,
 		Definition: def,
-		SourceURL:  ref.URL,
-		SourceRef:  ref.Ref,
-		PresetName: presetName,
-		EntryPath:  entryPath,
-		SourceFS:   extFS,
+		SourceURL:  ctx.SourceURL,
+		SourceRef:  ctx.SourceRef,
+		StackName:  ctx.Identifier,
+		EntryPath:  fileName,
+		SourceFS:   dirFS,
 	}, nil
 }
 
-// localEntryPath constructs the fs-relative entry-point path for a local
-// preset ref. For hook/mcp it tries .yaml first and falls back to .yml.
-func localEntryPath(cat definitions.Category, name string, fsys fs.FS) (string, error) {
+// ===== layout helpers =====
+
+// bareLayout builds the (bundle dir, entry file) pair for a bare-name
+// entry under <root>/<plural>/<name>. For hook/mcp/setting it tries
+// .yaml then .yml.
+func bareLayout(root string, cat definitions.Category, name string, fsys fs.FS) (bundleDir, fileName string, err error) {
 	switch cat {
 	case definitions.CategorySkill:
-		return fmt.Sprintf("definitions/skills/%s/SKILL.md", name), nil
+		return path.Join(root, "skills", name), "SKILL.md", nil
 	case definitions.CategoryAgent:
-		return fmt.Sprintf("definitions/agents/%s/AGENT.md", name), nil
+		return path.Join(root, "agents", name), "AGENT.md", nil
 	case definitions.CategoryRule:
-		return fmt.Sprintf("definitions/rules/%s.md", name), nil
+		return path.Join(root, "rules"), name + ".md", nil
 	case definitions.CategoryInstruction:
-		return fmt.Sprintf("definitions/instructions/%s.md", name), nil
+		return path.Join(root, "instructions"), name + ".md", nil
 	case definitions.CategoryCommand:
-		return fmt.Sprintf("definitions/commands/%s.md", name), nil
+		// Nested namespacing allowed: name may contain "/".
+		dir, file := path.Split(name + ".md")
+		return path.Join(root, "commands", dir), file, nil
 	case definitions.CategoryHook:
-		return resolveYAMLOrYML(fsys, "definitions/hooks/"+name)
+		return path.Join(root, "hooks"), pickYAMLOrYML(fsys, path.Join(root, "hooks"), name), nil
 	case definitions.CategoryMCP:
-		return resolveYAMLOrYML(fsys, "definitions/mcp/"+name)
+		return path.Join(root, "mcp"), pickYAMLOrYML(fsys, path.Join(root, "mcp"), name), nil
 	case definitions.CategorySetting:
-		return resolveYAMLOrYML(fsys, "definitions/settings/"+name)
+		return path.Join(root, "settings"), pickYAMLOrYML(fsys, path.Join(root, "settings"), name), nil
 	}
-	return "", fmt.Errorf("unsupported category %q", cat)
+	return "", "", fmt.Errorf("unsupported category %q", cat)
 }
 
-func resolveYAMLOrYML(fsys fs.FS, base string) (string, error) {
+// pathLayout splits a resolved in-FS path into (bundle dir, file name).
+// For bundle categories the resolved path IS the bundle dir; the entry
+// file inside it is fixed (SKILL.md/AGENT.md). For file categories the
+// resolved path is the file itself.
+func pathLayout(cat definitions.Category, resolved string) (bundleDir, fileName string, err error) {
+	if isBundleCategory(cat) {
+		entry := "SKILL.md"
+		if cat == definitions.CategoryAgent {
+			entry = "AGENT.md"
+		}
+		return resolved, entry, nil
+	}
+	return path.Dir(resolved), path.Base(resolved), nil
+}
+
+func isBundleCategory(cat definitions.Category) bool {
+	return cat == definitions.CategorySkill || cat == definitions.CategoryAgent
+}
+
+// pickYAMLOrYML returns "name.yaml" if it exists in dir, else "name.yml"
+// if that exists, else "name.yaml" as a default (so the downstream parse
+// produces a clean "no such file" rather than a missing-extension one).
+func pickYAMLOrYML(fsys fs.FS, dir, name string) string {
 	for _, ext := range []string{".yaml", ".yml"} {
-		p := base + ext
+		p := path.Join(dir, name+ext)
 		if _, err := fs.Stat(fsys, p); err == nil {
-			return p, nil
+			return name + ext
 		}
 	}
-	// Default to .yaml so the downstream ParseInCatalog produces a clean
-	// "no such file" error instead of a misleading missing-extension one.
-	return base + ".yaml", nil
+	return name + ".yaml"
 }
 
-// readPreset locates and parses a preset by name in the primary source.
-// Tries .yaml then .yml.
-func readPreset(primaryFS fs.FS, name string) (*definitions.Preset, error) {
-	for _, ext := range []string{".yaml", ".yml"} {
-		path := definitions.PresetsDir + "/" + name + ext
-		if _, err := fs.Stat(primaryFS, path); err != nil {
-			continue
-		}
-		return definitions.ParsePresetInCatalog(primaryFS, path)
+// joinFromFile resolves a "./relative" path against the directory holding
+// fileInFS. Both inputs are forward-slash, FS-style paths.
+func joinFromFile(fileInFS, relative string) string {
+	dir := path.Dir(fileInFS)
+	if dir == "." {
+		dir = ""
 	}
-	return nil, fmt.Errorf("not found in %s/%s.{yaml,yml}", definitions.PresetsDir, name)
-}
-
-// lastURLSeg returns the last "/"-separated segment of s. Used to derive
-// canonical names for external bundle refs.
-func lastURLSeg(s string) string {
-	if i := strings.LastIndex(s, "/"); i >= 0 {
-		return s[i+1:]
+	clean := strings.TrimPrefix(relative, "./")
+	if dir == "" {
+		return path.Clean(clean)
 	}
-	return s
+	return path.Clean(path.Join(dir, clean))
 }
 
-// splitURLLastSeg splits an external file ref URL into (parent, filename).
-// Requires the URL to contain `.git/` followed by at least one path
-// segment — i.e. the URL identifies an in-repo file. Returns ok=false
-// otherwise.
-func splitURLLastSeg(u string) (parent, last string, ok bool) {
+// splitGitURL splits a URL on `.git/`, returning (repoURL, inRepoPath).
+// If no `.git/` substring is present, returns (u, "").
+func splitGitURL(u string) (repoURL, inRepoPath string) {
 	const sep = ".git/"
 	i := strings.Index(u, sep)
-	if i < 0 || i+len(sep) >= len(u) {
-		return "", "", false
+	if i < 0 {
+		return u, ""
 	}
-	j := strings.LastIndex(u, "/")
-	if j < 0 || j+1 >= len(u) {
-		return "", "", false
+	return u[:i+len(".git")], strings.TrimRight(u[i+len(sep):], "/")
+}
+
+// displayID renders an identifier for diagnostic messages. The empty
+// string identifies the entry-point stack; rendered as "<entry>".
+func displayID(id string) string {
+	if id == "" {
+		return "<entry>"
 	}
-	return u[:j], u[j+1:], true
+	return id
 }

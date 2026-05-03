@@ -11,10 +11,10 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/pedromvgomes/agentic-toolkit/internal/adapters/claude"
-	"github.com/pedromvgomes/agentic-toolkit/internal/config"
 	"github.com/pedromvgomes/agentic-toolkit/internal/lockfile"
 	"github.com/pedromvgomes/agentic-toolkit/internal/resolver"
 	"github.com/pedromvgomes/agentic-toolkit/internal/sourcestore"
+	"github.com/pedromvgomes/agentic-toolkit/internal/stack"
 )
 
 func newStatusCmd(env *Env) *cobra.Command {
@@ -53,7 +53,7 @@ func runStatus(env *Env, cacheRoot, scopeFlag string, jsonOut bool) error {
 		return err
 	}
 
-	cfg, err := loadConfig(env.WorkDir)
+	st, entryFS, entryName, err := loadStack(env.WorkDir)
 	if err != nil {
 		return err
 	}
@@ -63,7 +63,7 @@ func runStatus(env *Env, cacheRoot, scopeFlag string, jsonOut bool) error {
 		return err
 	}
 
-	bucket1 := diffConfigVsLockfile(cfg, lock, lockErr)
+	bucket1 := diffStackVsLockfile(st, lock, lockErr)
 
 	var (
 		bucket2 []string
@@ -79,7 +79,7 @@ func runStatus(env *Env, cacheRoot, scopeFlag string, jsonOut bool) error {
 		// Re-resolve from the cache to drive the render-state diff.
 		// Resolver errors are non-fatal here — we surface them as drift
 		// rather than aborting the status report.
-		plan, rerr := resolver.Resolve(cfg, sourcestore.NewFrozenProvider(cache, lock))
+		plan, rerr := resolver.Resolve(st, entryFS, entryName, sourcestore.NewFrozenProvider(cache, lock))
 		if rerr != nil {
 			bucket3 = []string{fmt.Sprintf("resolve: %v", rerr)}
 		} else {
@@ -147,11 +147,19 @@ func loadLockfileIfPresent(workDir string) (*lockfile.Lockfile, error) {
 	return nil, fmt.Errorf("read %s: %w", path, err)
 }
 
-// diffConfigVsLockfile flags sources present in the config but missing
-// or with a divergent ref in the lockfile. Sources in the lockfile but
-// not in the config are not flagged here — they are normal artifacts of
-// implicit-external resolution recorded at lock time.
-func diffConfigVsLockfile(cfg *config.ConsumerConfig, lock *lockfile.Lockfile, lockErr error) []string {
+// diffStackVsLockfile flags every URL referenced from the entry-point
+// stack (extends + per-category URL entries) that is missing or has a
+// divergent ref in the lockfile. Sources in the lockfile but not in the
+// stack are not flagged here — they are normal artifacts of recursive
+// extends resolution recorded at lock time.
+//
+// Local-path imports and bare-name entries don't reach the network and
+// don't appear in the lockfile, so they are skipped. Recursive extends
+// inside imported stacks are also skipped: status only inspects the
+// top-level entry-point file, so a missing pin for a transitive import
+// will surface in the next bucket (lockfile vs cache) as a fetch error
+// instead.
+func diffStackVsLockfile(st *stack.Stack, lock *lockfile.Lockfile, lockErr error) []string {
 	if lock == nil {
 		if errors.Is(lockErr, fs.ErrNotExist) {
 			return []string{LockFileName + " missing — run `agtk lock`"}
@@ -168,25 +176,66 @@ func diffConfigVsLockfile(cfg *config.ConsumerConfig, lock *lockfile.Lockfile, l
 	}
 
 	var drift []string
-	check := func(srcs ...config.Source) {
-		for _, s := range srcs {
-			if s.URL == "" {
-				continue
+	check := func(url, ref string) {
+		if url == "" {
+			return
+		}
+		if _, ok := byKey[url+"@"+ref]; ok {
+			return
+		}
+		if ref == "" {
+			if pins := byURL[url]; len(pins) == 1 {
+				return
 			}
-			if _, ok := byKey[s.URL+"@"+s.Ref]; ok {
-				continue
-			}
-			if s.Ref == "" {
-				if pins := byURL[s.URL]; len(pins) == 1 {
-					continue
-				}
-			}
-			drift = append(drift, fmt.Sprintf("source %s@%s not pinned in lockfile", s.URL, displayRef(s.Ref)))
+		}
+		drift = append(drift, fmt.Sprintf("source %s@%s not pinned in lockfile", url, displayRef(ref)))
+	}
+
+	// extends URLs.
+	for _, ext := range st.Extends {
+		if !ext.IsExternal() {
+			continue
+		}
+		repoURL, _ := splitGitURLForStatus(ext.URL)
+		check(repoURL, ext.Ref)
+	}
+
+	// Per-category URL entries.
+	for _, entry := range allEntries(st) {
+		if !entry.IsExternal() {
+			continue
+		}
+		repoURL, _ := splitGitURLForStatus(entry.URL)
+		check(repoURL, entry.Ref)
+	}
+
+	return drift
+}
+
+// allEntries flattens every per-category entry list into a single slice.
+func allEntries(st *stack.Stack) []stack.EntryRef {
+	var out []stack.EntryRef
+	out = append(out, st.Skills...)
+	out = append(out, st.Agents...)
+	out = append(out, st.Rules...)
+	out = append(out, st.Instructions...)
+	out = append(out, st.Commands...)
+	out = append(out, st.Hooks...)
+	out = append(out, st.MCP...)
+	out = append(out, st.Settings...)
+	return out
+}
+
+// splitGitURLForStatus mirrors resolver.splitGitURL — local copy to
+// avoid an import cycle.
+func splitGitURLForStatus(u string) (repoURL, inRepoPath string) {
+	const sep = ".git/"
+	for i := 0; i+len(sep) <= len(u); i++ {
+		if u[i:i+len(sep)] == sep {
+			return u[:i+len(".git")], u[i+len(sep):]
 		}
 	}
-	check(cfg.Source)
-	check(cfg.Externals...)
-	return drift
+	return u, ""
 }
 
 // diffLockfileVsCache reports each pinned source whose worktree is

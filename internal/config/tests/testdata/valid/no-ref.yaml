@@ -1,5 +1,0 @@
-source: github.com/pedromvgomes/agentic-toolkit
-externals:
-  - github.com/anthropics/skills
-presets:
-  - default

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pedromvgomes/agentic-toolkit/internal/config"
+	"github.com/pedromvgomes/agentic-toolkit/internal/sourceref"
 	"github.com/pedromvgomes/agentic-toolkit/internal/lockfile"
 	"github.com/pedromvgomes/agentic-toolkit/internal/sourcestore"
 )
@@ -21,7 +21,7 @@ func TestFrozenProvider_ServesPinnedSource(t *testing.T) {
 	}
 	provider := sourcestore.NewFrozenProvider(sourcestore.NewCache(t.TempDir()), lock)
 
-	fsys, rr, err := provider.Provide(config.Source{URL: url, Ref: "main"})
+	fsys, rr, err := provider.Provide(sourceref.Source{URL: url, Ref: "main"})
 	if err != nil {
 		t.Fatalf("Provide: %v", err)
 	}
@@ -42,7 +42,7 @@ func TestFrozenProvider_EmptyConfigRef_FallsBackToUniquePinForURL(t *testing.T) 
 	provider := sourcestore.NewFrozenProvider(sourcestore.NewCache(t.TempDir()), lock)
 
 	// User config has empty ref; lockfile carries the resolved ref name.
-	_, rr, err := provider.Provide(config.Source{URL: url})
+	_, rr, err := provider.Provide(sourceref.Source{URL: url})
 	if err != nil {
 		t.Fatalf("Provide with empty ref: %v", err)
 	}
@@ -59,7 +59,7 @@ func TestFrozenProvider_UnpinnedSource_Errors(t *testing.T) {
 	}
 	provider := sourcestore.NewFrozenProvider(sourcestore.NewCache(t.TempDir()), lock)
 
-	_, _, err := provider.Provide(config.Source{URL: "github.com/other/repo", Ref: "main"})
+	_, _, err := provider.Provide(sourceref.Source{URL: "github.com/other/repo", Ref: "main"})
 	if !errors.Is(err, sourcestore.ErrPinNotFound) {
 		t.Errorf("expected ErrPinNotFound, got %v", err)
 	}
@@ -76,7 +76,7 @@ func TestFrozenProvider_DirectRefURL_RootedAtBundleDir(t *testing.T) {
 	}
 	provider := sourcestore.NewFrozenProvider(sourcestore.NewCache(t.TempDir()), lock)
 
-	fsys, _, err := provider.Provide(config.Source{URL: directURL, Ref: "main"})
+	fsys, _, err := provider.Provide(sourceref.Source{URL: directURL, Ref: "main"})
 	if err != nil {
 		t.Fatalf("Provide: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestFrozenProvider_SHAMismatch_HardFails(t *testing.T) {
 	}
 	provider := sourcestore.NewFrozenProvider(sourcestore.NewCache(t.TempDir()), lock)
 
-	_, _, err := provider.Provide(config.Source{URL: url, Ref: "main"})
+	_, _, err := provider.Provide(sourceref.Source{URL: url, Ref: "main"})
 	if !errors.Is(err, sourcestore.ErrSHAMismatch) {
 		t.Errorf("expected ErrSHAMismatch, got %v", err)
 	}

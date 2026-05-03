@@ -12,8 +12,7 @@ func TestRender_WritesScopeRoot(t *testing.T) {
 	work := t.TempDir()
 	cache := t.TempDir()
 
-	writeFile(t, filepath.Join(work, ".agentic-toolkit.yaml"),
-		"source: "+url+"@main\npresets:\n  - default\n")
+	writeEntryStack(t, work, url, "main")
 	writeLockfile(t, filepath.Join(work, ".agentic-toolkit.lock.yaml"), url, "main", sha)
 
 	_, _, err := runCLI(t, work, "render", "--cache", cache)
@@ -36,8 +35,7 @@ func TestRender_DryRunNoWrites(t *testing.T) {
 	work := t.TempDir()
 	cache := t.TempDir()
 
-	writeFile(t, filepath.Join(work, ".agentic-toolkit.yaml"),
-		"source: "+url+"@main\npresets:\n  - default\n")
+	writeEntryStack(t, work, url, "main")
 	writeLockfile(t, filepath.Join(work, ".agentic-toolkit.lock.yaml"), url, "main", sha)
 
 	stdout, _, err := runCLI(t, work, "render", "--cache", cache, "--dry-run")

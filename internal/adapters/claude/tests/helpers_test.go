@@ -4,7 +4,6 @@ import (
 	"io/fs"
 	"testing/fstest"
 
-	"github.com/pedromvgomes/agentic-toolkit/internal/config"
 	"github.com/pedromvgomes/agentic-toolkit/internal/definitions"
 	"github.com/pedromvgomes/agentic-toolkit/internal/resolver"
 )
@@ -18,23 +17,24 @@ func makeFS(files map[string]string) fstest.MapFS {
 	return out
 }
 
-// makePlan builds a resolver.Plan with the given definitions and preset
-// list. Sources is empty (renderer doesn't consult it). Each definition
+// makePlan builds a resolver.Plan with the given definitions and stack
+// order. Sources is empty (renderer doesn't consult it). Each definition
 // must have its Common.Name set.
-func makePlan(defs []resolver.PlannedDefinition, presets ...string) *resolver.Plan {
+//
+// stackOrder is the depth-first post-order list of stack identifiers the
+// resolver visited; the last entry is the entry-point stack (identifier
+// ""). Adapters use it for last-wins tiebreaking on settings fragments.
+func makePlan(defs []resolver.PlannedDefinition, stackOrder ...string) *resolver.Plan {
 	return &resolver.Plan{
-		Config: &config.ConsumerConfig{
-			Source:  config.Source{URL: "fake://primary"},
-			Presets: presets,
-		},
+		StackOrder:  stackOrder,
 		Definitions: defs,
 	}
 }
 
 // pdSkill builds a PlannedDefinition for a skill bundle. fsys is rooted
-// such that bundlePath/SKILL.md is the entry; companion files anywhere
-// under bundlePath are copied.
-func pdSkill(name, description, body, bundlePath, presetName string, fsys fs.FS) resolver.PlannedDefinition {
+// at the bundle directory itself (SKILL.md at root); companion files
+// anywhere under that root are copied verbatim by the adapter.
+func pdSkill(name, description, body, bundlePath, stackName string, fsys fs.FS) resolver.PlannedDefinition {
 	s := &definitions.Skill{
 		Common: definitions.Common{Name: name, Description: description},
 		Body:   body,
@@ -43,13 +43,13 @@ func pdSkill(name, description, body, bundlePath, presetName string, fsys fs.FS)
 		Category:   definitions.CategorySkill,
 		Name:       name,
 		Definition: s,
-		PresetName: presetName,
+		StackName:  stackName,
 		EntryPath:  bundlePath + "/SKILL.md",
 		SourceFS:   fsys,
 	}
 }
 
-func pdAgent(name, description, body, bundlePath, presetName string, fsys fs.FS) resolver.PlannedDefinition {
+func pdAgent(name, description, body, bundlePath, stackName string, fsys fs.FS) resolver.PlannedDefinition {
 	a := &definitions.Agent{
 		Common: definitions.Common{Name: name, Description: description},
 		Body:   body,
@@ -58,13 +58,13 @@ func pdAgent(name, description, body, bundlePath, presetName string, fsys fs.FS)
 		Category:   definitions.CategoryAgent,
 		Name:       name,
 		Definition: a,
-		PresetName: presetName,
+		StackName:  stackName,
 		EntryPath:  bundlePath + "/AGENT.md",
 		SourceFS:   fsys,
 	}
 }
 
-func pdCommand(name, description, body, presetName string) resolver.PlannedDefinition {
+func pdCommand(name, description, body, stackName string) resolver.PlannedDefinition {
 	c := &definitions.Command{
 		Common: definitions.Common{Name: name, Description: description},
 		Body:   body,
@@ -73,11 +73,11 @@ func pdCommand(name, description, body, presetName string) resolver.PlannedDefin
 		Category:   definitions.CategoryCommand,
 		Name:       name,
 		Definition: c,
-		PresetName: presetName,
+		StackName:  stackName,
 	}
 }
 
-func pdRule(name, description, body, presetName string) resolver.PlannedDefinition {
+func pdRule(name, description, body, stackName string) resolver.PlannedDefinition {
 	r := &definitions.Rule{
 		Common: definitions.Common{Name: name, Description: description},
 		Body:   body,
@@ -86,11 +86,11 @@ func pdRule(name, description, body, presetName string) resolver.PlannedDefiniti
 		Category:   definitions.CategoryRule,
 		Name:       name,
 		Definition: r,
-		PresetName: presetName,
+		StackName:  stackName,
 	}
 }
 
-func pdInstruction(name, description, body, presetName string) resolver.PlannedDefinition {
+func pdInstruction(name, description, body, stackName string) resolver.PlannedDefinition {
 	i := &definitions.Instruction{
 		Common: definitions.Common{Name: name, Description: description},
 		Body:   body,
@@ -99,11 +99,11 @@ func pdInstruction(name, description, body, presetName string) resolver.PlannedD
 		Category:   definitions.CategoryInstruction,
 		Name:       name,
 		Definition: i,
-		PresetName: presetName,
+		StackName:  stackName,
 	}
 }
 
-func pdHook(name, description, event, matcher, command, presetName string) resolver.PlannedDefinition {
+func pdHook(name, description, event, matcher, command, stackName string) resolver.PlannedDefinition {
 	h := &definitions.Hook{
 		Common:  definitions.Common{Name: name, Description: description},
 		Event:   event,
@@ -114,11 +114,11 @@ func pdHook(name, description, event, matcher, command, presetName string) resol
 		Category:   definitions.CategoryHook,
 		Name:       name,
 		Definition: h,
-		PresetName: presetName,
+		StackName:  stackName,
 	}
 }
 
-func pdMCPStdio(name, description, command string, args []string, presetName string) resolver.PlannedDefinition {
+func pdMCPStdio(name, description, command string, args []string, stackName string) resolver.PlannedDefinition {
 	m := &definitions.MCPServer{
 		Common:    definitions.Common{Name: name, Description: description},
 		Transport: definitions.TransportStdio,
@@ -129,11 +129,11 @@ func pdMCPStdio(name, description, command string, args []string, presetName str
 		Category:   definitions.CategoryMCP,
 		Name:       name,
 		Definition: m,
-		PresetName: presetName,
+		StackName:  stackName,
 	}
 }
 
-func pdSetting(name, description string, value map[string]any, presetName string) resolver.PlannedDefinition {
+func pdSetting(name, description string, value map[string]any, stackName string) resolver.PlannedDefinition {
 	s := &definitions.Setting{
 		Common: definitions.Common{Name: name, Description: description},
 		Value:  value,
@@ -142,6 +142,6 @@ func pdSetting(name, description string, value map[string]any, presetName string
 		Category:   definitions.CategorySetting,
 		Name:       name,
 		Definition: s,
-		PresetName: presetName,
+		StackName:  stackName,
 	}
 }
