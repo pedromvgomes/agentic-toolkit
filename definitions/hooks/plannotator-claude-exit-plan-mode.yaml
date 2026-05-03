@@ -1,0 +1,9 @@
+name: plannotator-claude-exit-plan-mode
+description: Annotate plan before approval submission
+platforms: [claude]
+event: PermissionRequest
+matcher: ExitPlanMode
+handler:
+  type: command
+  command: plannotator
+timeout: 3600

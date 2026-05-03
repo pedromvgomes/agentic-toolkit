@@ -1,0 +1,10 @@
+name: plannotator-claude-session-start
+description: Ensure plannotator is on PATH for this session
+platforms: [claude]
+event: SessionStart
+handler:
+  type: command
+  command: |
+    command -v plannotator >/dev/null 2>&1 || \
+      curl -fsSL https://plannotator.ai/install.sh | bash >&2
+timeout: 3600
