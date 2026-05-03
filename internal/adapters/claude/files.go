@@ -259,7 +259,7 @@ func renderRule(def definitions.Definition) ([]byte, error) {
 	r := def.(*definitions.Rule)
 	type fm struct {
 		Name        string `yaml:"name"`
-		Description string `yaml:"description"`
+		Description string `yaml:"description,omitempty"`
 	}
 	out := fm{Name: r.Name, Description: r.Description}
 	return frontmatterPlusBody(out, r.Body)

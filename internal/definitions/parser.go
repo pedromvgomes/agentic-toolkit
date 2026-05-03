@@ -115,17 +115,28 @@ func parseBytes(path string, cat Category, derivedName string, raw []byte, stric
 
 	if isMarkdownCategory(cat) {
 		fm, b, err := splitFrontmatter(path, raw)
-		if err != nil {
+		switch {
+		case err == nil:
+			yamlBytes = fm
+			body = b
+		case frontmatterOptional(cat) && IsKind(err, ErrFrontmatterMissing):
+			// Bare-markdown form: no frontmatter at all. Treat the whole
+			// file as the body; Common fields (description, name) get
+			// their zero values and Common-level validation tolerates
+			// the empty description for this category.
+			yamlBytes = nil
+			body = raw
+		default:
 			return nil, err
 		}
-		yamlBytes = fm
-		body = b
 	} else {
 		yamlBytes = raw
 	}
 
-	if err := strictDecode(path, yamlBytes, def); err != nil {
-		return nil, err
+	if len(yamlBytes) > 0 {
+		if err := strictDecode(path, yamlBytes, def); err != nil {
+			return nil, err
+		}
 	}
 
 	if isMarkdownCategory(cat) {
@@ -170,6 +181,31 @@ func isMarkdownCategory(cat Category) bool {
 		return true
 	}
 	return false
+}
+
+// descriptionOptional reports whether the Common.Description field may
+// be empty for a category. Tracks frontmatterOptional today (rules
+// only) — kept as a separate predicate so the two relaxations can
+// diverge if a future category needs one but not the other.
+func descriptionOptional(cat Category) bool {
+	return cat == CategoryRule
+}
+
+// frontmatterOptional reports whether a markdown category accepts files
+// with no leading `---` block (whole file = body, no metadata).
+//
+// Today only rules opt in: a Claude rule is just plain markdown that
+// CLAUDE.md aggregates, so requiring frontmatter would force users to
+// invent metadata that no adapter actually consumes. Skills, agents,
+// instructions, and commands all carry adapter-relevant metadata
+// (description used for routing/discovery, tools list, argument hints,
+// platforms allowlists), so they keep the strict requirement.
+//
+// When/if the Cursor adapter ships, it can synthesize the metadata it
+// needs (description/globs/alwaysApply) from defaults rather than
+// pushing the requirement onto every consumer up front.
+func frontmatterOptional(cat Category) bool {
+	return cat == CategoryRule
 }
 
 // setBody assigns the markdown body to definitions that carry one.
@@ -343,7 +379,7 @@ func validateNameForCategory(path string, cat Category, name string) error {
 func validateCommon(path string, def Definition, derivedName string, strictName bool) error {
 	c := def.GetCommon()
 
-	if c.Description == "" {
+	if c.Description == "" && !descriptionOptional(def.Category()) {
 		return newErr(path, ErrMissingRequired, "description is required")
 	}
 
