@@ -53,11 +53,11 @@ func runStatus(env *Env, cacheRoot, scopeFlag string, jsonOut bool) error {
 		return err
 	}
 
-	st, entryFS, entryName, err := loadStack(env.WorkDir)
+	st, entryFS, entryName, err := loadStack(env)
 	if err != nil {
 		return err
 	}
-	lock, lockErr := loadLockfileIfPresent(env.WorkDir)
+	lock, lockErr := loadLockfileIfPresent(env)
 	cache, err := buildCache(cacheRoot)
 	if err != nil {
 		return err
@@ -134,9 +134,9 @@ func runStatus(env *Env, cacheRoot, scopeFlag string, jsonOut bool) error {
 var errStatusDrift = errors.New("status: drift detected")
 
 // loadLockfileIfPresent is a softer variant of loadLockfile: a missing
-// file returns (nil, nil). Other parse errors propagate.
-func loadLockfileIfPresent(workDir string) (*lockfile.Lockfile, error) {
-	path := filepath.Join(workDir, LockFileName)
+// file returns (nil, fs.ErrNotExist). Other parse errors propagate.
+func loadLockfileIfPresent(env *Env) (*lockfile.Lockfile, error) {
+	path := lockfilePath(env)
 	lock, err := lockfile.ParseFile(path)
 	if err == nil {
 		return lock, nil

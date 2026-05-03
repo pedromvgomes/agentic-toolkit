@@ -48,11 +48,11 @@ func runRender(env *Env, cacheRoot, scopeFlag string, dryRun, force bool) error 
 	if err != nil {
 		return err
 	}
-	st, entryFS, entryName, err := loadStack(env.WorkDir)
+	st, entryFS, entryName, err := loadStack(env)
 	if err != nil {
 		return err
 	}
-	lock, err := loadLockfile(env.WorkDir)
+	lock, err := loadLockfile(env)
 	if err != nil {
 		return err
 	}

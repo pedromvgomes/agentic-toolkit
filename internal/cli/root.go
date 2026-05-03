@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -26,14 +27,38 @@ import (
 	"github.com/pedromvgomes/agentic-toolkit/internal/version"
 )
 
-// Env carries per-invocation streams and the working directory the
-// commands resolve config/lockfile paths against. Tests construct an
-// Env explicitly; Execute fills it from os.* defaults.
+// Env carries per-invocation streams and the directories the commands
+// read/write against. Tests construct an Env explicitly; Execute fills
+// it from os.* defaults.
+//
+// Two directory concepts:
+//
+//   - WorkDir is the *apply* directory — where rendered output lands
+//     (`.claude/`, `CLAUDE.md`, the per-platform manifest). Defaults
+//     to the user's cwd. This is what the `agentic-toolkit` writes
+//     INTO.
+//
+//   - ConfigPath, when non-empty, is the absolute path to the entry
+//     stack manifest. The lockfile lives next to it (in the same
+//     directory) and local `./...` refs in the config resolve from
+//     there. When empty, the config is `<WorkDir>/.agentic-toolkit.yaml`
+//     and the lockfile lives next to that.
+//
+// In the bare-repo + worktree workflow the user runs from the bare-
+// repo root (cwd = bare root), points `--config` at a worktree's
+// `.agentic-toolkit.yaml`, and gets render output written to the
+// bare-repo root. Without `--config` the two collapse into the
+// pre-v0.5 single-directory behavior.
 type Env struct {
 	Stdin   io.Reader
 	Stdout  io.Writer
 	Stderr  io.Writer
 	WorkDir string
+
+	// ConfigPath, when set, is the absolute path to the stack manifest.
+	// Bound to the persistent --config flag; resolved to absolute in
+	// PersistentPreRunE. Empty means "use the default in WorkDir".
+	ConfigPath string
 
 	// UpdateProvider, when non-nil, replaces the default GitHub-backed
 	// LatestVersionProvider. Tests inject stubs to keep the network
@@ -76,10 +101,26 @@ func NewRootCmd(env *Env) *cobra.Command {
 	root.SetOut(env.Stdout)
 	root.SetErr(env.Stderr)
 
-	// Persistent pre-run: spawn the background update checker once for
-	// the whole invocation. The result channel is drained in
-	// PersistentPostRunE so a slow network never delays exit.
+	// Global --config: when set, every command reads/writes the stack
+	// manifest at this path and places the lockfile next to it. Render
+	// output (.claude/, CLAUDE.md) keeps using env.WorkDir (cwd by
+	// default), so consumers using a bare-repo + worktree layout can
+	// run from the bare root and point --config at a worktree's
+	// manifest.
+	root.PersistentFlags().StringVar(&env.ConfigPath, "config", "",
+		"path to the stack manifest (default: ./"+ConfigFileName+"). The lockfile lands next to this file; render output still goes to the working directory.")
+
+	// Persistent pre-run: resolve --config to an absolute path so
+	// downstream helpers don't have to care about cwd, and spawn the
+	// background update checker once for the whole invocation.
 	root.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		if env.ConfigPath != "" && !filepath.IsAbs(env.ConfigPath) {
+			abs, err := filepath.Abs(env.ConfigPath)
+			if err != nil {
+				return fmt.Errorf("resolve --config %q: %w", env.ConfigPath, err)
+			}
+			env.ConfigPath = abs
+		}
 		if env.UpdateResult == nil && cmd.Name() != "update" {
 			env.UpdateResult = startBackgroundCheck(env)
 		}
