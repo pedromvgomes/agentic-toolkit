@@ -1,0 +1,4 @@
+description: Plannotator stack, enforces using plannotator for plan review
+hooks:
+  - plannotator-claude-session-start
+  - plannotator-claude-exit-plan-mode
