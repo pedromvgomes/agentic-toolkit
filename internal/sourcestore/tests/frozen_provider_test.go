@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pedromvgomes/agentic-toolkit/internal/sourceref"
 	"github.com/pedromvgomes/agentic-toolkit/internal/lockfile"
+	"github.com/pedromvgomes/agentic-toolkit/internal/sourceref"
 	"github.com/pedromvgomes/agentic-toolkit/internal/sourcestore"
 )
 

@@ -46,8 +46,8 @@ const DefaultRoot = "definitions"
 // slice is preserved; later entries within the same stack file win on
 // (category, name) collisions.
 type Stack struct {
-	Description string `yaml:"description,omitempty" agtkdoc:"One-line summary used by tooling when this stack is imported by another stack."`
-	Root        string `yaml:"root,omitempty"        agtkdoc:"Convention root for bare-name lookups, relative to the stack file's repo root. Defaults to \"definitions\"."`
+	Description string       `yaml:"description,omitempty" agtkdoc:"One-line summary used by tooling when this stack is imported by another stack."`
+	Root        string       `yaml:"root,omitempty"        agtkdoc:"Convention root for bare-name lookups, relative to the stack file's repo root. Defaults to \"definitions\"."`
 	Extends     []ExtendsRef `yaml:"extends,omitempty"     agtkdoc:"Other stacks to layer under this one. Applied in declared order; later entries override earlier ones. Each entry is an external URL (with .git/ boundary) or a local path (./...)."`
 
 	Skills       []EntryRef `yaml:"skills,omitempty"`

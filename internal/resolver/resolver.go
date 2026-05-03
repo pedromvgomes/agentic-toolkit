@@ -46,11 +46,11 @@ func Resolve(entry *stack.Stack, entryFS fs.FS, entryPathInFS string, provider S
 	// its source URL/Ref (it lives in the consumer's local FS, not in any
 	// fetched source).
 	entryCtx := stackCtx{
-		Identifier:    "",
-		SourceURL:     "",
-		SourceRef:     "",
-		FS:            entryFS,
-		FilePathInFS:  entryPathInFS,
+		Identifier:   "",
+		SourceURL:    "",
+		SourceRef:    "",
+		FS:           entryFS,
+		FilePathInFS: entryPathInFS,
 	}
 	if err := st.loadStack(entry, entryCtx); err != nil {
 		st.errs = append(st.errs, err)
@@ -98,10 +98,10 @@ func Resolve(entry *stack.Stack, entryFS fs.FS, entryPathInFS string, provider S
 
 type traversalState struct {
 	provider SourceProvider
-	visited  map[string]bool       // stack identifiers fully processed
-	inDFS    map[string]bool       // stack identifiers on the current DFS path
-	order    []string              // identifiers in post-order visit
-	overlay  map[defKey]walkedDef  // current (category, name) → winner
+	visited  map[string]bool      // stack identifiers fully processed
+	inDFS    map[string]bool      // stack identifiers on the current DFS path
+	order    []string             // identifiers in post-order visit
+	overlay  map[defKey]walkedDef // current (category, name) → winner
 	sources  *sourceTable
 	diags    []Diagnostic
 	errs     []error
