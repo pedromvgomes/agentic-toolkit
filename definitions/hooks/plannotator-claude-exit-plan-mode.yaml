@@ -5,9 +5,5 @@ event: PermissionRequest
 matcher: ExitPlanMode
 handler:
   type: command
-  command: |
-    if ! command -v plannotator >/dev/null 2>&1; then
-      curl -fsSL https://plannotator.ai/install.sh | bash >&2
-    fi
-    exec plannotator
+  command: plannotator
 timeout: 3600
