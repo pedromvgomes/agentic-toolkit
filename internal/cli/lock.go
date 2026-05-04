@@ -146,7 +146,7 @@ func loadStack(env *Env) (*stack.Stack, fs.FS, string, error) {
 	if err != nil {
 		return nil, nil, "", err
 	}
-	return st, os.DirFS(configDir(env)), entryFileName(env), nil
+	return st, os.DirFS(stackDir(env)), entryFileName(env), nil
 }
 
 // buildCache resolves the cache root: explicit override wins, otherwise

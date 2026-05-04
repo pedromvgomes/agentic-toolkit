@@ -56,10 +56,20 @@ type Options struct {
 	// derive from Scope. Tests use this to render into a temp dir.
 	ScopeRoot string
 
-	// ProjectRoot overrides the project root used for CLAUDE.md /
-	// AGENTS.md lookup under project scope. Empty = parent of ScopeRoot.
-	// Ignored under user scope (CLAUDE.md always lives inside ScopeRoot).
+	// ProjectRoot overrides the project root used for CLAUDE.md output
+	// and the fallback AGENTS.md lookup under project scope. Empty =
+	// parent of ScopeRoot. Ignored under user scope (CLAUDE.md always
+	// lives inside ScopeRoot).
 	ProjectRoot string
+
+	// StackDir is the directory rooting the stack definition (where the
+	// entry manifest lives). When non-empty and project-scoped, AGENTS.md
+	// is sourced from here first, falling back to ProjectRoot. The
+	// seeded `@`-import in CLAUDE.md is the relative path from
+	// ProjectRoot to the AGENTS.md actually found, so it resolves at
+	// agent runtime regardless of which root supplied the file. Empty
+	// = same as ProjectRoot (collapses to pre-stack-dir behavior).
+	StackDir string
 
 	// DryRun reports what would change without touching the filesystem.
 	// Errors that depend on filesystem state (collision refusal,
@@ -156,6 +166,12 @@ type scopeRoots struct {
 	Scope       Scope
 	ScopeRoot   string // <workdir>/.claude or ~/.claude (or override)
 	ProjectRoot string // <workdir> or ~/.claude (no AGENTS.md fallback under user scope)
+	// StackDir is where the stack definition lives. Equal to ProjectRoot
+	// when --config is not in use (or under user scope). Distinct from
+	// ProjectRoot in the bare-repo + worktree workflow, where AGENTS.md
+	// may live next to the manifest while CLAUDE.md is rendered into
+	// the apply dir.
+	StackDir string
 }
 
 // resolveRoots derives ScopeRoot and ProjectRoot from opts.
@@ -191,6 +207,11 @@ func resolveRoots(opts Options) (scopeRoots, error) {
 		roots.ProjectRoot = roots.ScopeRoot
 	} else {
 		roots.ProjectRoot = filepath.Dir(roots.ScopeRoot)
+	}
+	if opts.StackDir != "" {
+		roots.StackDir = filepath.Clean(opts.StackDir)
+	} else {
+		roots.StackDir = roots.ProjectRoot
 	}
 	return roots, nil
 }

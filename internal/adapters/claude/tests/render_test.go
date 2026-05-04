@@ -208,6 +208,75 @@ func TestRender_CLAUDEmd_SeedsFromAGENTSmd(t *testing.T) {
 	}
 }
 
+// TestRender_CLAUDEmd_SeedsFromAGENTSmd_AtStackDir: bare-repo + worktree
+// case. CLAUDE.md is rendered at ProjectRoot (the apply dir), AGENTS.md
+// lives next to the manifest at StackDir (a subdir of ProjectRoot). The
+// seeded import must be the relative path so the agent can resolve it
+// at runtime.
+func TestRender_CLAUDEmd_SeedsFromAGENTSmd_AtStackDir(t *testing.T) {
+	tmp := t.TempDir()
+	stackDir := filepath.Join(tmp, "main")
+	if err := os.MkdirAll(stackDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stackDir, "AGENTS.md"), []byte("# Worktree agents\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	scopeRoot := filepath.Join(tmp, ".claude")
+	plan := makePlan([]resolver.PlannedDefinition{
+		pdInstruction("plan-approval", "approve", "approve body", "default"),
+	}, "default")
+
+	if err := claude.Render(plan, claude.Options{
+		Scope:       claude.ScopeProject,
+		ScopeRoot:   scopeRoot,
+		ProjectRoot: tmp,
+		StackDir:    stackDir,
+	}); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+
+	got := mustRead(t, filepath.Join(tmp, "CLAUDE.md"))
+	if !strings.HasPrefix(got, "@main/AGENTS.md\n\n") {
+		t.Errorf("CLAUDE.md must start with @main/AGENTS.md import, got %q", got)
+	}
+}
+
+// TestRender_CLAUDEmd_StackDirAGENTSmdWinsOverProjectRoot: when AGENTS.md
+// exists at both StackDir and ProjectRoot, StackDir wins (the manifest
+// is the project definition).
+func TestRender_CLAUDEmd_StackDirAGENTSmdWinsOverProjectRoot(t *testing.T) {
+	tmp := t.TempDir()
+	stackDir := filepath.Join(tmp, "main")
+	if err := os.MkdirAll(stackDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmp, "AGENTS.md"), []byte("# root\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(stackDir, "AGENTS.md"), []byte("# stack\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	scopeRoot := filepath.Join(tmp, ".claude")
+	plan := makePlan([]resolver.PlannedDefinition{
+		pdInstruction("plan-approval", "approve", "approve body", "default"),
+	}, "default")
+
+	if err := claude.Render(plan, claude.Options{
+		Scope:       claude.ScopeProject,
+		ScopeRoot:   scopeRoot,
+		ProjectRoot: tmp,
+		StackDir:    stackDir,
+	}); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+
+	got := mustRead(t, filepath.Join(tmp, "CLAUDE.md"))
+	if !strings.HasPrefix(got, "@main/AGENTS.md\n\n") {
+		t.Errorf("StackDir AGENTS.md should win, got %q", got)
+	}
+}
+
 // TestRender_CLAUDEmd_PreservesUserContent: an existing CLAUDE.md
 // without markers gets the managed block appended; existing content is
 // preserved verbatim. A second render replaces only the managed region.

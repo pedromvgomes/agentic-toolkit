@@ -13,21 +13,24 @@ func configFilePath(env *Env) string {
 	return filepath.Join(env.WorkDir, ConfigFileName)
 }
 
-// configDir returns the directory containing the entry manifest. The
-// lockfile lives here, and local `./...` entries in the manifest
-// resolve relative to here.
-func configDir(env *Env) string {
+// stackDir returns the directory rooting the stack definition. The
+// entry manifest lives here, the lockfile is written here, local
+// `./...` entries in the manifest resolve from here, and ambient
+// project files like AGENTS.md are sourced from here. Distinct from
+// env.WorkDir, which is the apply directory (where rendered output
+// lands). The two collapse to the same path when --config is unset.
+func stackDir(env *Env) string {
 	return filepath.Dir(configFilePath(env))
 }
 
 // lockfilePath returns the absolute path the lockfile should be read
-// from / written to. Always next to the entry manifest.
+// from / written to. Always next to the entry manifest (in stackDir).
 func lockfilePath(env *Env) string {
-	return filepath.Join(configDir(env), LockFileName)
+	return filepath.Join(stackDir(env), LockFileName)
 }
 
 // entryFileName returns the basename of the entry manifest, used as
-// the entry-point name within the resolver's fs.FS rooted at configDir.
+// the entry-point name within the resolver's fs.FS rooted at stackDir.
 // When --config is unset this is just ConfigFileName; with a custom
 // path it's whatever filename the user pointed at.
 func entryFileName(env *Env) string {

@@ -14,8 +14,8 @@ func TestPathHelpers_DefaultBehavior(t *testing.T) {
 	if got, want := configFilePath(env), filepath.Join("/work", ConfigFileName); got != want {
 		t.Errorf("configFilePath = %q, want %q", got, want)
 	}
-	if got, want := configDir(env), "/work"; got != want {
-		t.Errorf("configDir = %q, want %q", got, want)
+	if got, want := stackDir(env), "/work"; got != want {
+		t.Errorf("stackDir = %q, want %q", got, want)
 	}
 	if got, want := lockfilePath(env), filepath.Join("/work", LockFileName); got != want {
 		t.Errorf("lockfilePath = %q, want %q", got, want)
@@ -43,8 +43,8 @@ func TestPathHelpers_ConfigOverride(t *testing.T) {
 	if got, want := configFilePath(env), "/elsewhere/team-stack.yaml"; got != want {
 		t.Errorf("configFilePath = %q, want %q", got, want)
 	}
-	if got, want := configDir(env), "/elsewhere"; got != want {
-		t.Errorf("configDir = %q, want %q", got, want)
+	if got, want := stackDir(env), "/elsewhere"; got != want {
+		t.Errorf("stackDir = %q, want %q", got, want)
 	}
 	if got, want := lockfilePath(env), filepath.Join("/elsewhere", LockFileName); got != want {
 		t.Errorf("lockfilePath = %q, want %q", got, want)
