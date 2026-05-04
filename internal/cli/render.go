@@ -77,6 +77,7 @@ func runRender(env *Env, cacheRoot, scopeFlag string, dryRun, force bool) error 
 		// a temp tree.
 		opts.ScopeRoot = env.WorkDir + "/.claude"
 		opts.ProjectRoot = env.WorkDir
+		opts.StackDir = stackDir(env)
 	}
 	if err := claude.Render(plan, opts); err != nil {
 		return fmt.Errorf("render: %w", err)

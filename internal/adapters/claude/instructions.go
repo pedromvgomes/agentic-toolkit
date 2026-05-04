@@ -24,7 +24,11 @@ func instructionsPath(roots scopeRoots) string {
 // instruction definitions in plan. Layout:
 //
 //   - File doesn't exist + project scope + AGENTS.md exists → seed file
-//     with `@AGENTS.md` import then the managed block.
+//     with `@<rel>` import then the managed block. AGENTS.md is searched
+//     at StackDir first (next to the manifest) and falls back to
+//     ProjectRoot. The seeded import is the path relative to
+//     ProjectRoot (where CLAUDE.md is written), so the agent resolves
+//     it correctly at runtime.
 //   - File doesn't exist (any other case) → create with just the
 //     managed block.
 //   - File exists with markers → replace the region between markers,
@@ -68,9 +72,8 @@ func renderInstructions(plan *resolver.Plan, roots scopeRoots, opts Options) err
 	case !exists:
 		seed := ""
 		if roots.Scope == ScopeProject {
-			agentsPath := filepath.Join(roots.ProjectRoot, "AGENTS.md")
-			if _, err := os.Stat(agentsPath); err == nil {
-				seed = "@AGENTS.md\n\n"
+			if rel, ok := findAgentsImport(roots); ok {
+				seed = "@" + rel + "\n\n"
 			}
 		}
 		newContent = seed + managedBody + "\n"
@@ -105,6 +108,31 @@ func renderInstructions(plan *resolver.Plan, roots scopeRoots, opts Options) err
 		fmt.Fprintf(opts.Stdout, "wrote %s\n", target)
 	}
 	return nil
+}
+
+// findAgentsImport locates an AGENTS.md to seed the @-import with and
+// returns the path relative to ProjectRoot (where CLAUDE.md is being
+// written). Search order: StackDir, then ProjectRoot. Returns ok=false
+// when neither has an AGENTS.md or the relative path can't be computed.
+func findAgentsImport(roots scopeRoots) (string, bool) {
+	candidates := []string{roots.StackDir, roots.ProjectRoot}
+	seen := map[string]bool{}
+	for _, dir := range candidates {
+		if dir == "" || seen[dir] {
+			continue
+		}
+		seen[dir] = true
+		full := filepath.Join(dir, "AGENTS.md")
+		if _, err := os.Stat(full); err != nil {
+			continue
+		}
+		rel, err := filepath.Rel(roots.ProjectRoot, full)
+		if err != nil {
+			continue
+		}
+		return filepath.ToSlash(rel), true
+	}
+	return "", false
 }
 
 // buildInstructionsRegion concatenates instruction bodies inside the

@@ -48,7 +48,7 @@ func runFetch(env *Env, cacheRoot string) error {
 }
 
 // loadLockfile reads the lockfile from the same directory as the
-// entry manifest (configDir). A missing lockfile is reported with a
+// entry manifest (stackDir). A missing lockfile is reported with a
 // clear "run agtk lock" hint so downstream commands don't have to
 // repeat the message.
 func loadLockfile(env *Env) (*lockfile.Lockfile, error) {
