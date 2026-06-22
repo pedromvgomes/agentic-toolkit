@@ -6,7 +6,6 @@ value:
     allow:
       - "Read(**/.agents/CODE-MAP.md)"
       - "Edit(**/.agents/CODE-MAP.md)"
-      - "Write(./.agents/memories/**)"
       - "Bash(git checkout *)"
       - "Bash(git hash-object *)"
       - "Bash(*/pre-pr-review/scripts/detect-parent.sh*)"
