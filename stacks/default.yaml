@@ -9,6 +9,8 @@ skills:
   - github.com/anthropics/skills.git/skills/skill-creator@main
 agents:
   - code-explorer
+mcp:
+  - context7
 instructions:
   - git
   - plan-approval
