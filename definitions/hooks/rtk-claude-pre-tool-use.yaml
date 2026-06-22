@@ -1,0 +1,12 @@
+name: rtk-claude-pre-tool-use
+description: Ensure usage of RTK
+platforms: [claude]
+event: PreToolUse
+matcher: Bash
+handler:
+  type: command
+  command: |
+    export PATH="$HOME/.local/bin:$PATH"
+    command -v rtk >/dev/null 2>&1 || \
+      curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh >&2
+timeout: 90

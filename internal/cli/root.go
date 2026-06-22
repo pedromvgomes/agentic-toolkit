@@ -60,6 +60,20 @@ type Env struct {
 	// PersistentPreRunE. Empty means "use the default in WorkDir".
 	ConfigPath string
 
+	// SourceDir, when set, is the absolute path to a toolkit source tree
+	// (containing stacks/ and definitions/). Bound to --source; resolved
+	// to absolute in PersistentPreRunE. Mutually exclusive with ConfigPath.
+	// agtk applies from it as if run there: the entry manifest is
+	// <SourceDir>/.agentic-toolkit.yaml by default, or the named stack at
+	// <SourceDir>/stacks/<StackName>.yaml when StackName is set. Output and
+	// the lockfile land in WorkDir, leaving the source tree untouched.
+	SourceDir string
+
+	// StackName optionally names a stack to apply from SourceDir (the
+	// `--stack` flag), overriding the source's default .agentic-toolkit.yaml
+	// entry. Only meaningful together with SourceDir.
+	StackName string
+
 	// UpdateProvider, when non-nil, replaces the default GitHub-backed
 	// LatestVersionProvider. Tests inject stubs to keep the network
 	// out of unit tests.
@@ -110,16 +124,39 @@ func NewRootCmd(env *Env) *cobra.Command {
 	root.PersistentFlags().StringVar(&env.ConfigPath, "config", "",
 		"path to the stack manifest (default: ./"+ConfigFileName+"). The lockfile lands next to this file; render output still goes to the working directory.")
 
+	// Global --source/--stack: apply a named stack from a toolkit source
+	// tree elsewhere on disk. Definitions and stacks are read from
+	// <source>/{definitions,stacks}; the lockfile and rendered output land
+	// in the working directory, so the source tree stays untouched.
+	// Mutually exclusive with --config.
+	root.PersistentFlags().StringVar(&env.SourceDir, "source", "",
+		"path to a toolkit source tree (with stacks/ and definitions/) to apply from, as if agtk were run there. Output and lockfile go to the working directory. Mutually exclusive with --config.")
+	root.PersistentFlags().StringVar(&env.StackName, "stack", "",
+		"optional named stack to apply from --source (resolves to <source>/stacks/<stack>.yaml instead of the source's .agentic-toolkit.yaml).")
+
 	// Persistent pre-run: resolve --config to an absolute path so
 	// downstream helpers don't have to care about cwd, and spawn the
 	// background update checker once for the whole invocation.
 	root.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		if env.SourceDir != "" && env.ConfigPath != "" {
+			return fmt.Errorf("--source and --config are mutually exclusive")
+		}
+		if env.StackName != "" && env.SourceDir == "" {
+			return fmt.Errorf("--stack requires --source <dir>")
+		}
 		if env.ConfigPath != "" && !filepath.IsAbs(env.ConfigPath) {
 			abs, err := filepath.Abs(env.ConfigPath)
 			if err != nil {
 				return fmt.Errorf("resolve --config %q: %w", env.ConfigPath, err)
 			}
 			env.ConfigPath = abs
+		}
+		if env.SourceDir != "" && !filepath.IsAbs(env.SourceDir) {
+			abs, err := filepath.Abs(env.SourceDir)
+			if err != nil {
+				return fmt.Errorf("resolve --source %q: %w", env.SourceDir, err)
+			}
+			env.SourceDir = abs
 		}
 		if env.UpdateResult == nil && cmd.Name() != "update" {
 			env.UpdateResult = startBackgroundCheck(env)

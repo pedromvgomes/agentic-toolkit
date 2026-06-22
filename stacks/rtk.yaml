@@ -1,0 +1,4 @@
+description: RTK stack — installs the RTK token-saving proxy and ensures it is used for shell commands.
+hooks:
+  - rtk-claude-session-start
+  - rtk-claude-pre-tool-use

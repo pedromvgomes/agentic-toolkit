@@ -1,0 +1,11 @@
+name: rtk-claude-session-start
+description: Ensure rtk is installed and on PATH for this session
+platforms: [claude]
+event: SessionStart
+handler:
+  type: command
+  command: |
+    export PATH="$HOME/.local/bin:$PATH"
+    command -v rtk >/dev/null 2>&1 || \
+      curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh >&2
+timeout: 90

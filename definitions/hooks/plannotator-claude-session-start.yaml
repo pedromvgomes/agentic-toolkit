@@ -7,4 +7,4 @@ handler:
   command: |
     command -v plannotator >/dev/null 2>&1 || \
       curl -fsSL https://plannotator.ai/install.sh | bash >&2
-timeout: 3600
+timeout: 90

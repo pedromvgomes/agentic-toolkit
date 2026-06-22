@@ -1,0 +1,8 @@
+name: serena-cleanup
+description: Clean up Serena hook session data on session end
+platforms: [claude]
+event: SessionEnd
+handler:
+  type: command
+  command: serena-hooks cleanup --client=claude-code
+timeout: 90

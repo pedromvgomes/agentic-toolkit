@@ -1,0 +1,8 @@
+name: serena-claude-activate
+description: Prompt project activation + load Serena instructions at session start
+platforms: [claude]
+event: SessionStart
+handler:
+  type: command
+  command: serena-hooks activate --client=claude-code
+timeout: 120

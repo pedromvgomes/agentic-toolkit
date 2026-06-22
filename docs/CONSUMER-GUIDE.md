@@ -113,6 +113,36 @@ Other commands:
 Re-run `agtk lock` (or `agtk sync`) whenever you change the stack file,
 want to bump pinned refs to current heads, or pin a new ref.
 
+## Choosing where to apply from
+
+By default every command reads `./.agentic-toolkit.yaml`, writes the
+lockfile next to it, and renders into the current directory. Two global
+flags decouple *where the stack lives* from *where output lands* (they are
+mutually exclusive):
+
+- **`--config <path>`** — point at a stack manifest elsewhere. The lockfile
+  lands next to that file and local `./…` refs resolve from its directory,
+  but rendered output still goes to the working directory. This is the
+  bare-repo + worktree workflow: run from the bare root, point `--config`
+  at a worktree's manifest.
+
+- **`--source <dir>` [`--stack <name>`]** — apply a *toolkit source tree*
+  that lives elsewhere on disk (a checkout with `stacks/` and
+  `definitions/`), exactly as if `agtk` were run inside it. Bare-name
+  definitions resolve against `<dir>/definitions/`, while the lockfile and
+  rendered output land in the working directory — the source tree is never
+  written to. Without `--stack`, the entry is `<dir>/.agentic-toolkit.yaml`;
+  with it, the entry is `<dir>/stacks/<name>.yaml`.
+
+  ```bash
+  # render this repo's `rust` stack into the current project,
+  # sourcing skills/agents/hooks from a sibling checkout:
+  agtk --source ../agentic-toolkit --stack rust sync
+  ```
+
+  Use this for local development of a toolkit before pushing, or to apply a
+  shared toolkit checkout without going through a git URL.
+
 ## Recipes
 
 ### Recipe 1 — extend a single shared stack

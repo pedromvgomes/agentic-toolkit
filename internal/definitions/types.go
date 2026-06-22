@@ -135,7 +135,9 @@ type SkillExtensions struct {
 }
 
 type ClaudeSkillExt struct {
-	AllowedTools []string `yaml:"allowed_tools,omitempty" agtkdoc:"Tool allowlist for the skill (Claude-specific)."`
+	AllowedTools           []string `yaml:"allowed_tools,omitempty"            agtkdoc:"Tool allowlist for the skill (Claude-specific)."`
+	ArgumentHint           string   `yaml:"argument_hint,omitempty"            agtkdoc:"Free-form hint shown when the skill is invoked as a slash command (e.g. \"<goal>\")."`
+	DisableModelInvocation bool     `yaml:"disable_model_invocation,omitempty" agtkdoc:"If true, the model cannot auto-invoke this skill; only the user can run it explicitly."`
 }
 
 func (s *Skill) GetCommon() *Common { return &s.Common }
