@@ -12,3 +12,5 @@ agents:
 instructions:
   - git
   - plan-approval
+settings:
+  - skill-permissions

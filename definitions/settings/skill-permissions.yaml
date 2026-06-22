@@ -1,0 +1,15 @@
+name: skill-permissions
+description: Pre-approve the file and shell operations the bundled skills/agents need (code-explorer code map, Serena memories, pre-pr-review scripts) so they run without permission prompts.
+platforms: [claude]
+value:
+  permissions:
+    allow:
+      - "Read(**/.agents/CODE-MAP.md)"
+      - "Edit(**/.agents/CODE-MAP.md)"
+      - "Write(./.agents/memories/**)"
+      - "Bash(git checkout *)"
+      - "Bash(git hash-object *)"
+      - "Bash(*/pre-pr-review/scripts/detect-parent.sh*)"
+      - "Bash(*/pre-pr-review/scripts/capture-diff.sh *)"
+      - "Bash(*/pre-pr-review/scripts/list-changed.sh *)"
+      - "Bash(*/pre-pr-review/scripts/find-convention-docs.sh*)"
