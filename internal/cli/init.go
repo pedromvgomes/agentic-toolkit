@@ -35,6 +35,9 @@ func newInitCmd(env *Env) *cobra.Command {
 }
 
 func runInit(env *Env, extendsURL string, force bool) error {
+	if env.SourceDir != "" {
+		return fmt.Errorf("init does not support --source; it writes a new %s in the working directory", ConfigFileName)
+	}
 	path := configFilePath(env)
 	if !force {
 		if _, err := os.Stat(path); err == nil {

@@ -1,0 +1,13 @@
+name: serena-claude-session-start
+description: Ensure serena + serena-hooks are on PATH for this session
+platforms: [claude]
+event: SessionStart
+handler:
+  type: command
+  command: |
+    export PATH="$HOME/.local/bin:$PATH"
+    command -v uv >/dev/null 2>&1 || \
+      curl -LsSf https://astral.sh/uv/install.sh | sh >&2
+    command -v serena >/dev/null 2>&1 || \
+      uv tool install -p 3.13 serena-agent >&2
+timeout: 3600

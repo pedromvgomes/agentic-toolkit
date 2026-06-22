@@ -6,6 +6,8 @@ tags: [demo]
 extensions:
   claude:
     allowed_tools: [Read, Grep]
+    argument_hint: "<goal>"
+    disable_model_invocation: true
 ---
 
 # Example skill

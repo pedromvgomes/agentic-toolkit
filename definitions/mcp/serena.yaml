@@ -1,0 +1,10 @@
+name: serena
+description: Serena MCP server — semantic code retrieval and editing tools, started against the current project directory.
+platforms: [claude]
+transport: stdio
+command: serena
+args:
+  - start-mcp-server
+  - --context
+  - claude-code
+  - --project-from-cwd

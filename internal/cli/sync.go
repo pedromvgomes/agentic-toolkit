@@ -111,7 +111,7 @@ func runSync(env *Env, cacheRoot, scopeFlag string, dryRun, force bool) error {
 	if scope == claude.ScopeProject {
 		opts.ScopeRoot = filepath.Join(env.WorkDir, ".claude")
 		opts.ProjectRoot = env.WorkDir
-		opts.StackDir = stackDir(env)
+		opts.StackDir = renderStackDir(env)
 	}
 	if err := claude.Render(plan, opts); err != nil {
 		return fmt.Errorf("render: %w", err)

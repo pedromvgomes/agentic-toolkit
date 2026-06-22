@@ -1,0 +1,8 @@
+description: Serena stack — the Serena MCP server plus its session lifecycle hooks (install, activation, reminders, cleanup).
+mcp:
+  - serena
+hooks:
+  - serena-claude-session-start
+  - serena-claude-activate
+  - serena-remind
+  - serena-cleanup

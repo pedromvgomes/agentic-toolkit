@@ -34,6 +34,12 @@ func TestParse_ValidSkill(t *testing.T) {
 	if got := s.Extensions.Claude.AllowedTools; len(got) != 2 || got[0] != "Read" {
 		t.Errorf("allowed_tools = %v, want [Read Grep]", got)
 	}
+	if got := s.Extensions.Claude.ArgumentHint; got != "<goal>" {
+		t.Errorf("argument_hint = %q, want %q", got, "<goal>")
+	}
+	if !s.Extensions.Claude.DisableModelInvocation {
+		t.Errorf("disable_model_invocation = false, want true")
+	}
 	if !strings.Contains(s.Body, "Body of the skill.") {
 		t.Errorf("body did not include expected text, got %q", s.Body)
 	}

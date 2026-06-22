@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/pedromvgomes/agentic-toolkit/internal/adapters/claude"
+	"github.com/pedromvgomes/agentic-toolkit/internal/definitions"
 	"github.com/pedromvgomes/agentic-toolkit/internal/resolver"
 )
 
@@ -526,6 +527,40 @@ func TestRender_SettingPresetOrder(t *testing.T) {
 	}
 	if envBlock["FOO"] != "from-high" {
 		t.Errorf("expected FOO=from-high (later preset wins), got %v", envBlock["FOO"])
+	}
+}
+
+// TestRender_SkillClaudeFrontmatter: a skill carrying claude extensions
+// emits argument-hint and disable-model-invocation in its frontmatter.
+func TestRender_SkillClaudeFrontmatter(t *testing.T) {
+	tmp := t.TempDir()
+	scopeRoot := filepath.Join(tmp, ".claude")
+
+	skillFS := makeFS(map[string]string{
+		"definitions/skills/handoff/SKILL.md": "ignored\n",
+	})
+	pd := pdSkill("handoff", "hand off the session", "handoff body\n", "definitions/skills/handoff", "default", skillFS)
+	skill := pd.Definition.(*definitions.Skill)
+	skill.Extensions.Claude = &definitions.ClaudeSkillExt{
+		ArgumentHint:           "<goal>",
+		DisableModelInvocation: true,
+	}
+
+	plan := makePlan([]resolver.PlannedDefinition{pd}, "default")
+	if err := claude.Render(plan, claude.Options{
+		Scope:       claude.ScopeProject,
+		ScopeRoot:   scopeRoot,
+		ProjectRoot: tmp,
+	}); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+
+	got := mustRead(t, filepath.Join(scopeRoot, "skills/handoff/SKILL.md"))
+	if !strings.Contains(got, "argument-hint: <goal>") {
+		t.Errorf("SKILL.md missing argument-hint frontmatter:\n%s", got)
+	}
+	if !strings.Contains(got, "disable-model-invocation: true") {
+		t.Errorf("SKILL.md missing disable-model-invocation frontmatter:\n%s", got)
 	}
 }
 

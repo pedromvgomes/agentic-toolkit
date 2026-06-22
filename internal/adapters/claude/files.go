@@ -187,13 +187,17 @@ func applyWholeOp(op wholeOp, newManifest manifestState, opts Options) error {
 func renderSkill(def definitions.Definition) ([]byte, error) {
 	s := def.(*definitions.Skill)
 	type fm struct {
-		Name         string   `yaml:"name"`
-		Description  string   `yaml:"description"`
-		AllowedTools []string `yaml:"allowed-tools,omitempty"`
+		Name                   string   `yaml:"name"`
+		Description            string   `yaml:"description"`
+		AllowedTools           []string `yaml:"allowed-tools,omitempty"`
+		ArgumentHint           string   `yaml:"argument-hint,omitempty"`
+		DisableModelInvocation bool     `yaml:"disable-model-invocation,omitempty"`
 	}
 	out := fm{Name: s.Name, Description: s.Description}
 	if s.Extensions.Claude != nil {
 		out.AllowedTools = s.Extensions.Claude.AllowedTools
+		out.ArgumentHint = s.Extensions.Claude.ArgumentHint
+		out.DisableModelInvocation = s.Extensions.Claude.DisableModelInvocation
 	}
 	return frontmatterPlusBody(out, s.Body)
 }
