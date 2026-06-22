@@ -1,0 +1,12 @@
+name: context7
+description: Context7 MCP server — up-to-date, version-specific library documentation and code examples.
+platforms: [claude]
+transport: stdio
+command: npx
+args:
+  - "-y"
+  - "@upstash/context7-mcp"
+  - "--api-key"
+  - "${CONTEXT7_KEY}"
+env:
+  DATABASE_URL: "${CONTEXT7_KEY}"
