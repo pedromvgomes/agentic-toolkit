@@ -1,0 +1,8 @@
+name: chrome-devtools
+description: Chrome DevTools MCP server — drives a real Chrome instance over the DevTools Protocol for browser automation and debugging, with screenshots saved directly to disk via take_screenshot's filePath.
+platforms: [claude]
+transport: stdio
+command: npx
+args:
+  - "-y"
+  - "chrome-devtools-mcp@latest"
