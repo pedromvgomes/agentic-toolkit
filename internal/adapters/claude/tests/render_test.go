@@ -70,18 +70,33 @@ func TestRender_AllCategories(t *testing.T) {
 		t.Fatalf("CLAUDE.md missing instruction body: %q", claudeMD)
 	}
 
-	// settings.json contains hooks/mcpServers/permissions and the marker.
+	// settings.json contains hooks/permissions and the marker; mcpServers
+	// is not among them (see below — it lives in .mcp.json instead).
 	settings := mustReadJSON(t, filepath.Join(scopeRoot, "settings.json"))
-	for _, key := range []string{"hooks", "mcpServers", "permissions", "_meta"} {
+	for _, key := range []string{"hooks", "permissions", "_meta"} {
 		if _, ok := settings[key]; !ok {
 			t.Errorf("settings.json missing top-level key %q (got keys %v)", key, mapKeys(settings))
 		}
 	}
+	if _, ok := settings["mcpServers"]; ok {
+		t.Errorf("settings.json must not contain mcpServers (Claude Code doesn't read MCP config from there)")
+	}
 	managed := managedKeys(t, settings)
-	for _, want := range []string{"hooks", "mcpServers", "permissions"} {
+	for _, want := range []string{"hooks", "permissions"} {
 		if !contains(managed, want) {
 			t.Errorf("_meta.agtk.managed missing %q (got %v)", want, managed)
 		}
+	}
+
+	// mcpServers lives in .mcp.json at the project root, Claude Code's
+	// documented location for project-scoped MCP servers.
+	mcpJSON := mustReadJSON(t, filepath.Join(tmp, ".mcp.json"))
+	if _, ok := mcpJSON["mcpServers"]; !ok {
+		t.Errorf(".mcp.json missing mcpServers (got keys %v)", mapKeys(mcpJSON))
+	}
+	mcpManaged := managedKeys(t, mcpJSON)
+	if !contains(mcpManaged, "mcpServers") {
+		t.Errorf(".mcp.json _meta.agtk.managed missing mcpServers (got %v)", mcpManaged)
 	}
 
 	// Manifest tracks every whole-owned file and excludes settings.json/CLAUDE.md.
@@ -102,6 +117,9 @@ func TestRender_AllCategories(t *testing.T) {
 	}
 	if _, leaked := files["settings.json"]; leaked {
 		t.Errorf("manifest must not track settings.json")
+	}
+	if _, leaked := files[".mcp.json"]; leaked {
+		t.Errorf("manifest must not track .mcp.json")
 	}
 }
 
@@ -177,6 +195,113 @@ func TestRender_PreservesUserSettingsKeys(t *testing.T) {
 	}
 	if _, ok := settings["hooks"]; !ok {
 		t.Errorf("hooks key not written")
+	}
+}
+
+// TestRender_MCP_WritesProjectMCPJSON verifies MCP servers land in
+// .mcp.json at the project root — the location Claude Code actually
+// reads project-scoped servers from — not in settings.json, and that
+// pre-existing unrelated keys in .mcp.json survive the render.
+func TestRender_MCP_WritesProjectMCPJSON(t *testing.T) {
+	tmp := t.TempDir()
+	scopeRoot := filepath.Join(tmp, ".claude")
+
+	// Pre-existing .mcp.json with a server agtk doesn't know about,
+	// simulating a file a user or another tool wrote to directly.
+	writeJSON(t, filepath.Join(tmp, ".mcp.json"), map[string]any{
+		"someUnrelatedKey": true,
+	})
+
+	plan := makePlan([]resolver.PlannedDefinition{
+		pdMCPStdio("git", "git mcp", "git-mcp", []string{"--repo", "."}, "default"),
+	}, "default")
+
+	if err := claude.Render(plan, claude.Options{
+		Scope:       claude.ScopeProject,
+		ScopeRoot:   scopeRoot,
+		ProjectRoot: tmp,
+	}); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+
+	// No hooks/settings in this plan, so settings.json is never created
+	// at all — settings.json's exclusion of mcpServers in general is
+	// covered by TestRender_AllCategories.
+	if _, err := os.Stat(filepath.Join(scopeRoot, "settings.json")); !os.IsNotExist(err) {
+		t.Errorf("settings.json should not exist for an MCP-only plan (err=%v)", err)
+	}
+
+	mcpJSON := mustReadJSON(t, filepath.Join(tmp, ".mcp.json"))
+	if mcpJSON["someUnrelatedKey"] != true {
+		t.Errorf("unrelated .mcp.json key lost: got %v", mcpJSON["someUnrelatedKey"])
+	}
+	servers, ok := mcpJSON["mcpServers"].(map[string]any)
+	if !ok {
+		t.Fatalf(".mcp.json missing mcpServers object (got %v)", mcpJSON["mcpServers"])
+	}
+	if _, ok := servers["git"]; !ok {
+		t.Errorf("mcpServers missing %q server (got %v)", "git", mapKeys(servers))
+	}
+}
+
+// TestRender_MCP_StaleServerCleared: a server removed from the plan is
+// removed from .mcp.json's mcpServers on the next render, and the
+// managed marker is cleared once no MCP definitions remain at all.
+func TestRender_MCP_StaleServerCleared(t *testing.T) {
+	tmp := t.TempDir()
+	scopeRoot := filepath.Join(tmp, ".claude")
+
+	planA := makePlan([]resolver.PlannedDefinition{
+		pdMCPStdio("git", "git mcp", "git-mcp", nil, "default"),
+	}, "default")
+	if err := claude.Render(planA, claude.Options{
+		Scope:       claude.ScopeProject,
+		ScopeRoot:   scopeRoot,
+		ProjectRoot: tmp,
+	}); err != nil {
+		t.Fatalf("Render A: %v", err)
+	}
+	mcpJSON := mustReadJSON(t, filepath.Join(tmp, ".mcp.json"))
+	if _, ok := mcpJSON["mcpServers"].(map[string]any)["git"]; !ok {
+		t.Fatalf("git server not written in first render")
+	}
+
+	planB := makePlan([]resolver.PlannedDefinition{}, "default")
+	if err := claude.Render(planB, claude.Options{
+		Scope:       claude.ScopeProject,
+		ScopeRoot:   scopeRoot,
+		ProjectRoot: tmp,
+	}); err != nil {
+		t.Fatalf("Render B: %v", err)
+	}
+	mcpJSON = mustReadJSON(t, filepath.Join(tmp, ".mcp.json"))
+	if _, ok := mcpJSON["mcpServers"]; ok {
+		t.Errorf("mcpServers should be cleared once no MCP definitions remain, got %v", mcpJSON["mcpServers"])
+	}
+	if _, ok := mcpJSON["_meta"]; ok {
+		t.Errorf("_meta marker should be cleared once mcpServers is gone, got %v", mcpJSON["_meta"])
+	}
+}
+
+// TestRender_MCP_UserScopeNoop verifies user scope does not write
+// .mcp.json (Claude Code stores user-scoped MCP servers in
+// ~/.claude.json, a different shape not yet implemented by this
+// adapter).
+func TestRender_MCP_UserScopeNoop(t *testing.T) {
+	tmp := t.TempDir()
+	scopeRoot := filepath.Join(tmp, "user-claude")
+
+	plan := makePlan([]resolver.PlannedDefinition{
+		pdMCPStdio("git", "git mcp", "git-mcp", nil, "default"),
+	}, "default")
+	if err := claude.Render(plan, claude.Options{
+		Scope:     claude.ScopeUser,
+		ScopeRoot: scopeRoot,
+	}); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(scopeRoot, ".mcp.json")); !os.IsNotExist(err) {
+		t.Errorf(".mcp.json should not be written under user scope (err=%v)", err)
 	}
 }
 

@@ -23,22 +23,23 @@ func settingsPath(roots scopeRoots) string {
 // there, then write the new managed keys, then rewrite the marker. Keys
 // not in either the old or new managed list are preserved verbatim.
 //
-// Conflict resolution between hook/mcp/setting contributions to the
-// same top-level key:
+// Conflict resolution between hook/setting contributions to the same
+// top-level key:
 //   - Hook definitions own `hooks` exclusively. If a setting tries to
 //     write `hooks`, the hook definitions win (the setting's `hooks`
 //     fragment is dropped silently).
-//   - MCP definitions own `mcpServers` exclusively. Same precedence.
 //   - For other top-level keys touched by multiple settings, last by
 //     preset stack order wins (preset index lookup against
 //     plan.Config.Presets), with stable PlannedDefinition order as
 //     tiebreak.
+//
+// MCP definitions do not touch settings.json at all — see mcp.go. Claude
+// Code does not read project MCP servers from settings.json.
 func renderSettings(plan *resolver.Plan, roots scopeRoots, opts Options) error {
 	hooks := collectHooks(plan)
-	mcps := collectMCPs(plan)
 	settingFragments := collectSettingFragments(plan)
 
-	if len(hooks) == 0 && len(mcps) == 0 && len(settingFragments) == 0 {
+	if len(hooks) == 0 && len(settingFragments) == 0 {
 		return clearSettingsManaged(roots, opts)
 	}
 
@@ -60,14 +61,10 @@ func renderSettings(plan *resolver.Plan, roots scopeRoots, opts Options) error {
 		current["hooks"] = hooks
 		managed["hooks"] = true
 	}
-	if len(mcps) > 0 {
-		current["mcpServers"] = mcps
-		managed["mcpServers"] = true
-	}
 	for key, value := range settingFragments {
 		if managed[key] {
-			// hook/mcp already claimed this key; setting contribution
-			// is suppressed for safety.
+			// hook already claimed this key; setting contribution is
+			// suppressed for safety.
 			continue
 		}
 		current[key] = value
@@ -254,40 +251,6 @@ func collectHooks(plan *resolver.Plan) map[string]any {
 			converted[i] = entry
 		}
 		out[e] = converted
-	}
-	return out
-}
-
-// collectMCPs builds the Claude `mcpServers` block keyed by definition
-// name, with shape derived from transport.
-func collectMCPs(plan *resolver.Plan) map[string]any {
-	out := map[string]any{}
-	for _, d := range plan.Definitions {
-		if d.Category != definitions.CategoryMCP {
-			continue
-		}
-		m := d.Definition.(*definitions.MCPServer)
-		entry := map[string]any{}
-		switch m.Transport {
-		case definitions.TransportStdio:
-			entry["command"] = m.Command
-			if len(m.Args) > 0 {
-				entry["args"] = m.Args
-			}
-			if len(m.Env) > 0 {
-				entry["env"] = m.Env
-			}
-		case definitions.TransportHTTP, definitions.TransportSSE:
-			entry["type"] = string(m.Transport)
-			entry["url"] = m.URL
-			if len(m.Headers) > 0 {
-				entry["headers"] = m.Headers
-			}
-		}
-		out[m.Name] = entry
-	}
-	if len(out) == 0 {
-		return nil
 	}
 	return out
 }
