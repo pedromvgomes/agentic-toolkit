@@ -14,9 +14,11 @@
 //     outside the markers is preserved verbatim. When CLAUDE.md does not
 //     exist, project-scope renders seed it from AGENTS.md (via @AGENTS.md
 //     import) when present, else create a fresh file.
-//  3. Mixed-ownership JSON (settings.json). agtk owns only the top-level
-//     keys it has rendered, recorded in `_meta.agtk.managed`. User keys
-//     are preserved.
+//  3. Mixed-ownership JSON (settings.json, .mcp.json). agtk owns only
+//     the top-level keys it has rendered in each file, recorded in
+//     `_meta.agtk.managed`. User keys are preserved. MCP servers render
+//     to project-scope .mcp.json exclusively — Claude Code does not
+//     read project MCP servers from settings.json.
 //
 // Bundle companion files (skills/agents) are copied verbatim from
 // PlannedDefinition.SourceFS, walking path.Dir(EntryPath) and skipping
@@ -151,6 +153,10 @@ func Render(plan *resolver.Plan, opts Options) error {
 	}
 
 	if err := renderSettings(plan, roots, opts); err != nil {
+		errs = append(errs, err)
+	}
+
+	if err := renderMCP(plan, roots, opts); err != nil {
 		errs = append(errs, err)
 	}
 
