@@ -7,8 +7,8 @@
     },
     "react": {
       "extensions": [".tsx", ".jsx"],
-      "files": ["package.json", "next.config.js", "next.config.ts", "vite.config.js", "vite.config.ts"],
-      "path_contains": ["src/components"]
+      "files": ["next.config.js", "next.config.ts", "vite.config.js", "vite.config.ts"],
+      "path_contains": ["src/components", "src/hooks"]
     },
     "rust": {
       "extensions": [".rs"],
@@ -16,8 +16,7 @@
     },
     "go": {
       "extensions": [".go"],
-      "files": ["go.mod", "go.sum"],
-      "path_contains": ["internal/"]
+      "files": ["go.mod", "go.sum"]
     }
   },
   "agents": {
@@ -99,6 +98,20 @@
         "model": "sonnet",
         "prompt_file": "prompts/go/best-practices.md",
         "description": "Logic bugs and Go/go-vet/project-convention violations."
+      }
+    ],
+    "general": [
+      {
+        "name": "security",
+        "model": "opus",
+        "prompt_file": "prompts/general/security.md",
+        "description": "Language-agnostic security review: secrets, injection, CI/supply chain, infra and container config, access control."
+      },
+      {
+        "name": "best-practices",
+        "model": "sonnet",
+        "prompt_file": "prompts/general/best-practices.md",
+        "description": "Language-agnostic correctness review: logic bugs, shell/config/CI pitfalls, contract drift, project conventions."
       }
     ]
   }
