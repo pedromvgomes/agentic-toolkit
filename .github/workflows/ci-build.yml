@@ -1,9 +1,14 @@
-name: ci
+# ci-build — this file is yours.
+#
+# gt created it once and will never modify or delete it again. It is called by
+# ci-orchestration.yml and must keep `workflow_call`.
+name: ci-build
 
 on:
-  push:
-    branches: [main]
-  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
 
 jobs:
   lint:
@@ -36,19 +41,3 @@ jobs:
           go-version-file: go.mod
           cache: true
       - run: go build ./...
-
-  test:
-    name: test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-          cache: true
-      # Sourcestore + CLI tests shell out to `git` against file:// fixture
-      # repos. setup-go's runner already has git on PATH, but pin a
-      # default branch name so `git init -b main` matches local dev.
-      - name: configure git
-        run: git config --global init.defaultBranch main
-      - run: go test ./...
