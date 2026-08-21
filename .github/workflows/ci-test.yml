@@ -1,16 +1,8 @@
 # ci-test — this file is yours.
 #
-# gt created it once and will never modify or delete it again. Put this
-# repository's test suite here; the orchestration around it stays gt's.
+# gt created it once and will never modify or delete it again.
 #
-# Upload coverage as an artifact named `gt-coverage` and the bulwark
-# stage will consume it instead of running the suite a second time. Without it
-# bulwark falls back to running the tests itself, which is correct but slower.
-#
-#   - uses: actions/upload-artifact@<sha>
-#     with:
-#       name: gt-coverage
-#       path: coverage.out
+# The Go suite, moved from ci.yml, now also producing a coverage profile.
 name: ci-test
 
 on:
@@ -24,6 +16,24 @@ jobs:
     name: test
     runs-on: ubuntu-latest
     steps:
-      # A no-op so the stage is green from the first run. Replace it.
-      - name: Nothing to do yet
-        run: echo "No test steps defined. Add them in .github/workflows/ci-test.yml"
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      # Sourcestore + CLI tests shell out to `git` against file:// fixture
+      # repos. setup-go's runner already has git on PATH, but pin a
+      # default branch name so `git init -b main` matches local dev.
+      - name: configure git
+        run: git config --global init.defaultBranch main
+      # -coverprofile so the bulwark stage reads a report rather than running
+      # the suite again. .bulwark.yml declares `report`, and bulwark exits
+      # rather than shrugging when told to read one nothing wrote.
+      - run: go test -coverprofile=coverage.out ./...
+
+      - name: Upload coverage for the bulwark stage
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: gt-coverage
+          path: coverage.out
+          if-no-files-found: error

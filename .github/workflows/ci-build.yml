@@ -1,10 +1,8 @@
 # ci-build — this file is yours.
 #
-# gt created it once and will never modify or delete it again. Put this
-# repository's build steps here; the orchestration around it stays gt's.
+# gt created it once and will never modify or delete it again.
 #
-# It is called by ci-orchestration.yml and must keep `workflow_call`, or the
-# orchestrator loses the stage.
+# gofmt, vet and the build, moved from ci.yml verbatim.
 name: ci-build
 
 on:
@@ -14,10 +12,33 @@ permissions:
   contents: read
 
 jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -s -l .)
+          if [ -n "$unformatted" ]; then
+            echo "::error::Files need 'gofmt -s -w':"
+            echo "$unformatted"
+            exit 1
+          fi
+      - name: vet
+        run: go vet ./...
+
   build:
     name: build
     runs-on: ubuntu-latest
     steps:
-      # A no-op so the stage is green from the first run. Replace it.
-      - name: Nothing to do yet
-        run: echo "No build steps defined. Add them in .github/workflows/ci-build.yml"
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go build ./...

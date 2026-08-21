@@ -10,7 +10,7 @@
 # never touches them again. Branch protection needs exactly one check, ci-gate,
 # which waits on all of them.
 
-gt_version: v1.0.0
+gt_version: 1.2.0
 dependabot:
   - ecosystem: github-actions
     directory: /
@@ -21,11 +21,10 @@ dependabot_auto_merge:
   schedule: 0 1 * * *
   max_bump: minor
   delete_branch: true
+  github_app: false
 bulwark:
-  # On. There is no security scanning here today, so gt's stage is an addition
-  # rather than a duplicate. Expect findings on the first run; nothing gates on
-  # them while ci-gate is not the required check.
   enabled: true
+  coverage: true
 pipeline:
   ci:
     enabled: true
@@ -34,10 +33,6 @@ pipeline:
       - build
       - test
     merge_queue: false
-  # Off: release.yml already fires on tags here, and on `v*` rather than
-  # `v*.*.*` — so migrating CD also means deciding which pattern is right, not
-  # just moving jobs. cd-orchestration's verify-attestation runs with
-  # require: true, and no tree carries an attestation yet.
   cd:
     enabled: false
     stages:
@@ -46,7 +41,6 @@ pipeline:
       - deploy
       - verify
     tags:
-      # release.yml uses v* today; reconcile the two when CD is turned on.
       - v*.*.*
 conventional_commits:
   enabled: true
@@ -69,10 +63,16 @@ settings:
     merge_commit: false
     rebase: false
     delete_branch_on_merge: true
+    squash_title: pr_title
+    squash_message: blank
   branch_protection:
     branch: main
     required_approvals: 0
     require_up_to_date: false
+    dismiss_stale_reviews: true
+    require_thread_resolution: true
+    require_code_owner_review: false
+    require_last_push_approval: false
 files:
   - sync
   - dependabot-auto-merge
