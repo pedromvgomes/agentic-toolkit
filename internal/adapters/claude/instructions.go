@@ -48,7 +48,7 @@ func renderInstructions(plan *resolver.Plan, roots scopeRoots, opts Options) err
 	}
 
 	target := instructionsPath(roots)
-	existing, existsErr := os.ReadFile(target)
+	existing, existsErr := os.ReadFile(target) // #nosec G304 -- reads the CLAUDE.md agtk is about to update, under the scope root
 	exists := existsErr == nil
 
 	managedBody := buildInstructionsRegion(instructions)
@@ -64,7 +64,7 @@ func renderInstructions(plan *resolver.Plan, roots scopeRoots, opts Options) err
 		if !changed {
 			return nil
 		}
-		return os.WriteFile(target, []byte(updated), 0o644)
+		return os.WriteFile(target, []byte(updated), 0o644) // #nosec G306 G703 -- 0644 and a scope-root-derived path: writing CLAUDE.md where the invoker asked is the command
 	}
 
 	var newContent string
@@ -98,10 +98,10 @@ func renderInstructions(plan *resolver.Plan, roots scopeRoots, opts Options) err
 		}
 		return nil
 	}
-	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil { // #nosec G301 -- 0755: the CLAUDE.md directory in the user's repo, meant to be committed
 		return fmt.Errorf("claude: mkdir %s: %w", filepath.Dir(target), err)
 	}
-	if err := os.WriteFile(target, []byte(newContent), 0o644); err != nil {
+	if err := os.WriteFile(target, []byte(newContent), 0o644); err != nil { // #nosec G306 G703 -- 0644 and a scope-root-derived path: writing CLAUDE.md where the invoker asked is the command
 		return fmt.Errorf("claude: write %s: %w", target, err)
 	}
 	if opts.Stdout != nil {

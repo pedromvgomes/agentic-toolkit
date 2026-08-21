@@ -170,10 +170,10 @@ func applyWholeOp(op wholeOp, newManifest manifestState, opts Options) error {
 		return nil
 	}
 
-	if err := os.MkdirAll(filepath.Dir(op.AbsPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(op.AbsPath), 0o755); err != nil { // #nosec G301 -- 0755: a directory of agent assets in the user's repo, meant to be committed
 		return fmt.Errorf("claude: mkdir %s: %w", filepath.Dir(op.AbsPath), err)
 	}
-	if err := os.WriteFile(op.AbsPath, op.Content, 0o644); err != nil {
+	if err := os.WriteFile(op.AbsPath, op.Content, 0o644); err != nil { // #nosec G306 -- 0644: an agent asset in the user's repo, meant to be committed and read by tools
 		return fmt.Errorf("claude: write %s: %w", op.AbsPath, err)
 	}
 	if opts.Stdout != nil {
@@ -308,7 +308,7 @@ func newManifestState() manifestState {
 
 func readManifest(scopeRoot string) (manifestState, error) {
 	path := filepath.Join(scopeRoot, manifestFileName)
-	raw, err := os.ReadFile(path)
+	raw, err := os.ReadFile(path) // #nosec G304 -- reads back the manifest agtk itself wrote under the scope root
 	if err != nil {
 		if os.IsNotExist(err) {
 			return newManifestState(), nil
@@ -326,7 +326,7 @@ func readManifest(scopeRoot string) (manifestState, error) {
 }
 
 func writeManifest(scopeRoot string, m manifestState) error {
-	if err := os.MkdirAll(scopeRoot, 0o755); err != nil {
+	if err := os.MkdirAll(scopeRoot, 0o755); err != nil { // #nosec G301 -- 0755: the scope root in the user's repo, meant to be committed
 		return fmt.Errorf("claude: mkdir %s: %w", scopeRoot, err)
 	}
 	path := filepath.Join(scopeRoot, manifestFileName)
@@ -335,7 +335,7 @@ func writeManifest(scopeRoot string, m manifestState) error {
 		return fmt.Errorf("claude: marshal manifest: %w", err)
 	}
 	raw = append(raw, '\n')
-	if err := os.WriteFile(path, raw, 0o644); err != nil {
+	if err := os.WriteFile(path, raw, 0o644); err != nil { // #nosec G306 -- 0644: the manifest in the user's repo, meant to be committed
 		return fmt.Errorf("claude: write manifest %s: %w", path, err)
 	}
 	return nil

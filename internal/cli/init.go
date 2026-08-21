@@ -46,11 +46,11 @@ func runInit(env *Env, extendsURL string, force bool) error {
 			return fmt.Errorf("stat %s: %w", path, err)
 		}
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { // #nosec G301 -- 0755: the directory for agentic.yaml in the user's repo
 		return fmt.Errorf("mkdir %s: %w", filepath.Dir(path), err)
 	}
 	body := scaffold(extendsURL)
-	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil { // #nosec G306 -- 0644: agentic.yaml in the user's repo, meant to be committed
 		return fmt.Errorf("write %s: %w", path, err)
 	}
 	fmt.Fprintln(env.Stdout, "wrote", path)

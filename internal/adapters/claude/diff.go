@@ -89,7 +89,7 @@ func Diff(plan *resolver.Plan, opts Options) (Drift, error) {
 	for _, rel := range trackedKeys {
 		recordedHash := manifest.Files[rel]
 		abs := absPath(roots.ScopeRoot, rel)
-		raw, err := os.ReadFile(abs)
+		raw, err := os.ReadFile(abs) // #nosec G304 -- reads the file agtk is diffing, at the path the invoker named
 		if err != nil {
 			d.Missing = append(d.Missing, rel)
 			continue
@@ -116,7 +116,7 @@ func Diff(plan *resolver.Plan, opts Options) (Drift, error) {
 		// user-modification signal already covers it).
 		if recorded := manifest.Files[rel]; recorded != planned[rel] {
 			abs := absPath(roots.ScopeRoot, rel)
-			if raw, err := os.ReadFile(abs); err == nil && contentHash(raw) == recorded {
+			if raw, err := os.ReadFile(abs); err == nil && contentHash(raw) == recorded { // #nosec G304 -- reads the file agtk is diffing, at the path the invoker named
 				if !contains(d.Modified, rel) {
 					d.Modified = append(d.Modified, rel)
 				}

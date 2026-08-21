@@ -83,7 +83,7 @@ func runSync(env *Env, cacheRoot, scopeFlag string, dryRun, force bool) error {
 		if err != nil {
 			return fmt.Errorf("marshal lockfile: %w", err)
 		}
-		if err := os.WriteFile(lockPath, data, 0o644); err != nil {
+		if err := os.WriteFile(lockPath, data, 0o644); err != nil { // #nosec G306 -- 0644: agentic.lock in the user's repo, meant to be committed
 			return fmt.Errorf("write %s: %w", lockPath, err)
 		}
 	}

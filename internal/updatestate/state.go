@@ -62,7 +62,7 @@ func Load() (State, error) {
 // LoadFrom reads State from path. Tests use this to read a tempdir
 // state file without exporting XDG_STATE_HOME.
 func LoadFrom(path string) (State, error) {
-	raw, err := os.ReadFile(path)
+	raw, err := os.ReadFile(path) // #nosec G304 -- reads agtk's own update state at its XDG path
 	if errors.Is(err, fs.ErrNotExist) {
 		return State{}, nil
 	}
@@ -88,14 +88,18 @@ func Save(st State) error {
 
 // SaveTo writes st to path, creating the parent directory if absent.
 func SaveTo(path string, st State) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	// 0700/0600, not 0755/0644. Unlike everything agtk writes into the user's
+	// repo, this file is agtk's own state under XDG_STATE_HOME — nothing else
+	// needs to read it, so nothing else should be able to. Same reasoning gt
+	// applies to its own config and update state.
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("updatestate: mkdir %s: %w", filepath.Dir(path), err)
 	}
 	raw, err := yaml.Marshal(st)
 	if err != nil {
 		return fmt.Errorf("updatestate: marshal: %w", err)
 	}
-	if err := os.WriteFile(path, raw, 0o644); err != nil {
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
 		return fmt.Errorf("updatestate: write %s: %w", path, err)
 	}
 	return nil

@@ -41,7 +41,7 @@ func Load() (Config, error) {
 // LoadFrom reads and parses the user config from path. Tests use this
 // to point at a tempdir-rooted config without setting XDG_CONFIG_HOME.
 func LoadFrom(path string) (Config, error) {
-	raw, err := os.ReadFile(path)
+	raw, err := os.ReadFile(path) // #nosec G304 -- reads agtk's own config at its XDG path
 	if errors.Is(err, fs.ErrNotExist) {
 		return Default(), nil
 	}

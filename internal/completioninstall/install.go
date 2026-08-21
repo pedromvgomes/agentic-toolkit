@@ -212,8 +212,8 @@ func dirWritable(dir string) bool {
 		return false
 	}
 	name := probe.Name()
-	probe.Close()
-	os.Remove(name)
+	probe.Close()   // #nosec G104 -- best-effort probe; failure is handled by the fallback below
+	os.Remove(name) // #nosec G104 -- best-effort probe; failure is handled by the fallback below
 	return true
 }
 
@@ -225,13 +225,18 @@ func defaultBrewPrefix() string {
 	return strings.TrimSpace(string(out))
 }
 
+// exe is agtk's own os.Executable and shell is one of bash/zsh/fish, gated by
+// supportedShell above before this is ever reached — neither is user-controlled
+// in the sense either scanner means. The directives have to sit on the call
+// itself: semgrep anchors to the finding line, not the declaration.
 func defaultRun(exe, shell string) ([]byte, error) {
-	return exec.Command(exe, "completion", shell).Output()
+	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
+	return exec.Command(exe, "completion", shell).Output() // #nosec G204 G702 -- exe is agtk's own os.Executable and shell is one of a fixed set validated by the caller
 }
 
 func defaultWriteFile(path string, data []byte) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { // #nosec G301 -- 0755: the shell completion directory, which the shell must traverse
 		return err
 	}
-	return os.WriteFile(path, data, 0o644)
+	return os.WriteFile(path, data, 0o644) // #nosec G306 -- 0644: a shell completion script, which the shell must read
 }
