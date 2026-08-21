@@ -24,4 +24,3 @@ rather than guessing or falling back to a default.
 
 - **Never add co-authorship trailers.** Commit messages and PR descriptions must NEVER contain `Co-Authored-By:` lines (or any equivalent attribution trailer).
 - **Never merge a PR** unless explicitly told to.
-- **Always include a "Merge Commit Message" section** in every PR description — a short, descriptive message suitable for use as the commit message when the PR is squashed/merged.

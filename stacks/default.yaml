@@ -3,8 +3,9 @@ skills:
   - agents-md-creator
   - challenge
   - continuation-session
+  - deep-code-review
+  - pr-code-review
   - pr-review-resolver
-  - pre-pr-review
   - tdd-bugfix
   - wrap-session
   - github.com/anthropics/skills.git/skills/skill-creator@main
@@ -13,6 +14,7 @@ agents:
 mcp:
   - context7
 instructions:
+  - comments-describe-code-not-its-history
   - git
   - plan-approval
 settings:
