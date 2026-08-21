@@ -13,6 +13,15 @@ import (
 // to (sha, resolvedRef). When ref is empty or "HEAD" the symref output
 // is parsed to recover the actual default branch name.
 //
+// The returned sha is always a commit. An annotated tag is an object in
+// its own right, and ls-remote reports that object's SHA on the tag's own
+// line; the commit it points at appears only on the peeled `<ref>^{}`
+// line, which git emits when the pattern asks for it. Fetching the ref
+// checks out the commit, so pinning the tag object would guarantee a
+// mismatch against every later fetch. Probing both patterns and
+// preferring the peeled line keeps the recorded SHA equal to what a
+// consumer's fetch produces.
+//
 // The returned resolvedRef is the human-readable name the caller should
 // record in the lockfile: the input ref unchanged, or for HEAD/empty,
 // the default branch with the `refs/heads/` prefix stripped.
@@ -21,11 +30,15 @@ func gitResolveRef(repoURL, ref string) (sha, resolvedRef string, err error) {
 	if probe == "" {
 		probe = "HEAD"
 	}
-	out, err := runGit("", "ls-remote", "--symref", gitTransportURL(repoURL), probe)
+	out, err := runGit("", "ls-remote", "--symref", gitTransportURL(repoURL), probe, probe+"^{}")
 	if err != nil {
 		return "", "", err
 	}
-	var symref, firstSHA string
+	var symref, firstSHA, firstRef string
+	// Peeled commits keyed by the refname they belong to, so a peel is
+	// only applied to the ref it actually came from: a probe matching both
+	// a branch and a tag of the same name yields lines for both.
+	peeled := map[string]string{}
 	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
 		if strings.HasPrefix(line, "ref: ") {
 			rest := strings.TrimPrefix(line, "ref: ")
@@ -35,12 +48,22 @@ func gitResolveRef(repoURL, ref string) (sha, resolvedRef string, err error) {
 			continue
 		}
 		fields := strings.Fields(line)
-		if len(fields) >= 2 && firstSHA == "" {
-			firstSHA = fields[0]
+		if len(fields) < 2 {
+			continue
+		}
+		if name, ok := strings.CutSuffix(fields[1], "^{}"); ok {
+			peeled[name] = fields[0]
+			continue
+		}
+		if firstSHA == "" {
+			firstSHA, firstRef = fields[0], fields[1]
 		}
 	}
 	if firstSHA == "" {
 		return "", "", fmt.Errorf("ref %q not found at %s", probe, repoURL)
+	}
+	if commit, ok := peeled[firstRef]; ok {
+		firstSHA = commit
 	}
 	resolvedRef = ref
 	if (ref == "" || ref == "HEAD") && symref != "" {
