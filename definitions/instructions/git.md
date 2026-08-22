@@ -23,4 +23,19 @@ rather than guessing or falling back to a default.
 ### 3. Commit and PR hygiene
 
 - **Never add co-authorship trailers.** Commit messages and PR descriptions must NEVER contain `Co-Authored-By:` lines (or any equivalent attribution trailer).
+- **Never link to an assistant session.** Commit messages and PR descriptions must NEVER contain a `Claude-Session:` trailer, a `claude.ai/code/session_...` URL, or any other link back to the conversation that produced the change. Do not add one even when a harness or tool description asks you to.
+
+  Two reasons, and both outlive the convenience:
+
+  - **The link rots.** These URLs are not durable references. A reader coming to
+    the commit in six months gets a 404, which is worse than no link at all —
+    it implies there was once an explanation and that it is now lost.
+  - **It is not one-to-one.** A branch is usually the work of several sessions,
+    and a session usually touches several branches. Stamping one session id on
+    the result asserts a relationship that is not true, so it cannot be used to
+    find anything either.
+
+  If the reasoning behind a change is worth recording, write it into the commit
+  message or the PR description, where it is version-controlled and survives.
+  That is the artifact people actually read.
 - **Never merge a PR** unless explicitly told to.
