@@ -289,8 +289,8 @@ func extractYAMLPos(err error) (int, int) {
 	m := yamlPosRE.FindStringSubmatch(err.Error())
 	if len(m) == 3 {
 		var l, c int
-		fmt.Sscanf(m[1], "%d", &l)
-		fmt.Sscanf(m[2], "%d", &c)
+		fmt.Sscanf(m[1], "%d", &l) // #nosec G104 -- best-effort cleanup; the parse error already returned is what matters
+		fmt.Sscanf(m[2], "%d", &c) // #nosec G104 -- best-effort cleanup; the parse error already returned is what matters
 		return l, c
 	}
 	return 0, 0

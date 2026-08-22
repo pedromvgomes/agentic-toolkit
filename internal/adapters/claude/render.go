@@ -122,7 +122,7 @@ func Render(plan *resolver.Plan, opts Options) error {
 		return nil
 	}
 
-	if err := os.MkdirAll(roots.ScopeRoot, 0o755); err != nil {
+	if err := os.MkdirAll(roots.ScopeRoot, 0o755); err != nil { // #nosec G301 -- 0755: the scope root in the user's repo, meant to be committed
 		return fmt.Errorf("claude: mkdir %s: %w", roots.ScopeRoot, err)
 	}
 

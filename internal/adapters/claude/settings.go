@@ -105,7 +105,7 @@ func clearSettingsManaged(roots scopeRoots, opts Options) error {
 }
 
 func readSettings(path string) (map[string]any, error) {
-	raw, err := os.ReadFile(path)
+	raw, err := os.ReadFile(path) // #nosec G304 -- reads the settings.json agtk merges into, under the scope root
 	if err != nil {
 		if os.IsNotExist(err) {
 			return map[string]any{}, nil
@@ -123,7 +123,7 @@ func readSettings(path string) (map[string]any, error) {
 }
 
 func writeSettings(path string, m map[string]any, opts Options) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { // #nosec G301 -- 0755: the .claude directory in the user's repo, meant to be committed
 		return fmt.Errorf("claude: mkdir %s: %w", filepath.Dir(path), err)
 	}
 	raw, err := json.MarshalIndent(m, "", "  ")
@@ -131,7 +131,7 @@ func writeSettings(path string, m map[string]any, opts Options) error {
 		return fmt.Errorf("claude: marshal settings: %w", err)
 	}
 	raw = append(raw, '\n')
-	if err := os.WriteFile(path, raw, 0o644); err != nil {
+	if err := os.WriteFile(path, raw, 0o644); err != nil { // #nosec G306 -- 0644: settings.json in the user's repo, read by Claude Code itself
 		return fmt.Errorf("claude: write %s: %w", path, err)
 	}
 	if opts.Stdout != nil {

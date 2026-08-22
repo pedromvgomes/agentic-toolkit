@@ -73,7 +73,7 @@ func runLock(env *Env, cacheRoot string, frozen, jsonOut bool) error {
 		return runLockFrozen(env, path, data, resolved, jsonOut)
 	}
 
-	if err := os.WriteFile(path, data, 0o644); err != nil {
+	if err := os.WriteFile(path, data, 0o644); err != nil { // #nosec G306 -- 0644: agentic.lock in the user's repo, meant to be committed
 		return fmt.Errorf("write %s: %w", path, err)
 	}
 	if jsonOut {
@@ -92,7 +92,7 @@ func runLock(env *Env, cacheRoot string, frozen, jsonOut bool) error {
 // on-disk one. Equal → success. Different (or missing on-disk file) →
 // non-zero exit with a drift report.
 func runLockFrozen(env *Env, path string, resolved []byte, lock *lockfile.Lockfile, jsonOut bool) error {
-	existing, readErr := os.ReadFile(path)
+	existing, readErr := os.ReadFile(path) // #nosec G304 -- reads the existing lockfile at the path the invoker named
 	switch {
 	case errors.Is(readErr, fs.ErrNotExist):
 		if jsonOut {

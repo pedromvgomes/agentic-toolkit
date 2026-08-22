@@ -80,7 +80,10 @@ func gitFetch(repoURL, ref, expectedSHA, dest string) error {
 		ref = "HEAD"
 	}
 	parent := filepath.Dir(dest)
-	if err := os.MkdirAll(parent, 0o755); err != nil {
+	// 0700: this is agtk's own source cache under XDG_CACHE_HOME, the single
+	// place the tree is created. Nothing outside agtk reads it, so nothing
+	// outside agtk should be able to.
+	if err := os.MkdirAll(parent, 0o700); err != nil {
 		return fmt.Errorf("mkdir %s: %w", parent, err)
 	}
 	tmp, err := os.MkdirTemp(parent, ".tmp-fetch-*")
@@ -90,7 +93,7 @@ func gitFetch(repoURL, ref, expectedSHA, dest string) error {
 	cleanup := true
 	defer func() {
 		if cleanup {
-			os.RemoveAll(tmp)
+			os.RemoveAll(tmp) // #nosec G104 -- best-effort removal of a temp dir we are abandoning anyway
 		}
 	}()
 	if _, err := runGit(tmp, "init", "--quiet"); err != nil {
@@ -123,7 +126,7 @@ func gitFetch(repoURL, ref, expectedSHA, dest string) error {
 // (via errors.Join) so the multi-line CLI renderer surfaces it on its
 // own row instead of folding it into the wrapper's line.
 func runGit(dir string, args ...string) (string, error) {
-	cmd := exec.Command("git", args...)
+	cmd := exec.Command("git", args...) // #nosec G204 -- args are built by this package, never interpolated from user input; git is resolved via PATH deliberately
 	if dir != "" {
 		cmd.Dir = dir
 	}

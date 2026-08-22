@@ -1,0 +1,39 @@
+# ci-test — this file is yours.
+#
+# gt created it once and will never modify or delete it again.
+#
+# The Go suite, moved from ci.yml, now also producing a coverage profile.
+name: ci-test
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      # Sourcestore + CLI tests shell out to `git` against file:// fixture
+      # repos. setup-go's runner already has git on PATH, but pin a
+      # default branch name so `git init -b main` matches local dev.
+      - name: configure git
+        run: git config --global init.defaultBranch main
+      # -coverprofile so the bulwark stage reads a report rather than running
+      # the suite again. .bulwark.yml declares `report`, and bulwark exits
+      # rather than shrugging when told to read one nothing wrote.
+      - run: go test -coverprofile=coverage.out ./...
+
+      - name: Upload coverage for the bulwark stage
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: gt-coverage
+          path: coverage.out
+          if-no-files-found: error

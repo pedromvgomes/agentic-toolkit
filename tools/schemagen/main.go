@@ -140,10 +140,10 @@ func main() {
 		if err != nil {
 			fail(err)
 		}
-		if err := os.MkdirAll(filepath.Dir(doc.path), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(doc.path), 0o755); err != nil { // #nosec G301 -- 0755: a docs directory in this repo, meant to be committed
 			fail(err)
 		}
-		if err := os.WriteFile(doc.path, out, 0o644); err != nil {
+		if err := os.WriteFile(doc.path, out, 0o644); err != nil { // #nosec G306 -- 0644: generated schema docs in this repo, meant to be committed
 			fail(err)
 		}
 		fmt.Printf("schemagen: wrote %s (%d bytes)\n", doc.path, len(out))
