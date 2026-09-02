@@ -238,6 +238,13 @@ func renderConfig() ([]byte, error) {
 	writeFieldTable(&b, docForType(reflect.TypeOf(stk.Stack{})).Fields)
 	fmt.Fprintln(&b)
 
+	fmt.Fprintln(&b, "### `memory`")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "Settings for the repo-resident memory store (`agtk memory ...`). Honoured **only in the entry manifest**: the store's location is a fact about the consumer repo, not about a shareable stack, so a stack reached through `extends:` that sets it is ignored with a diagnostic rather than silently relocating the consumer's committed notes.")
+	fmt.Fprintln(&b)
+	writeFieldTable(&b, docForType(reflect.TypeOf(stk.MemoryConfig{})).Fields)
+	fmt.Fprintln(&b)
+
 	fmt.Fprintln(&b, "### Per-entry resolution")
 	fmt.Fprintln(&b)
 	fmt.Fprintln(&b, "Each entry in `extends:` and in the per-category lists (`skills`, `agents`, `rules`, `instructions`, `commands`, `hooks`, `mcp`, `settings`) is a string that the parser disambiguates by shape:")

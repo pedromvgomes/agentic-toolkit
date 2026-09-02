@@ -113,6 +113,64 @@ Other commands:
 Re-run `agtk lock` (or `agtk sync`) whenever you change the stack file,
 want to bump pinned refs to current heads, or pin a new ref.
 
+## Memory store
+
+`agtk memory` manages a repo-resident store of durable notes about your
+codebase — invariants, rationale, gotchas and dead ends that cost real
+exploration to learn. It lives at `.agents/memory/` next to your stack
+manifest, is committed, and is reviewed in PRs like any other source.
+
+```bash
+agtk memory index               # regenerate INDEX.md (scaffolds the store)
+agtk memory anchor              # stamp blob hashes into note anchors
+agtk memory audit               # report notes whose anchored files changed
+agtk memory lint                # structural check for CI
+agtk memory show <name>         # read one note, and count the read
+agtk memory stats               # size, staleness, hit rate
+```
+
+Every command takes `--json`. Nothing here calls a model: `index`,
+`anchor`, `audit` and `lint` are deterministic, so they are safe in hooks
+and CI.
+
+A note is a markdown file with frontmatter:
+
+```markdown
+---
+name: lockfile-pins-shas-not-tags
+kind: invariant
+description: Lock resolution pins commit SHAs, never tags.
+anchors:
+  - path: internal/resolver/graph.go
+  - path: internal/lockfile/*.go
+confidence: verified
+---
+
+`agtk lock` resolves `extends:` graphs to commit SHAs, never tags — see
+`internal/resolver/graph.go:88`.
+```
+
+Write the `path:` entries; `agtk memory anchor` fills in the hashes and
+expands the globs. Anchor paths are relative to the directory holding your
+stack manifest, stay inside it, and are one directory level deep — `**` is
+rejected rather than silently truncated.
+
+`audit` never writes: staleness is recomputed from your working tree on
+every run, so `confidence:` stays your own judgment about whether the claim
+was checked. `lint` is the CI command, and it deliberately passes on a
+stale store — a rename in an unrelated PR should not go red.
+
+To put the store somewhere else, set it in your entry manifest:
+
+```yaml
+memory:
+  root: docs/memory
+```
+
+Only the entry manifest is honoured. A stack pulled in through `extends:`
+that sets `memory:` is ignored with a diagnostic — where your repo commits
+its notes is not a shared stack's business.
+
 ## Choosing where to apply from
 
 By default every command reads `./.agentic-toolkit.yaml`, writes the

@@ -261,3 +261,23 @@ func TestEntriesFor(t *testing.T) {
 		t.Errorf("EntriesFor(agent) should be empty")
 	}
 }
+
+// TestParse_MemoryConfig decodes the memory block; MemoryRoot reports "" when
+// it is absent so callers apply the default without a nil check.
+func TestParse_MemoryConfig(t *testing.T) {
+	with, err := stack.ParseBytes("s.yaml", []byte("skills: []\nmemory:\n  root: docs/memory\n"))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if got := with.MemoryRoot(); got != "docs/memory" {
+		t.Errorf("MemoryRoot = %q, want docs/memory", got)
+	}
+
+	without, err := stack.ParseBytes("s.yaml", []byte("skills: []\n"))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if got := without.MemoryRoot(); got != "" {
+		t.Errorf("MemoryRoot = %q, want empty", got)
+	}
+}

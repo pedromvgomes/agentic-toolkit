@@ -365,3 +365,46 @@ func TestResolve_SourcesOrderedStacksFirst(t *testing.T) {
 		t.Errorf("second source should be definition, got %v", plan.Sources[1].Kind)
 	}
 }
+
+// TestResolve_MemoryConfigIgnoredInExtendedStack: `memory:` is a fact about
+// the consumer repo, so a stack reached through extends: must not relocate
+// the consumer's committed notes. Ignoring it is reported as a diagnostic
+// rather than a hard error, because failing here would break the consumer's
+// build over a field in someone else's stack.
+func TestResolve_MemoryConfigIgnoredInExtendedStack(t *testing.T) {
+	upstreamFS := makeMapFS(map[string]string{
+		"stacks/default.yaml": stackBody(nil, map[string][]string{
+			"skills": {"upstream"},
+		}) + "memory:\n  root: somewhere/else\n",
+		"definitions/skills/upstream/SKILL.md": validSkillBody("Upstream skill"),
+	})
+	provider := newFakeProvider().register("github.com/foo/bar.git", "main", upstreamFS)
+
+	entryFS := makeMapFS(map[string]string{
+		".agentic-toolkit.yaml": stackBody(
+			[]string{"github.com/foo/bar.git/stacks/default.yaml@main"},
+			nil,
+		),
+	})
+	st, err := stack.ParseInFS(entryFS, ".agentic-toolkit.yaml")
+	if err != nil {
+		t.Fatalf("parse stack: %v", err)
+	}
+
+	plan, err := resolver.Resolve(st, entryFS, ".agentic-toolkit.yaml", provider)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	var found *resolver.Diagnostic
+	for i, d := range plan.Diagnostics {
+		if d.Kind == resolver.DiagIgnoredMemoryConfig {
+			found = &plan.Diagnostics[i]
+		}
+	}
+	if found == nil {
+		t.Fatalf("no ignored-memory-config diagnostic in %+v", plan.Diagnostics)
+	}
+	if !strings.Contains(found.Message, "entry manifest") {
+		t.Errorf("diagnostic should explain where memory: is honoured: %q", found.Message)
+	}
+}

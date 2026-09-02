@@ -28,6 +28,15 @@ The same shape is used everywhere: the consumer's entry-point file is just a sta
 | `hooks` | `[]EntryRef` | no |  |
 | `mcp` | `[]EntryRef` | no |  |
 | `settings` | `[]EntryRef` | no |  |
+| `memory` | `MemoryConfig` | no | Repo-resident memory store settings. Honoured only in the entry manifest — the store's location is a fact about the consumer repo, not about a shareable stack, so a stack reached through extends: that sets it gets a diagnostic instead of silently relocating the consumer's committed notes. |
+
+### `memory`
+
+Settings for the repo-resident memory store (`agtk memory ...`). Honoured **only in the entry manifest**: the store's location is a fact about the consumer repo, not about a shareable stack, so a stack reached through `extends:` that sets it is ignored with a diagnostic rather than silently relocating the consumer's committed notes.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `root` | `string` | no | Store location, relative to the directory holding the entry manifest. Defaults to ".agents/memory". |
 
 ### Per-entry resolution
 

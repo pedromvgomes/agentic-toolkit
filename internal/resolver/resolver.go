@@ -180,6 +180,16 @@ func (s *traversalState) loadStack(st *stack.Stack, ctx stackCtx) error {
 		}
 	}
 
+	if ctx.Identifier != "" && st.Memory != nil {
+		s.diags = append(s.diags, Diagnostic{
+			Kind: DiagIgnoredMemoryConfig,
+			Message: fmt.Sprintf("stack %q sets memory:, which is honoured only in the entry manifest; ignoring it",
+				displayID(ctx.Identifier)),
+			SourceURL: ctx.SourceURL,
+			StackName: ctx.Identifier,
+		})
+	}
+
 	root := st.EffectiveRoot()
 	for _, cat := range definitions.AllCategories {
 		entries := st.EntriesFor(cat)
