@@ -313,8 +313,8 @@ func TestMemoryToleratesBrokenManifest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("lint with a broken manifest: %v (%s)", err, stdout)
 	}
-	if !strings.Contains(stderr, "default memory root") {
-		t.Errorf("the fallback should be announced: %q", stderr)
+	if !strings.Contains(stderr, "memory.root") {
+		t.Errorf("the narrowed read should be announced: %q", stderr)
 	}
 }
 
@@ -403,5 +403,44 @@ func TestMemoryShowScaffoldsGitignore(t *testing.T) {
 	ignore := readFile(t, filepath.Join(work, ".agents/memory/.gitignore"))
 	if !strings.Contains(ignore, ".hits.jsonl") {
 		t.Errorf(".gitignore = %q, want it to cover the hits log", ignore)
+	}
+}
+
+// TestMemoryKeepsConfiguredRootWhenManifestIsBroken: tolerating an
+// unrelated manifest error must not silently move the store. Falling back
+// to the default root would make lint green over an empty directory while
+// the real store drifts — worse than the error being tolerated.
+func TestMemoryKeepsConfiguredRootWhenManifestIsBroken(t *testing.T) {
+	work := memoryProject(t, "memory:\n  root: docs/memory\nextends:\n  - \"!!! not a ref !!!\"\n")
+	writeFile(t, filepath.Join(work, "docs/memory/notes/pins-shas.md"), memoryNote)
+
+	stdout, _, err := runCLI(t, work, "memory", "lint")
+	if err == nil {
+		t.Fatalf("lint passed over the wrong store: %s", stdout)
+	}
+	if !strings.Contains(stdout, "unstamped") {
+		t.Errorf("lint should have read the configured store: %q", stdout)
+	}
+	if _, statErr := os.Stat(filepath.Join(work, ".agents")); statErr == nil {
+		t.Error("a second store was created at the default root")
+	}
+}
+
+// TestMemoryAnchorReportsNothingStampedOnStdout: with every note failing,
+// stdout must not read as success — a hook log often shows only stdout.
+func TestMemoryAnchorReportsNothingStampedOnStdout(t *testing.T) {
+	work := memoryProject(t, "skills: []\n")
+	writeFile(t, filepath.Join(work, ".agents/memory/notes/deep.md"),
+		strings.NewReplacer(
+			"name: pins-shas", "name: deep",
+			"  - path: internal/lockfile/*.go", "  - path: internal/**/*.go",
+		).Replace(memoryNote))
+
+	stdout, _, err := runCLI(t, work, "memory", "anchor")
+	if err == nil {
+		t.Fatal("expected a non-zero exit")
+	}
+	if strings.Contains(stdout, "already current") {
+		t.Errorf("stdout claims success after a total failure: %q", stdout)
 	}
 }

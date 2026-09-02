@@ -193,7 +193,11 @@ func (s *Store) lintNote(n *Note) []Issue {
 // sends the reader in a loop, because stamping cannot resurrect the file.
 func (s *Store) unstampedHint(path string, glob bool) string {
 	if glob {
-		if matches, err := filepath.Glob(s.abs(path)); err == nil && len(matches) == 0 {
+		// expandGlob, not filepath.Glob: stamping skips directories, so a
+		// pattern matching only directories is "matched" to Glob and
+		// "unmatched" to anchor — the advice loop this function exists to
+		// avoid.
+		if matches, err := s.expandGlob(path); err == nil && len(matches) == 0 {
 			return "matches no files — fix the pattern or drop the anchor"
 		}
 		return "unstamped — run `agtk memory anchor`"

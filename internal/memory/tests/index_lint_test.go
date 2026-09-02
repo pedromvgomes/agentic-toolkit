@@ -275,3 +275,22 @@ func TestValidateRootRejectsEscapes(t *testing.T) {
 		}
 	}
 }
+
+// TestLintGlobHintMatchesStampBehaviour: stamping skips directories, so a
+// pattern matching only directories must not be told to run `anchor`.
+func TestLintGlobHintMatchesStampBehaviour(t *testing.T) {
+	s := project(t, map[string]string{"pkg/sub/deep.go": "package sub\n"})
+	writeNote(t, s, "dirs", note("dirs", "  - path: pkg/*\n"))
+	notes, parseErrs := s.LoadNotes()
+	if _, err := s.WriteIndex(notes); err != nil {
+		t.Fatalf("write index: %v", err)
+	}
+
+	issues := s.Lint(notes, parseErrs)
+	if !containsMessage(issues, "matches no files") {
+		t.Errorf("issues = %+v, want the pattern called out", issues)
+	}
+	if containsMessage(issues, "run `agtk memory anchor`") {
+		t.Error("hint prescribes a command that would change nothing")
+	}
+}

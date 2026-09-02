@@ -89,7 +89,13 @@ func memoryStore(env *Env) (*memory.Store, error) {
 		// broken `extends:` ref elsewhere in it is a real problem, but not
 		// this command's, and failing here would turn a memory hook red for
 		// a reason that has nothing to do with the store.
-		fmt.Fprintf(env.Stderr, "warning: %v\n         using the default memory root\n", err)
+		//
+		// Re-read that one field rather than falling back to the default:
+		// silently using a different store than the repo configured would
+		// make lint green over an empty directory, which is worse than the
+		// error we are tolerating.
+		root = stack.MemoryRootFromFile(memoryManifestPath(env))
+		fmt.Fprintf(env.Stderr, "warning: %v\n         reading only `memory.root` from it\n", err)
 	}
 	if err := memory.ValidateRoot(root); err != nil {
 		return nil, err
@@ -221,9 +227,15 @@ func printAnchorReport(env *Env, results []memory.StampResult) {
 			changed++
 		}
 	}
-	if changed == 0 {
+	switch {
+	case len(results) == 0:
+		// Every selected note failed; the errors are on stderr, and claiming
+		// "0 notes already current" on stdout would read as success in a
+		// hook log.
+		fmt.Fprintln(env.Stdout, "no notes stamped")
+	case changed == 0:
 		fmt.Fprintf(env.Stdout, "%s already current\n", plural(len(results), "note"))
-	} else {
+	default:
 		fmt.Fprintf(env.Stdout, "anchored %s:\n", plural(changed, "note"))
 	}
 	for _, r := range results {
@@ -318,6 +330,8 @@ func driftDetail(d memory.Drift) string {
 		return short(d.Was) + " -> " + short(d.Now)
 	case memory.DriftInvalid:
 		return d.Detail
+	case memory.DriftUnstamped:
+		return "unstamped -> " + short(d.Now)
 	case memory.DriftMissing:
 		if d.Detail != "" {
 			return d.Detail

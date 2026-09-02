@@ -250,3 +250,30 @@ func TestStampMarksMissingAnchors(t *testing.T) {
 		t.Errorf("healthy glob anchor marked missing: %+v", res.Anchors[1])
 	}
 }
+
+// TestStampClearsBlobOnAGlobThatMatchesNothing: a `blob` left over from
+// when the path was concrete is meaningless on a glob anchor, and lint
+// rejects it — with no command able to clear it if Stamp does not.
+func TestStampClearsBlobOnAGlobThatMatchesNothing(t *testing.T) {
+	s := project(t, map[string]string{"internal/resolver/graph.go": "package resolver\n"})
+	writeNote(t, s, "switched", note("switched", "  - path: internal/resolver/graph.go\n"))
+	if _, err := s.Stamp(loadOne(t, s, "switched")); err != nil {
+		t.Fatalf("stamp: %v", err)
+	}
+
+	// The curator repoints the anchor at a pattern that matches nothing yet.
+	n := loadOne(t, s, "switched")
+	n.Anchors[0].Path = "internal/nothing/*.go"
+	raw, err := n.Render()
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	write(t, n.File, string(raw))
+
+	if _, err := s.Stamp(loadOne(t, s, "switched")); err != nil {
+		t.Fatalf("stamp: %v", err)
+	}
+	if blob := loadOne(t, s, "switched").Anchors[0].Blob; blob != "" {
+		t.Errorf("glob anchor kept blob %q; lint would reject it with no way to fix", blob)
+	}
+}

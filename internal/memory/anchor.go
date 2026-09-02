@@ -65,7 +65,11 @@ func (s *Store) Stamp(n *Note) (StampResult, error) {
 				// signal into silence: the pattern would look never-stamped,
 				// and if the files came back changed a later stamp would
 				// record the new content as though it had always been so.
+				// Matches are preserved, but a `blob` is meaningless on a
+				// glob anchor: left behind from when the path was concrete,
+				// it would trip lint with no command able to clear it.
 				res.Missing = append(res.Missing, a.Path)
+				a.Blob = ""
 				res.Anchors = append(res.Anchors, StampedAnchor{
 					Path: a.Path, Matches: len(a.Matches), IsGlob: true, Missing: true,
 				})

@@ -414,3 +414,31 @@ func cleanYAMLMessage(err error) string {
 	}
 	return strings.TrimSpace(s)
 }
+
+// MemoryRootFromBytes extracts just `memory.root` from a stack manifest,
+// ignoring everything else in it.
+//
+// It exists for the memory commands, which need only that one field and are
+// advertised as hook- and CI-safe: a manifest that fails full validation —
+// a bad `extends:` ref, say — must not make them fall back to a different
+// store than the one the repo configured. Decoding is non-strict on
+// purpose; this is a targeted read, not a validation pass.
+func MemoryRootFromBytes(raw []byte) string {
+	var partial struct {
+		Memory *MemoryConfig `yaml:"memory"`
+	}
+	if err := yaml.Unmarshal(raw, &partial); err != nil || partial.Memory == nil {
+		return ""
+	}
+	return partial.Memory.Root
+}
+
+// MemoryRootFromFile is MemoryRootFromBytes over a file on disk. A missing
+// or unreadable file yields "".
+func MemoryRootFromFile(filePath string) string {
+	raw, err := os.ReadFile(filePath) // #nosec G304 -- reads the stack file at the path the invoker named
+	if err != nil {
+		return ""
+	}
+	return MemoryRootFromBytes(raw)
+}

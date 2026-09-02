@@ -20,6 +20,10 @@ const (
 	// DriftInvalid: the anchor could not be evaluated at all — an
 	// unsupported pattern, or a path that escapes the project.
 	DriftInvalid DriftKind = "invalid"
+	// DriftUnstamped: the anchored file is present but carries no recorded
+	// hash. Distinct from DriftMissing, which an agent may reasonably act on
+	// by dropping the anchor; this one is fixed by running `anchor`.
+	DriftUnstamped DriftKind = "unstamped"
 )
 
 // Drift is one divergence between a note's anchors and the working tree.
@@ -75,7 +79,7 @@ func (s *Store) auditNote(n *Note) []Drift {
 		case err != nil:
 			drifts = append(drifts, Drift{Kind: DriftInvalid, Path: a.Path, Was: a.Blob, Detail: err.Error()})
 		case a.Blob == "":
-			drifts = append(drifts, Drift{Kind: DriftMissing, Path: a.Path, Now: now, Detail: "never stamped"})
+			drifts = append(drifts, Drift{Kind: DriftUnstamped, Path: a.Path, Now: now})
 		case now != a.Blob:
 			drifts = append(drifts, Drift{Kind: DriftChanged, Path: a.Path, Was: a.Blob, Now: now})
 		}
