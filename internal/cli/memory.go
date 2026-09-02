@@ -94,7 +94,21 @@ func memoryStore(env *Env) (*memory.Store, error) {
 		// silently using a different store than the repo configured would
 		// make lint green over an empty directory, which is worse than the
 		// error we are tolerating.
-		root = stack.MemoryRootFromFile(memoryManifestPath(env))
+		//
+		// If even that read fails the YAML is malformed, so the store's
+		// location is unknown. Guessing the default there would recreate the
+		// bug this tolerance was added to fix — quietly operating on the
+		// wrong store — so refuse instead.
+		recovered, ok := stack.MemoryRootFromFile(memoryManifestPath(env))
+		if !ok {
+			// renderTopLevelError formats the ParseError structurally and
+			// drops anything wrapped around it, so the reason this is fatal
+			// for a memory command has to be said separately.
+			fmt.Fprintln(env.Stderr, "the manifest could not be read at all, so `memory.root` is unknown;")
+			fmt.Fprintln(env.Stderr, "refusing rather than guessing which store to operate on.")
+			return nil, err
+		}
+		root = recovered
 		fmt.Fprintf(env.Stderr, "warning: %v\n         reading only `memory.root` from it\n", err)
 	}
 	if err := memory.ValidateRoot(root); err != nil {
@@ -208,7 +222,7 @@ func newMemoryAnchorCmd(env *Env) *cobra.Command {
 					return err
 				}
 			} else {
-				printAnchorReport(env, results)
+				printAnchorReport(env, results, failed)
 			}
 			if len(failed) > 0 {
 				return fmt.Errorf("could not stamp %s", strings.Join(failed, ", "))
@@ -220,7 +234,7 @@ func newMemoryAnchorCmd(env *Env) *cobra.Command {
 	return cmd
 }
 
-func printAnchorReport(env *Env, results []memory.StampResult) {
+func printAnchorReport(env *Env, results []memory.StampResult, failed []string) {
 	changed := 0
 	for _, r := range results {
 		if r.Changed {
@@ -228,11 +242,13 @@ func printAnchorReport(env *Env, results []memory.StampResult) {
 		}
 	}
 	switch {
-	case len(results) == 0:
-		// Every selected note failed; the errors are on stderr, and claiming
-		// "0 notes already current" on stdout would read as success in a
-		// hook log.
-		fmt.Fprintln(env.Stdout, "no notes stamped")
+	case len(results) == 0 && len(failed) == 0:
+		fmt.Fprintln(env.Stdout, "no notes in the store")
+	case len(failed) > 0:
+		// Errors are on stderr; stdout must not read as success in a hook
+		// log that shows only stdout. Keyed on failures rather than on an
+		// empty result set, because a store with no notes yet is healthy.
+		fmt.Fprintf(env.Stdout, "%s could not be stamped\n", plural(len(failed), "note"))
 	case changed == 0:
 		fmt.Fprintf(env.Stdout, "%s already current\n", plural(len(results), "note"))
 	default:
@@ -245,6 +261,9 @@ func printAnchorReport(env *Env, results []memory.StampResult) {
 		fmt.Fprintf(env.Stdout, "  %s\n", r.Name)
 		for _, a := range r.Anchors {
 			switch {
+			case a.Missing && a.IsGlob:
+				fmt.Fprintf(env.Stdout, "    %-44s -> matches nothing, keeping %s\n",
+					a.Path, plural(a.Matches, "previous match"))
 			case a.Missing:
 				// The hash shown is the one kept from the last stamp, so say
 				// so — otherwise it reads exactly like a fresh stamp.

@@ -281,3 +281,27 @@ func TestParse_MemoryConfig(t *testing.T) {
 		t.Errorf("MemoryRoot = %q, want empty", got)
 	}
 }
+
+// TestMemoryRootFromBytes: ok separates "no memory block" from "nothing
+// could be read", which is what lets the memory commands tolerate a broken
+// manifest without guessing where the store lives.
+func TestMemoryRootFromBytes(t *testing.T) {
+	cases := map[string]struct {
+		raw      string
+		wantRoot string
+		wantOK   bool
+	}{
+		"configured":      {"memory:\n  root: docs/memory\nskills: []\n", "docs/memory", true},
+		"no memory block": {"skills: []\n", "", true},
+		"invalid extends": {"memory:\n  root: docs/memory\nextends:\n  - \"!!!\"\n", "docs/memory", true},
+		"malformed yaml":  {"memory:\n  root: docs/memory\nskills: [a, b\n", "", false},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			root, ok := stack.MemoryRootFromBytes([]byte(tc.raw))
+			if root != tc.wantRoot || ok != tc.wantOK {
+				t.Errorf("= (%q, %v), want (%q, %v)", root, ok, tc.wantRoot, tc.wantOK)
+			}
+		})
+	}
+}

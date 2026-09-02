@@ -423,22 +423,31 @@ func cleanYAMLMessage(err error) string {
 // a bad `extends:` ref, say — must not make them fall back to a different
 // store than the one the repo configured. Decoding is non-strict on
 // purpose; this is a targeted read, not a validation pass.
-func MemoryRootFromBytes(raw []byte) string {
+//
+// ok distinguishes the two ways of getting an empty root. True means the
+// document decoded and simply has no `memory:` block, so the default root
+// is correct. False means nothing could be read at all — the YAML itself is
+// malformed — and the store's location is then genuinely unknown, which a
+// caller must not paper over by guessing.
+func MemoryRootFromBytes(raw []byte) (root string, ok bool) {
 	var partial struct {
 		Memory *MemoryConfig `yaml:"memory"`
 	}
-	if err := yaml.Unmarshal(raw, &partial); err != nil || partial.Memory == nil {
-		return ""
+	if err := yaml.Unmarshal(raw, &partial); err != nil {
+		return "", false
 	}
-	return partial.Memory.Root
+	if partial.Memory == nil {
+		return "", true
+	}
+	return partial.Memory.Root, true
 }
 
-// MemoryRootFromFile is MemoryRootFromBytes over a file on disk. A missing
-// or unreadable file yields "".
-func MemoryRootFromFile(filePath string) string {
+// MemoryRootFromFile is MemoryRootFromBytes over a file on disk. An
+// unreadable file reports ok=false.
+func MemoryRootFromFile(filePath string) (root string, ok bool) {
 	raw, err := os.ReadFile(filePath) // #nosec G304 -- reads the stack file at the path the invoker named
 	if err != nil {
-		return ""
+		return "", false
 	}
 	return MemoryRootFromBytes(raw)
 }

@@ -129,11 +129,15 @@ func hashRegularFile(abs string) (string, error) {
 	return HashFile(abs)
 }
 
-// expandGlob resolves a project-relative pattern to its matching files,
-// sorted, with each file's current blob. Directories are skipped so a
-// pattern like `internal/*` anchors to files rather than to directory
-// entries that can never be hashed.
-func (s *Store) expandGlob(pattern string) ([]Match, error) {
+// globFiles resolves a project-relative pattern to the regular files it
+// matches, sorted and absolute. Directories are skipped so a pattern like
+// `internal/*` anchors to files rather than to directory entries that can
+// never be hashed.
+//
+// Split out from expandGlob so a caller that only needs to know whether a
+// pattern matches anything — lint's hint — does not hash the whole
+// expansion to find out.
+func (s *Store) globFiles(pattern string) ([]string, error) {
 	if err := ValidateAnchorPath(pattern); err != nil {
 		return nil, err
 	}
@@ -141,18 +145,31 @@ func (s *Store) expandGlob(pattern string) ([]Match, error) {
 	if err != nil {
 		return nil, fmt.Errorf("bad glob %q: %w", pattern, err)
 	}
-	var matches []Match
+	var files []string
 	for _, hit := range hits {
 		info, err := os.Stat(hit)
-		if err != nil || info.IsDir() {
+		if err != nil || !info.Mode().IsRegular() {
 			continue
 		}
-		blob, err := HashFile(hit)
-		if err != nil {
-			return nil, fmt.Errorf("hash %s: %w", hit, err)
-		}
-		matches = append(matches, Match{Path: s.rel(hit), Blob: blob})
+		files = append(files, hit)
 	}
-	sort.Slice(matches, func(i, j int) bool { return matches[i].Path < matches[j].Path })
+	sort.Strings(files)
+	return files, nil
+}
+
+// expandGlob is globFiles plus each file's current blob.
+func (s *Store) expandGlob(pattern string) ([]Match, error) {
+	files, err := s.globFiles(pattern)
+	if err != nil {
+		return nil, err
+	}
+	matches := make([]Match, 0, len(files))
+	for _, f := range files {
+		blob, err := HashFile(f)
+		if err != nil {
+			return nil, fmt.Errorf("hash %s: %w", f, err)
+		}
+		matches = append(matches, Match{Path: s.rel(f), Blob: blob})
+	}
 	return matches, nil
 }

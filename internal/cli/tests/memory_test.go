@@ -444,3 +444,39 @@ func TestMemoryAnchorReportsNothingStampedOnStdout(t *testing.T) {
 		t.Errorf("stdout claims success after a total failure: %q", stdout)
 	}
 }
+
+// TestMemoryRefusesOnMalformedManifest: a manifest whose YAML does not
+// parse leaves the store's location genuinely unknown. Falling back to the
+// default would recreate the bug the narrowed read exists to fix — quietly
+// operating on the wrong store.
+func TestMemoryRefusesOnMalformedManifest(t *testing.T) {
+	work := memoryProject(t, "memory:\n  root: docs/memory\nskills: [a, b\n")
+	writeFile(t, filepath.Join(work, "docs/memory/notes/pins-shas.md"), memoryNote)
+
+	if _, _, err := runCLI(t, work, "memory", "lint"); err == nil {
+		t.Fatal("lint passed with an unparseable manifest")
+	}
+	if _, _, err := runCLI(t, work, "memory", "index"); err == nil {
+		t.Fatal("index ran with an unparseable manifest")
+	}
+	if _, statErr := os.Stat(filepath.Join(work, ".agents")); statErr == nil {
+		t.Error("a second store was created at the default root")
+	}
+}
+
+// TestMemoryAnchorOnEmptyStore: a store with no notes yet is healthy, and
+// must not report like a failed run.
+func TestMemoryAnchorOnEmptyStore(t *testing.T) {
+	work := memoryProject(t, "skills: []\n")
+	if _, _, err := runCLI(t, work, "memory", "index"); err != nil {
+		t.Fatalf("memory index: %v", err)
+	}
+
+	stdout, _, err := runCLI(t, work, "memory", "anchor")
+	if err != nil {
+		t.Fatalf("anchor on an empty store: %v", err)
+	}
+	if strings.Contains(stdout, "could not be stamped") {
+		t.Errorf("an empty store reported as a failure: %q", stdout)
+	}
+}
