@@ -29,7 +29,13 @@ jobs:
       # -coverprofile so the bulwark stage reads a report rather than running
       # the suite again. .bulwark.yml declares `report`, and bulwark exits
       # rather than shrugging when told to read one nothing wrote.
-      - run: go test -coverprofile=coverage.out ./...
+      #
+      # -coverpkg is load-bearing, not a refinement: this repo keeps its tests
+      # in sibling `internal/<pkg>/tests` packages, and without it Go credits
+      # the coverage to the test package rather than the package under test.
+      # The profile then reports 4.7% for a suite that actually covers 70.8%,
+      # and any well-tested new package *lowers* the number.
+      - run: go test -coverpkg=./... -coverprofile=coverage.out ./...
 
       - name: Upload coverage for the bulwark stage
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
