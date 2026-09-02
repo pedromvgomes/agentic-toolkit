@@ -73,7 +73,7 @@ func (s *Store) Exists() bool {
 // local hit telemetry out of commits. Idempotent.
 func (s *Store) Scaffold() error {
 	for _, dir := range []string{s.Root, s.NotesPath(), s.CandidatesPath()} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		if err := os.MkdirAll(dir, 0o750); err != nil {
 			return fmt.Errorf("create %s: %w", dir, err)
 		}
 	}
@@ -92,7 +92,7 @@ func (s *Store) Scaffold() error {
 // ensureGitignore writes the store's .gitignore if it is not already there,
 // creating the store directory as needed.
 func (s *Store) ensureGitignore() error {
-	if err := os.MkdirAll(s.Root, 0o755); err != nil {
+	if err := os.MkdirAll(s.Root, 0o750); err != nil {
 		return fmt.Errorf("create %s: %w", s.Root, err)
 	}
 	gitignore := filepath.Join(s.Root, GitignoreFile)

@@ -20,7 +20,8 @@ const BlobHashLen = 12
 // a git dependency, and — unlike `git ls-files -s`, which reports the index
 // — reflects the working tree the agent is about to read.
 func BlobHash(content []byte) string {
-	h := sha1.New() // #nosec G401 -- see above
+	// nosemgrep: go.lang.security.audit.crypto.use_of_weak_crypto.use-of-sha1
+	h := sha1.New() // #nosec G401 -- git's object id format, not a signature
 	fmt.Fprintf(h, "blob %d\x00", len(content))
 	h.Write(content)
 	return hex.EncodeToString(h.Sum(nil))[:BlobHashLen]
