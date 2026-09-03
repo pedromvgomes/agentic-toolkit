@@ -51,9 +51,10 @@ agtk memory stats --json
 ```
 
 Read `root` (where the store is) and `project_root` (what anchor paths are relative to) from the
-output. Both are relative to your working directory, and they are different directories: `root`
-is the store, `project_root` is the repo the anchors point into. Resolve an anchor path against
-`project_root`, never against `root`.
+output. `root` is the store; `project_root` is the repo the anchors point into. They are
+normally different directories but not always, so resolve an anchor path against
+`project_root` either way — never against `root`. Both are relative to your working directory
+when they sit below it, and absolute otherwise; use them as given rather than rebuilding them.
 
 **Never** read `memory.root` out of `.agentic-toolkit.yaml` — a `memory.root` in a stack reached
 through `extends:` is deliberately ignored, so the manifest and `agtk` disagree.

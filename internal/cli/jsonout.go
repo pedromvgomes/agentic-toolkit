@@ -217,10 +217,12 @@ type memoryStatsJSON struct {
 	// stack reached through extends: is deliberately ignored, so a grep over
 	// YAML gets a different answer than agtk does.
 	//
-	// They are two different directories, not a normal case and a special
-	// one — Root is the store, ProjectRoot is what anchor paths resolve
-	// against. --source changes where each is derived from, not whether they
-	// differ.
+	// Root is the store; ProjectRoot is what anchor paths resolve against.
+	// They are normally different directories — `memory.root: .` is the case
+	// that collapses them — so an anchor resolves against ProjectRoot either
+	// way. --source changes where each is derived from, not whether they
+	// differ. Both go through relToWork, which falls back to an absolute
+	// path when the target is not below WorkDir.
 	Root         string         `json:"root"`
 	ProjectRoot  string         `json:"project_root"`
 	Notes        int            `json:"notes"`

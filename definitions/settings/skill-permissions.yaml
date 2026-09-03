@@ -13,7 +13,6 @@ value:
       - "Read(**/.agents/memory/INDEX.md)"
       - "Write(**/.agents/memory/candidates/**)"
       - "Bash(git checkout *)"
-      - "Bash(git hash-object *)"
       - "Bash(*/skills/deep-code-review/scripts/detect-parent.sh*)"
       - "Bash(*/skills/deep-code-review/scripts/capture-diff.sh*)"
       - "Bash(*/skills/deep-code-review/scripts/list-changed.sh*)"

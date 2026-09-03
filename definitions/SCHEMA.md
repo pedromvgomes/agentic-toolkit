@@ -309,7 +309,7 @@ handler:
   type: command
   command: "echo $TOOL >> /tmp/agtk-tools.log"
 fail_closed: false
-timeout: 2000
+timeout: 5
 ```
 
 ### Notes

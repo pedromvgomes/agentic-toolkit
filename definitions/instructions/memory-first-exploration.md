@@ -21,9 +21,15 @@ Before you answer any of these from your own reading, you MUST delegate to the
 - what constrains a piece of code
 - whether an approach has already been tried and abandoned
 
-**This is non-negotiable.** A stale or missing note is not a reason to skip the
-delegation — re-verifying and re-staging is the explorer's job, and skipping it is how
-the store quietly stops being true.
+**This is non-negotiable while the repo has a store.** A stale or missing note is not a
+reason to skip the delegation — re-verifying and re-staging is the explorer's job, and
+skipping it is how the store quietly stops being true.
+
+The one exception is a repo that has not adopted memory at all: if `.agents/memory/INDEX.md`
+does not exist, skip the delegation entirely and explore normally. Check that directly rather
+than inferring it from the session-start digest — that digest is silent both when the store is
+empty and when the hook is not configured, so its absence proves nothing. The rule resumes the
+moment the store does.
 
 Do **not** delegate code *location* — "where is X", "what calls Z", a symbol's signature.
 Grep, the LSP and serena answer those in seconds; routing them through memory wastes a

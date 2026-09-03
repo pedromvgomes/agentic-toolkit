@@ -4,7 +4,7 @@ kind: gotcha
 description: SCHEMA.md and CONFIG-SCHEMA.md are generated but nothing verifies them, so they drift silently.
 anchors:
   - path: tools/schemagen/main.go
-    blob: a06d702d7e11
+    blob: 2f9ab4c334c5
   - path: .github/workflows/*.yml
     matches:
       - path: .github/workflows/ci-build.yml
