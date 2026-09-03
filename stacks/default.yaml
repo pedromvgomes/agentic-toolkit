@@ -1,4 +1,4 @@
-description: Default toolkit stack — workflow-agnostic skills plus the plan-approval instruction and the upstream skill-creator skill.
+description: Default toolkit stack — workflow-agnostic skills, the plan-approval and memory-first instructions, the memory-explorer agent and the upstream skill-creator skill.
 skills:
   - agents-md-creator
   - challenge
@@ -10,12 +10,15 @@ skills:
   - wrap-session
   - github.com/anthropics/skills.git/skills/skill-creator@main
 agents:
-  - code-explorer
+  - memory-explorer
 mcp:
   - context7
 instructions:
   - comments-describe-code-not-its-history
   - git
+  - memory-first-exploration
   - plan-approval
+hooks:
+  - memory-claude-session-start
 settings:
   - skill-permissions

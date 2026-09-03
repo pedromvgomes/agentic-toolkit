@@ -211,7 +211,20 @@ type memoryShowJSON struct {
 }
 
 type memoryStatsJSON struct {
-	Version      int            `json:"version"`
+	Version int `json:"version"`
+	// Root and ProjectRoot are reported so an agent does not have to
+	// re-derive store resolution from the manifest: `memory.root` set in a
+	// stack reached through extends: is deliberately ignored, so a grep over
+	// YAML gets a different answer than agtk does.
+	//
+	// Root is the store; ProjectRoot is what anchor paths resolve against.
+	// They are normally different directories — `memory.root: .` is the case
+	// that collapses them — so an anchor resolves against ProjectRoot either
+	// way. --source changes where each is derived from, not whether they
+	// differ. Both go through relToWork, which falls back to an absolute
+	// path when the target is not below WorkDir.
+	Root         string         `json:"root"`
+	ProjectRoot  string         `json:"project_root"`
 	Notes        int            `json:"notes"`
 	ByKind       map[string]int `json:"by_kind"`
 	ByConfidence map[string]int `json:"by_confidence"`
@@ -267,9 +280,11 @@ func lintJSONIssues(env *Env, issues []memory.Issue) []memoryIssueJSON {
 	return out
 }
 
-func statsJSON(st memory.Stats) memoryStatsJSON {
+func statsJSON(env *Env, store *memory.Store, st memory.Stats) memoryStatsJSON {
 	out := memoryStatsJSON{
 		Version:      jsonVersion,
+		Root:         relToWork(env, store.Root),
+		ProjectRoot:  relToWork(env, store.ProjectRoot),
 		Notes:        st.Notes,
 		ByKind:       map[string]int{},
 		ByConfidence: map[string]int{},

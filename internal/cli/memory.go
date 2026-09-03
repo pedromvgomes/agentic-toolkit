@@ -512,9 +512,9 @@ func newMemoryStatsCmd(env *Env) *cobra.Command {
 				return err
 			}
 			if jsonOut {
-				return writeJSON(env, statsJSON(st))
+				return writeJSON(env, statsJSON(env, store, st))
 			}
-			printStats(env, st)
+			printStats(env, store, st)
 			return nil
 		},
 	}
@@ -522,7 +522,8 @@ func newMemoryStatsCmd(env *Env) *cobra.Command {
 	return cmd
 }
 
-func printStats(env *Env, st memory.Stats) {
+func printStats(env *Env, store *memory.Store, st memory.Stats) {
+	fmt.Fprintf(env.Stdout, "root:        %s\n", relToWork(env, store.Root))
 	fmt.Fprintf(env.Stdout, "notes:       %d\n", st.Notes)
 	for _, k := range memory.AllKinds {
 		if n := st.ByKind[k]; n > 0 {

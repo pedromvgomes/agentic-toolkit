@@ -1,6 +1,6 @@
 # Plan — repo-resident long-term memory for agentic exploration
 
-Status: Slice A implemented. Slices B–D not started.
+Status: Slices A and B implemented. Slices C–D not started.
 Created: 2026-09-02. Challenged and revised: 2026-09-02.
 
 Decisions that the challenge changed are marked **[revised]** below; the reasoning for
@@ -158,7 +158,20 @@ the note's pointers against current state is the job anyway.
 ## 4. Reading
 
 Two levels. `INDEX.md` is loaded; a note is read only when its anchors intersect the files
-the task is about. Anchors therefore live in the index because that is where the routing
+the task is about.
+
+**[revised]** "Loaded" means *by the explorer, as its first step* — not @-imported into every
+session. The explorer is a subagent, so the index costs nothing until something delegates, and
+§1's tax is really a per-delegation cost. That distinction matters because the two eager costs
+behave differently: the index grows with the store, while the rule that makes the explorer get
+used is constant-size forever. Only the second is worth paying on every session, and Slice B
+pays exactly it — a `memory-first-exploration` instruction plus a one-line `SessionStart`
+digest from `agtk memory stats`. `stats` and not `audit`: `audit` exits non-zero when anything
+is stale, which is its CI contract and would read as a hook failure.
+
+Routing needs a fallback. Anchor intersection presumes the task names files, and an
+understanding question often names none — so the explorer routes on anchors when it has file
+names and on descriptions when it does not, preferring anchors. Anchors therefore live in the index because that is where the routing
 decision is made, and in the note because that is where provenance belongs — kept in sync
 by generation, not by discipline.
 
@@ -173,6 +186,19 @@ it.
 The explorer appends to `candidates/` with no quality bar. Judging a finding is
 deliberation in the hot path, and the explorer is mid-task with a conclusion that may not
 survive the next hour.
+
+**[revised]** `candidates/` is the explorer's *only* write. An earlier draft of §6 had it
+"rewrite or drop" a stale note, which contradicted this section outright — and re-stamping a
+note is not as innocent as it looks: `agtk memory anchor` clears the one signal that says
+nobody has checked the claim, so an explorer that anchored without really verifying would
+launder a stale note into looking fresh. So the explorer records a **verdict**
+(`still-true | now-false | unchecked`) on a candidate and leaves `notes/` alone. The cost is
+that `audit` stays red until a curator runs; the gain is that `notes/` has exactly one writer.
+See `docs/adr/0003-the-curator-is-the-only-author-of-notes.md`.
+
+There is still one bar, and only the explorer can apply it, because only it knows what an
+answer cost: store what cost real exploration, never what grep answers in seconds. "No quality
+bar" is about durability and wording — the curator's call — not about cost.
 
 The curator runs at session close and is the only *authoring* writer to `notes/`. It
 promotes, merges near-duplicates, rejects anything re-derivable or unverified, then calls
@@ -191,7 +217,10 @@ A stale note nobody reads costs nothing. Verifying it eagerly costs every time.
 - **Lazy (the default path).** `agtk memory audit` is mechanical and model-free: compare
   recorded blob hashes to current and report what moved. Cheap enough to run from a hook.
   The explorer then refuses to trust a stale note on read — it re-checks the pointers as
-  part of the task it was already doing, and rewrites or drops the note.
+  part of the task it was already doing, and stages the verdict as a candidate. **[revised]**
+  It does not rewrite or drop the note; see §5. Anchors catch *file* drift only, so a body
+  pointer that has moved from `:33` to `:35` is invisible to `audit` and the explorer has to
+  re-check line numbers by reading.
 
   **[revised]** Audit writes nothing. An earlier draft had it flip notes to
   `confidence: suspect`, which conflated two independent axes: whether a curator checked
@@ -232,7 +261,12 @@ verification cost lands in the session that benefits from it.
   read in the gitignored `.hits.jsonl`. Reading through the CLI is what makes the hit rate
   honest: a separate "record a hit" call is exactly what an agent skips under context
   pressure, and the denominator would drift in the reassuring direction.
-- `agtk memory stats` — store size, staleness, and **hit rate**.
+- `agtk memory stats` — store size, staleness, and **hit rate**. **[revised]** Also reports
+  `root` and `project_root`, which is how an agent finds the store. Slice B was meant to need
+  no binary change, and this is the one it needed: the alternative was an agent definition
+  re-deriving store resolution from the manifest in prose, which gets a *different* answer
+  than `agtk` in two documented cases — a `memory.root` reached through `extends:` is ignored,
+  and the two roots diverge under `--source`.
 
 `stats` is not optional. Without knowing how often a loaded note is actually used, there
 is no way to tell whether the index tax is being repaid, and no basis for deciding whether
@@ -240,8 +274,10 @@ to prune. If hit rate stays low, the answer is prune harder — never store more
 
 **Model-driven — definitions, run by whatever agent the repo is configured for:**
 
-- `explorer` agent — index-first lookup via `agtk memory show`, anchor-scoped note reads,
-  stale-note re-verification, candidate writes.
+- `memory-explorer` agent — index-first lookup via `agtk memory show`, anchor-scoped note
+  reads, stale-note re-verification, candidate writes. Named for symmetry with
+  `memory-curator`. **[revised]** It replaces `code-explorer`, which is deleted along with
+  `CODE-MAP.md`; see §11.
 - `memory-curator` agent — promotion, dedupe, merge, index regeneration.
 - `/memory-seed` command — the cold-start pass (§9).
 
@@ -318,8 +354,10 @@ before a model touches it.
 Shipping `show` here rather than in Slice B leaves Slice B as pure agent-definition work
 with no binary changes, and starts hit collection from the first note.
 
-**Slice B — explorer.** Index-first read, anchor routing, stale handling, candidate
-writes. Ship with seeded notes from Slice A so it has something to hit.
+**Slice B — explorer. Done.** Index-first read, anchor routing, stale handling, candidate
+writes, as `definitions/agents/memory-explorer/`. Shipped with the instruction and
+`SessionStart` hook that make it actually get used (§4), and with `root`/`project_root` added
+to `agtk memory stats` (§7) — the one binary change the slice needed.
 
 **Slice C — curator and session close.** Promotion, dedupe, fresh-context dispatch, and
 whatever §8 resolves to. Redirect `continuation-session`'s decisions section into
@@ -333,9 +371,16 @@ whatever §8 resolves to. Redirect `continuation-session`'s decisions section in
 ## 11. Open questions
 
 - §8: what session close hooks into, per platform.
-- Whether `explorer` replaces `code-explorer` outright or ships alongside it. Two stores
-  that both claim to be repo memory is worse than one imperfect store, because neither
-  becomes the one you trust — so probably replaces.
+- ~~Whether `explorer` replaces `code-explorer` outright or ships alongside it.~~ Resolved:
+  **replaces**, with memory-only scope. `code-explorer` and `CODE-MAP.md` are gone. Cheap to
+  do — nothing dispatched to it; it was named only in `stacks/default.yaml` and
+  `skill-permissions.yaml`. Location questions are not delegated at all now, because they are
+  the thing §1 says never to store, so one rule serves both routing and content policy.
+- ~~The candidate file format.~~ Resolved: one markdown file per finding at
+  `candidates/<YYYYMMDD>-<slug>.md`, frontmatter `about`, `saw`, `targets`, `verdict`. No
+  anchors, no `confidence`, no blob hashes — an explorer computes neither. One file per
+  finding for the same reason notes are: a shared append-only file conflicts on every
+  parallel session.
 - ~~Whether `stats` hit-rate tracking needs a written log, and where it lives so it does not
   itself become PR noise.~~ Resolved: `.agents/memory/.hits.jsonl`, appended by
   `agtk memory show`, gitignored by the scaffold.

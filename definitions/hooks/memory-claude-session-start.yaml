@@ -1,0 +1,31 @@
+name: memory-claude-session-start
+description: Report the memory store's size and staleness at session start, so the coordinator knows there is something to consult before it explores.
+platforms: [claude]
+requires:
+  - agents/memory-explorer
+event: SessionStart
+handler:
+  type: command
+  command: |
+    export PATH="$HOME/.local/bin:$PATH"
+    # stats, not audit: audit exits non-zero when anything is stale, which is
+    # its CI contract and would read as a hook failure. stats exits 0 and
+    # carries the same stale count. Both write nothing.
+    command -v agtk >/dev/null 2>&1 || exit 0
+    agtk memory stats 2>/dev/null \
+      | awk -F': *' '
+          /^root:/       { root = $2 }
+          /^notes:/      { notes = $2 }
+          /^stale:/      { stale = $2 }
+          /^candidates:/ { cand = $2 }
+          END {
+            if (notes == "" || notes == 0) exit 0
+            printf "memory: %s notes (%s stale, %s candidates)", notes, stale, cand
+            # An agtk predating `root:` in stats output leaves this empty. Say
+            # nothing rather than guess: the guess is wrong precisely when the
+            # consumer set memory.root, and naming the wrong store is worse
+            # than naming none.
+            if (root != "") printf " in %s", root
+            printf ". Delegate understanding questions to the memory-explorer agent.\n"
+          }'
+timeout: 10

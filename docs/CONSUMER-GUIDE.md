@@ -133,6 +133,26 @@ Every command takes `--json`. Nothing here calls a model: `index`,
 `anchor`, `audit` and `lint` are deterministic, so they are safe in hooks
 and CI.
 
+`stats` also reports where the store is, which is how an agent finds it
+without re-deriving resolution from the manifest:
+
+```json
+{ "root": ".agents/memory", "project_root": "." }
+```
+
+`root` is where notes and candidates live — `memory.root` if the entry
+manifest sets one. `project_root` is the repo that anchor paths are
+relative to. They are normally different directories, though
+`memory.root: .` collapses them; either way, resolve an anchor against
+`project_root` and never against `root`. What `--source` changes is where
+each is derived from — the store belongs to the consumer, not to the
+source tree.
+
+Both are relative to the working directory when they sit below it, and
+absolute otherwise. Do not read `memory.root` out of the manifest instead:
+a `memory.root` in a stack reached through `extends:` is deliberately
+ignored, so YAML and `agtk` disagree.
+
 A note is a markdown file with frontmatter:
 
 ```markdown
