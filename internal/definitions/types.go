@@ -273,7 +273,7 @@ type Hook struct {
 	Matcher    string         `yaml:"matcher,omitempty"    agtkdoc:"Regex (or pipe-separated list) matching the event payload. Empty = match all."`
 	Handler    HookHandler    `yaml:"handler"              agtkdoc:"required;What to run when the hook fires."`
 	FailClosed bool           `yaml:"fail_closed,omitempty" agtkdoc:"If true, a non-zero exit blocks the action; default is fail-open."`
-	Timeout    int            `yaml:"timeout,omitempty"    agtkdoc:"Timeout in milliseconds; 0 = platform default."`
+	Timeout    int            `yaml:"timeout,omitempty"    agtkdoc:"Timeout in seconds; 0 = platform default. Written through to the platform unconverted."`
 	Extensions HookExtensions `yaml:"extensions,omitempty" agtkdoc:"Per-platform extension blocks."`
 }
 

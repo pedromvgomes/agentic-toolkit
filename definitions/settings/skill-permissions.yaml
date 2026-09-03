@@ -7,6 +7,9 @@ value:
       - "Write(./.agents/memories/**)"
       - "Bash(agtk memory stats*)"
       - "Bash(agtk memory show *)"
+      # These two assume the default store location. A consumer that sets
+      # `memory.root` needs its own entries for that path — permissions are
+      # pre-approval, so the only cost of a miss is a prompt, never a block.
       - "Read(**/.agents/memory/INDEX.md)"
       - "Write(**/.agents/memory/candidates/**)"
       - "Bash(git checkout *)"

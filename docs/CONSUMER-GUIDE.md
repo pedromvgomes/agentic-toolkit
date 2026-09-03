@@ -141,11 +141,15 @@ without re-deriving resolution from the manifest:
 ```
 
 `root` is where notes and candidates live — `memory.root` if the entry
-manifest sets one. `project_root` is what anchor paths are relative to;
-the two differ under `--source`. Both are relative to the working
-directory. Do not read `memory.root` out of the manifest instead: a
-`memory.root` in a stack reached through `extends:` is deliberately
-ignored, so YAML and `agtk` disagree.
+manifest sets one. `project_root` is the repo that anchor paths are
+relative to. They are always two different directories: resolve an anchor
+against `project_root`, never against `root`. What `--source` changes is
+where each is derived from — the store belongs to the consumer, not to the
+source tree.
+
+Both are relative to the working directory. Do not read `memory.root` out
+of the manifest instead: a `memory.root` in a stack reached through
+`extends:` is deliberately ignored, so YAML and `agtk` disagree.
 
 A note is a markdown file with frontmatter:
 

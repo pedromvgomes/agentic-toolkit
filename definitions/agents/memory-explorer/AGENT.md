@@ -9,10 +9,12 @@ model: sonnet
 color: purple
 extensions:
   claude:
-    # A candidate is always a new file, so Write is enough. Withholding Edit
-    # is what stops an in-place rewrite of a note: notes/ has one writer, the
-    # curator. A path-scoped deny cannot express this — settings render into
-    # the consumer's global config, where it would block the curator too.
+    # A candidate is always a new file, so Write is enough, and withholding
+    # Edit removes the obvious way to rewrite a note in place. It is a
+    # guardrail, not enforcement: `tools` grants Bash, so `sed -i` and
+    # `agtk memory anchor` remain reachable. The single-writer rule is prose
+    # (see below, and ADR 0003) — nothing here can scope a deny to a path,
+    # and doing it in the shared settings definition would block the curator.
     disallowed_tools: [Edit, MultiEdit, NotebookEdit]
 ---
 
@@ -49,9 +51,16 @@ agtk memory stats --json
 ```
 
 Read `root` (where the store is) and `project_root` (what anchor paths are relative to) from the
-output. Both are relative to your working directory. **Never** read `memory.root` out of
-`.agentic-toolkit.yaml` — a `memory.root` in a stack reached through `extends:` is deliberately
-ignored, so the manifest and `agtk` disagree.
+output. Both are relative to your working directory, and they are different directories: `root`
+is the store, `project_root` is the repo the anchors point into. Resolve an anchor path against
+`project_root`, never against `root`.
+
+**Never** read `memory.root` out of `.agentic-toolkit.yaml` — a `memory.root` in a stack reached
+through `extends:` is deliberately ignored, so the manifest and `agtk` disagree.
+
+If the output has no `root` field, this `agtk` predates it (definitions are pinned by lockfile,
+the binary is installed separately, so the two can skew). Fall back to `.agents/memory` and `.`,
+say once that you did, and carry on — do not go reading the manifest instead.
 
 If `agtk` is not installed, or `notes` is `0`, this repo has no memory to consult. Say so once,
 explore normally, and still do Step 5 — a repo with an empty store is exactly the one that
@@ -59,9 +68,9 @@ benefits most from the first candidate.
 
 ## Step 2 — Read the index, and only the index
 
-```bash
-cat <root>/INDEX.md
-```
+Use the `Read` tool on `<root>/INDEX.md` — not `cat`. The store's index read is pre-approved
+for `Read`, so reading it any other way prompts for permission on the first step of every
+delegation.
 
 This is a routing table, not content. One row per note: name, kind, description, anchor paths.
 Reading it is the whole cost of consulting memory — keep it that way.

@@ -247,7 +247,7 @@ A hook attaches a handler to a lifecycle event. Canonical handler types are `com
 | `matcher` | `string` | no | Regex (or pipe-separated list) matching the event payload. Empty = match all. |
 | `handler` | `HookHandler` | **yes** | What to run when the hook fires. |
 | `fail_closed` | `bool` | no | If true, a non-zero exit blocks the action; default is fail-open. |
-| `timeout` | `int` | no | Timeout in milliseconds; 0 = platform default. |
+| `timeout` | `int` | no | Timeout in seconds; 0 = platform default. Written through to the platform unconverted. |
 | `extensions` | `HookExtensions` | no | Per-platform extension blocks. |
 
 ### `extensions.claude.agent` (ClaudeAgentHandler)

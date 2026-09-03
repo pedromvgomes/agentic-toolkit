@@ -28,7 +28,12 @@ session that has spent its budget on the task.
 - Anchors detect *file* drift only. A body pointer that has moved from `:33` to `:35` is
   invisible to `audit`, so re-checking line numbers is the explorer's job and cannot be
   delegated to the deterministic surface.
-- The restriction is enforced where it is scoped: the explorer's own definition withholds
-  `Edit`. A path-scoped `deny` in the shared settings definition was tried and backed out — it
-  renders into the consumer's global config, where it would block the curator and any manual
-  `agtk memory anchor` too.
+- **The rule is prose, not enforcement.** The explorer's definition withholds `Edit`, which
+  removes the obvious way to rewrite a note in place, but it grants `Bash` — so `sed -i` and
+  `agtk memory anchor` stay reachable, and `Write` can name an existing note's path. Nothing
+  available closes that: `disallowed_tools` is tool-scoped, not path-scoped, and a path-scoped
+  `deny` in the shared settings definition was tried and backed out because it renders into the
+  consumer's global config, where it would block the curator and any manual `agtk memory
+  anchor` too. Restricting the explorer to a `Bash` command allowlist would be real
+  enforcement; it is not done here, so the honest claim is that the invariant is instructed
+  and guarded, not guaranteed.

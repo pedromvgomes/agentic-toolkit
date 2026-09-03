@@ -3,6 +3,8 @@ description: |
   Before answering any question about why the codebase is the way it is — invariants,
   rationale, gotchas, dead ends — the agent must delegate to the `memory-explorer`
   agent, so an exploration already paid for is not paid for twice.
+requires:
+  - agents/memory-explorer
 ---
 
 ## Memory-first exploration

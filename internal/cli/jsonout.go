@@ -213,10 +213,14 @@ type memoryShowJSON struct {
 type memoryStatsJSON struct {
 	Version int `json:"version"`
 	// Root and ProjectRoot are reported so an agent does not have to
-	// re-derive store resolution from the manifest. `memory.root` set in a
-	// stack reached through extends: is deliberately ignored, and the two
-	// roots differ under --source, so a grep over YAML gets a different
-	// answer than agtk does.
+	// re-derive store resolution from the manifest: `memory.root` set in a
+	// stack reached through extends: is deliberately ignored, so a grep over
+	// YAML gets a different answer than agtk does.
+	//
+	// They are two different directories, not a normal case and a special
+	// one — Root is the store, ProjectRoot is what anchor paths resolve
+	// against. --source changes where each is derived from, not whether they
+	// differ.
 	Root         string         `json:"root"`
 	ProjectRoot  string         `json:"project_root"`
 	Notes        int            `json:"notes"`

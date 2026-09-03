@@ -1,6 +1,8 @@
 name: memory-claude-session-start
 description: Report the memory store's size and staleness at session start, so the coordinator knows there is something to consult before it explores.
 platforms: [claude]
+requires:
+  - agents/memory-explorer
 event: SessionStart
 handler:
   type: command
@@ -18,6 +20,8 @@ handler:
           /^candidates:/ { cand = $2 }
           END {
             if (notes == "" || notes == 0) exit 0
+            # An agtk predating `root:` in stats output leaves this empty.
+            if (root == "") root = ".agents/memory"
             printf "memory: %s notes (%s stale, %s candidates) in %s.", notes, stale, cand, root
             printf " Delegate understanding questions to the memory-explorer agent.\n"
           }'
