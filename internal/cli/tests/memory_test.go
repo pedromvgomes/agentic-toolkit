@@ -480,3 +480,130 @@ func TestMemoryAnchorOnEmptyStore(t *testing.T) {
 		t.Errorf("an empty store reported as a failure: %q", stdout)
 	}
 }
+
+// TestMemoryShowJSON: the JSON shape is what an explorer agent consumes, so
+// it is asserted field by field rather than just parsed.
+func TestMemoryShowJSON(t *testing.T) {
+	work := memoryProject(t, "skills: []\n")
+	writeFile(t, filepath.Join(work, ".agents/memory/notes/pins-shas.md"), memoryNote)
+	if _, _, err := runCLI(t, work, "memory", "anchor"); err != nil {
+		t.Fatalf("memory anchor: %v", err)
+	}
+
+	stdout, _, err := runCLI(t, work, "memory", "show", "pins-shas", "--json")
+	if err != nil {
+		t.Fatalf("memory show --json: %v", err)
+	}
+	var out struct {
+		Name        string   `json:"name"`
+		Kind        string   `json:"kind"`
+		Confidence  string   `json:"confidence"`
+		Description string   `json:"description"`
+		Stale       bool     `json:"stale"`
+		Anchors     []string `json:"anchors"`
+		Body        string   `json:"body"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &out); err != nil {
+		t.Fatalf("show json: %v (%s)", err, stdout)
+	}
+	if out.Name != "pins-shas" || out.Kind != "invariant" || out.Confidence != "verified" {
+		t.Errorf("frontmatter fields wrong: %+v", out)
+	}
+	if out.Stale {
+		t.Error("freshly anchored note reported stale")
+	}
+	// Anchors carry the authored pattern, not its expansion, so an agent can
+	// match them against the paths it is already working on.
+	if len(out.Anchors) != 2 || out.Anchors[1] != "internal/lockfile/*.go" {
+		t.Errorf("anchors = %v, want the authored paths", out.Anchors)
+	}
+	if !strings.Contains(out.Body, "graph.go:88") {
+		t.Errorf("body missing its pointer: %q", out.Body)
+	}
+}
+
+// TestMemoryAnchorSelectsNamedNotes: `anchor <name>` must stamp only what it
+// was asked for, and reject a name that is not in the store rather than
+// silently stamping nothing.
+func TestMemoryAnchorSelectsNamedNotes(t *testing.T) {
+	work := memoryProject(t, "skills: []\n")
+	writeFile(t, filepath.Join(work, ".agents/memory/notes/pins-shas.md"), memoryNote)
+	writeFile(t, filepath.Join(work, ".agents/memory/notes/other.md"),
+		strings.Replace(memoryNote, "name: pins-shas", "name: other", 1))
+
+	if _, _, err := runCLI(t, work, "memory", "anchor", "pins-shas"); err != nil {
+		t.Fatalf("memory anchor pins-shas: %v", err)
+	}
+	if got := readFile(t, filepath.Join(work, ".agents/memory/notes/pins-shas.md")); !strings.Contains(got, "blob:") {
+		t.Error("the named note was not stamped")
+	}
+	if got := readFile(t, filepath.Join(work, ".agents/memory/notes/other.md")); strings.Contains(got, "blob:") {
+		t.Error("an unnamed note was stamped too")
+	}
+
+	if _, _, err := runCLI(t, work, "memory", "anchor", "no-such-note"); err == nil {
+		t.Error("expected an error for a name that is not in the store")
+	}
+}
+
+// TestMemoryStatsText covers the human-readable report, including the hit
+// line that only appears once something has been read.
+func TestMemoryStatsText(t *testing.T) {
+	work := memoryProject(t, "skills: []\n")
+	writeFile(t, filepath.Join(work, ".agents/memory/notes/pins-shas.md"), memoryNote)
+	if _, _, err := runCLI(t, work, "memory", "anchor"); err != nil {
+		t.Fatalf("memory anchor: %v", err)
+	}
+
+	stdout, _, err := runCLI(t, work, "memory", "stats")
+	if err != nil {
+		t.Fatalf("memory stats: %v", err)
+	}
+	for _, want := range []string{"notes:", "invariant:", "verified:", "anchors:", "stale:", "candidates:", "none recorded"} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("stats output missing %q:\n%s", want, stdout)
+		}
+	}
+
+	if _, _, err := runCLI(t, work, "memory", "show", "pins-shas"); err != nil {
+		t.Fatalf("memory show: %v", err)
+	}
+	stdout, _, err = runCLI(t, work, "memory", "stats")
+	if err != nil {
+		t.Fatalf("memory stats: %v", err)
+	}
+	if !strings.Contains(stdout, "hit rate") || !strings.Contains(stdout, "window:") {
+		t.Errorf("stats did not report the recorded read:\n%s", stdout)
+	}
+}
+
+// TestMemoryAuditTextNamesEveryDrift: the text report is what a human reads
+// in a hook log, and each drift kind renders differently.
+func TestMemoryAuditTextNamesEveryDrift(t *testing.T) {
+	work := memoryProject(t, "skills: []\n")
+	writeFile(t, filepath.Join(work, ".agents/memory/notes/pins-shas.md"), memoryNote)
+	if _, _, err := runCLI(t, work, "memory", "anchor"); err != nil {
+		t.Fatalf("memory anchor: %v", err)
+	}
+
+	writeFile(t, filepath.Join(work, "internal/resolver/graph.go"), "package resolver // changed\n")
+	writeFile(t, filepath.Join(work, "internal/lockfile/added.go"), "package lockfile\n")
+	if err := os.Remove(filepath.Join(work, "internal/lockfile/types.go")); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+
+	stdout, _, err := runCLI(t, work, "memory", "audit")
+	if err == nil {
+		t.Fatal("expected a non-zero exit for a stale store")
+	}
+	for _, want := range []string{
+		"stale (1 of 1)",
+		"added, matches internal/lockfile/*.go",
+		"removed, matched internal/lockfile/*.go",
+		"->",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("audit text missing %q:\n%s", want, stdout)
+		}
+	}
+}
