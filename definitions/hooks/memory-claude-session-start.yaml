@@ -20,9 +20,12 @@ handler:
           /^candidates:/ { cand = $2 }
           END {
             if (notes == "" || notes == 0) exit 0
-            # An agtk predating `root:` in stats output leaves this empty.
-            if (root == "") root = ".agents/memory"
-            printf "memory: %s notes (%s stale, %s candidates) in %s.", notes, stale, cand, root
-            printf " Delegate understanding questions to the memory-explorer agent.\n"
+            printf "memory: %s notes (%s stale, %s candidates)", notes, stale, cand
+            # An agtk predating `root:` in stats output leaves this empty. Say
+            # nothing rather than guess: the guess is wrong precisely when the
+            # consumer set memory.root, and naming the wrong store is worse
+            # than naming none.
+            if (root != "") printf " in %s", root
+            printf ". Delegate understanding questions to the memory-explorer agent.\n"
           }'
 timeout: 10
