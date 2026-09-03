@@ -211,7 +211,14 @@ type memoryShowJSON struct {
 }
 
 type memoryStatsJSON struct {
-	Version      int            `json:"version"`
+	Version int `json:"version"`
+	// Root and ProjectRoot are reported so an agent does not have to
+	// re-derive store resolution from the manifest. `memory.root` set in a
+	// stack reached through extends: is deliberately ignored, and the two
+	// roots differ under --source, so a grep over YAML gets a different
+	// answer than agtk does.
+	Root         string         `json:"root"`
+	ProjectRoot  string         `json:"project_root"`
 	Notes        int            `json:"notes"`
 	ByKind       map[string]int `json:"by_kind"`
 	ByConfidence map[string]int `json:"by_confidence"`
@@ -267,9 +274,11 @@ func lintJSONIssues(env *Env, issues []memory.Issue) []memoryIssueJSON {
 	return out
 }
 
-func statsJSON(st memory.Stats) memoryStatsJSON {
+func statsJSON(env *Env, store *memory.Store, st memory.Stats) memoryStatsJSON {
 	out := memoryStatsJSON{
 		Version:      jsonVersion,
+		Root:         relToWork(env, store.Root),
+		ProjectRoot:  relToWork(env, store.ProjectRoot),
 		Notes:        st.Notes,
 		ByKind:       map[string]int{},
 		ByConfidence: map[string]int{},

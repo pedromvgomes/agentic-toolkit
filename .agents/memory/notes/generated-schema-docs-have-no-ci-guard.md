@@ -10,11 +10,11 @@ anchors:
       - path: .github/workflows/ci-build.yml
         blob: 6c4ccc31ed9b
       - path: .github/workflows/ci-orchestration.yml
-        blob: 284551b1a35c
+        blob: aac1a99fde15
       - path: .github/workflows/ci-preflight.yml
         blob: f01800fcff31
       - path: .github/workflows/ci-test.yml
-        blob: eb469350db27
+        blob: 45ddaee79893
       - path: .github/workflows/dependabot-auto-merge.yml
         blob: 42d98e95b8af
       - path: .github/workflows/gt-sync.yml
@@ -26,7 +26,7 @@ confidence: verified
 
 `definitions/SCHEMA.md` and `definitions/CONFIG-SCHEMA.md` are produced by
 `tools/schemagen` from the structs in `internal/{definitions,stack,lockfile}` via
-`go generate ./...` (the directive lives at `internal/stack/types.go:33`).
+`go generate ./...` (the directive lives at `internal/stack/types.go:35`).
 
 No workflow runs or checks it. Both files had already drifted before anyone noticed: the
 skill struct gained `argument_hint` and `disable_model_invocation` without a regeneration,

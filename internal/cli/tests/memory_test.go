@@ -577,6 +577,81 @@ func TestMemoryStatsText(t *testing.T) {
 	}
 }
 
+// TestMemoryStatsReportsStoreRoots: `stats` is how an agent discovers where
+// the store is, so it must report agtk's own resolution rather than leave the
+// agent to re-derive it from the manifest. A grep over YAML would get a
+// different answer in both cases below.
+func TestMemoryStatsReportsStoreRoots(t *testing.T) {
+	// Default root, and a project root that is the working directory.
+	work := memoryProject(t, "skills: []\n")
+	stdout, _, err := runCLI(t, work, "memory", "stats", "--json")
+	if err != nil {
+		t.Fatalf("memory stats: %v", err)
+	}
+	roots := decodeRoots(t, stdout)
+	if roots.Root != ".agents/memory" || roots.ProjectRoot != "." {
+		t.Errorf("default roots = %+v, want .agents/memory and .", roots)
+	}
+
+	// A configured root moves the store but not what anchors are relative to.
+	work = memoryProject(t, "skills: []\nmemory:\n  root: docs/memory\n")
+	stdout, _, err = runCLI(t, work, "memory", "stats", "--json")
+	if err != nil {
+		t.Fatalf("memory stats: %v", err)
+	}
+	roots = decodeRoots(t, stdout)
+	if roots.Root != "docs/memory" || roots.ProjectRoot != "." {
+		t.Errorf("configured roots = %+v, want docs/memory and .", roots)
+	}
+
+	// The human report carries the root too, so a hook log says which store
+	// it was talking about.
+	stdout, _, err = runCLI(t, work, "memory", "stats")
+	if err != nil {
+		t.Fatalf("memory stats: %v", err)
+	}
+	if !strings.Contains(stdout, "root:") || !strings.Contains(stdout, "docs/memory") {
+		t.Errorf("text stats did not name the store root:\n%s", stdout)
+	}
+}
+
+// TestMemoryStatsRootsIgnoreTheSourceTree: under --source the store belongs
+// to the consumer, so both roots must point there. An agent that trusted the
+// source tree's manifest would stage candidates into someone else's repo.
+func TestMemoryStatsRootsIgnoreTheSourceTree(t *testing.T) {
+	consumer := memoryProject(t, "skills: []\nmemory:\n  root: docs/memory\n")
+	source := t.TempDir()
+	writeFile(t, filepath.Join(source, ".agentic-toolkit.yaml"), "skills: []\nmemory:\n  root: upstream/notes\n")
+
+	stdout, _, err := runCLI(t, consumer, "memory", "--source", source, "stats", "--json")
+	if err != nil {
+		t.Fatalf("memory stats: %v", err)
+	}
+	roots := decodeRoots(t, stdout)
+	if roots.Root != "docs/memory" {
+		t.Errorf("root = %q, want the consumer's docs/memory", roots.Root)
+	}
+	if roots.ProjectRoot != "." {
+		t.Errorf("project_root = %q, want the consumer's working directory", roots.ProjectRoot)
+	}
+}
+
+// decodeRoots pulls just the two path fields out of `stats --json`.
+func decodeRoots(t *testing.T, stdout string) struct {
+	Root        string `json:"root"`
+	ProjectRoot string `json:"project_root"`
+} {
+	t.Helper()
+	var out struct {
+		Root        string `json:"root"`
+		ProjectRoot string `json:"project_root"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &out); err != nil {
+		t.Fatalf("stats json: %v (%s)", err, stdout)
+	}
+	return out
+}
+
 // TestMemoryAuditTextNamesEveryDrift: the text report is what a human reads
 // in a hook log, and each drift kind renders differently.
 func TestMemoryAuditTextNamesEveryDrift(t *testing.T) {

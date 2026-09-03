@@ -133,6 +133,20 @@ Every command takes `--json`. Nothing here calls a model: `index`,
 `anchor`, `audit` and `lint` are deterministic, so they are safe in hooks
 and CI.
 
+`stats` also reports where the store is, which is how an agent finds it
+without re-deriving resolution from the manifest:
+
+```json
+{ "root": ".agents/memory", "project_root": "." }
+```
+
+`root` is where notes and candidates live — `memory.root` if the entry
+manifest sets one. `project_root` is what anchor paths are relative to;
+the two differ under `--source`. Both are relative to the working
+directory. Do not read `memory.root` out of the manifest instead: a
+`memory.root` in a stack reached through `extends:` is deliberately
+ignored, so YAML and `agtk` disagree.
+
 A note is a markdown file with frontmatter:
 
 ```markdown

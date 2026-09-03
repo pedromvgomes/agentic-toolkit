@@ -67,18 +67,28 @@ The curator's judgment about whether a **Note**'s claim was checked: `verified |
 Independent of **Stale** — a note can be verified and stale, or fresh and suspect.
 
 **Index**:
-The generated `INDEX.md`, the only always-loaded file in the **Memory store**. One row per
-**Note**: name, **Kind**, description, **Anchor** paths. Never hand-authored.
+The generated `INDEX.md`, the routing table over the **Memory store**. One row per **Note**:
+name, **Kind**, description, **Anchor** paths. Never hand-authored, and never loaded into a
+session eagerly — an explorer reads it as its first step, so its cost is paid per delegation
+rather than per session.
 _Avoid_: map, catalog, manifest
 
 **Candidate**:
 A finding an explorer staged during a session, with no quality bar applied. Lives in
-`candidates/` until a curator promotes it to a **Note** or rejects it.
+`candidates/` until a curator promotes it to a **Note** or rejects it. The explorer's only
+write: an explorer never authors, stamps or deletes a **Note**.
 _Avoid_: draft note, proposal
+
+**Verdict**:
+What an explorer concluded about an existing **Note** it re-checked because that note was
+**Stale**: `still-true | now-false | unchecked`. Recorded on a **Candidate** so the curator
+inherits the check instead of repeating it. Never written into the **Note** — that would be
+writing **Confidence**, which is the curator's alone.
+_Avoid_: status, result
 
 **Hit**:
 One read of a **Note** through `agtk memory show`. The numerator that says whether the
-**Index**'s always-loaded cost is being repaid.
+**Memory store**'s cost is being repaid.
 
 **Memory store**:
 The `.agents/memory/` directory holding the **Index**, `notes/` and `candidates/`. Committed,

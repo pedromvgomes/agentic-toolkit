@@ -1,12 +1,14 @@
 name: skill-permissions
-description: Pre-approve the file and shell operations the bundled skills/agents need (code-explorer code map, Serena memories, deep-code-review scripts, pr-code-review read-only gh calls) so they run without permission prompts.
+description: Pre-approve the file and shell operations the bundled skills/agents need (memory-explorer store reads and candidate writes, Serena memories, deep-code-review scripts, pr-code-review read-only gh calls) so they run without permission prompts.
 platforms: [claude]
 value:
   permissions:
     allow:
-      - "Read(**/.agents/CODE-MAP.md)"
-      - "Edit(**/.agents/CODE-MAP.md)"
       - "Write(./.agents/memories/**)"
+      - "Bash(agtk memory stats*)"
+      - "Bash(agtk memory show *)"
+      - "Read(**/.agents/memory/INDEX.md)"
+      - "Write(**/.agents/memory/candidates/**)"
       - "Bash(git checkout *)"
       - "Bash(git hash-object *)"
       - "Bash(*/skills/deep-code-review/scripts/detect-parent.sh*)"

@@ -8,12 +8,12 @@ anchors:
   - path: internal/cli/status.go
     blob: 9c0513063466
   - path: internal/cli/memory.go
-    blob: a594550f00b8
+    blob: 2566c3c8743b
 confidence: verified
 ---
 
 `Execute` renders any error returned by a command through `renderTopLevelError`, prefixed
-with `agtk:` (`internal/cli/root.go:250`). A command that has already printed a structured
+with `agtk:` (`internal/cli/root.go:272`). A command that has already printed a structured
 report — drift buckets, stale notes, lint issues — would therefore print its findings
 twice, the second time as an error message.
 
