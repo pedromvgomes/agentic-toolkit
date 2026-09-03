@@ -139,6 +139,11 @@ const (
 	// stack's own source. The implicit source is locked like any other;
 	// the diagnostic is purely informational.
 	DiagImplicitSource
+	// DiagIgnoredMemoryConfig: a stack reached through extends: set
+	// `memory:`, which only the entry manifest may do. Ignoring it is
+	// deliberate; a remote stack must not relocate a consumer's committed
+	// notes, and it must not hard-fail the consumer's build either.
+	DiagIgnoredMemoryConfig
 )
 
 func (k DiagnosticKind) String() string {
@@ -147,6 +152,8 @@ func (k DiagnosticKind) String() string {
 		return "override"
 	case DiagImplicitSource:
 		return "implicit_source"
+	case DiagIgnoredMemoryConfig:
+		return "ignored_memory_config"
 	}
 	return "unknown"
 }

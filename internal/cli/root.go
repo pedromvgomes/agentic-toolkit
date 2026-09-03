@@ -171,6 +171,7 @@ func NewRootCmd(env *Env) *cobra.Command {
 	root.AddCommand(
 		newInitCmd(env), newLockCmd(env), newFetchCmd(env), newPlanCmd(env),
 		newRenderCmd(env), newSyncCmd(env), newStatusCmd(env), newUpdateCmd(env),
+		newMemoryCmd(env),
 	)
 	return root
 }
@@ -253,6 +254,11 @@ func Execute() int {
 		// generic error prefix in that case so users see only the
 		// bucket lines.
 		if errors.Is(err, errStatusDrift) {
+			return 1
+		}
+		// `agtk memory audit`/`lint` print their own reports and return a
+		// sentinel purely to flip the exit code for CI and hooks.
+		if errors.Is(err, errMemoryStale) || errors.Is(err, errMemoryLint) {
 			return 1
 		}
 		// `agtk update --check` returns updateNewerErr when newer is

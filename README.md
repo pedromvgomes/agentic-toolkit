@@ -38,8 +38,9 @@ go install github.com/pedromvgomes/agentic-toolkit/cmd/agtk@latest
 
 - **Definition catalog** under `definitions/` covering eight typed categories: `skill`, `agent`, `command`, `rule`, `instruction`, `hook`, `mcp`, `setting`. See [`definitions/SCHEMA.md`](definitions/SCHEMA.md) for shapes.
 - **Shareable stacks** under `stacks/` that bundle catalog definitions for consumers to extend. Today: `default.yaml` (workflow-agnostic skills + plan-approval) and `bare-repos.yaml` (worktree workflow rule).
-- **`agtk` CLI** with `init`, `lock`, `fetch`, `plan`, `render`, `sync`, `status`, `update`. Run any subcommand with `--help` for flags.
+- **`agtk` CLI** with `init`, `lock`, `fetch`, `plan`, `render`, `sync`, `status`, `memory`, `update`. Run any subcommand with `--help` for flags.
 - **Lockfile-driven workflow.** `agtk lock` resolves the entry-point stack's `extends:` graph to commit SHAs; `agtk fetch` hydrates the cache deterministically; `agtk render` writes Claude Code's expected layout under `.claude/`. `agtk sync` collapses all three into one command for the common case.
+- **Repo-resident memory.** `agtk memory` manages a committed store of durable notes about the consumer's own codebase — invariants, rationale, gotchas, dead ends — each anchored to the content it was derived from, so a note that has gone stale says so. Deterministic and model-free, hence safe in hooks and CI. See the memory section of [docs/CONSUMER-GUIDE.md](docs/CONSUMER-GUIDE.md).
 - **Auto-update** that checks GitHub releases in the background and self-replaces from the verified archive when you run `agtk update`.
 
 ## Repository layout

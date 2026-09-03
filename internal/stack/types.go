@@ -14,6 +14,7 @@
 //	hooks:       []EntryRef
 //	mcp:         []EntryRef
 //	settings:    []EntryRef
+//	memory:      optional; memory-store settings, entry manifest only
 //
 // Override semantics: depth-first walk of `extends:`, post-order overlay
 // (children apply before importer's own entries), entry-point file's
@@ -58,6 +59,24 @@ type Stack struct {
 	Hooks        []EntryRef `yaml:"hooks,omitempty"`
 	MCP          []EntryRef `yaml:"mcp,omitempty"`
 	Settings     []EntryRef `yaml:"settings,omitempty"`
+
+	Memory *MemoryConfig `yaml:"memory,omitempty" agtkdoc:"Repo-resident memory store settings. Honoured only in the entry manifest \u2014 the store's location is a fact about the consumer repo, not about a shareable stack, so a stack reached through extends: that sets it gets a diagnostic instead of silently relocating the consumer's committed notes."`
+}
+
+// MemoryConfig configures the memory store. It is deliberately not part of
+// the overlay: a stack pulled in via `extends:` must not be able to decide
+// where another repo commits its notes.
+type MemoryConfig struct {
+	Root string `yaml:"root,omitempty" agtkdoc:"Store location, relative to the directory holding the entry manifest. Defaults to \".agents/memory\"."`
+}
+
+// MemoryRoot returns the configured store root, or "" when the stack does
+// not set one (the caller then applies the default).
+func (s *Stack) MemoryRoot() string {
+	if s.Memory == nil {
+		return ""
+	}
+	return s.Memory.Root
 }
 
 // EffectiveRoot returns Root if set, else DefaultRoot.

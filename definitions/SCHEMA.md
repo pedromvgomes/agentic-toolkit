@@ -47,6 +47,8 @@ A skill is a reusable, self-contained piece of agent capability — a prose body
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `allowed_tools` | `[]string` | no | Tool allowlist for the skill (Claude-specific). |
+| `argument_hint` | `string` | no | Free-form hint shown when the skill is invoked as a slash command (e.g. "<goal>"). |
+| `disable_model_invocation` | `bool` | no | If true, the model cannot auto-invoke this skill; only the user can run it explicitly. |
 
 ### Example
 
