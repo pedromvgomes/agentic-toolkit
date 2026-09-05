@@ -37,8 +37,8 @@ func catalogNames(t *testing.T, root string) map[definitions.Category]map[string
 // TestRequiresResolve asserts every `requires:` entry in the real catalog
 // points at a definition the catalog actually holds. The resolver reports an
 // unresolvable requirement rather than failing on it, so a typo here reaches a
-// consumer as a diagnostic in their sync output — true but easy to scroll
-// past, and the dependency is silently absent either way.
+// consumer as one line in their sync output — easy to scroll past, and the
+// dependency is absent either way.
 func TestRequiresResolve(t *testing.T) {
 	root := repoRoot(t)
 	fsys := os.DirFS(root)
@@ -118,11 +118,11 @@ func TestStackManifestsResolve(t *testing.T) {
 // TestStackManifestsCarryWhatTheirEntriesRequire asserts that a stack listing
 // a definition also lists everything that definition's `requires:` names.
 //
-// The resolver pulls a missing requirement in, so an omission here is no
-// longer broken — it is merely implicit, and announced as a diagnostic on
-// every sync of every consumer extending these stacks by URL. Listing what
-// they need keeps that output quiet and keeps the stacks readable as a
-// statement of what a consumer gets.
+// A stack that omits what its entries require still resolves — the resolver
+// pulls the requirement in — but every consumer extending these stacks by URL
+// sees a diagnostic about it on each sync. Listing requirements keeps that
+// output quiet, and keeps a stack readable as a statement of what a consumer
+// gets rather than a starting point the resolver finishes.
 func TestStackManifestsCarryWhatTheirEntriesRequire(t *testing.T) {
 	root := repoRoot(t)
 	fsys := os.DirFS(root)

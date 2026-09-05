@@ -9,80 +9,157 @@ import (
 	"github.com/pedromvgomes/agentic-toolkit/internal/stack"
 )
 
-// maxRequirementRounds bounds the fixpoint below. Requirements are
-// transitive — a definition pulled in may declare its own — so the pass
-// repeats until nothing new appears. The bound is a backstop against a
-// pathological graph, not the termination argument: the overlay only ever
-// grows and is bounded by the catalog, so a normal graph settles in a round
-// or two.
-const maxRequirementRounds = 16
+// maxRequirementDepth bounds how far a requirement chain is followed. Each
+// round resolves the requirements of the definitions the previous round added,
+// so this is a limit on the DEPTH of the chain, not on how many definitions
+// end up pulled in.
+//
+// It is a backstop rather than the termination argument: a definition is
+// scanned once, and the overlay only grows, so an ordinary graph settles in a
+// round or two. Reaching the bound is reported, because a closure that was cut
+// short leaves definitions missing and the render would otherwise look
+// complete.
+const maxRequirementDepth = 16
 
-// pullInRequirements adds every definition that a resolved definition
-// declares it needs, and says so.
+// pullInRequirements adds every definition that a resolved definition declares
+// it needs, and says so.
 //
-// `requires:` is a claim by a definition's author that it does not work
-// alone — a skill that dispatches to a subagent, an instruction that names
-// one. Without this, a stack could list the skill and not the agent, and
-// nothing would notice until the consumer's session dispatched to something
-// that was never installed. That is not hypothetical: it is how
-// `wrap-session` shipped broken to every consumer.
+// `requires:` is a claim by a definition's author that it does not work alone —
+// a skill that dispatches to a subagent, an instruction that names one. Without
+// this, a stack can list the skill and not the agent, and nothing notices until
+// a consumer's session delegates to something that was never installed.
 //
-// Pulling in rather than merely reporting mirrors what the resolver already
-// does for sources: an entry that needs a source the stack does not name
-// gets it, locked like any other, with an informational diagnostic. A
-// requirement is the same relationship one level down.
+// Pulling in rather than merely reporting mirrors what the resolver does for
+// sources: an entry that needs a source the stack does not name gets it, locked
+// like any other, with an informational diagnostic. A requirement is the same
+// relationship one level down.
 //
-// Nothing here is fatal. A requirement that cannot be resolved is somebody
-// else's metadata problem — often in a definition the consumer does not own
-// — and hard-failing their sync over it would be worse than rendering
-// without it, which is what happens today anyway.
+// Nothing here is fatal. A requirement that cannot be resolved is a metadata
+// problem in a definition the consumer often does not own, and failing their
+// whole resolve over it would be a worse outcome than rendering without it.
 func (s *traversalState) pullInRequirements() {
-	// Requirements already reported, so a definition required by three
-	// others is announced once rather than three times.
-	seen := map[defKey]bool{}
+	// Each definition's requirements are read once: only what the previous
+	// round added can name something nobody has looked at yet. Re-scanning the
+	// whole overlay every round would repeat work and repeat diagnostics.
+	frontier := s.overlaySnapshot()
 
-	for round := 0; round < maxRequirementRounds; round++ {
-		added := 0
-		for _, w := range s.overlaySnapshot() {
-			for _, req := range w.Definition.GetCommon().Requires {
-				cat, name, ok := parseRequirement(req)
-				if !ok {
-					s.reportRequirement(DiagUnresolvedRequirement, w, req,
-						fmt.Sprintf("%q is not in 'category/name' form", req))
-					continue
-				}
-				key := defKey{Category: cat, Name: name}
-				if _, exists := s.overlay[key]; exists {
-					continue
-				}
-				if seen[key] {
-					continue
-				}
-				seen[key] = true
+	// Keyed by declaring definition plus the raw requirement: a malformed
+	// reference is an authoring mistake at one site, so each site says so once
+	// however many rounds run.
+	reported := map[string]bool{}
 
-				pulled, err := s.resolveBare(
-					stack.EntryRef{Kind: stack.RefBare, Name: name, Raw: req},
-					cat, w.root, w.ctx,
-				)
-				if err != nil {
-					s.reportRequirement(DiagUnresolvedRequirement, w, req, err.Error())
-					continue
-				}
-				pulled.root, pulled.ctx = w.root, w.ctx
-				s.overlay[key] = *pulled
-				added++
-				s.reportRequirement(DiagPulledRequirement, w, req, "")
+	// A requirement one definition cannot resolve may still be satisfied by
+	// another that declares it from a source where it exists, so failures are
+	// held until the closure settles and only then reported — and only if the
+	// definition is genuinely absent. Reporting on the spot would blame the
+	// first requirer for something that ends up present.
+	var pending []pendingRequirement
+
+	settled := false
+	for depth := 0; depth < maxRequirementDepth; depth++ {
+		var next []walkedDef
+		for _, w := range frontier {
+			added, failed := s.pullOne(w, reported)
+			next = append(next, added...)
+			pending = append(pending, failed...)
+		}
+		if len(next) == 0 {
+			settled = true
+			break
+		}
+		frontier = next
+	}
+
+	s.reportUnsatisfied(pending)
+	if settled {
+		return
+	}
+
+	s.diags = append(s.diags, Diagnostic{
+		Kind: DiagUnresolvedRequirement,
+		Message: fmt.Sprintf(
+			"requirement chain deeper than %d; the closure may be incomplete and some definitions absent",
+			maxRequirementDepth),
+	})
+}
+
+// pendingRequirement is a requirement a definition could not resolve, held
+// until the closure settles in case another definition resolves it.
+type pendingRequirement struct {
+	by     walkedDef
+	raw    string
+	key    defKey
+	detail string
+}
+
+// pullOne resolves the requirements w declares, returning what it added and
+// what it could not resolve.
+func (s *traversalState) pullOne(w walkedDef, reported map[string]bool) (added []walkedDef, failed []pendingRequirement) {
+
+	for _, req := range w.Definition.GetCommon().Requires {
+		mark := w.Category.CategoryDir() + "/" + w.Name + "\x00" + req
+		cat, name, err := parseRequirement(req)
+		if err != nil {
+			if !reported[mark] {
+				reported[mark] = true
+				s.reportRequirement(DiagUnresolvedRequirement, w, req, err.Error())
 			}
+			continue
 		}
-		if added == 0 {
-			return
+		// The requirement's own name is only a first guess at the key: a
+		// file-shaped definition's `name:` field wins over its filename, so the
+		// definition that comes back may be called something else.
+		if _, exists := s.overlay[defKey{Category: cat, Name: name}]; exists {
+			continue
 		}
+
+		pulled, err := s.resolveBare(
+			stack.EntryRef{Kind: stack.RefBare, Name: name, Raw: req},
+			cat, w.root, w.ctx,
+		)
+		if err != nil {
+			failed = append(failed, pendingRequirement{
+				by:     w,
+				raw:    req,
+				key:    defKey{Category: cat, Name: name},
+				detail: err.Error(),
+			})
+			continue
+		}
+
+		key := defKey{Category: pulled.Category, Name: pulled.Name}
+		if _, exists := s.overlay[key]; exists {
+			continue
+		}
+		s.overlay[key] = *pulled
+		added = append(added, *pulled)
+		s.reportRequirement(DiagPulledRequirement, w, req, "")
+	}
+	return added, failed
+}
+
+// reportUnsatisfied announces the requirements nothing resolved, once each.
+//
+// A requirement two definitions both declare is one missing definition, not
+// two problems, so it is reported by the first declarer in overlay order and
+// not repeated.
+func (s *traversalState) reportUnsatisfied(pending []pendingRequirement) {
+	said := map[defKey]bool{}
+	for _, p := range pending {
+		if _, exists := s.overlay[p.key]; exists {
+			continue
+		}
+		if said[p.key] {
+			continue
+		}
+		said[p.key] = true
+		s.reportRequirement(DiagUnresolvedRequirement, p.by, p.raw, p.detail)
 	}
 }
 
-// overlaySnapshot is the overlay in a stable order, so a round's pulls do
-// not depend on map iteration and two runs of the same stack produce the
-// same diagnostics in the same sequence.
+// overlaySnapshot is the overlay in a stable order, so which definition is
+// scanned first does not depend on map iteration and two runs of the same
+// stack produce the same diagnostics in the same sequence.
 func (s *traversalState) overlaySnapshot() []walkedDef {
 	out := make([]walkedDef, 0, len(s.overlay))
 	for _, w := range s.overlay {
@@ -115,21 +192,44 @@ func (s *traversalState) reportRequirement(kind DiagnosticKind, w walkedDef, req
 	})
 }
 
-// parseRequirement splits a "category/name" cross-reference.
+// parseRequirement splits a "category/name" cross-reference and validates the
+// name as strictly as a stack entry.
 //
 // The left half is the category's DIRECTORY name — "skills", not "skill" —
-// because that is the form every `requires:` in the catalog is written in
-// and the form the schema documents. Matching against CategoryDir rather
-// than trimming an "s" also keeps `mcp`, which is not a plural, correct.
-func parseRequirement(req string) (definitions.Category, string, bool) {
+// which is the form the schema documents and every `requires:` in the catalog
+// is written in. Matching against CategoryDir rather than trimming an "s" also
+// keeps `mcp`, which is not a plural, correct.
+//
+// The name half goes through stack.ParseEntryRef, the same validation a name
+// written in a manifest gets. Without it a requirement is a path fragment that
+// reaches path.Join, which CLEANS "..": a definition could name
+// "skills/../../elsewhere" and read a file outside the convention root
+// entirely. A requirement may only name a definition at the canonical
+// <root>/<plural>/<name> location, so anything ParseEntryRef reads as a URL or
+// a path is refused too.
+func parseRequirement(req string) (definitions.Category, string, error) {
 	dir, name, ok := strings.Cut(strings.TrimSpace(req), "/")
 	if !ok || dir == "" || name == "" {
-		return "", "", false
+		return "", "", fmt.Errorf("%q is not in 'category/name' form", req)
 	}
-	for _, cat := range definitions.AllCategories {
-		if cat.CategoryDir() == dir {
-			return cat, name, true
+
+	var cat definitions.Category
+	for _, c := range definitions.AllCategories {
+		if c.CategoryDir() == dir {
+			cat = c
+			break
 		}
 	}
-	return "", "", false
+	if cat == "" {
+		return "", "", fmt.Errorf("%q names no category", dir)
+	}
+
+	ref, err := stack.ParseEntryRef(name, cat)
+	if err != nil {
+		return "", "", err
+	}
+	if ref.Kind != stack.RefBare {
+		return "", "", fmt.Errorf("%q must name a definition, not a path or URL", name)
+	}
+	return cat, ref.Name, nil
 }

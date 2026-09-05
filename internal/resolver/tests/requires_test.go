@@ -55,8 +55,7 @@ func diagKinds(plan *resolver.Plan, kind resolver.DiagnosticKind) []string {
 // A definition's `requires:` is its author saying it does not work alone — a
 // skill that dispatches to a subagent, an instruction that names one. A stack
 // listing the skill and not the agent renders something that fails at the
-// moment it delegates, which is how wrap-session shipped broken to every
-// consumer.
+// moment it delegates.
 func TestARequiredDefinitionIsPulledInWhenNoStackListsIt(t *testing.T) {
 	plan := resolvePlan(t, map[string]string{
 		".agentic-toolkit.yaml": stackBody(nil, map[string][]string{
@@ -121,10 +120,10 @@ func TestAStackThatListsItsRequirementsIsUnchanged(t *testing.T) {
 	}
 }
 
-// A requirement naming something that does not exist is somebody else's
-// metadata problem, usually in a definition the consumer does not own.
-// Failing their sync over it would be worse than rendering without it, which
-// is what happens today anyway — but it must not pass in silence.
+// A requirement naming something that does not exist is a metadata problem in
+// a definition the consumer often does not own. Failing their whole resolve
+// over it is a worse outcome than rendering without it — but it must not pass
+// in silence.
 func TestAnUnresolvableRequirementIsReportedAndNotFatal(t *testing.T) {
 	plan := resolvePlan(t, map[string]string{
 		".agentic-toolkit.yaml": stackBody(nil, map[string][]string{
@@ -145,9 +144,9 @@ func TestAnUnresolvableRequirementIsReportedAndNotFatal(t *testing.T) {
 	}
 }
 
-// A malformed cross-reference must be reported rather than silently ignored,
-// for the reason `requires:` exists at all: nothing else in the pipeline reads
-// it, so a typo would otherwise be inert forever.
+// A reference that is not in 'category/name' form resolves to nothing, so it
+// must surface as a diagnostic rather than being skipped in silence: the
+// declared dependency is absent either way, and only the diagnostic says so.
 func TestAMalformedRequirementIsReported(t *testing.T) {
 	plan := resolvePlan(t, map[string]string{
 		".agentic-toolkit.yaml": stackBody(nil, map[string][]string{
@@ -193,5 +192,166 @@ func TestARequirementCycleSettles(t *testing.T) {
 		if !planHas(plan, definitions.CategorySkill, name) {
 			t.Errorf("skills/%s missing: %+v", name, plan.Definitions)
 		}
+	}
+}
+
+// A requirement is resolved through the source and convention root of the
+// definition that declared it, not the stack that listed it. A remote
+// definition's dependency lives in the remote repo, and looking it up in the
+// consumer's tree both fails to find it and — worse, if a name happens to
+// collide — renders whatever the consumer had under that name while
+// attributing it to the remote source.
+func TestARemoteDefinitionsRequirementResolvesInsideItsOwnSource(t *testing.T) {
+	remote := makeMapFS(map[string]string{
+		"skills/wrap-session/SKILL.md":          bodyRequiring("Wraps a session", "agents/wrap-session-reviewer"),
+		"agents/wrap-session-reviewer/AGENT.md": validAgentBody("Reviews a session"),
+	})
+	entryFS := makeMapFS(map[string]string{
+		".agentic-toolkit.yaml": stackBody(nil, map[string][]string{
+			"skills": {"github.com/o/r.git/skills/wrap-session"},
+		}),
+		// A same-named agent in the consumer's own tree. Resolving the remote
+		// definition's requirement here would find this one.
+		"definitions/agents/wrap-session-reviewer/AGENT.md": validAgentBody("The consumer's own agent"),
+	})
+	st, err := stack.ParseInFS(entryFS, ".agentic-toolkit.yaml")
+	if err != nil {
+		t.Fatalf("parse stack: %v", err)
+	}
+	provider := newFakeProvider().register("github.com/o/r.git", "", remote)
+
+	plan, err := resolver.Resolve(st, entryFS, ".agentic-toolkit.yaml", provider)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+
+	var pulled *resolver.PlannedDefinition
+	for i, d := range plan.Definitions {
+		if d.Category == definitions.CategoryAgent && d.Name == "wrap-session-reviewer" {
+			pulled = &plan.Definitions[i]
+		}
+	}
+	if pulled == nil {
+		t.Fatalf("the required agent was not pulled in: %+v", plan.Definitions)
+	}
+	if pulled.SourceURL != "github.com/o/r.git" {
+		t.Errorf("pulled agent came from %q, want the source that declared the requirement", pulled.SourceURL)
+	}
+	if strings.Contains(pulled.Definition.GetCommon().Description, "consumer's own") {
+		t.Error("a remote definition's requirement resolved against the consumer's own tree")
+	}
+}
+
+// The name half of a requirement reaches path.Join, which cleans "..". Without
+// the same validation a manifest entry gets, a definition could name a file
+// outside the convention root entirely — and a definition's frontmatter is
+// authored wherever the definition came from.
+func TestARequirementCannotEscapeTheConventionRoot(t *testing.T) {
+	for name, req := range map[string]string{
+		"parent traversal":     "skills/../../elsewhere/evil",
+		"absolute":             "skills//etc/passwd",
+		"dot segment":          "skills/./evil",
+		"slash in non-command": "agents/nested/evil",
+	} {
+		t.Run(name, func(t *testing.T) {
+			plan := resolvePlan(t, map[string]string{
+				".agentic-toolkit.yaml": stackBody(nil, map[string][]string{
+					"skills": {"wrap-session"},
+				}),
+				"definitions/skills/wrap-session/SKILL.md": bodyRequiring("Wraps a session", req),
+				"elsewhere/evil/SKILL.md":                  validSkillBody("Should be unreachable"),
+				"definitions/skills/evil/SKILL.md":         validSkillBody("Should be unreachable"),
+			})
+
+			for _, d := range plan.Definitions {
+				if strings.Contains(d.Definition.GetCommon().Description, "unreachable") {
+					t.Fatalf("a requirement reached outside the convention root: %+v", d)
+				}
+			}
+			if got := diagKinds(plan, resolver.DiagUnresolvedRequirement); len(got) != 1 {
+				t.Errorf("diagnostics = %v, want one refusing the reference", got)
+			}
+		})
+	}
+}
+
+// A requirement two definitions declare is one missing definition, not two
+// problems.
+func TestASharedUnresolvableRequirementIsReportedOnce(t *testing.T) {
+	plan := resolvePlan(t, map[string]string{
+		".agentic-toolkit.yaml": stackBody(nil, map[string][]string{
+			"skills": {"one", "two"},
+		}),
+		"definitions/skills/one/SKILL.md": bodyRequiring("One", "agents/missing"),
+		"definitions/skills/two/SKILL.md": bodyRequiring("Two", "agents/missing"),
+	})
+
+	if got := diagKinds(plan, resolver.DiagUnresolvedRequirement); len(got) != 1 {
+		t.Errorf("diagnostics = %v, want exactly one", got)
+	}
+}
+
+// One definition failing to resolve a requirement must not settle it for
+// everyone: another may declare the same thing from a source where it exists.
+// Blaming the first requirer for something that ends up present is the failure
+// deferred reporting exists to avoid.
+func TestARequirementOneDefinitionCannotResolveIsStillSatisfiedByAnother(t *testing.T) {
+	remote := makeMapFS(map[string]string{
+		"skills/needs-it/SKILL.md": bodyRequiring("Needs it", "agents/shared"),
+	})
+	entryFS := makeMapFS(map[string]string{
+		".agentic-toolkit.yaml": stackBody(nil, map[string][]string{
+			"skills": {"github.com/o/r.git/skills/needs-it", "local-needs-it"},
+		}),
+		"definitions/skills/local-needs-it/SKILL.md": bodyRequiring("Also needs it", "agents/shared"),
+		"definitions/agents/shared/AGENT.md":         validAgentBody("Shared"),
+	})
+	st, err := stack.ParseInFS(entryFS, ".agentic-toolkit.yaml")
+	if err != nil {
+		t.Fatalf("parse stack: %v", err)
+	}
+	provider := newFakeProvider().register("github.com/o/r.git", "", remote)
+
+	plan, err := resolver.Resolve(st, entryFS, ".agentic-toolkit.yaml", provider)
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+
+	found := false
+	for _, d := range plan.Definitions {
+		if d.Category == definitions.CategoryAgent && d.Name == "shared" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("the requirement was never satisfied: %+v", plan.Definitions)
+	}
+	if got := diagKinds(plan, resolver.DiagUnresolvedRequirement); len(got) != 0 {
+		t.Errorf("diagnostics = %v, want none once the requirement is satisfied", got)
+	}
+}
+
+// A file-shaped definition's `name:` field wins over its filename, so the
+// definition a requirement resolves to may not be called what the requirement
+// called it. Keying the overlay on the requirement's spelling would let the
+// same definition land twice.
+func TestAPulledDefinitionIsKeyedByItsOwnName(t *testing.T) {
+	plan := resolvePlan(t, map[string]string{
+		".agentic-toolkit.yaml": stackBody(nil, map[string][]string{
+			"skills":       {"one"},
+			"instructions": {"renamed"},
+		}),
+		"definitions/skills/one/SKILL.md":     bodyRequiring("One", "instructions/renamed"),
+		"definitions/instructions/renamed.md": "---\nname: actual-name\ndescription: An instruction\n---\n\nbody\n",
+	})
+
+	count := 0
+	for _, d := range plan.Definitions {
+		if d.Category == definitions.CategoryInstruction {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("instruction count = %d, want 1 — the same definition was keyed twice", count)
 	}
 }

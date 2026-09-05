@@ -288,28 +288,24 @@ func (s *traversalState) loadExtends(ext stack.ExtendsRef, parent stackCtx) erro
 }
 
 // resolveEntry loads one per-category entry into a walkedDef.
+// resolveEntry loads one per-category entry into a walkedDef.
+//
+// Each branch records the root and context it actually parsed through, rather
+// than this function stamping the listing stack's. A definition fetched from a
+// URL entry lives in the fetched repo, and a `requires:` it declares has to be
+// looked up there — stamping the stack's context would resolve a remote
+// definition's requirements against the consumer's own filesystem, and
+// attribute whatever it found to a source it never came from.
 func (s *traversalState) resolveEntry(entry stack.EntryRef, cat definitions.Category, root string, ctx stackCtx) (*walkedDef, error) {
-	var (
-		w   *walkedDef
-		err error
-	)
 	switch entry.Kind {
 	case stack.RefBare:
-		w, err = s.resolveBare(entry, cat, root, ctx)
+		return s.resolveBare(entry, cat, root, ctx)
 	case stack.RefPath:
-		w, err = s.resolvePath(entry, cat, ctx)
+		return s.resolvePath(entry, cat, root, ctx)
 	case stack.RefURL:
-		w, err = s.resolveURL(entry, cat, ctx)
-	default:
-		return nil, fmt.Errorf("unsupported entry kind %v", entry.Kind)
+		return s.resolveURL(entry, cat, ctx)
 	}
-	if w != nil {
-		// Recorded here rather than in parseFromFS, which is one layer too
-		// deep to know the convention root. A `requires:` this definition
-		// declares is looked up through the same pair.
-		w.root, w.ctx = root, ctx
-	}
-	return w, err
+	return nil, fmt.Errorf("unsupported entry kind %v", entry.Kind)
 }
 
 // resolveBare looks up a bare name under <root>/<plural>/<name>... in
@@ -319,18 +315,20 @@ func (s *traversalState) resolveBare(entry stack.EntryRef, cat definitions.Categ
 	if err != nil {
 		return nil, err
 	}
-	return s.parseFromFS(ctx.FS, bundleDir, fileName, cat, entry.Name, ctx)
+	return s.parseFromFS(ctx.FS, bundleDir, fileName, cat, entry.Name, ctx, root)
 }
 
 // resolvePath resolves a ./relative entry against the stack file's
 // parent directory.
-func (s *traversalState) resolvePath(entry stack.EntryRef, cat definitions.Category, ctx stackCtx) (*walkedDef, error) {
+func (s *traversalState) resolvePath(entry stack.EntryRef, cat definitions.Category, root string, ctx stackCtx) (*walkedDef, error) {
 	resolved := joinFromFile(ctx.FilePathInFS, entry.Path)
 	bundleDir, fileName, err := pathLayout(cat, resolved)
 	if err != nil {
 		return nil, err
 	}
-	return s.parseFromFS(ctx.FS, bundleDir, fileName, cat, "", ctx)
+	// A path entry names one file in the stack's own tree, so a bare name in
+	// its `requires:` resolves under that stack's convention root.
+	return s.parseFromFS(ctx.FS, bundleDir, fileName, cat, "", ctx, root)
 }
 
 // resolveURL resolves an external URL entry. The URL must contain
@@ -365,7 +363,10 @@ func (s *traversalState) resolveURL(entry stack.EntryRef, cat definitions.Catego
 		FS:           repoFS,
 		FilePathInFS: ctx.FilePathInFS,
 	}
-	return s.parseFromFS(repoFS, bundleDir, fileName, cat, "", urlCtx)
+	// The requirement root is the directory the entry's own category sits in,
+	// so a bare name in its `requires:` resolves as its sibling inside the
+	// fetched repo rather than under a root that repo may not have.
+	return s.parseFromFS(repoFS, bundleDir, fileName, cat, "", urlCtx, rootFromEntryPath(cat, bundleDir))
 }
 
 // parseFromFS reads the entry from rootFS at (bundleDir, fileName) and
@@ -376,7 +377,7 @@ func (s *traversalState) resolveURL(entry stack.EntryRef, cat definitions.Catego
 //
 // Empty bundleDir means rootFS is already at the right level — used for
 // path-form entries that resolve to the FS root.
-func (s *traversalState) parseFromFS(rootFS fs.FS, bundleDir, fileName string, cat definitions.Category, expectedName string, ctx stackCtx) (*walkedDef, error) {
+func (s *traversalState) parseFromFS(rootFS fs.FS, bundleDir, fileName string, cat definitions.Category, expectedName string, ctx stackCtx, root string) (*walkedDef, error) {
 	dirFS := rootFS
 	if bundleDir != "" && bundleDir != "." {
 		sub, err := fs.Sub(rootFS, bundleDir)
@@ -412,7 +413,28 @@ func (s *traversalState) parseFromFS(rootFS fs.FS, bundleDir, fileName string, c
 		StackName:  ctx.Identifier,
 		EntryPath:  fileName,
 		SourceFS:   dirFS,
+		root:       root,
+		ctx:        ctx,
 	}, nil
+}
+
+// rootFromEntryPath recovers the convention root an in-repo entry path sits
+// under, by stripping the category directory the layout put there.
+//
+// A URL entry names its file explicitly (`…​.git/skills/foo`), so the repo it
+// came from has no manifest here to ask for a root. What the path itself shows
+// is where that repo keeps its categories, and a sibling definition is under
+// the same place.
+func rootFromEntryPath(cat definitions.Category, bundleDir string) string {
+	catDir := bundleDir
+	if isBundleCategory(cat) {
+		catDir = path.Dir(bundleDir)
+	}
+	root := path.Dir(catDir)
+	if root == "." || root == "/" {
+		return ""
+	}
+	return root
 }
 
 // ===== layout helpers =====
