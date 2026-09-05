@@ -113,3 +113,68 @@ func TestStackManifestsResolve(t *testing.T) {
 		})
 	}
 }
+
+// TestStackManifestsCarryWhatTheirEntriesRequire asserts that a stack listing
+// a definition also lists everything that definition's `requires:` names.
+//
+// Nothing in the resolver or the render path reads Requires — TestRequiresResolve
+// says so, and it only checks the target exists in the catalog. So a stack can
+// list an instruction whose agent it never pulls in, and the omission survives
+// parse, resolve and render: it surfaces in the consumer, at the moment
+// something dispatches to an agent that was never installed.
+//
+// Checking it here does not make `requires:` enforced. It makes this repo's own
+// published stacks — the ones consumers extend by URL — consistent with what
+// their entries declare.
+func TestStackManifestsCarryWhatTheirEntriesRequire(t *testing.T) {
+	root := repoRoot(t)
+	fsys := os.DirFS(root)
+
+	entries, err := definitions.WalkCatalog(fsys)
+	if err != nil {
+		t.Fatalf("walk: %v", err)
+	}
+	// requiredBy maps "<category-dir>/<name>" to what that definition needs.
+	requiredBy := map[string][]string{}
+	for _, e := range entries {
+		def, err := definitions.ParseInCatalog(fsys, e.Path)
+		if err != nil {
+			t.Fatalf("parse %s: %v", e.Path, err)
+		}
+		common := def.GetCommon()
+		if len(common.Requires) == 0 {
+			continue
+		}
+		requiredBy[string(e.Category)+"s/"+common.Name] = common.Requires
+	}
+
+	manifests, err := filepath.Glob(filepath.Join(root, "stacks", "*.yaml"))
+	if err != nil {
+		t.Fatalf("glob: %v", err)
+	}
+	for _, path := range manifests {
+		t.Run(filepath.Base(path), func(t *testing.T) {
+			st, err := stack.ParseFile(path)
+			if err != nil {
+				t.Fatalf("parse: %v", err)
+			}
+
+			listed := map[string]bool{}
+			for _, cat := range definitions.AllCategories {
+				for _, ref := range st.EntriesFor(cat) {
+					if ref.Kind == stack.RefBare {
+						listed[string(cat)+"s/"+ref.Name] = true
+					}
+				}
+			}
+			for entry := range listed {
+				for _, req := range requiredBy[entry] {
+					if !listed[req] {
+						t.Errorf("%s lists %q, which requires %q — but %q is not in this stack, so a consumer renders one without the other",
+							filepath.Base(path), entry, req, req)
+					}
+				}
+			}
+		})
+	}
+}

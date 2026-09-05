@@ -27,12 +27,30 @@ reason to skip the delegation — re-verifying and re-staging is the explorer's 
 skipping it is how the store quietly stops being true.
 
 The one exception is a repo that has not adopted memory at all. Establish that with
-`agtk memory stats` — a non-zero exit, a missing binary, or `notes: 0` all mean there is
-nothing to consult, so skip the delegation and explore normally. Do **not** decide this by
-looking for a path: `memory.root` is configurable, and a repo that moved its store is the last
-one whose routing should silently switch off. Do not infer it from the session-start digest
-either — that is silent both when the store is empty and when the hook is not configured, so
-its absence proves nothing. The rule resumes the moment the store holds a note.
+`agtk memory stats`, and read its outcome as one of three things — not two:
+
+| What you see | What it means | What you do |
+|---|---|---|
+| `agtk` is not installed | nothing to consult | skip the delegation, explore normally |
+| exit 0 and `notes: 0` | the store is empty | skip the delegation, explore normally |
+| **a non-zero exit** | the command could not answer | **say so and keep delegating** |
+
+A non-zero exit is **not** evidence that the repo has no memory. `agtk memory stats` refuses
+rather than guesses when it cannot read the entry manifest — a YAML typo anywhere in
+`.agentic-toolkit.yaml` is enough — so the repo with the fullest store and one broken line
+produces exactly the same silence as a repo that never adopted memory. Reading that as "no
+memory here" switches the routing off in the repo that configured it most deliberately, which
+is the failure this whole section exists to prevent.
+
+So when the exit is non-zero, report what it printed on stderr and treat the store as present
+but unreachable. Fixing the manifest is the user's call, not a reason to quietly stop
+consulting memory.
+
+Do **not** decide any of this by looking for a path: `memory.root` is configurable, and a repo
+that moved its store is the last one whose routing should silently switch off. Do not infer it
+from the session-start digest either — that is silent both when the store is empty and when
+the hook is not configured, so its absence proves nothing. The rule resumes the moment the
+store holds a note.
 
 Do **not** delegate code *location* — "where is X", "what calls Z", a symbol's signature.
 Grep, the LSP and serena answer those in seconds; routing them through memory wastes a
