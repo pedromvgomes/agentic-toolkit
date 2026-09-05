@@ -6,12 +6,12 @@ anchors:
   - path: internal/adapters/claude/render.go
     blob: 4a87de9b70a9
   - path: internal/adapters/claude/files.go
-    blob: a62fd6986ab4
+    blob: ee7d951bccd8
 confidence: verified
 ---
 
 Whole-owned outputs (skills, agents, commands, rules) are tracked in a sidecar manifest at
-`<scope-root>/.agtk-manifest.json` (`internal/adapters/claude/files.go:297`). Membership in
+`<scope-root>/.agtk-manifest.json` (`internal/adapters/claude/files.go:301`). Membership in
 that manifest is what grants agtk permission to overwrite: a path in it can be rewritten
 freely, a path on disk but not in it is assumed to be the user's and render refuses unless
 `Options.Force` is set (`internal/adapters/claude/render.go:114`).

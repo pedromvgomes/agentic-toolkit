@@ -6,7 +6,7 @@ anchors:
   - path: internal/stack/parser.go
     blob: cdbb1d5c5dec
   - path: internal/stack/types.go
-    blob: e1183e8434b4
+    blob: fe5cd947f8d3
 confidence: verified
 ---
 
@@ -15,9 +15,10 @@ top-level key is a hard parse error, not an ignored field. A consumer therefore 
 write a new setting before `stack.Stack` has the field — which is why adding `memory:`
 was a schema change rather than a read.
 
-The trap is the pre-decode check: `detectLegacyConfig` runs first and rejects `source`,
-`presets`, `externals`, `definitions` and `platforms` with "is a v1 schema field"
-(`internal/stack/parser.go:372`). Those five names are unavailable for new fields no
+The trap is the pre-decode check: `detectLegacyConfig` (`internal/stack/parser.go:362`)
+runs first and rejects `source`, `presets`, `externals`, `definitions` and `platforms`
+(the list is at `:372`) with "is a v1 schema field" (`:366`). Those five names are
+unavailable for new fields no
 matter what the struct says — a future top-level `definitions:` key would fail with a
 migration hint that has nothing to do with the actual problem.
 

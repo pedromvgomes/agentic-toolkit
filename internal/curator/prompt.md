@@ -101,10 +101,19 @@ A glob that merely covers several files goes stale more often for no gain.
 You never compute a hash. After writing notes:
 
 ```bash
-agtk memory anchor            # stamps blob hashes, expands globs
-agtk memory index             # regenerates INDEX.md
-agtk memory lint              # structural check; fix anything it reports
+agtk memory anchor <name> [<name>...]   # stamp ONLY the notes you checked
+agtk memory index                       # regenerate INDEX.md
+agtk memory lint                        # structural check; fix anything it reports
 ```
+
+**Name every note you stamp. Never run `agtk memory anchor` with no arguments** — it stamps
+every note in the store, including ones you never looked at. Stamping does not only record
+hashes: it clears the staleness signal, which is the one thing that would have told the next
+reader nobody has checked that claim. A note you silently marked fresh is worse than a stale
+one, because no later audit will ever flag it again.
+
+If you find you have already stamped a note you did not check, go back and check it now, or
+say plainly in your report that its freshness is not something you verified.
 
 Never hand-edit `INDEX.md`. It is generated, and a conflict in it is resolved by regenerating.
 
