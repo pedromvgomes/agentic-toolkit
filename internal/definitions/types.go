@@ -110,7 +110,7 @@ type Common struct {
 	Description string     `yaml:"description"         agtkdoc:"required;One-line summary used by adapters and discovery surfaces."`
 	Platforms   []Platform `yaml:"platforms,omitempty" agtkdoc:"Target platform allowlist. Omit when the definition works on every platform; only set this to *narrow* (e.g. a Claude-only skill that depends on Claude features)."`
 	Tags        []string   `yaml:"tags,omitempty"      agtkdoc:"Free-form tags for grouping and filtering."`
-	Requires    []string   `yaml:"requires,omitempty"  agtkdoc:"Cross-references to other definitions in 'category/name' form (e.g. skills/challenge)."`
+	Requires    []string   `yaml:"requires,omitempty"  agtkdoc:"Definitions this one does not work without, in 'category/name' form (e.g. agents/wrap-session-reviewer). The resolver pulls in anything listed here that no stack names, transitively, and reports each one as a diagnostic \u2014 so a stack listing a skill gets the subagent it dispatches to rather than rendering something that fails the moment it delegates."`
 }
 
 // Definition is implemented by every category struct.

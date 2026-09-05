@@ -3,6 +3,8 @@ name: wrap-session-reviewer
 description: Reviews changes from a working session and updates AGENTS.md (creating via the agents-md-creator skill when missing) and per-rule files
   under .agents/rules/ per affected module. Invoked by the wrap-session skill. Runs autonomously on Sonnet — does not interact with the user mid-execution.
 model: sonnet
+requires:
+  - skills/agents-md-creator
 tools: [Read, Write, Edit, MultiEdit, Bash, Grep, Glob, Task]
 color: green
 ---
