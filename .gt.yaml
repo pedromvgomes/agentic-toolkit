@@ -3,12 +3,21 @@ setup:
     - name: agentic-toolkit
       run: |
         set -e
-        command -v agtk >/dev/null 2>&1 || \
-          curl -fsSL https://raw.githubusercontent.com/pedromvgomes/agentic-toolkit/main/install.sh | sh
+
+        # This repo is agtk. It syncs with the binary built from its own
+        # default branch, never a released one and never whatever is on PATH:
+        # the manifest can use schema this repo has added and no release has
+        # shipped yet, and manifests decode strictly, so an older agtk fails to
+        # parse the very file it is being pointed at. Every other consumer
+        # installs a release instead — they track the schema, they do not move
+        # ahead of it.
+        AGTK="${GT_ROOT}/.gt/bin/agtk"
+        mkdir -p "$(dirname "$AGTK")"
+        ( cd "${GT_ROOT}/${GT_DEFAULT_BRANCH}" && go build -o "$AGTK" ./cmd/agtk )
 
         if [ "$GT_SETUP_PHASE" = "worktree" ]; then
-          agtk sync                                                       # worktree has its own checkout, source from cwd
+          "$AGTK" sync                                                        # worktree has its own checkout, source from cwd
         else
-          cd "$GT_ROOT"                                                   # clone: render .claude next to .bare at the gt root
-          agtk sync --config "${GT_ROOT}/${GT_DEFAULT_BRANCH}/.agentic-toolkit.yaml"   # config + lockfile from main, fetch over network
+          cd "$GT_ROOT"                                                       # clone: render .claude next to .bare at the gt root
+          "$AGTK" sync --config "${GT_ROOT}/${GT_DEFAULT_BRANCH}/.agentic-toolkit.yaml"
         fi
