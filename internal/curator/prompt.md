@@ -106,14 +106,15 @@ agtk memory index                       # regenerate INDEX.md
 agtk memory lint                        # structural check; fix anything it reports
 ```
 
-**Name every note you stamp. Never run `agtk memory anchor` with no arguments** — it stamps
-every note in the store, including ones you never looked at. Stamping does not only record
-hashes: it clears the staleness signal, which is the one thing that would have told the next
-reader nobody has checked that claim. A note you silently marked fresh is worse than a stale
-one, because no later audit will ever flag it again.
+**Name every note you stamp.** `anchor` refuses to run without names for this reason, and
+`--all` exists only for a deliberate whole-store sweep — never reach for it to get past the
+refusal. Stamping does not only record hashes: it clears the staleness signal, which is the
+one thing that would have told the next reader nobody has checked that claim. A note you
+silently marked fresh is worse than a stale one, because no later audit will ever flag it
+again.
 
-If you find you have already stamped a note you did not check, go back and check it now, or
-say plainly in your report that its freshness is not something you verified.
+If you find you have stamped a note you did not check, go back and check it now, or say
+plainly in your report that its freshness is not something you verified.
 
 Never hand-edit `INDEX.md`. It is generated, and a conflict in it is resolved by regenerating.
 

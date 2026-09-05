@@ -109,7 +109,7 @@ func TestLintStructuralProblems(t *testing.T) {
 		"unstamped anchor": {
 			file: note("subject", "  - path: a.go\n"),
 			tree: map[string]string{"a.go": "package a\n"},
-			want: "unstamped — run `agtk memory anchor`",
+			want: "unstamped — run `agtk memory anchor subject`",
 		},
 		"anchored file is gone": {
 			file: note("subject", "  - path: a.go\n"),
@@ -245,7 +245,7 @@ func TestLintNamesDirectoryAnchors(t *testing.T) {
 	if !containsMessage(issues, "anchors a directory") {
 		t.Errorf("issues = %+v, want the directory called out", issues)
 	}
-	if containsMessage(issues, "run `agtk memory anchor`") {
+	if containsMessage(issues, "run `agtk memory anchor") {
 		t.Error("hint prescribes a command that cannot fix a directory anchor")
 	}
 }
@@ -290,7 +290,7 @@ func TestLintGlobHintMatchesStampBehaviour(t *testing.T) {
 	if !containsMessage(issues, "matches no files") {
 		t.Errorf("issues = %+v, want the pattern called out", issues)
 	}
-	if containsMessage(issues, "run `agtk memory anchor`") {
+	if containsMessage(issues, "run `agtk memory anchor") {
 		t.Error("hint prescribes a command that would change nothing")
 	}
 }

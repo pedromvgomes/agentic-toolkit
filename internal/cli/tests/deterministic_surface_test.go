@@ -79,7 +79,7 @@ func TestTheDeterministicSubcommandsRunWithNoProviderConfigured(t *testing.T) {
 
 	for _, args := range [][]string{
 		{"memory", "index"},
-		{"memory", "anchor"},
+		{"memory", "anchor", "--all"},
 		{"memory", "audit"},
 		{"memory", "lint"},
 		{"memory", "stats"},
