@@ -143,6 +143,14 @@ type memoryIndexJSON struct {
 	Changed bool   `json:"changed"`
 }
 
+type memoryCurateCheckJSON struct {
+	Version  int      `json:"version"`
+	Provider string   `json:"provider"`
+	Binary   string   `json:"binary"`
+	Mode     string   `json:"mode"`
+	Tools    []string `json:"tools"`
+}
+
 type memoryCurateJSON struct {
 	Version int  `json:"version"`
 	Stale   bool `json:"stale"`

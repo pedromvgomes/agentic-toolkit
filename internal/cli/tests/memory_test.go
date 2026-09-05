@@ -808,3 +808,35 @@ func TestMemoryWithNoSubcommandStillPrintsHelp(t *testing.T) {
 		t.Errorf("help does not list the subcommands:\n%s", stdout)
 	}
 }
+
+// TestMemoryCurateCheckRefusesAnUnknownProvider: `--check` is the way to find
+// out whether curation is configured without performing it, so its refusals
+// have to name what would fix them. A run that spends money to report a typo in
+// a config file is the thing this flag exists to avoid.
+func TestMemoryCurateCheckRefusesAnUnknownProvider(t *testing.T) {
+	work := memoryProject(t, "memory:\n  agent: not-a-provider\nskills: []\n")
+
+	_, _, err := runCLI(t, work, "memory", "curate", "--check")
+	if err == nil {
+		t.Fatal("--check accepted a provider that does not exist")
+	}
+	for _, want := range []string{"claudecode", "codex"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not name %q: %v", want, err)
+		}
+	}
+}
+
+// TestMemoryCurateCheckRefusesWithNoProviderConfigured: the same, for a repo
+// that never chose one. There is no default, so this is the common case.
+func TestMemoryCurateCheckRefusesWithNoProviderConfigured(t *testing.T) {
+	work := memoryProject(t, "skills: []\n")
+
+	_, _, err := runCLI(t, work, "memory", "curate", "--check")
+	if err == nil {
+		t.Fatal("--check reported a repo with no provider as ready")
+	}
+	if !strings.Contains(err.Error(), "memory.agent") {
+		t.Errorf("the refusal does not say what to set: %v", err)
+	}
+}

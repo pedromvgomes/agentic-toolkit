@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -657,6 +658,7 @@ func newMemoryCurateCmd(env *Env) *cobra.Command {
 	var (
 		jsonOut bool
 		stale   bool
+		check   bool
 		timeout time.Duration
 	)
 	cmd := &cobra.Command{
@@ -684,14 +686,46 @@ func newMemoryCurateCmd(env *Env) *cobra.Command {
 				return err
 			}
 
+			if check {
+				ready, err := curator.Check(curator.Options{
+					Provider:      provider,
+					WorkDir:       store.ProjectRoot,
+					CandidatesDir: store.CandidatesPath(),
+					AgtkPath:      selfPath(env),
+				})
+				if err != nil {
+					return err
+				}
+				if jsonOut {
+					return writeJSON(env, memoryCurateCheckJSON{
+						Version:  jsonVersion,
+						Provider: ready.Provider,
+						Binary:   ready.Binary,
+						Mode:     ready.Mode,
+						Tools:    ready.Tools,
+					})
+				}
+				fmt.Fprintf(env.Stdout, "provider:  %s\nbinary:    %s\nmode:      %s\ntools:     %s\n",
+					ready.Provider, ready.Binary, ready.Mode, strings.Join(ready.Tools, ", "))
+				return nil
+			}
+
 			res, err := curator.Run(cmd.Context(), curator.Options{
 				Provider: provider,
 				// The curator resolves the store the way every other command
 				// does — by running `agtk` — so it has to start where agtk
 				// would have.
 				WorkDir: store.ProjectRoot,
-				Stale:   stale,
-				Timeout: timeout,
+				// Scopes the curator's deletion grant, so it can clear the
+				// backlog and nothing else.
+				CandidatesDir: store.CandidatesPath(),
+				// The running binary, not whatever PATH resolves: a consumer
+				// installs agtk separately from the lockfile-pinned
+				// definitions, so the agtk on PATH can be older than this one
+				// and lack `memory` entirely.
+				AgtkPath: selfPath(env),
+				Stale:    stale,
+				Timeout:  timeout,
 			})
 			if err != nil {
 				return err
@@ -719,8 +753,22 @@ func newMemoryCurateCmd(env *Env) *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit machine-readable JSON output")
 	cmd.Flags().BoolVar(&stale, "stale", false, "sweep stale notes instead of the candidate backlog")
+	cmd.Flags().BoolVar(&check, "check", false, "report what a run would use and start nothing")
 	cmd.Flags().DurationVar(&timeout, "timeout", 0, "bound the curation run (default 20m)")
 	return cmd
+}
+
+// selfPath is this binary's own path, for a child that shells back into agtk.
+//
+// A failure here is not worth refusing a run over: the grant falls back to the
+// bare name, which is what a curator would have used anyway.
+func selfPath(env *Env) string {
+	exe, err := os.Executable()
+	if err != nil {
+		fmt.Fprintf(env.Stderr, "warning: cannot resolve this binary's path (%v); the curator will use whatever `agtk` is on PATH\n", err)
+		return ""
+	}
+	return exe
 }
 
 // memoryAgent reads `memory.agent` from the entry manifest, the same way and

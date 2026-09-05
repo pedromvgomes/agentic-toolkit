@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -178,5 +179,82 @@ func TestAnUnconfiguredRunStartsNoProcess(t *testing.T) {
 	}
 	if fake.Ran() {
 		t.Error("a run with no provider configured still spawned a process")
+	}
+}
+
+// The whole reason --check exists is that confirming the configuration must
+// not perform it. A check that spawned the CLI would spend money to answer a
+// question about a config file.
+func TestCheckStartsNothing(t *testing.T) {
+	fake := (&agentictest.Fake{Stdout: curatedEnvelope}).Build(t)
+
+	ready, err := curator.Check(curator.Options{
+		Provider:      "claudecode",
+		Binary:        fake.Path(),
+		WorkDir:       t.TempDir(),
+		CandidatesDir: "/repo/.agents/memory/candidates",
+	})
+	if err != nil {
+		t.Fatalf("Check: %v", err)
+	}
+	if fake.Ran() {
+		t.Fatal("--check spawned the CLI")
+	}
+	if ready.Provider == "" || ready.Binary != fake.Path() {
+		t.Errorf("Ready = %+v, want the provider and the pinned binary", ready)
+	}
+	if ready.Mode != curator.PermissionMode() {
+		t.Errorf("Mode = %q, want the mode a run would use", ready.Mode)
+	}
+}
+
+// The check reports the grant a run would be given, which is how a reader
+// notices a grant that is wider than they meant. An over-broad `rm` was found
+// exactly this way.
+func TestCheckReportsTheGrantARunWouldUse(t *testing.T) {
+	fake := (&agentictest.Fake{Stdout: curatedEnvelope}).Build(t)
+
+	ready, err := curator.Check(curator.Options{
+		Provider:      "claudecode",
+		Binary:        fake.Path(),
+		WorkDir:       t.TempDir(),
+		CandidatesDir: "/repo/.agents/memory/candidates",
+	})
+	if err != nil {
+		t.Fatalf("Check: %v", err)
+	}
+	want := curator.AllowedTools("", "/repo/.agents/memory/candidates")
+	if len(ready.Tools) != len(want) {
+		t.Fatalf("Tools = %v, want the run's grant %v", ready.Tools, want)
+	}
+	for _, tool := range ready.Tools {
+		if strings.Contains(tool, "rm") && !strings.Contains(tool, "/repo/.agents/memory/candidates/") {
+			t.Errorf("check reports an unscoped deletion grant: %q", tool)
+		}
+	}
+}
+
+func TestCheckRefusesAnUnconfiguredProvider(t *testing.T) {
+	if _, err := curator.Check(curator.Options{WorkDir: t.TempDir()}); !errors.Is(err, curator.ErrNoProvider) {
+		t.Fatalf("error = %v, want ErrNoProvider", err)
+	}
+}
+
+// "Configured" and "runnable" are different states: the driver constructs
+// happily around a CLI that is not installed. A check that only resolved the
+// provider would report a run as ready that cannot start.
+func TestCheckRefusesABinaryThatCannotRun(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "not-installed")
+
+	_, err := curator.Check(curator.Options{
+		Provider: "claudecode",
+		Binary:   missing,
+		WorkDir:  t.TempDir(),
+	})
+	if err == nil {
+		t.Fatal("check reported a missing binary as ready")
+	}
+	if !strings.Contains(err.Error(), missing) {
+		t.Errorf("error does not name the binary it looked for: %v", err)
 	}
 }

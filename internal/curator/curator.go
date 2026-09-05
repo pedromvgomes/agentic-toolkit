@@ -64,20 +64,63 @@ var ErrNoProvider = fmt.Errorf(
 // that answers instead of refusing.
 func Prompt() string { return prompt }
 
-// AllowedTools is the grant a curation run is given, as a copy.
-func AllowedTools() []string { return append([]string(nil), allowedTools...) }
+// AllowedTools is the grant a curation run is given.
+func AllowedTools(agtk, candidatesDir string) []string { return allowedTools(agtk, candidatesDir) }
 
 // PermissionMode is how a curation run answers permission prompts.
 func PermissionMode() string { return permissionMode }
 
 // CheckProvider reports whether name resolves to a provider, without building
 // a driver or touching PATH.
-//
-// It is what `agtk memory curate` could call to fail early, and what a test
-// calls to check the refusals say something useful.
 func CheckProvider(name string) error {
 	_, err := newProvider(name)
 	return err
+}
+
+// Ready is what a run would need, answered without starting one.
+type Ready struct {
+	// Provider is the descriptor's stable ID, e.g. "claude-code".
+	Provider string
+	// Binary is the executable a run would execute.
+	Binary string
+	// Tools is the grant the run would be given.
+	Tools []string
+	// Mode is the permission mode the run would use.
+	Mode string
+}
+
+// Check resolves everything a curation run depends on and starts nothing.
+//
+// Curation is the only operation here that spends money and writes notes, so
+// confirming it is configured must not require performing it. Without this the
+// only way to find out whether `memory.agent` resolves is to run the curator
+// and watch what happens, which is a costly way to read a config file.
+func Check(opts Options) (Ready, error) {
+	provider, err := newProvider(opts.Provider)
+	if err != nil {
+		return Ready{}, err
+	}
+
+	driverOpts := []agentic.Option{agentic.WithWorkDir(opts.WorkDir)}
+	if opts.Binary != "" {
+		driverOpts = append(driverOpts, agentic.WithBinary(opts.Binary))
+	}
+	driver, err := agentic.New(provider, driverOpts...)
+	if err != nil {
+		return Ready{}, err
+	}
+	// Ready is the difference between "configured" and "runnable": the driver
+	// constructs happily around a CLI that is not installed, because a
+	// provider that vendors its binary needs Install reachable first.
+	if err := driver.Ready(); err != nil {
+		return Ready{}, err
+	}
+	return Ready{
+		Provider: driver.Descriptor().ID,
+		Binary:   driver.Binary(),
+		Tools:    allowedTools(opts.AgtkPath, opts.CandidatesDir),
+		Mode:     permissionMode,
+	}, nil
 }
 
 // Options configure one curation run.
@@ -96,6 +139,19 @@ type Options struct {
 	// PATH, so nothing PATH resolves and no repointed symlink can stand in
 	// for the CLI that was chosen.
 	Binary string
+	// CandidatesDir is the staging directory the run may clear. It scopes the
+	// deletion grant, so it is required for a run and not merely cosmetic.
+	CandidatesDir string
+	// AgtkPath is the agtk the curator shells back into to stamp anchors and
+	// regenerate the index.
+	//
+	// It must be the running binary's own path, not the name `agtk`. Consumers
+	// install the binary separately from the lockfile-pinned definitions, so
+	// whatever PATH resolves may be older than the build that started this run
+	// — old enough not to have `memory` at all, in which case the curator's
+	// stamping commands fail and it finishes having verified everything and
+	// recorded nothing.
+	AgtkPath string
 }
 
 // Result is what a run produced.
@@ -116,22 +172,44 @@ type Result struct {
 //
 // This is what makes ADR 0003's single-writer rule enforcement for the curator
 // rather than an honour system: it is an argv flag, so no settings file can
-// widen it. Writes are scoped to the store by the three commands that write —
-// `anchor` and `index` are the only sanctioned writers, and neither computes
-// anything the curator has to be trusted with.
-var allowedTools = []string{
-	"Read",
-	"Grep",
-	"Glob",
-	"Write",
-	"Edit",
-	"Bash(agtk memory show *)",
-	"Bash(agtk memory candidates*)",
-	"Bash(agtk memory stats*)",
-	"Bash(agtk memory anchor*)",
-	"Bash(agtk memory index*)",
-	"Bash(agtk memory lint*)",
-	"Bash(rm *)",
+// widen it.
+//
+// The deletion grant is scoped to the candidates directory rather than left as
+// a bare `rm`. Clearing the backlog is the only thing the curator deletes, and
+// a grant that reads `rm *` would let the one agent with a constructed grant
+// remove anything in the repo — which is the guarantee this list exists to
+// make, given away in its last line. The directory is a parameter because
+// `memory.root` is configurable, so there is no path to hard-code.
+func allowedTools(agtk, candidatesDir string) []string {
+	if agtk == "" {
+		agtk = "agtk"
+	}
+	deletion := "Bash(rm " + candidatesDir + "/*)"
+	if candidatesDir == "" {
+		// An empty directory would compose to `rm /*`, which is the widest
+		// possible reading of a grant meant to be the narrowest. A caller that
+		// names no staging directory gets no deletion grant at all: the
+		// backlog goes uncleared, which is visible, rather than the curator
+		// holding a licence nobody meant to give it.
+		deletion = ""
+	}
+	tools := []string{
+		"Read",
+		"Grep",
+		"Glob",
+		"Write",
+		"Edit",
+		"Bash(" + agtk + " memory show *)",
+		"Bash(" + agtk + " memory candidates*)",
+		"Bash(" + agtk + " memory stats*)",
+		"Bash(" + agtk + " memory anchor*)",
+		"Bash(" + agtk + " memory index*)",
+		"Bash(" + agtk + " memory lint*)",
+	}
+	if deletion != "" {
+		tools = append(tools, deletion)
+	}
+	return tools
 }
 
 // permissionMode lets the run act on its grant without a prompt nobody is
@@ -169,11 +247,11 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	}
 
 	res, err := driver.Run(ctx, agentic.Request{
-		Prompt: task(opts.Stale),
+		Prompt: task(opts.Stale, opts.AgtkPath),
 		Agents: map[string]agentic.Agent{
 			AgentName: {Description: agentDescription, Prompt: prompt},
 		},
-		AllowedTools:   allowedTools,
+		AllowedTools:   allowedTools(opts.AgtkPath, opts.CandidatesDir),
 		PermissionMode: permissionMode,
 		WorkDir:        opts.WorkDir,
 	})
@@ -193,16 +271,30 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 const agentDescription = "Promotes, merges and rejects findings staged in the repo's memory store, and re-checks notes whose anchors have moved. The only author of notes."
 
 // task is the instruction the run itself receives. The curator's own content
-// policy lives in the roster entry; this only says which of its two jobs to do.
-func task(stale bool) string {
+// policy lives in the roster entry; this says which of its two jobs to do, and
+// which binary to do it with.
+//
+// The path is spelled out because the prompt speaks of `agtk` generically while
+// the grant permits exactly one executable. A curator that reached for the bare
+// name would be denied by its own grant, and — worse — the `agtk` on PATH may
+// predate the memory subsystem entirely, so the reach would fail even if it
+// were allowed.
+func task(stale bool, agtk string) string {
+	if agtk == "" {
+		agtk = "agtk"
+	}
+	preamble := "Delegate to the " + AgentName + " agent. Use `" + agtk +
+		"` for every agtk command — that exact path, never the bare name `agtk`, which may " +
+		"resolve to an older build without the `memory` subcommand and is not in your tool grant. "
+
 	if stale {
-		return "Delegate to the " + AgentName + " agent: sweep the memory store's stale notes. " +
-			"Run `agtk memory audit --json` for the list, then re-check each stale note's claim " +
-			"against the code its pointers name and update, re-stamp or reject it. " +
+		return preamble + "Sweep the memory store's stale notes: run `" + agtk +
+			" memory audit --json` for the list, then re-check each stale note's claim against " +
+			"the code its pointers name and update, re-stamp or reject it. " +
 			"Report exactly what the agent reports."
 	}
-	return "Delegate to the " + AgentName + " agent: curate the memory store's staged candidates. " +
-		"Run `agtk memory candidates --json` for the backlog. " +
+	return preamble + "Curate the memory store's staged candidates: run `" + agtk +
+		" memory candidates --json` for the backlog. " +
 		"Report exactly what the agent reports."
 }
 
