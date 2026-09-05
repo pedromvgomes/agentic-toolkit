@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/pedromvgomes/agentic-toolkit/internal/lockfile"
@@ -140,6 +141,71 @@ type memoryIndexJSON struct {
 	Path    string `json:"path"`
 	Notes   int    `json:"notes"`
 	Changed bool   `json:"changed"`
+}
+
+type memoryCurateJSON struct {
+	Version int  `json:"version"`
+	Stale   bool `json:"stale"`
+	// Failed is the curator's own verdict on its turn, not an error from
+	// running it: the report is populated either way and carries the reason.
+	Failed  bool    `json:"failed"`
+	Model   string  `json:"model,omitempty"`
+	CostUSD float64 `json:"cost_usd,omitempty"`
+	Report  string  `json:"report"`
+}
+
+type memoryCandidatesJSON struct {
+	Version int    `json:"version"`
+	Path    string `json:"path"`
+	// Staged counts every file in the directory, readable or not, the same
+	// way `stats` counts them. A curator comparing it against len(candidates)
+	// can tell "the backlog is empty" from "I could not read three of them".
+	Staged int `json:"staged"`
+	// Candidates is never null: a curator reading this iterates it, and an
+	// empty backlog is the ordinary case rather than an absent field.
+	Candidates []memoryCandidateJSON `json:"candidates"`
+	// Unreadable is never null for the same reason. A candidate that does not
+	// parse is still a finding somebody staged, and dropping it silently is
+	// the loss this command exists to surface.
+	Unreadable []string `json:"unreadable"`
+}
+
+func unreadableJSONEntries(errs []error) []string {
+	out := make([]string, 0, len(errs))
+	for _, e := range errs {
+		out = append(out, e.Error())
+	}
+	return out
+}
+
+type memoryCandidateJSON struct {
+	Name  string   `json:"name"`
+	File  string   `json:"file"`
+	About string   `json:"about"`
+	Saw   []string `json:"saw,omitempty"`
+	// Targets and Verdict travel together: a verdict is a statement about the
+	// note named here, never about the finding itself.
+	Targets string   `json:"targets,omitempty"`
+	Verdict string   `json:"verdict,omitempty"`
+	Body    string   `json:"body"`
+	Issues  []string `json:"issues,omitempty"`
+}
+
+func candidateJSONEntries(env *Env, candidates []*memory.Candidate) []memoryCandidateJSON {
+	out := make([]memoryCandidateJSON, 0, len(candidates))
+	for _, c := range candidates {
+		out = append(out, memoryCandidateJSON{
+			Name:    c.Stem(),
+			File:    relToWork(env, c.File),
+			About:   c.About,
+			Saw:     c.Saw,
+			Targets: c.Targets,
+			Verdict: string(c.Verdict),
+			Body:    strings.TrimSpace(c.Body),
+			Issues:  c.CandidateIssues(),
+		})
+	}
+	return out
 }
 
 type memoryAnchorJSON struct {

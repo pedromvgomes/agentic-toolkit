@@ -3,6 +3,7 @@ description: Report the memory store's size and staleness at session start, so t
 platforms: [claude]
 requires:
   - agents/memory-explorer
+  - commands/memory-curate
 event: SessionStart
 handler:
   type: command
@@ -26,6 +27,11 @@ handler:
             # consumer set memory.root, and naming the wrong store is worse
             # than naming none.
             if (root != "") printf " in %s", root
-            printf ". Delegate understanding questions to the memory-explorer agent.\n"
+            printf ". Delegate understanding questions to the memory-explorer agent."
+            # A backlog left from an earlier session is invisible otherwise: the
+            # store keeps working, the candidates simply never become notes. Said
+            # only when there are some, so the ordinary line stays one sentence.
+            if (cand != "" && cand != 0) printf " %s candidate(s) await curation: run `/memory-curate`.", cand
+            printf "\n"
           }'
 timeout: 10

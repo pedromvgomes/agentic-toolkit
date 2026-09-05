@@ -1,5 +1,5 @@
 name: skill-permissions
-description: Pre-approve the file and shell operations the bundled skills/agents need (memory-explorer store reads and candidate writes, Serena memories, deep-code-review scripts, pr-code-review read-only gh calls) so they run without permission prompts.
+description: Pre-approve the file and shell operations the bundled skills/agents need (memory-explorer store reads and candidate writes, backlog reporting, Serena memories, deep-code-review scripts, pr-code-review read-only gh calls) so they run without permission prompts.
 platforms: [claude]
 value:
   permissions:
@@ -7,6 +7,9 @@ value:
       - "Write(./.agents/memories/**)"
       - "Bash(agtk memory stats*)"
       - "Bash(agtk memory show *)"
+      # Reporting only. `curate` is not pre-approved: it spends money and
+      # rewrites notes/, so it stays a prompt the user answers deliberately.
+      - "Bash(agtk memory candidates*)"
       # These two assume the default store location. A consumer that sets
       # `memory.root` needs its own entries for that path — permissions are
       # pre-approval, so the only cost of a miss is a prompt, never a block.

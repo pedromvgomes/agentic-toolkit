@@ -1,6 +1,6 @@
 # Plan — repo-resident long-term memory for agentic exploration
 
-Status: Slices A and B implemented. Slices C–D not started.
+Status: Slices A, B and C implemented. Slice D not started.
 Created: 2026-09-02. Challenged and revised: 2026-09-02.
 
 Decisions that the challenge changed are marked **[revised]** below; the reasoning for
@@ -278,8 +278,15 @@ to prune. If hit rate stays low, the answer is prune harder — never store more
   reads, stale-note re-verification, candidate writes. Named for symmetry with
   `memory-curator`. **[revised]** It replaces `code-explorer`, which is deleted along with
   `CODE-MAP.md`; see §11.
-- `memory-curator` agent — promotion, dedupe, merge, index regeneration.
 - `/memory-seed` command — the cold-start pass (§9).
+
+**[revised]** The curator is *not* on this list. It ships inside the binary, as the prompt
+`agtk memory curate` hands to a provider along with a tool grant it constructs itself, and
+there is no `memory-curator` definition. `agentic-driver` pins `--setting-sources ""` on every
+run — the only thing that closes `apiKeyHelper`, a settings-file key that outranks an injected
+credential — and that same refusal is what puts a consumer's rendered `.claude/agents/` out of
+a headless run's reach. See `docs/adr/0004-the-curator-ships-in-the-binary.md`. It buys real
+enforcement of ADR 0003 for the curator, and costs the curator its lockfile pin.
 
 These stay out of the binary. `agtk`'s value is that `lock`/`fetch`/`render`/`sync` are
 reproducible; putting a model call inside it trades that away for auth, cost, rate limits
@@ -293,7 +300,7 @@ the path of the deterministic ones, and never fired implicitly from a hook.**
 
 An earlier draft had a `--exec "claude -p"` string flag, on the reasoning that shelling out
 to a command the user names keeps `agtk` ignorant of models. That is obsolete:
-`agentic-driver` is tagged `v0.1.0` (`github.com/pedromvgomes/agentic-driver`, with
+`agentic-driver` is tagged `v0.2.0` (`github.com/pedromvgomes/agentic-driver`, with
 `claudecode` and `codex` providers) and is a better version of exactly that abstraction —
 it owns argv assembly, timeouts, exit-code interpretation, stderr redaction and isolated
 credential construction, none of which a raw string can express. What `--exec` was really
@@ -311,16 +318,34 @@ knowledge belongs and is tested, rather than a hole to leave open in agtk's flag
 Linking the driver does put agent-invoking code in the binary, which is worth reading
 against ADR 0002 deliberately: the rule there is no model calls **on the path the
 deterministic commands take**, not no dependency at all. `index`, `anchor`, `audit`,
-`lint`, `show` and `stats` must stay reachable without a driver ever being constructed —
-that is the property hooks and CI depend on, and it is checkable by grep.
+`lint`, `show`, `stats` and `candidates` must stay reachable without a driver ever being
+constructed — that is the property hooks and CI depend on. **[revised]** It is no longer only
+checkable by grep: `internal/cli/tests` walks every file under `internal/` for a driver import
+outside `internal/curator`, and asserts the store package's dependency graph cannot reach one.
+
+**[revised]** `v0.2.0` rather than `v0.1.0`, and the difference is what made the curator
+possible. A run built by the driver pins `--setting-sources ""`, so it loads no agent
+definitions and no permission grants; `v0.2.0` adds `Request.Agents`, `AllowedTools` and
+`PermissionMode`, which say those things on the command line instead.
 
 ---
 
 ## 8. Session close
 
+**[revised]** Settled, and less open than this section assumed. `SessionEnd` *is* portable
+(Claude ∩ Cursor, per `definitions/SCHEMA.md`), so "no portable answer" was too pessimistic —
+but ADR 0002 forbids firing model-driven work implicitly from a hook, so the answer is not a
+hook that curates. The trigger is the `memory-curate` command, invoked deliberately. Two hooks
+report the backlog and neither acts on it: the `SessionStart` digest gains a line when
+candidates are waiting, and a `SessionEnd` hook names what this session staged.
+
+The `SessionEnd` half is the weaker of the two, and worth saying so: its output reaches a
+model that is terminating and a user who is leaving. It is kept because it costs one
+definition and is the only signal at the moment the backlog is created, but the digest at the
+*next* session start is what will actually get read.
+
 The curator has to be triggered by something, and Claude Code, Cursor and Copilot do not
-agree on that lifecycle. This is the one piece of the design with no portable answer, and
-it should be settled before the curator is built.
+agree on that lifecycle.
 
 The lazy-by-default choice contains the damage: if the close hook never fires, candidates
 accumulate and notes go unpromoted, but nothing becomes silently wrong. A design that
@@ -359,18 +384,31 @@ writes, as `definitions/agents/memory-explorer/`. Shipped with the instruction a
 `SessionStart` hook that make it actually get used (§4), and with `root`/`project_root` added
 to `agtk memory stats` (§7) — the one binary change the slice needed.
 
-**Slice C — curator and session close.** Promotion, dedupe, fresh-context dispatch, and
-whatever §8 resolves to. Redirect `continuation-session`'s decisions section into
-`candidates/` here.
+**Slice C — curator and session close.** Promotion, dedupe, fresh-context dispatch, and §8's
+answer. **[revised]** `agtk memory curate` lands here rather than in Slice D: the curator has
+no other home once it stopped being a definition, so the slice that builds the curator is the
+slice that builds the command. It needs `Request.Agents`, `AllowedTools` and `PermissionMode`
+on `agentic-driver`, which is a change in that repo. Also here: `agtk memory candidates`, a
+deterministic report over the staging area; the `wrap-session-reviewer` stack entry from §12;
+and render-and-assert tests over `stacks/default.yaml`, since every defect in the previous
+slice's review was in prose that no test read.
 
-**Slice D — seeding and measurement.** `/memory-seed`, `agtk memory curate` on
-`agentic-driver`, and enough `stats` history to judge whether the tax is being repaid.
+Redirecting `continuation-session`'s decisions section into `candidates/` is **not** here. It
+is a change to what a skill writes, independent of the curator, and folding it in would mean
+resurrecting one thing and changing another in the same review.
+
+**Slice D — seeding and measurement.** `/memory-seed`, the `continuation-session` redirect,
+and enough `stats` history to judge whether the tax is being repaid.
 
 ---
 
 ## 11. Open questions
 
-- §8: what session close hooks into, per platform.
+- ~~§8: what session close hooks into, per platform.~~ Resolved: nothing curates from a hook.
+  Two hooks *report* the backlog — `SessionStart` and `SessionEnd`, both portable — and the
+  `memory-curate` command is what runs the curator. ADR 0002 rules out the alternative.
+- ~~Whether the curator ships as a definition or in the binary.~~ Resolved: **in the binary**,
+  see `docs/adr/0004-the-curator-ships-in-the-binary.md`. The explorer stays a definition.
 - ~~Whether `explorer` replaces `code-explorer` outright or ships alongside it.~~ Resolved:
   **replaces**, with memory-only scope. `code-explorer` and `CODE-MAP.md` are gone. Cheap to
   do — nothing dispatched to it; it was named only in `stacks/default.yaml` and
@@ -397,3 +435,20 @@ whatever §8 resolves to. Redirect `continuation-session`'s decisions section in
 against a fresh consumer: `agentic-driver/main/.claude/agents/` contains `code-explorer`
 alone. `wrap-session` is therefore broken in every consumer repo today. One-line fix,
 worth doing independently of this plan.
+
+**[revised]** Fixed in Slice C, and the fold question it raised is settled: the reviewer stays
+a separate agent. It and the curator both run at session close and both turn what a session
+learned into committed artifacts, which looks like the two-sources-for-one-question problem
+that removed `code-explorer` in §11 — but it is not. A rule under `.agents/rules/` is
+prescriptive, always loaded and unanchored; a note is a lazily-loaded anchored fact with a
+blob hash, a confidence and a hit count. No reader ever has to choose between them, so
+merging would create the one-agent-two-content-policies failure rather than avoid it.
+
+Making the reviewer a *producer* that stages into `candidates/` — §8's shape, applied to a
+second source — is a real option and was deliberately not taken here. `continuation-session`
+already produces the note-shaped tier and discards it, so redirecting it is free; the reviewer
+produces the rule-shaped tier, so this would be new behaviour, in the same change that
+resurrects an agent no consumer has run.
+
+The fix is one line, and the reason it went unnoticed is that nothing rendered the stack and
+looked. That is what the render-and-assert tests in Slice C are for.

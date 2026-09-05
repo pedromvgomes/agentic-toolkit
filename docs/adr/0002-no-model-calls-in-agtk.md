@@ -5,10 +5,11 @@ model call inside the binary trades that away for auth, cost, rate limits and
 non-determinism, and it would land on the path of commands that hooks and CI depend on
 being deterministic.
 
-Model-driven memory work — the explorer and the curator — therefore ships as agent
-definitions run by whatever agent the repo is configured for, never as subcommands, and is
-never fired implicitly from a hook. The deterministic surface (`index`, `anchor`, `audit`,
-`lint`, `show`, `stats`) is what those agents call.
+Model-driven memory work is therefore never fired implicitly from a hook, and the
+deterministic surface (`index`, `anchor`, `audit`, `lint`, `show`, `stats`, `candidates`) is
+what it calls. The explorer ships as an agent definition, run by whatever agent the repo is
+configured for. The curator does not: it ships in the binary, for the reasons in
+`docs/adr/0004-the-curator-ships-in-the-binary.md`.
 
 The rule is about the *path*, not the import graph. Unattended curation is a real need, so
 one subcommand — `agtk memory curate` — does invoke an agent, through
