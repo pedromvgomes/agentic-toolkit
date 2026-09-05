@@ -682,3 +682,129 @@ func TestMemoryAuditTextNamesEveryDrift(t *testing.T) {
 		}
 	}
 }
+
+// TestMemoryCandidatesReportsAnUnreadableOne: a candidate that does not parse
+// is still a finding somebody staged. Reporting only what parsed would print
+// "no candidates staged" over a directory holding one, and the session-end
+// hook — which reads stdout and discards stderr — would then say nothing at
+// all. That is the silent loss this command exists to surface.
+func TestMemoryCandidatesReportsAnUnreadableOne(t *testing.T) {
+	work := memoryProject(t, "skills: []\n")
+	writeFile(t, filepath.Join(work, ".agents/memory/candidates/20260905-bad.md"),
+		"---\nabout: broken\nbogus: x\n---\n\nbody\n")
+
+	stdout, _, err := runCLI(t, work, "memory", "candidates")
+	if err != nil {
+		t.Fatalf("memory candidates: %v", err)
+	}
+	if strings.Contains(stdout, "no candidates staged") {
+		t.Fatalf("an unreadable candidate was reported as an empty backlog:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "unreadable") || !strings.Contains(stdout, "20260905-bad.md") {
+		t.Errorf("stdout does not name the unreadable candidate:\n%s", stdout)
+	}
+}
+
+// TestMemoryCandidatesCountAgreesWithStats: the session-start digest quotes
+// stats and the session-end hook quotes this command. If the two counted
+// differently, one would announce a backlog the other says is not there, and
+// running the command they both point at would clear neither.
+func TestMemoryCandidatesCountAgreesWithStats(t *testing.T) {
+	work := memoryProject(t, "skills: []\n")
+	writeFile(t, filepath.Join(work, ".agents/memory/candidates/20260905-good.md"),
+		"---\nabout: a finding\nsaw:\n  - x.go\n---\n\nevidence\n")
+	writeFile(t, filepath.Join(work, ".agents/memory/candidates/20260905-bad.md"),
+		"---\nabout: broken\nbogus: x\n---\n\nbody\n")
+
+	stdout, _, err := runCLI(t, work, "memory", "candidates")
+	if err != nil {
+		t.Fatalf("memory candidates: %v", err)
+	}
+	if !strings.Contains(stdout, "2 candidates staged") {
+		t.Errorf("candidates counted differently from stats:\n%s", stdout)
+	}
+
+	statsOut, _, err := runCLI(t, work, "memory", "stats")
+	if err != nil {
+		t.Fatalf("memory stats: %v", err)
+	}
+	if !strings.Contains(statsOut, "candidates:  2") {
+		t.Errorf("stats counted differently from candidates:\n%s", statsOut)
+	}
+}
+
+// TestMemoryCandidatesJSONSeparatesEmptyFromUnreadable: the JSON is for a
+// curator, and a curator that cannot tell "nothing staged" from "three I
+// could not read" will report the backlog as cleared.
+func TestMemoryCandidatesJSONSeparatesEmptyFromUnreadable(t *testing.T) {
+	work := memoryProject(t, "skills: []\n")
+	writeFile(t, filepath.Join(work, ".agents/memory/candidates/20260905-bad.md"),
+		"---\nabout: broken\nbogus: x\n---\n\nbody\n")
+
+	stdout, _, err := runCLI(t, work, "memory", "candidates", "--json")
+	if err != nil {
+		t.Fatalf("memory candidates --json: %v", err)
+	}
+	var got struct {
+		Staged     int      `json:"staged"`
+		Candidates []any    `json:"candidates"`
+		Unreadable []string `json:"unreadable"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("decode: %v\n%s", err, stdout)
+	}
+	if got.Staged != 1 {
+		t.Errorf("staged = %d, want 1", got.Staged)
+	}
+	if len(got.Candidates) != 0 {
+		t.Errorf("candidates = %v, want none parseable", got.Candidates)
+	}
+	if len(got.Unreadable) != 1 {
+		t.Fatalf("unreadable = %v, want the one that failed", got.Unreadable)
+	}
+}
+
+// TestMemoryAgentIsAcceptedByTheStrictParser: manifests decode with
+// yaml.Strict(), so a key the struct does not have is a hard parse error on
+// every command, not an ignored field. The curate command and CONTEXT.md both
+// tell a user to set `memory.agent`; following that instruction must not break
+// lock, fetch, render and sync.
+func TestMemoryAgentIsAcceptedByTheStrictParser(t *testing.T) {
+	work := memoryProject(t, "memory:\n  agent: claudecode\nskills: []\n")
+
+	if _, stderr, err := runCLI(t, work, "memory", "stats"); err != nil {
+		t.Fatalf("memory.agent broke the manifest: %v\n%s", err, stderr)
+	}
+}
+
+// TestMemoryRejectsAnUnknownSubcommand: cobra rejects an unknown subcommand
+// only at the root — a non-root parent takes it as an argument, prints help
+// and exits 0. An agent told to run a subcommand its installed `agtk` does not
+// have would then read the help text as output and report success. Definitions
+// are pinned by lockfile and the binary is installed separately, so that skew
+// is routine rather than hypothetical.
+func TestMemoryRejectsAnUnknownSubcommand(t *testing.T) {
+	work := memoryProject(t, "skills: []\n")
+
+	stdout, _, err := runCLI(t, work, "memory", "no-such-subcommand")
+	if err == nil {
+		t.Fatalf("an unknown subcommand succeeded and printed:\n%s", stdout)
+	}
+	if !strings.Contains(err.Error(), "no-such-subcommand") {
+		t.Errorf("error does not name the subcommand: %v", err)
+	}
+}
+
+// TestMemoryWithNoSubcommandStillPrintsHelp: the guard above must not turn the
+// ordinary "what can this do" invocation into a failure.
+func TestMemoryWithNoSubcommandStillPrintsHelp(t *testing.T) {
+	work := memoryProject(t, "skills: []\n")
+
+	stdout, _, err := runCLI(t, work, "memory")
+	if err != nil {
+		t.Fatalf("bare `memory` failed: %v", err)
+	}
+	if !strings.Contains(stdout, "candidates") {
+		t.Errorf("help does not list the subcommands:\n%s", stdout)
+	}
+}

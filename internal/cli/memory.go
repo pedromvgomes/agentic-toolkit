@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/pedromvgomes/agentic-toolkit/internal/curator"
 	"github.com/pedromvgomes/agentic-toolkit/internal/memory"
 	"github.com/pedromvgomes/agentic-toolkit/internal/stack"
 )
@@ -28,6 +29,18 @@ func newMemoryCmd(env *Env) *cobra.Command {
 			"\n" +
 			"Staleness is never stored. It is recomputed from working-tree content on\n" +
 			"every run, so `audit` writes nothing and is safe to call from a hook.",
+		// Cobra rejects an unknown subcommand only at the ROOT: a non-root
+		// parent takes it as an argument, prints help and exits 0. An agent
+		// told to run a subcommand this binary does not have — a misspelling,
+		// or a definition newer than the installed `agtk` — would read that
+		// help text as the command's output and report success.
+		//
+		// NoArgs alone does not close it, because a command with no Run is
+		// not Runnable and cobra returns ErrHelp before it validates args. The
+		// RunE is what makes the validation reachable; bare `agtk memory`
+		// still prints help and exits 0.
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error { return cmd.Help() },
 	}
 	cmd.AddCommand(
 		newMemoryIndexCmd(env),
@@ -36,6 +49,8 @@ func newMemoryCmd(env *Env) *cobra.Command {
 		newMemoryLintCmd(env),
 		newMemoryShowCmd(env),
 		newMemoryStatsCmd(env),
+		newMemoryCandidatesCmd(env),
+		newMemoryCurateCmd(env),
 	)
 	return cmd
 }
@@ -46,6 +61,10 @@ func newMemoryCmd(env *Env) *cobra.Command {
 var (
 	errMemoryStale = errors.New("memory: stale notes")
 	errMemoryLint  = errors.New("memory: store has issues")
+	// errMemoryCurate flips the exit code after the curator's own report has
+	// been printed. The CLI ran fine; the curator declared the turn a
+	// failure, and that verdict is in the report rather than in this error.
+	errMemoryCurate = errors.New("memory: curation reported a failure")
 )
 
 // memoryProjectRoot is what anchor paths are relative to. It mirrors
@@ -546,6 +565,179 @@ func printStats(env *Env, store *memory.Store, st memory.Stats) {
 		plural(st.Hits, "read"), st.NotesHit, st.Notes, st.HitRate*100)
 	fmt.Fprintf(env.Stdout, "  window:    %s .. %s\n",
 		st.FirstHit.Format(time.RFC3339), st.LastHit.Format(time.RFC3339))
+}
+
+// ===== candidates =====
+
+func newMemoryCandidatesCmd(env *Env) *cobra.Command {
+	var jsonOut bool
+	cmd := &cobra.Command{
+		Use:   "candidates",
+		Short: "List the findings staged for curation",
+		Long: "Prints what is waiting in candidates/: what each finding is about, the paths\n" +
+			"it came from, and — for a re-check of an existing note — which note it\n" +
+			"concerns and what the explorer concluded.\n" +
+			"\n" +
+			"Structural problems are reported alongside, because a candidate is the one\n" +
+			"input to curation nothing else checks: a malformed one becomes a bad note or\n" +
+			"a silently dropped finding.\n" +
+			"\n" +
+			"Reports only. Promoting, merging and rejecting are `agtk memory curate`, and\n" +
+			"the difference is that this one never invokes a model.",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			store, err := memoryStore(env)
+			if err != nil {
+				return err
+			}
+			// Parse failures are part of the report rather than a warning on
+			// the side. A finding that cannot be read is still a finding that
+			// was staged, and reporting only what parsed would say "no
+			// candidates staged" over a directory holding three of them —
+			// which is the silent loss this command exists to surface.
+			candidates, parseErrs := store.LoadCandidates()
+
+			if jsonOut {
+				return writeJSON(env, memoryCandidatesJSON{
+					Version:    jsonVersion,
+					Path:       relToWork(env, store.CandidatesPath()),
+					Staged:     len(candidates) + len(parseErrs),
+					Candidates: candidateJSONEntries(env, candidates),
+					Unreadable: unreadableJSONEntries(parseErrs),
+				})
+			}
+			printCandidatesReport(env, candidates, parseErrs)
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit machine-readable JSON output")
+	return cmd
+}
+
+func printCandidatesReport(env *Env, candidates []*memory.Candidate, parseErrs []error) {
+	staged := len(candidates) + len(parseErrs)
+	if staged == 0 {
+		fmt.Fprintln(env.Stdout, "no candidates staged")
+		return
+	}
+	// Counted the same way `agtk memory stats` counts them — every file in
+	// the directory — so the two never disagree about the size of the
+	// backlog and a hook can quote either.
+	fmt.Fprintf(env.Stdout, "%s staged:\n", plural(staged, "candidate"))
+	for _, c := range candidates {
+		fmt.Fprintf(env.Stdout, "  %s\n", c.Stem())
+		if c.About != "" {
+			fmt.Fprintf(env.Stdout, "    about:   %s\n", c.About)
+		}
+		if len(c.Saw) > 0 {
+			fmt.Fprintf(env.Stdout, "    saw:     %s\n", strings.Join(c.Saw, ", "))
+		}
+		if c.Targets != "" {
+			fmt.Fprintf(env.Stdout, "    targets: %s (%s)\n", c.Targets, c.Verdict)
+		}
+		for _, issue := range c.CandidateIssues() {
+			fmt.Fprintf(env.Stdout, "    issue:   %s\n", issue)
+		}
+	}
+	// On stdout, not stderr: a hook reads stdout, and a finding nobody can
+	// read is exactly what a backlog report must not omit.
+	for _, e := range parseErrs {
+		fmt.Fprintf(env.Stdout, "  unreadable: %v\n", e)
+	}
+}
+
+// ===== curate =====
+
+// newMemoryCurateCmd is the one memory subcommand that invokes a model.
+//
+// Everything above it is deterministic and safe on the path of a hook; this
+// one spends money and reaches outside the machine, which is why it is a
+// separate command rather than a flag on `audit`. Nothing fires it implicitly.
+func newMemoryCurateCmd(env *Env) *cobra.Command {
+	var (
+		jsonOut bool
+		stale   bool
+		timeout time.Duration
+	)
+	cmd := &cobra.Command{
+		Use:   "curate",
+		Short: "Run the curator over staged candidates, or over stale notes",
+		Long: "Promotes, merges and rejects the findings in candidates/, then stamps and\n" +
+			"regenerates the index. With --stale, sweeps notes whose anchored content has\n" +
+			"moved instead.\n" +
+			"\n" +
+			"The curator runs in its own process with its own context, holding the store\n" +
+			"and the backlog and not this session's history. Its tool grant is constructed\n" +
+			"here and passed on the command line, so notes/ has one writer by\n" +
+			"construction rather than by instruction.\n" +
+			"\n" +
+			"Names its provider through `memory.agent` in the entry manifest. There is no\n" +
+			"default: this is the only memory command that costs anything.",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			store, err := memoryStore(env)
+			if err != nil {
+				return err
+			}
+			provider, err := memoryAgent(env)
+			if err != nil {
+				return err
+			}
+
+			res, err := curator.Run(cmd.Context(), curator.Options{
+				Provider: provider,
+				// The curator resolves the store the way every other command
+				// does — by running `agtk` — so it has to start where agtk
+				// would have.
+				WorkDir: store.ProjectRoot,
+				Stale:   stale,
+				Timeout: timeout,
+			})
+			if err != nil {
+				return err
+			}
+
+			if jsonOut {
+				if err := writeJSON(env, memoryCurateJSON{
+					Version: jsonVersion,
+					Stale:   stale,
+					Failed:  res.IsError,
+					Model:   res.Model,
+					CostUSD: res.CostUSD,
+					Report:  res.Text,
+				}); err != nil {
+					return err
+				}
+			} else {
+				fmt.Fprintln(env.Stdout, res.Text)
+			}
+			if res.IsError {
+				return errMemoryCurate
+			}
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit machine-readable JSON output")
+	cmd.Flags().BoolVar(&stale, "stale", false, "sweep stale notes instead of the candidate backlog")
+	cmd.Flags().DurationVar(&timeout, "timeout", 0, "bound the curation run (default 20m)")
+	return cmd
+}
+
+// memoryAgent reads `memory.agent` from the entry manifest, the same way and
+// from the same file memoryStore reads `memory.root`.
+func memoryAgent(env *Env) (string, error) {
+	st, err := stack.ParseFile(memoryManifestPath(env))
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			// No manifest is the same state as a manifest naming no
+			// provider. Returning empty rather than the sentinel keeps one
+			// place — the curator, which knows the provider names — in charge
+			// of saying what to do about it.
+			return "", nil
+		}
+		return "", err
+	}
+	return st.MemoryAgent(), nil
 }
 
 // ===== shared helpers =====

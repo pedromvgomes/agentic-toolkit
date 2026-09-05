@@ -243,11 +243,15 @@ func renderAgent(def definitions.Definition) ([]byte, error) {
 func renderCommand(def definitions.Definition) ([]byte, error) {
 	c := def.(*definitions.Command)
 	type fm struct {
-		Name         string   `yaml:"name"`
-		Description  string   `yaml:"description"`
-		ArgumentHint string   `yaml:"argument-hint,omitempty"`
-		Model        string   `yaml:"model,omitempty"`
-		Tools        []string `yaml:"tools,omitempty"`
+		Name         string `yaml:"name"`
+		Description  string `yaml:"description"`
+		ArgumentHint string `yaml:"argument-hint,omitempty"`
+		Model        string `yaml:"model,omitempty"`
+		// Claude Code reads a slash command's tool allowlist from
+		// `allowed-tools`, the way it reads the hint from `argument-hint`.
+		// Under any other key the restriction is not rejected — it is
+		// ignored, and the command runs with the session's whole tool set.
+		Tools []string `yaml:"allowed-tools,omitempty"`
 	}
 	out := fm{
 		Name:         c.Name,

@@ -261,6 +261,12 @@ func Execute() int {
 		if errors.Is(err, errMemoryStale) || errors.Is(err, errMemoryLint) {
 			return 1
 		}
+		// `agtk memory curate` prints the curator's own report before
+		// returning errMemoryCurate, so the report is not repeated as an
+		// error message with the generic prefix.
+		if errors.Is(err, errMemoryCurate) {
+			return 1
+		}
 		// `agtk update --check` returns updateNewerErr when newer is
 		// available; map that to UpdateCheckExitCode without the
 		// generic prefix so scripts can read the message verbatim.

@@ -68,6 +68,10 @@ type Stack struct {
 // where another repo commits its notes.
 type MemoryConfig struct {
 	Root string `yaml:"root,omitempty" agtkdoc:"Store location, relative to the directory holding the entry manifest. Defaults to \".agents/memory\"."`
+	// Agent names the coding-agent CLI that curation drives. It is a
+	// provider, not a definition of category `agent` and not the agent
+	// running the session — see CONTEXT.md, which flags the collision.
+	Agent string `yaml:"agent,omitempty" agtkdoc:"Coding-agent CLI that 'agtk memory curate' drives, e.g. \"claudecode\" or \"codex\". No default: curation is the one operation that spends money, so the repo names its provider or curation does not run."`
 }
 
 // MemoryRoot returns the configured store root, or "" when the stack does
@@ -77,6 +81,20 @@ func (s *Stack) MemoryRoot() string {
 		return ""
 	}
 	return s.Memory.Root
+}
+
+// MemoryAgent returns the configured curation provider, or "" when the stack
+// names none.
+//
+// There is deliberately no default. Every other memory command is
+// deterministic and free; this is the one that spends money and calls out to
+// a CLI, so a repo that has not chosen a provider gets a refusal rather than
+// a guess about which one it meant.
+func (s *Stack) MemoryAgent() string {
+	if s.Memory == nil {
+		return ""
+	}
+	return s.Memory.Agent
 }
 
 // EffectiveRoot returns Root if set, else DefaultRoot.

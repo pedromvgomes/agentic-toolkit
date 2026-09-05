@@ -95,6 +95,26 @@ The `.agents/memory/` directory holding the **Index**, `notes/` and `candidates/
 so notes are reviewable in PRs and travel with the branch that wrote them.
 _Avoid_: memory bank, knowledge base
 
+**Explorer**:
+The agent that answers understanding questions by reading the **Memory store** before
+exploring, re-checks a **Stale** **Note** it relies on, and stages what it learned as a
+**Candidate**. A **Definition**, so it runs inside the session that delegated to it.
+_Avoid_: researcher, code-explorer
+
+**Curator**:
+The agent that turns **Candidate**s into **Note**s — promoting, merging near-duplicates, and
+rejecting anything re-derivable or unverified — then stamps and regenerates the **Index**. The
+only author of **Note**s, and the only thing that writes **Confidence**. Unlike the
+**Explorer** it is not a **Definition**: it ships inside `agtk` and runs in its own process,
+so it gets a context holding the candidates and the **Index**, never the session transcript.
+_Avoid_: reviewer, promoter
+
+**Curate**:
+One run of the **Curator** over the staged **Candidate**s, or with `--stale` over **Stale**
+**Note**s. The one `agtk` subcommand that invokes a model; every other one is deterministic
+and safe on the path of a hook.
+_Avoid_: promote, sweep
+
 ## Flagged ambiguities
 **"Verify"** — was used both for the CI structural check and for a curator confirming a claim
 is true. Resolution: the command is `agtk memory lint`; `verified` is reserved for
@@ -107,6 +127,10 @@ the second.
 
 **"Root"** — `root:` in a **Stack** is the convention root for bare-name **Definition** lookups;
 `memory.root` is the **Memory store** location. Unrelated; always qualify which.
+
+**"Agent"** — a **Definition** **Category**, and also the thing that runs one. `memory.agent`
+is neither: it names which coding-agent CLI `agtk` drives when it **Curate**s. Say "provider"
+for that, and qualify the other two.
 
 ## Example dialogue
 > **Dev:** `graph.go` changed, so the note about SHA pinning is suspect now, right?

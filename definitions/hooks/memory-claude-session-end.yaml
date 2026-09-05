@@ -1,0 +1,27 @@
+name: memory-claude-session-end
+description: Report the memory store's unpromoted backlog at session close, so findings staged during the session are not left waiting unseen.
+platforms: [claude]
+requires:
+  - commands/memory-curate
+event: SessionEnd
+handler:
+  type: command
+  command: |
+    export PATH="$HOME/.local/bin:$PATH"
+    # Reports; it does not curate. Curation is a model call, and a model call
+    # fired implicitly from a hook is the thing the deterministic surface exists
+    # to stay clear of — so this names the backlog and the command that clears
+    # it, and stops there.
+    #
+    # candidates, not audit or stats: staleness is a standing condition that the
+    # session-start digest already carries, while an unpromoted candidate is
+    # work this session produced.
+    command -v agtk >/dev/null 2>&1 || exit 0
+    agtk memory candidates 2>/dev/null \
+      | awk '
+          /^[0-9]+ candidates? staged:$/ { staged = $1 }
+          END {
+            if (staged == "") exit 0
+            printf "memory: %s staged and not curated. Run `/memory-curate` to promote or reject them.\n", staged
+          }'
+timeout: 10

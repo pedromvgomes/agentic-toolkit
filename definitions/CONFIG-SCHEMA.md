@@ -37,6 +37,7 @@ Settings for the repo-resident memory store (`agtk memory ...`). Honoured **only
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `root` | `string` | no | Store location, relative to the directory holding the entry manifest. Defaults to ".agents/memory". |
+| `agent` | `string` | no | Coding-agent CLI that 'agtk memory curate' drives, e.g. "claudecode" or "codex". No default: curation is the one operation that spends money, so the repo names its provider or curation does not run. |
 
 ### Per-entry resolution
 
