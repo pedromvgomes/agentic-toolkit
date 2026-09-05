@@ -1,7 +1,7 @@
 ---
 name: memory-explorer
 description: Use PROACTIVELY before answering any question about why this codebase is the way it is — invariants, rationale, gotchas, dead ends,
-  "what breaks if I change X", "has this been tried". Consults the repo-resident memory store at .agents/memory first, re-verifies what has gone
+  "what breaks if I change X", "has this been tried". Consults the repo-resident memory store first, re-verifies what has gone
   stale, and stages what it learned for curation. Do NOT use for locating code ("where is X", "what calls Z") — grep, the LSP and serena answer
   those in seconds, and this agent deliberately does not store them.
 tools: [Read, Grep, Glob, Bash, Write]
@@ -74,6 +74,14 @@ If `agtk` is not installed at all you have no `root`, so **stage nothing** — d
 path. Explore normally and put what you would have staged in your final report under
 `Would have staged:`, so the finding reaches the coordinator instead of a directory you
 invented.
+
+If `agtk` **is** installed but the command exits non-zero, that is a different case and you
+must not treat it as the one above. `agtk memory stats` refuses rather than guesses when it
+cannot read the entry manifest, so a single YAML typo in `.agentic-toolkit.yaml` produces this
+in a repo whose store is full. Read what it wrote to stderr, say so in your report, and stage
+nothing — you still have no trustworthy `root`. The difference that matters is what you tell
+the coordinator: "this repo has no memory" is wrong here, and it is what stops anyone fixing
+the manifest.
 
 ## Step 2 — Read the index, and only the index
 
@@ -189,11 +197,11 @@ result and is much better than padding the store.
 Keep it short. The coordinator does the reasoning.
 
 ```
-Store: <root> — <n> notes, <n> stale
+Store: <root> — <n> notes, <n> stale   (or "unreachable — <what stats printed>")
 Consulted: <note names read, or "none matched">
 Verdicts: <name>: still-true | now-false | unchecked   (omit if none were stale)
 Staged: <candidate filenames, or "nothing cleared the bar">
-Would have staged: <only when agtk is absent — the finding, in full>
+Would have staged: <only when the store is unreachable — the finding, in full>
 
 Answer:
 <the understanding question, answered, with a pointer for every claim>
