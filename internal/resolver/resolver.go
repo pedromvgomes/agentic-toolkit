@@ -55,6 +55,7 @@ func Resolve(entry *stack.Stack, entryFS fs.FS, entryPathInFS string, provider S
 	if err := st.loadStack(entry, entryCtx); err != nil {
 		st.errs = append(st.errs, err)
 	}
+	st.pullInRequirements()
 
 	if len(st.errs) > 0 {
 		return nil, errors.Join(st.errs...)
@@ -151,6 +152,13 @@ type walkedDef struct {
 	StackName  string
 	EntryPath  string
 	SourceFS   fs.FS
+
+	// root and ctx are what this definition was resolved through, kept so a
+	// `requires:` it declares can be looked up the same way its own entry
+	// was — in the same source, under the same convention root. A bare name
+	// means nothing without them.
+	root string
+	ctx  stackCtx
 }
 
 type defKey struct {
@@ -281,15 +289,27 @@ func (s *traversalState) loadExtends(ext stack.ExtendsRef, parent stackCtx) erro
 
 // resolveEntry loads one per-category entry into a walkedDef.
 func (s *traversalState) resolveEntry(entry stack.EntryRef, cat definitions.Category, root string, ctx stackCtx) (*walkedDef, error) {
+	var (
+		w   *walkedDef
+		err error
+	)
 	switch entry.Kind {
 	case stack.RefBare:
-		return s.resolveBare(entry, cat, root, ctx)
+		w, err = s.resolveBare(entry, cat, root, ctx)
 	case stack.RefPath:
-		return s.resolvePath(entry, cat, ctx)
+		w, err = s.resolvePath(entry, cat, ctx)
 	case stack.RefURL:
-		return s.resolveURL(entry, cat, ctx)
+		w, err = s.resolveURL(entry, cat, ctx)
+	default:
+		return nil, fmt.Errorf("unsupported entry kind %v", entry.Kind)
 	}
-	return nil, fmt.Errorf("unsupported entry kind %v", entry.Kind)
+	if w != nil {
+		// Recorded here rather than in parseFromFS, which is one layer too
+		// deep to know the convention root. A `requires:` this definition
+		// declares is looked up through the same pair.
+		w.root, w.ctx = root, ctx
+	}
+	return w, err
 }
 
 // resolveBare looks up a bare name under <root>/<plural>/<name>... in

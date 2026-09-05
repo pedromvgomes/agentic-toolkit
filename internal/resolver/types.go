@@ -144,6 +144,16 @@ const (
 	// deliberate; a remote stack must not relocate a consumer's committed
 	// notes, and it must not hard-fail the consumer's build either.
 	DiagIgnoredMemoryConfig
+	// DiagPulledRequirement: a definition declared a `requires:` that no
+	// stack listed, so the resolver added it. Informational, like
+	// DiagImplicitSource — the same relationship one level down, and
+	// resolved the same way.
+	DiagPulledRequirement
+	// DiagUnresolvedRequirement: a `requires:` names something that could
+	// not be resolved. Not fatal: the reference usually lives in a
+	// definition the consumer does not own, and failing their sync over
+	// somebody else's metadata is worse than rendering without it.
+	DiagUnresolvedRequirement
 )
 
 func (k DiagnosticKind) String() string {
@@ -154,6 +164,10 @@ func (k DiagnosticKind) String() string {
 		return "implicit_source"
 	case DiagIgnoredMemoryConfig:
 		return "ignored_memory_config"
+	case DiagPulledRequirement:
+		return "pulled_requirement"
+	case DiagUnresolvedRequirement:
+		return "unresolved_requirement"
 	}
 	return "unknown"
 }
@@ -165,7 +179,9 @@ type Diagnostic struct {
 	Kind    DiagnosticKind
 	Message string
 
-	// Category and Name are populated for DiagOverride.
+	// Category and Name are populated for DiagOverride, and for both
+	// requirement diagnostics, where they identify the definition that
+	// declared the requirement rather than the requirement itself.
 	Category definitions.Category
 	Name     string
 

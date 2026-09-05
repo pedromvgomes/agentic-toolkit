@@ -6,6 +6,8 @@ description: |
   subagent to do the actual work on Sonnet. Triggers on user phrases like "wrap up", "wrap this session", "end of session", "session review", "review docs",
   "let's close out", "we're done with this session", or any explicit signal that the user is finishing a session and wants documentation considered for the
   work that was done.
+requires:
+  - agents/wrap-session-reviewer
 ---
 
 # Wrap Session

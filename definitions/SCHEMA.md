@@ -27,7 +27,7 @@ Every definition embeds the same `Common` base. Category is determined by the fi
 | `description` | `string` | **yes** | One-line summary used by adapters and discovery surfaces. |
 | `platforms` | `[]Platform` | no | Target platform allowlist. Omit when the definition works on every platform; only set this to *narrow* (e.g. a Claude-only skill that depends on Claude features). |
 | `tags` | `[]string` | no | Free-form tags for grouping and filtering. |
-| `requires` | `[]string` | no | Cross-references to other definitions in 'category/name' form (e.g. skills/challenge). |
+| `requires` | `[]string` | no | Definitions this one does not work without, in 'category/name' form (e.g. agents/wrap-session-reviewer). The resolver pulls in anything listed here that no stack names, transitively, and reports each one as a diagnostic — so a stack listing a skill gets the subagent it dispatches to rather than rendering something that fails the moment it delegates. |
 
 ## Skills
 
