@@ -92,6 +92,10 @@ type Options struct {
 	Stale bool
 	// Timeout overrides the default bound.
 	Timeout time.Duration
+	// Binary pins the executable instead of resolving the provider's name on
+	// PATH, so nothing PATH resolves and no repointed symlink can stand in
+	// for the CLI that was chosen.
+	Binary string
 }
 
 // Result is what a run produced.
@@ -149,10 +153,14 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	if timeout == 0 {
 		timeout = defaultTimeout
 	}
-	driver, err := agentic.New(provider,
+	driverOpts := []agentic.Option{
 		agentic.WithWorkDir(opts.WorkDir),
 		agentic.WithTimeout(timeout),
-	)
+	}
+	if opts.Binary != "" {
+		driverOpts = append(driverOpts, agentic.WithBinary(opts.Binary))
+	}
+	driver, err := agentic.New(provider, driverOpts...)
 	if err != nil {
 		return Result{}, err
 	}
