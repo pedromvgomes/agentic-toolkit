@@ -1,0 +1,5 @@
+version: 2
+sources:
+- url: github.com/anthropics/skills.git
+  ref: main
+  sha: 41bbe19d1a1a7eaab5e7bb9050a417e5c6cffc8f

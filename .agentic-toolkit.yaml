@@ -1,0 +1,18 @@
+# agentic-toolkit consumes its own definitions.
+#
+# The stacks are extended by local path rather than through an org aggregator:
+# this repo IS the source, so a URL ref would fetch a pinned copy of itself and
+# render yesterday's definitions over today's working tree — and it would make
+# the toolkit's own setup depend on a repo it does not own.
+extends:
+  - ./stacks/default.yaml
+  - ./stacks/plannotator.yaml
+  - ./stacks/serena.yaml
+  - ./stacks/rtk.yaml
+
+# The store is already here and committed, and every deterministic memory
+# command finds it from the default `memory.root`. Only the provider needs
+# saying: curation is the one operation that spends money, so `memory.agent`
+# has no default and an unconfigured repo is refused rather than guessed at.
+memory:
+  agent: claudecode
