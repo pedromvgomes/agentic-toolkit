@@ -1,0 +1,129 @@
+{
+  "_meta": {
+    "agtk": {
+      "managed": [
+        "hooks",
+        "permissions"
+      ]
+    }
+  },
+  "hooks": {
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "command": "plannotator",
+            "timeout": 3600,
+            "type": "command"
+          }
+        ],
+        "matcher": "ExitPlanMode"
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "export PATH=\"$HOME/.local/bin:$PATH\"\ncommand -v rtk \u003e/dev/null 2\u003e\u00261 || \\\n  curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh \u003e\u00262\n",
+            "timeout": 90,
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash"
+      },
+      {
+        "hooks": [
+          {
+            "command": "serena-hooks remind --client=claude-code",
+            "timeout": 15,
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "command": "export PATH=\"$HOME/.local/bin:$PATH\"\n# Reports; it does not curate. Curation is a model call, and a model call\n# fired implicitly from a hook is the thing the deterministic surface exists\n# to stay clear of — so this names the backlog and the command that clears\n# it, and stops there.\n#\n# candidates, not audit or stats: staleness is a standing condition that the\n# session-start digest already carries, while an unpromoted candidate is\n# work this session produced.\ncommand -v agtk \u003e/dev/null 2\u003e\u00261 || exit 0\nagtk memory candidates 2\u003e/dev/null \\\n  | awk '\n      /^[0-9]+ candidates? staged:$/ { staged = $1 }\n      END {\n        if (staged == \"\") exit 0\n        printf \"memory: %s staged and not curated. Run `/memory-curate` to promote or reject them.\\n\", staged\n      }'\n",
+            "timeout": 10,
+            "type": "command"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "command": "serena-hooks cleanup --client=claude-code",
+            "timeout": 90,
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "command": "export PATH=\"$HOME/.local/bin:$PATH\"\n# stats, not audit: audit exits non-zero when anything is stale, which is\n# its CI contract and would read as a hook failure. stats exits 0 and\n# carries the same stale count. Both write nothing.\ncommand -v agtk \u003e/dev/null 2\u003e\u00261 || exit 0\nagtk memory stats 2\u003e/dev/null \\\n  | awk -F': *' '\n      /^root:/       { root = $2 }\n      /^notes:/      { notes = $2 }\n      /^stale:/      { stale = $2 }\n      /^candidates:/ { cand = $2 }\n      END {\n        if (notes == \"\" || notes == 0) exit 0\n        printf \"memory: %s notes (%s stale, %s candidates)\", notes, stale, cand\n        # An agtk predating `root:` in stats output leaves this empty. Say\n        # nothing rather than guess: the guess is wrong precisely when the\n        # consumer set memory.root, and naming the wrong store is worse\n        # than naming none.\n        if (root != \"\") printf \" in %s\", root\n        printf \". Delegate understanding questions to the memory-explorer agent.\"\n        # A backlog left from an earlier session is invisible otherwise: the\n        # store keeps working, the candidates simply never become notes. Said\n        # only when there are some, so the ordinary line stays one sentence.\n        if (cand != \"\" \u0026\u0026 cand != 0) printf \" %s candidate(s) await curation: run `/memory-curate`.\", cand\n        printf \"\\n\"\n      }'\n",
+            "timeout": 10,
+            "type": "command"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "command": "command -v plannotator \u003e/dev/null 2\u003e\u00261 || \\\n  curl -fsSL https://plannotator.ai/install.sh | bash \u003e\u00262\n",
+            "timeout": 90,
+            "type": "command"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "command": "export PATH=\"$HOME/.local/bin:$PATH\"\ncommand -v rtk \u003e/dev/null 2\u003e\u00261 || \\\n  curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh \u003e\u00262\n",
+            "timeout": 90,
+            "type": "command"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "command": "serena-hooks activate --client=claude-code",
+            "timeout": 120,
+            "type": "command"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "command": "export PATH=\"$HOME/.local/bin:$PATH\"\ncommand -v uv \u003e/dev/null 2\u003e\u00261 || \\\n  curl -LsSf https://astral.sh/uv/install.sh | sh \u003e\u00262\ncommand -v serena \u003e/dev/null 2\u003e\u00261 || \\\n  uv tool install -p 3.13 serena-agent \u003e\u00262\n",
+            "timeout": 3600,
+            "type": "command"
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Write(./.agents/memories/**)",
+      "Bash(agtk memory stats*)",
+      "Bash(agtk memory show *)",
+      "Bash(agtk memory candidates*)",
+      "Read(**/.agents/memory/INDEX.md)",
+      "Write(**/.agents/memory/candidates/**)",
+      "Bash(git checkout *)",
+      "Bash(*/skills/deep-code-review/scripts/detect-parent.sh*)",
+      "Bash(*/skills/deep-code-review/scripts/capture-diff.sh*)",
+      "Bash(*/skills/deep-code-review/scripts/list-changed.sh*)",
+      "Bash(*/skills/deep-code-review/scripts/find-convention-docs.sh*)",
+      "Bash(gh pr view *)",
+      "Bash(gh pr diff *)"
+    ]
+  }
+}
