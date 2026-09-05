@@ -8,9 +8,10 @@ import (
 	"testing"
 )
 
-// memoryProject lays out a minimal consumer repo with one note and returns
-// its root. The note is unstamped; callers run `memory anchor` when they
-// want it current.
+// memoryProject lays out a minimal consumer repo and returns its root: a
+// manifest and the two files the fixture note anchors. The store and the note
+// are not created — a caller that wants either writes memoryNote and runs
+// `memory index`, so a test can start from a repo that has not adopted memory.
 func memoryProject(t *testing.T, manifest string) string {
 	t.Helper()
 	work := t.TempDir()
@@ -110,7 +111,7 @@ func TestMemoryLifecycle(t *testing.T) {
 		t.Errorf("lint output should name the problem: %q", stdout)
 	}
 
-	if _, _, err := runCLI(t, work, "memory", "anchor"); err != nil {
+	if _, _, err := runCLI(t, work, "memory", "anchor", "--all"); err != nil {
 		t.Fatalf("memory anchor: %v", err)
 	}
 	if _, _, err := runCLI(t, work, "memory", "index"); err != nil {
@@ -146,7 +147,7 @@ func TestMemoryLifecycle(t *testing.T) {
 func TestMemoryShowRecordsHit(t *testing.T) {
 	work := memoryProject(t, "skills: []\n")
 	writeFile(t, filepath.Join(work, ".agents/memory/notes/pins-shas.md"), memoryNote)
-	if _, _, err := runCLI(t, work, "memory", "anchor"); err != nil {
+	if _, _, err := runCLI(t, work, "memory", "anchor", "--all"); err != nil {
 		t.Fatalf("memory anchor: %v", err)
 	}
 
@@ -191,7 +192,7 @@ func TestMemoryShowUnknownNote(t *testing.T) {
 func TestMemoryAuditJSON(t *testing.T) {
 	work := memoryProject(t, "skills: []\n")
 	writeFile(t, filepath.Join(work, ".agents/memory/notes/pins-shas.md"), memoryNote)
-	if _, _, err := runCLI(t, work, "memory", "anchor"); err != nil {
+	if _, _, err := runCLI(t, work, "memory", "anchor", "--all"); err != nil {
 		t.Fatalf("memory anchor: %v", err)
 	}
 	writeFile(t, filepath.Join(work, "internal/lockfile/parser.go"), "package lockfile\n")
@@ -282,7 +283,7 @@ func TestMemoryAnchorContinuesPastFailure(t *testing.T) {
 			"  - path: internal/lockfile/*.go", "  - path: internal/**/*.go",
 		).Replace(memoryNote))
 
-	_, stderr, err := runCLI(t, work, "memory", "anchor")
+	_, stderr, err := runCLI(t, work, "memory", "anchor", "--all")
 	if err == nil {
 		t.Fatal("expected a non-zero exit when a note cannot be stamped")
 	}
@@ -303,7 +304,7 @@ func TestMemoryToleratesBrokenManifest(t *testing.T) {
 	work := memoryProject(t, "extends:\n  - \"!!! not a ref !!!\"\n")
 	writeFile(t, filepath.Join(work, ".agents/memory/notes/pins-shas.md"), memoryNote)
 
-	if _, _, err := runCLI(t, work, "memory", "anchor"); err != nil {
+	if _, _, err := runCLI(t, work, "memory", "anchor", "--all"); err != nil {
 		t.Fatalf("anchor with a broken manifest: %v", err)
 	}
 	if _, _, err := runCLI(t, work, "memory", "index"); err != nil {
@@ -436,7 +437,7 @@ func TestMemoryAnchorReportsNothingStampedOnStdout(t *testing.T) {
 			"  - path: internal/lockfile/*.go", "  - path: internal/**/*.go",
 		).Replace(memoryNote))
 
-	stdout, _, err := runCLI(t, work, "memory", "anchor")
+	stdout, _, err := runCLI(t, work, "memory", "anchor", "--all")
 	if err == nil {
 		t.Fatal("expected a non-zero exit")
 	}
@@ -472,7 +473,7 @@ func TestMemoryAnchorOnEmptyStore(t *testing.T) {
 		t.Fatalf("memory index: %v", err)
 	}
 
-	stdout, _, err := runCLI(t, work, "memory", "anchor")
+	stdout, _, err := runCLI(t, work, "memory", "anchor", "--all")
 	if err != nil {
 		t.Fatalf("anchor on an empty store: %v", err)
 	}
@@ -486,7 +487,7 @@ func TestMemoryAnchorOnEmptyStore(t *testing.T) {
 func TestMemoryShowJSON(t *testing.T) {
 	work := memoryProject(t, "skills: []\n")
 	writeFile(t, filepath.Join(work, ".agents/memory/notes/pins-shas.md"), memoryNote)
-	if _, _, err := runCLI(t, work, "memory", "anchor"); err != nil {
+	if _, _, err := runCLI(t, work, "memory", "anchor", "--all"); err != nil {
 		t.Fatalf("memory anchor: %v", err)
 	}
 
@@ -551,7 +552,7 @@ func TestMemoryAnchorSelectsNamedNotes(t *testing.T) {
 func TestMemoryStatsText(t *testing.T) {
 	work := memoryProject(t, "skills: []\n")
 	writeFile(t, filepath.Join(work, ".agents/memory/notes/pins-shas.md"), memoryNote)
-	if _, _, err := runCLI(t, work, "memory", "anchor"); err != nil {
+	if _, _, err := runCLI(t, work, "memory", "anchor", "--all"); err != nil {
 		t.Fatalf("memory anchor: %v", err)
 	}
 
@@ -657,7 +658,7 @@ func decodeRoots(t *testing.T, stdout string) struct {
 func TestMemoryAuditTextNamesEveryDrift(t *testing.T) {
 	work := memoryProject(t, "skills: []\n")
 	writeFile(t, filepath.Join(work, ".agents/memory/notes/pins-shas.md"), memoryNote)
-	if _, _, err := runCLI(t, work, "memory", "anchor"); err != nil {
+	if _, _, err := runCLI(t, work, "memory", "anchor", "--all"); err != nil {
 		t.Fatalf("memory anchor: %v", err)
 	}
 
@@ -838,5 +839,49 @@ func TestMemoryCurateCheckRefusesWithNoProviderConfigured(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "memory.agent") {
 		t.Errorf("the refusal does not say what to set: %v", err)
+	}
+}
+
+// TestMemoryAnchorRefusesToStampTheWholeStoreByAccident: stamping does not only
+// record hashes, it clears the staleness signal — the one thing telling the next
+// reader that nobody has checked a claim. A bare `anchor` after a refactor would
+// mark every note in the store fresh on nobody's say-so, and no later audit
+// would ever flag them again.
+func TestMemoryAnchorRefusesToStampTheWholeStoreByAccident(t *testing.T) {
+	work := memoryProject(t, "skills: []\n")
+
+	_, _, err := runCLI(t, work, "memory", "anchor")
+	if err == nil {
+		t.Fatal("a bare `anchor` stamped the store")
+	}
+	if !strings.Contains(err.Error(), "--all") {
+		t.Errorf("the refusal does not name the deliberate form: %v", err)
+	}
+}
+
+// TestMemoryAnchorStampsWhatItIsGiven: naming a note must still work, and is
+// the form the curator uses after checking one.
+func TestMemoryAnchorStampsWhatItIsGiven(t *testing.T) {
+	work := memoryProject(t, "skills: []\n")
+	writeFile(t, filepath.Join(work, ".agents/memory/notes/pins-shas.md"), memoryNote)
+
+	if _, stderr, err := runCLI(t, work, "memory", "anchor", "pins-shas"); err != nil {
+		t.Fatalf("anchor by name: %v\n%s", err, stderr)
+	}
+	if _, _, err := runCLI(t, work, "memory", "anchor", "--all"); err != nil {
+		t.Fatalf("anchor --all: %v", err)
+	}
+}
+
+// TestMemoryAnchorRefusesTwoDifferentInstructions: `--all` with names asks for
+// the whole store and for a subset at once, and silently honouring either one
+// would stamp something the caller did not ask for.
+func TestMemoryAnchorRefusesTwoDifferentInstructions(t *testing.T) {
+	work := memoryProject(t, "skills: []\n")
+
+	writeFile(t, filepath.Join(work, ".agents/memory/notes/pins-shas.md"), memoryNote)
+
+	if _, _, err := runCLI(t, work, "memory", "anchor", "--all", "pins-shas"); err == nil {
+		t.Fatal("anchor accepted --all alongside a named note")
 	}
 }

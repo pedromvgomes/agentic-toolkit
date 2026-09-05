@@ -174,14 +174,14 @@ func (s *Store) lintNote(n *Note) []Issue {
 				add("anchors[%d] (%s): glob anchors carry `matches`, not `blob`", i, a.Path)
 			}
 			if len(a.Matches) == 0 {
-				add("anchors[%d] (%s): %s", i, a.Path, s.unstampedHint(a.Path, true))
+				add("anchors[%d] (%s): %s", i, a.Path, s.unstampedHint(n.Name, a.Path, true))
 			}
 		default:
 			if len(a.Matches) > 0 {
 				add("anchors[%d] (%s): `matches` is only for glob anchors", i, a.Path)
 			}
 			if a.Blob == "" {
-				add("anchors[%d] (%s): %s", i, a.Path, s.unstampedHint(a.Path, false))
+				add("anchors[%d] (%s): %s", i, a.Path, s.unstampedHint(n.Name, a.Path, false))
 			}
 		}
 	}
@@ -191,7 +191,11 @@ func (s *Store) lintNote(n *Note) []Issue {
 // unstampedHint distinguishes "nobody has run anchor yet" from "the
 // anchored path is gone" — prescribing `agtk memory anchor` for the second
 // sends the reader in a loop, because stamping cannot resurrect the file.
-func (s *Store) unstampedHint(path string, glob bool) string {
+//
+// The remedy names the note rather than stopping at the command, because
+// `anchor` requires one: stamping clears the staleness signal, so it is not
+// something to do to the whole store on the way past a lint failure.
+func (s *Store) unstampedHint(note, path string, glob bool) string {
 	if glob {
 		// globFiles, not filepath.Glob: stamping skips directories, so a
 		// pattern matching only directories is "matched" to Glob and
@@ -205,7 +209,7 @@ func (s *Store) unstampedHint(path string, glob bool) string {
 		case len(files) == 0:
 			return "matches no files — fix the pattern or drop the anchor"
 		}
-		return "unstamped — run `agtk memory anchor`"
+		return "unstamped — run `agtk memory anchor " + note + "`"
 	}
 	info, err := os.Stat(s.abs(path))
 	switch {
@@ -218,7 +222,7 @@ func (s *Store) unstampedHint(path string, glob bool) string {
 	case err == nil && !info.Mode().IsRegular():
 		return "is not a regular file — fix the path or drop the anchor"
 	}
-	return "unstamped — run `agtk memory anchor`"
+	return "unstamped — run `agtk memory anchor " + note + "`"
 }
 
 func joinKinds() string {

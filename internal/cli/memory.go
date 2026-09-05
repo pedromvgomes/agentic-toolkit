@@ -203,18 +203,36 @@ func newMemoryIndexCmd(env *Env) *cobra.Command {
 // ===== anchor =====
 
 func newMemoryAnchorCmd(env *Env) *cobra.Command {
-	var jsonOut bool
+	var (
+		jsonOut bool
+		all     bool
+	)
 	cmd := &cobra.Command{
 		Use:   "anchor [name...]",
-		Short: "Stamp current blob hashes into note anchors",
+		Short: "Stamp current blob hashes into the notes you name",
 		Long: "Records each anchored file's git blob hash into the note, and expands glob\n" +
-			"anchors to the files they currently match. With no arguments, stamps every\n" +
-			"note; otherwise only the named ones.\n" +
+			"anchors to the files they currently match. Stamps the notes you name; --all\n" +
+			"stamps every note in the store.\n" +
 			"\n" +
 			"This is the only command that writes to notes/. It exists so nothing has to\n" +
 			"produce a hash by hand: a wrong anchor is worse than no note, because it\n" +
-			"short-circuits the check a reader would otherwise have done.",
+			"short-circuits the check a reader would otherwise have done.\n" +
+			"\n" +
+			"Naming notes is required rather than optional because stamping does not only\n" +
+			"record hashes — it clears the staleness signal, which is the one thing that\n" +
+			"tells the next reader nobody has checked a claim. Stamping the whole store\n" +
+			"marks notes fresh that nobody looked at, and no later audit will flag them\n" +
+			"again.",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 0 && !all {
+				return errors.New("name the notes to stamp, or pass --all to stamp every note in the store;\n" +
+					"stamping clears the staleness signal, so doing it to notes you have not checked\n" +
+					"marks them fresh on nobody's say-so")
+			}
+			if len(args) > 0 && all {
+				return errors.New("--all stamps every note; naming notes as well says two different things")
+			}
+
 			store, notes, _, err := loadStoreNotes(env)
 			if err != nil {
 				return err
@@ -251,6 +269,7 @@ func newMemoryAnchorCmd(env *Env) *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit machine-readable JSON output")
+	cmd.Flags().BoolVar(&all, "all", false, "stamp every note in the store")
 	return cmd
 }
 

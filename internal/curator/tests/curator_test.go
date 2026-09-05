@@ -160,7 +160,7 @@ func TestThePromptForbidsStampingTheWholeStore(t *testing.T) {
 	if !strings.Contains(prompt, "anchor <name>") {
 		t.Error("the prompt does not tell the curator to stamp notes by name")
 	}
-	if !strings.Contains(prompt, "with no arguments") {
-		t.Error("the prompt does not warn against stamping the whole store")
+	if !strings.Contains(prompt, "--all") {
+		t.Error("the prompt does not warn against the whole-store escape hatch")
 	}
 }

@@ -8,7 +8,7 @@ anchors:
   - path: internal/cli/status.go
     blob: 9c0513063466
   - path: internal/cli/memory.go
-    blob: c450efa1befe
+    blob: a42c2dbd8c5b
 confidence: verified
 ---
 
