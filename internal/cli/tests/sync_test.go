@@ -54,9 +54,9 @@ func TestSync_FreshLockfile_NoRelock(t *testing.T) {
 	}
 }
 
-// TestSync_StaleConfig_Relocks checks that touching the config triggers
-// a re-lock on the next sync.
-func TestSync_StaleConfig_Relocks(t *testing.T) {
+// An edited manifest is what sends sync back to the network, and it does so
+// however the edit left the file's timestamps.
+func TestSync_EditedConfig_Relocks(t *testing.T) {
 	url, _ := fixtureRepoFromDir(t, "testdata/primary")
 	work := t.TempDir()
 	cache := t.TempDir()
@@ -66,7 +66,42 @@ func TestSync_StaleConfig_Relocks(t *testing.T) {
 		t.Fatalf("first sync: %v", err)
 	}
 
-	// Bump config mtime so it appears newer than the lockfile.
+	configPath := filepath.Join(work, ".agentic-toolkit.yaml")
+	raw, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configPath, append(raw, "\n# an edit\n"...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Backdated, so nothing about the edit is visible in the timestamps.
+	past := time.Now().Add(-2 * time.Hour)
+	if err := os.Chtimes(configPath, past, past); err != nil {
+		t.Fatalf("chtimes: %v", err)
+	}
+
+	stdout, _, err := runCLI(t, work, "sync", "--cache", cache)
+	if err != nil {
+		t.Fatalf("second sync: %v", err)
+	}
+	if !strings.Contains(stdout, "locking against the network") {
+		t.Errorf("an edited manifest did not trigger a relock, got: %q", stdout)
+	}
+}
+
+// A newer timestamp over identical content is not a reason to reach the
+// network. Re-locking is the only branch in sync that does, so an offline
+// runner fails here on a repo whose committed lockfile was usable.
+func TestSync_TouchedConfig_DoesNotRelock(t *testing.T) {
+	url, _ := fixtureRepoFromDir(t, "testdata/primary")
+	work := t.TempDir()
+	cache := t.TempDir()
+
+	writeEntryStack(t, work, url, "main")
+	if _, _, err := runCLI(t, work, "sync", "--cache", cache); err != nil {
+		t.Fatalf("first sync: %v", err)
+	}
+
 	configPath := filepath.Join(work, ".agentic-toolkit.yaml")
 	future := time.Now().Add(2 * time.Second)
 	if err := os.Chtimes(configPath, future, future); err != nil {
@@ -77,7 +112,7 @@ func TestSync_StaleConfig_Relocks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second sync: %v", err)
 	}
-	if !strings.Contains(stdout, "locking against the network") {
-		t.Errorf("stale config should trigger relock, got: %q", stdout)
+	if strings.Contains(stdout, "locking against the network") {
+		t.Errorf("an untouched manifest with a bumped mtime went to the network, got: %q", stdout)
 	}
 }

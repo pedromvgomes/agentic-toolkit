@@ -37,9 +37,10 @@ func NewChecker(provider LatestVersionProvider, currentVersion string) *Checker 
 
 // Start launches the goroutine. It returns immediately. On success the
 // goroutine writes one UpdateInfo to Result and persists last-check and
-// last-known-version via updatestate.SaveTo(statePath, ...). On any
-// network failure the goroutine writes nothing (Result is closed
-// regardless, so consumers can use a non-blocking select).
+// last-known-version via updatestate.SaveTo(statePath, ...). On a network
+// failure it writes nothing to Result (which is closed regardless, so
+// consumers can use a non-blocking select) but still advances the
+// persisted last-check, because the throttle counts attempts.
 //
 // statePath is the absolute path the goroutine should write throttle
 // metadata to. Pass "" to skip persistence (used by `agtk update --check`
@@ -58,6 +59,13 @@ func (c *Checker) run(statePath string) {
 	defer cancel()
 	latest, err := c.Provider.LatestVersion(ctx)
 	if err != nil {
+		// The throttle bounds network traffic, so it counts attempts. A
+		// failure that leaves LastUpdateCheck untouched makes an offline or
+		// rate-limited machine pay for a live call on every invocation —
+		// exactly the traffic the interval exists to bound. The attempt
+		// learns nothing about the latest release, so it advances the
+		// timestamp over the persisted state rather than replacing it.
+		recordAttempt(statePath, time.Now())
 		return
 	}
 	info := UpdateInfo{
@@ -72,4 +80,22 @@ func (c *Checker) run(statePath string) {
 		})
 	}
 	c.Result <- info
+}
+
+// recordAttempt advances LastUpdateCheck without disturbing the rest of
+// the persisted state. Failures are dropped: throttle bookkeeping must
+// never be louder than the check it is throttling.
+func recordAttempt(statePath string, at time.Time) {
+	if statePath == "" {
+		return
+	}
+	st, err := updatestate.LoadFrom(statePath)
+	if err != nil {
+		// Unreadable state is not a reason to skip arming the throttle; a
+		// state file nothing can parse would otherwise mean an uncapped
+		// live call on every invocation.
+		st = updatestate.State{}
+	}
+	st.LastUpdateCheck = at
+	_ = updatestate.SaveTo(statePath, st)
 }

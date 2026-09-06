@@ -32,7 +32,7 @@ type Gate struct {
 //   - stdout is a terminal (so the result is actually surfaced)
 //   - the binary has a real version (not "dev")
 //   - the user hasn't disabled auto-update in config
-//   - the throttle interval has elapsed since the last live check
+//   - the throttle interval has elapsed since the last live attempt
 func ShouldCheck(g Gate) bool {
 	if !g.IsTerminal {
 		return false

@@ -12,9 +12,9 @@ anchors:
       - path: internal/cli/jsonout.go
         blob: cb82873c6a58
       - path: internal/cli/lock.go
-        blob: 74bd9b9b88e9
+        blob: a52fb8f8e2ac
       - path: internal/cli/memory.go
-        blob: 08d9bb761374
+        blob: 36f459299379
       - path: internal/cli/paths.go
         blob: d30919b87867
       - path: internal/cli/paths_test.go
@@ -30,9 +30,11 @@ anchors:
       - path: internal/cli/status.go
         blob: 9c0513063466
       - path: internal/cli/sync.go
-        blob: bdf2025ca832
+        blob: 9220465043b9
+      - path: internal/cli/sync_stale_test.go
+        blob: 45a9c7cba741
       - path: internal/cli/update.go
-        blob: de55c77114ce
+        blob: b2b0526bee75
 confidence: verified
 ---
 

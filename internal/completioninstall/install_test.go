@@ -187,3 +187,60 @@ func TestInstall_RunError(t *testing.T) {
 func mkdir(p string) error {
 	return defaultWriteFile(filepath.Join(p, ".keep"), []byte{})
 }
+
+// The opt-out is a property of the operation, not of one call site. Left
+// to the caller alone, any other entry point into Install writes a
+// completion script into the home directory of a user who set
+// AGTK_NO_COMPLETION=1.
+func TestInstall_HonoursTheEnvOptOut(t *testing.T) {
+	t.Setenv(EnvNoCompletion, "1")
+	var written []string
+	var out bytes.Buffer
+	res, err := Install(&out, Options{
+		Shell:      "bash",
+		Home:       t.TempDir(),
+		Executable: "/nonexistent/agtk",
+		Run:        func(_, _ string) ([]byte, error) { return []byte("# completion\n"), nil },
+		WriteFile: func(path string, _ []byte) error {
+			written = append(written, path)
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	if !res.Skipped {
+		t.Errorf("Skipped = false, want true")
+	}
+	if len(written) != 0 {
+		t.Errorf("wrote %v, want no writes", written)
+	}
+}
+
+// Any value other than "1" is not an opt-out: install.sh tests the same
+// literal, and treating a stray "0" or "false" as consent to skip would
+// silently diverge the two implementations.
+func TestInstall_EnvOptOutRequiresExactlyOne(t *testing.T) {
+	t.Setenv(EnvNoCompletion, "0")
+	var written []string
+	var out bytes.Buffer
+	res, err := Install(&out, Options{
+		Shell:      "bash",
+		Home:       t.TempDir(),
+		Executable: "/nonexistent/agtk",
+		Run:        func(_, _ string) ([]byte, error) { return []byte("# completion\n"), nil },
+		WriteFile: func(path string, _ []byte) error {
+			written = append(written, path)
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	if res.Skipped {
+		t.Errorf("Skipped = true, want the install to proceed")
+	}
+	if len(written) != 1 {
+		t.Errorf("wrote %v, want exactly one file", written)
+	}
+}

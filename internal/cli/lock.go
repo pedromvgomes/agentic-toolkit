@@ -63,9 +63,9 @@ func runLock(env *Env, cacheRoot string, frozen, jsonOut bool) error {
 		}
 	}
 	resolved := plan.Lockfile()
-	data, err := yaml.Marshal(resolved)
+	data, err := marshalLock(resolved, configFilePath(env))
 	if err != nil {
-		return fmt.Errorf("marshal lockfile: %w", err)
+		return err
 	}
 	path := lockfilePath(env)
 
@@ -156,4 +156,27 @@ func buildCache(override string) (*sourcestore.Cache, error) {
 		return sourcestore.NewCache(override), nil
 	}
 	return sourcestore.DefaultCache()
+}
+
+// marshalLock stamps the entry manifest's digest onto lock and renders it.
+//
+// Every writer goes through here. A lockfile written without the digest is
+// indistinguishable from one predating the field, so the next run re-locks
+// against the network, writes another digest-less lockfile, and the run after
+// that does it again — an unbounded loop that looks exactly like the mtime
+// behaviour this replaces.
+//
+// The digest is taken here rather than in the resolver because it is over the
+// manifest's bytes on disk, and the resolver is handed a parsed stack.
+func marshalLock(lock *lockfile.Lockfile, configPath string) ([]byte, error) {
+	raw, err := os.ReadFile(configPath) // #nosec G304 -- reads the entry manifest at the path the invoker named
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", configPath, err)
+	}
+	lock.ConfigDigest = lockfile.Digest(raw)
+	data, err := yaml.Marshal(lock)
+	if err != nil {
+		return nil, fmt.Errorf("marshal lockfile: %w", err)
+	}
+	return data, nil
 }

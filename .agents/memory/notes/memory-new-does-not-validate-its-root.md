@@ -6,7 +6,7 @@ anchors:
   - path: internal/memory/store.go
     blob: 54fdd0d1f563
   - path: internal/cli/memory.go
-    blob: 08d9bb761374
+    blob: 36f459299379
   - path: internal/memory/hits.go
     blob: 30d823466c1e
 confidence: verified

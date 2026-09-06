@@ -2,11 +2,17 @@
 // counterpart to internal/stack. The resolver writes it; later runs read
 // it to reproduce the same fetch graph deterministically.
 //
-// The schema is intentionally minimal: a version tag and the list of
-// sources touched. Sources include every URL reached via the entry-point
-// stack's `extends:` graph plus every URL reached via per-category URL
-// entries. No timestamp, no content hash, no resolved-definition manifest.
+// The schema is intentionally minimal: a version tag, the list of sources
+// touched, and a digest of the entry manifest that produced them. Sources
+// include every URL reached via the entry-point stack's `extends:` graph plus
+// every URL reached via per-category URL entries. No timestamp and no
+// resolved-definition manifest.
 package lockfile
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+)
 
 // Version is the lockfile schema version this build emits and accepts.
 // Bumped to 2 when the consumer config + preset format collapsed into
@@ -19,6 +25,25 @@ const Version = 2
 type Lockfile struct {
 	Version int              `yaml:"version" agtkdoc:"required;Lockfile schema version. Currently must be 1."`
 	Sources []ResolvedSource `yaml:"sources" agtkdoc:"required;Every source the resolver touched, in deterministic order."`
+	// ConfigDigest is what makes staleness a question about content. It is
+	// the only record of which manifest produced these pins, and without it
+	// the alternative is comparing mtimes — which calls an untouched manifest
+	// stale whenever a checkout writes it last, and calls an edited one fresh
+	// whenever the edit preserves timestamps.
+	//
+	// Optional so a lockfile predating it still parses. One is treated as
+	// stale, which costs a single re-lock and then converges.
+	ConfigDigest string `yaml:"config_digest,omitempty" agtkdoc:"Digest of the entry manifest these pins were resolved from."`
+}
+
+// Digest renders the canonical digest of an entry manifest's bytes.
+//
+// Over the raw bytes rather than the parsed stack: a digest of the parse
+// would call two manifests identical whenever the parser ignores what
+// separates them, and the parser is the thing most likely to change.
+func Digest(raw []byte) string {
+	sum := sha256.Sum256(raw)
+	return "sha256:" + hex.EncodeToString(sum[:])
 }
 
 // ResolvedSource is a fully-pinned source entry. url+ref are what the

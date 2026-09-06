@@ -7,10 +7,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/goccy/go-yaml"
 	"github.com/spf13/cobra"
 
 	"github.com/pedromvgomes/agentic-toolkit/internal/adapters/claude"
+	"github.com/pedromvgomes/agentic-toolkit/internal/lockfile"
 	"github.com/pedromvgomes/agentic-toolkit/internal/resolver"
 	"github.com/pedromvgomes/agentic-toolkit/internal/sourcestore"
 )
@@ -79,9 +79,9 @@ func runSync(env *Env, cacheRoot, scopeFlag string, dryRun, force bool) error {
 		for _, d := range plan.Diagnostics {
 			fmt.Fprintln(env.Stderr, "diag:", d.Message)
 		}
-		data, err := yaml.Marshal(plan.Lockfile())
+		data, err := marshalLock(plan.Lockfile(), configPath)
 		if err != nil {
-			return fmt.Errorf("marshal lockfile: %w", err)
+			return err
 		}
 		if err := os.WriteFile(lockPath, data, 0o644); err != nil { // #nosec G306 -- 0644: agentic.lock in the user's repo, meant to be committed
 			return fmt.Errorf("write %s: %w", lockPath, err)
@@ -119,20 +119,37 @@ func runSync(env *Env, cacheRoot, scopeFlag string, dryRun, force bool) error {
 	return nil
 }
 
-// lockIsStale returns true when the lockfile is missing or older than the
-// config. Stale → re-lock against the network. Errors that aren't
-// fs.ErrNotExist propagate.
+// lockIsStale returns true when the lockfile is missing, records no manifest
+// digest, or records one that does not match the manifest on disk. Stale →
+// re-lock against the network. Errors that aren't fs.ErrNotExist propagate.
+//
+// The comparison is over content, because the alternative — which of the two
+// files has the later mtime — answers a different question and gets this one
+// wrong in both directions. A checkout that writes the manifest after the
+// lockfile makes an untouched pair look stale, and re-locking is the one
+// branch here that reaches the network, so an offline runner fails on a repo
+// whose committed lockfile was usable. An edit that preserves timestamps
+// makes a mismatched pair look fresh, and sync then renders from pins that no
+// longer describe the manifest without printing anything about it.
 func lockIsStale(configPath, lockPath string) (bool, error) {
-	cfgInfo, err := os.Stat(configPath)
+	cfg, err := os.ReadFile(configPath) // #nosec G304 -- reads the entry manifest at the path the invoker named
 	if err != nil {
-		return false, fmt.Errorf("stat %s: %w", configPath, err)
+		return false, fmt.Errorf("read %s: %w", configPath, err)
 	}
-	lockInfo, err := os.Stat(lockPath)
+	lock, err := lockfile.ParseFile(lockPath)
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, os.ErrNotExist) {
+		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, os.ErrNotExist) ||
+			lockfile.IsKind(err, lockfile.ErrIO) {
 			return true, nil
 		}
-		return false, fmt.Errorf("stat %s: %w", lockPath, err)
+		return false, err
 	}
-	return cfgInfo.ModTime().After(lockInfo.ModTime()), nil
+	// A lockfile recording no digest predates the field. Calling it fresh
+	// would carry the mtime era's ambiguity forward for as long as nobody
+	// re-locks; calling it stale costs one re-lock and then converges.
+	return lock.ConfigDigest != lockfileConfigDigest(cfg), nil
 }
+
+// lockfileConfigDigest is the digest recorded in a lockfile for the entry
+// manifest that produced it.
+func lockfileConfigDigest(config []byte) string { return lockfile.Digest(config) }

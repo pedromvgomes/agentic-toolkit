@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"sort"
 
 	"github.com/pedromvgomes/agentic-toolkit/internal/lockfile"
 	"github.com/pedromvgomes/agentic-toolkit/internal/resolver"
@@ -120,13 +121,18 @@ func (p *FrozenProvider) lookup(s sourceref.Source) (lockfile.ResolvedSource, bo
 func (p *FrozenProvider) Hydrate() error {
 	var errs []error
 	seen := make(map[string]bool, len(p.byKey))
-	for _, pin := range p.byKey {
+	// Ordered, because one sha pinned under two refs is fetched once and the
+	// ref that fetch uses is whichever comes first. Left to map order, a pin
+	// whose other ref has been deleted upstream fails on some runs and not
+	// others, which is the hardest shape of failure to act on.
+	for _, k := range sortedSrcKeys(p.byKey) {
+		pin := p.byKey[k]
 		repoURL, _ := splitURL(pin.URL)
-		key := repoURL + "@" + pin.SHA
-		if seen[key] {
+		shaKey := repoURL + "@" + pin.SHA
+		if seen[shaKey] {
 			continue
 		}
-		seen[key] = true
+		seen[shaKey] = true
 		if p.cache.has(repoURL, pin.SHA) {
 			continue
 		}
@@ -140,3 +146,18 @@ func (p *FrozenProvider) Hydrate() error {
 // ErrPinNotFound is returned by FrozenProvider.Provide when the
 // requested (URL, Ref) is not in the lockfile.
 var ErrPinNotFound = errors.New("source not pinned in lockfile")
+
+// sortedSrcKeys renders a pin map's keys in a stable order.
+func sortedSrcKeys(m map[srcKey]lockfile.ResolvedSource) []srcKey {
+	out := make([]srcKey, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].URL != out[j].URL {
+			return out[i].URL < out[j].URL
+		}
+		return out[i].Ref < out[j].Ref
+	})
+	return out
+}
