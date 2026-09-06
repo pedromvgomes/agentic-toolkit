@@ -26,6 +26,11 @@ import (
 	"strings"
 )
 
+// EnvNoCompletion is the environment variable that suppresses the
+// completion install. install.sh reads the same name, and both sides
+// test for exactly "1".
+const EnvNoCompletion = "AGTK_NO_COMPLETION"
+
 // Result describes the outcome of an Install call. Skipped=true means
 // no file was written; Reason explains why (disabled, unsupported
 // shell, missing $HOME). On a successful write, Path is the file and
@@ -41,8 +46,9 @@ type Result struct {
 // Options carries the inputs and test seams. All fields are optional;
 // defaults read from the live process environment.
 type Options struct {
-	// Disabled short-circuits the install (used for AGTK_NO_COMPLETION
-	// and --no-completion).
+	// Disabled short-circuits the install. It is the --no-completion flag
+	// alone: EnvNoCompletion is read by Install itself, so a caller that
+	// leaves this false still cannot write over the user's opt-out.
 	Disabled bool
 
 	// Binary is the executable name (e.g. "agtk"). Empty = "agtk".
@@ -82,7 +88,11 @@ type Options struct {
 // All errors are wrapped with enough context for the caller to surface
 // them as a hint without aborting the larger flow.
 func Install(stdout io.Writer, opts Options) (Result, error) {
-	if opts.Disabled {
+	// The env opt-out is enforced here rather than only at the call site,
+	// because it is a property of the operation: a caller that forgets it
+	// writes a completion script into the home directory of a user who
+	// asked for none.
+	if opts.Disabled || os.Getenv(EnvNoCompletion) == "1" {
 		return Result{Skipped: true, Reason: "disabled"}, nil
 	}
 
