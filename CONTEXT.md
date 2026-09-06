@@ -115,7 +115,86 @@ One run of the **Curator** over the staged **Candidate**s, or with `--stale` ove
 and safe on the path of a hook.
 _Avoid_: promote, sweep
 
+### Code review
+**Reviewer**:
+One configured critic of a change — a name, a **Provider**, a model, and a prompt body. Declared
+in the **Review manifest**. The unit that is spawned, and the unit a **Finding** is attributed to.
+_Avoid_: agent, critic, panelist
+
+**Panel**:
+A named set of **Reviewer**s plus the condition under which that set is the one that runs. Exactly
+one panel is selected per review, so a panel is the whole roster for that run, not a subset of it.
+_Avoid_: profile, preset, tier
+
+**Context**:
+What a review is running against — the local working tree, or an open PR. Read by **Panel**
+selection, which is why one manifest describes both the pre-push review and the PR review.
+Every review runs locally on ambient credentials, so context never decides which credential
+is used.
+_Avoid_: environment, mode, target
+
+**Finding**:
+One issue a **Reviewer** reports: a file, a line range, a severity, and a body. The unit
+**Judge**ment is applied to and the unit that becomes an inline comment.
+_Avoid_: issue, comment, result
+
+**Judge**:
+The single run that reads every **Reviewer**'s **Finding**s, merges near-duplicates, sets final
+severity and decides which survive. It decides; it does not transmit — the App credential never
+enters a model's process, so `agtk` alone calls GitHub. The same separation of authority from
+action that ADR 0003 makes for the **Curator**.
+_Avoid_: reducer, arbiter, referee
+
+**Review**:
+The one artifact a review run posts: a single GitHub review with event `COMMENT`, carrying a
+summary body and one inline comment per surviving **Finding**. A review run posts nothing else
+— **Approval** is a separate act, reachable only from its own subcommand.
+_Avoid_: report, verdict, comment
+
+**Severity**:
+How much a **Finding** matters: `RED | AMBER | GREEN`. RED means must fix before merge, and is
+the default **Approval floor**.
+_Avoid_: priority, level
+
+**Approval**:
+A GitHub review with event `APPROVE`, posted by the App so it counts toward a repo's required
+approvals — which a solo author cannot satisfy alone, since nobody may approve their own PR.
+Granted only when a **Review** exists for the PR's current head commit and no **Finding** at or
+above the **Severity** floor survived, unless forced.
+
+Never reachable from a review run. No model decides it, no tool grant contains it, and the
+**Judge** cannot reach it: a run that could approve the code it just reviewed is the hazard
+GitHub blocks `GITHUB_TOKEN` approvals to prevent. The person types the command.
+_Avoid_: sign-off, gate, merge
+
+**Review root**:
+The detached worktree of the code under review, created by `agtk` outside the project
+directory. No **Reviewer** ever runs with it as its working directory, and the instruction
+files a coding-agent CLI discovers by walking upward — `AGENTS.md`, `AGENTS.override.md`,
+`CLAUDE.md`, `.codex/`, `.claude/` — are neutralised inside it before any child starts.
+Codex has no equivalent of `--setting-sources ""`, so discovery is closed by where the child
+runs and what the directory contains, not by a flag.
+_Avoid_: checkout, workspace, head
+
+**Review manifest**:
+`.agents/code-review/manifest.yaml`: the single declaration of **Reviewer**s, **Panel**s and the
+prompt bodies they use. Read by both engines — the in-session skill and `agtk code-review` — so
+there is one roster and not two.
+_Avoid_: panels.json, roster file, review config
+
 ## Flagged ambiguities
+**"Panel"** — `deep-code-review` used it for a per-stack group of reviewers *within* one run,
+so a polyglot change had several. A **Panel** here is the entire roster for a run, chosen by
+**Context**, and exactly one is selected. The per-stack sense has no name because per-stack
+partitioning is not built.
+
+**"Review"** — the activity and the artifact. **Review** is the artifact posted to the PR; say
+"review run" for the activity, and **Approval** is never part of either.
+
+**"Judge" vs "Curator"** — both are single model runs holding final authority over what
+survives, and neither performs the act its judgment authorises. Deliberately parallel; they
+share no code and no store.
+
 **"Verify"** — was used both for the CI structural check and for a curator confirming a claim
 is true. Resolution: the command is `agtk memory lint`; `verified` is reserved for
 **Confidence**.
