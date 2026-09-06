@@ -99,26 +99,72 @@ func gitFetch(repoURL, ref, expectedSHA, dest string) error {
 	if _, err := runGit(tmp, "init", "--quiet"); err != nil {
 		return err
 	}
-	if _, err := runGit(tmp, "fetch", "--quiet", "--depth", "1", gitTransportURL(repoURL), ref); err != nil {
-		return fmt.Errorf("fetch %s ref %q: %w", repoURL, ref, err)
-	}
-	if _, err := runGit(tmp, "checkout", "--quiet", "FETCH_HEAD"); err != nil {
+	if err := fetchPinned(tmp, repoURL, ref, expectedSHA); err != nil {
 		return err
-	}
-	out, err := runGit(tmp, "rev-parse", "HEAD")
-	if err != nil {
-		return err
-	}
-	gotSHA := strings.TrimSpace(out)
-	if gotSHA != expectedSHA {
-		return fmt.Errorf("%w: fetched %s but lockfile pins %s for %s@%s",
-			ErrSHAMismatch, gotSHA, expectedSHA, repoURL, ref)
 	}
 	if err := os.Rename(tmp, dest); err != nil {
 		return fmt.Errorf("rename %s -> %s: %w", tmp, dest, err)
 	}
 	cleanup = false
 	return nil
+}
+
+// fetchPinned leaves dir checked out at expectedSHA, or returns an error.
+//
+// The shallow fetch of ref is tried first because it is the cheapest thing
+// that works and it is what succeeds whenever the ref still points at the pin.
+// When it does not, the commit is not gone — the ref has simply moved past it,
+// which an empty `ref:` guarantees will happen, since that records a branch
+// name and the next upstream push advances it. Failing there would make a
+// lockfile row unfetchable on every machine that has not already cached it,
+// so two recoveries follow, cheapest first.
+func fetchPinned(dir, repoURL, ref, expectedSHA string) error {
+	url := gitTransportURL(repoURL)
+
+	if _, err := runGit(dir, "fetch", "--quiet", "--depth", "1", url, ref); err != nil {
+		return fmt.Errorf("fetch %s ref %q: %w", repoURL, ref, err)
+	}
+	got, err := checkoutFetchHead(dir)
+	if err != nil {
+		return err
+	}
+	if got == expectedSHA {
+		return nil
+	}
+
+	// Asking the remote for the commit itself. One round trip and still
+	// depth 1, but it needs the server to serve a sha nobody advertises —
+	// `uploadpack.allowReachableSHA1InWant`, which many forges leave off.
+	if _, err := runGit(dir, "fetch", "--quiet", "--depth", "1", url, expectedSHA); err == nil {
+		if got, err := checkoutFetchHead(dir); err == nil && got == expectedSHA {
+			return nil
+		}
+	}
+
+	// Fetching the ref's history and checking out the pin from it. This works
+	// against any server, and pays for that with the full history of one ref.
+	if _, err := runGit(dir, "fetch", "--quiet", url, ref); err == nil {
+		if _, err := runGit(dir, "checkout", "--quiet", expectedSHA); err == nil {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("%w: %s@%s now points at %s, and the pinned commit %s is not reachable from it — "+
+		"the ref moved past the pin or the history was rewritten; re-run `agtk lock` to repin",
+		ErrSHAMismatch, repoURL, ref, got, expectedSHA)
+}
+
+// checkoutFetchHead checks out whatever the last fetch brought down and
+// reports the commit landed on.
+func checkoutFetchHead(dir string) (string, error) {
+	if _, err := runGit(dir, "checkout", "--quiet", "FETCH_HEAD"); err != nil {
+		return "", err
+	}
+	out, err := runGit(dir, "rev-parse", "HEAD")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
 }
 
 // runGit invokes `git <args...>`, optionally inside dir. Stdout is

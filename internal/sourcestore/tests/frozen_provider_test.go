@@ -126,3 +126,36 @@ func TestFrozenProvider_Hydrate_FetchesAllPinsAndIsIdempotent(t *testing.T) {
 		t.Errorf("idempotent Hydrate failed after remote vanished: %v", err)
 	}
 }
+
+// A lockfile row pins a commit, and an empty `ref:` records a branch name, so
+// the very next upstream push leaves the pinned commit off the tip of the ref
+// it was recorded against. Hydrating that row has to reach the commit anyway:
+// a lockfile that stops being fetchable the moment the branch moves is not a
+// pin, and the failure lands in clean CI reading as corruption.
+func TestFrozenProvider_ServesAPinWhoseBranchHasMoved(t *testing.T) {
+	url, pinned := fixtureRepo(t, map[string]string{"README.md": "first"})
+	barePath := strings.TrimPrefix(url, "file://")
+	moved := commitSecond(t, barePath, map[string]string{"README.md": "second"})
+	if moved == pinned {
+		t.Fatal("fixture did not advance the branch")
+	}
+
+	lock := &lockfile.Lockfile{
+		Version: lockfile.Version,
+		Sources: []lockfile.ResolvedSource{{URL: url, Ref: "main", SHA: pinned}},
+	}
+	// A cold cache, which is the whole difficulty: a warm one short-circuits
+	// the fetch and hides this entirely.
+	provider := sourcestore.NewFrozenProvider(sourcestore.NewCache(t.TempDir()), lock)
+
+	fsys, rr, err := provider.Provide(sourceref.Source{URL: url, Ref: "main"})
+	if err != nil {
+		t.Fatalf("Provide on a moved branch: %v", err)
+	}
+	if rr.SHA != pinned {
+		t.Errorf("rr.SHA = %s, want the pinned %s", rr.SHA, pinned)
+	}
+	if got := readFSFile(t, fsys, "README.md"); got != "first" {
+		t.Errorf("served %q, want the pinned commit's %q", got, "first")
+	}
+}
