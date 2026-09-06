@@ -2,6 +2,7 @@ package tests
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -121,5 +122,66 @@ func TestChecker_NetworkErrorSilent(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("Checker did not exit within 2s")
+	}
+}
+
+// The throttle bounds network traffic, so it has to count attempts, not
+// successes. Persisting only after a reachable provider answers means an
+// offline or rate-limited machine leaves LastUpdateCheck zero and pays
+// for a fresh live call on every single invocation, which is the case the
+// interval exists to bound.
+func TestChecker_NetworkErrorStillRecordsTheAttempt(t *testing.T) {
+	statePath := filepath.Join(t.TempDir(), "state.yaml")
+	before := time.Now()
+
+	c := updatecheck.NewChecker(&stubProvider{err: context.DeadlineExceeded}, "v1.0.0")
+	c.Start(statePath)
+	select {
+	case <-c.Result:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Checker did not exit within 2s")
+	}
+
+	st, err := updatestate.LoadFrom(statePath)
+	if err != nil {
+		t.Fatalf("LoadFrom: %v", err)
+	}
+	if st.LastUpdateCheck.IsZero() {
+		t.Fatal("LastUpdateCheck is zero; a failed check left the throttle unarmed")
+	}
+	if st.LastUpdateCheck.Before(before) {
+		t.Errorf("LastUpdateCheck = %v, want at or after %v", st.LastUpdateCheck, before)
+	}
+}
+
+// A failed check learns nothing about the latest release, so it must not
+// overwrite what an earlier successful one recorded.
+func TestChecker_NetworkErrorKeepsLastKnownVersion(t *testing.T) {
+	statePath := filepath.Join(t.TempDir(), "state.yaml")
+	seed := updatestate.State{
+		LastUpdateCheck:    time.Now().Add(-72 * time.Hour),
+		LatestKnownVersion: "v9.9.9",
+	}
+	if err := updatestate.SaveTo(statePath, seed); err != nil {
+		t.Fatal(err)
+	}
+
+	c := updatecheck.NewChecker(&stubProvider{err: context.DeadlineExceeded}, "v1.0.0")
+	c.Start(statePath)
+	select {
+	case <-c.Result:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Checker did not exit within 2s")
+	}
+
+	st, err := updatestate.LoadFrom(statePath)
+	if err != nil {
+		t.Fatalf("LoadFrom: %v", err)
+	}
+	if st.LatestKnownVersion != "v9.9.9" {
+		t.Errorf("LatestKnownVersion = %q, want it preserved as %q", st.LatestKnownVersion, "v9.9.9")
+	}
+	if !st.LastUpdateCheck.After(seed.LastUpdateCheck) {
+		t.Errorf("LastUpdateCheck = %v, want it advanced past %v", st.LastUpdateCheck, seed.LastUpdateCheck)
 	}
 }

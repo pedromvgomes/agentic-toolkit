@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -48,12 +49,24 @@ func LoadFrom(path string) (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("userconfig: read %s: %w", path, err)
 	}
-	cfg := Default()
+	// Decoded separately from the value returned on the empty-document
+	// path: the decoder zeroes its destination before it reports io.EOF,
+	// so a Default() decoded in place comes back as the zero Config.
+	parsed := Default()
 	dec := yaml.NewDecoder(bytes.NewReader(raw), yaml.Strict())
-	if err := dec.Decode(&cfg); err != nil {
+	if err := dec.Decode(&parsed); err != nil {
+		// A file holding no YAML document — empty, blank, or all comments
+		// — carries exactly the information a missing file carries, so it
+		// takes the same path: the defaults, not an error. The only
+		// recovery a caller has from an error here is the zero Config,
+		// whose Enabled is false, so reporting EOF turns auto-update off
+		// for anyone who creates the file before filling it in.
+		if errors.Is(err, io.EOF) {
+			return Default(), nil
+		}
 		return Config{}, fmt.Errorf("userconfig: parse %s: %w", path, err)
 	}
-	return cfg, nil
+	return parsed, nil
 }
 
 // configBase returns the XDG config root for the current user.
