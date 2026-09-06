@@ -8,7 +8,7 @@ anchors:
   - path: internal/cli/status.go
     blob: 9c0513063466
   - path: internal/cli/memory.go
-    blob: a42c2dbd8c5b
+    blob: 08d9bb761374
 confidence: verified
 ---
 
@@ -20,10 +20,10 @@ report — would therefore print its findings twice, the second time as an error
 The protocol is a typed sentinel returned after printing, plus a branch in `Execute` that
 maps it to an exit code and suppresses the prefix: `errStatusDrift` (declared
 `status.go:134`, returned at `:117` and `:124`; branch at `root.go:256`), `errMemoryStale` /
-`errMemoryLint` (declared `memory.go:63`/`:64`, returned at `:340`/`:422`; branch at
-`root.go:261`), `errMemoryCurate` (declared `memory.go:68`, returned at `:749`; branch at
+`errMemoryLint` (declared `memory.go:63`/`:64`, returned at `:359`/`:441`; branch at
+`root.go:261`), `errMemoryCurate` (declared `memory.go:68`, returned at `:821`; branch at
 `root.go:267`), and `updateNewerErr`, which maps to `UpdateCheckExitCode` rather than 1
-(branch at `root.go:274`).
+(branch at `root.go:273`).
 
 `errMemoryCurate` is the same protocol applied to the one memory command that invokes a
 model: `agtk memory curate` prints the curator's own report and returns the sentinel purely

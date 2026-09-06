@@ -3,6 +3,7 @@ package tests
 import (
 	"errors"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -256,5 +257,100 @@ func TestCheckRefusesABinaryThatCannotRun(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), missing) {
 		t.Errorf("error does not name the binary it looked for: %v", err)
+	}
+}
+
+// grant is what a run under opts would be handed, read from the surface that
+// reports it rather than from the child's argv — the argv also carries the
+// curator's own prompt, which names the very tools a grant assertion is
+// looking for.
+func grant(t *testing.T, opts curator.Options) []string {
+	t.Helper()
+	fake := (&agentictest.Fake{Stdout: curatedEnvelope}).Build(t)
+	opts.Provider = "claudecode"
+	opts.Binary = fake.Path()
+	if opts.WorkDir == "" {
+		opts.WorkDir = t.TempDir()
+	}
+	ready, err := curator.Check(opts)
+	if err != nil {
+		t.Fatalf("Check: %v", err)
+	}
+	return ready.Tools
+}
+
+// A dry run must be safe by construction, not by cooperation. Handing the
+// curator Write, Edit and the stamping commands and then asking it in prose to
+// hold back leaves the store one misreading away from being edited by a run
+// whose whole purpose was to touch nothing.
+func TestADryRunIsHandedNoWritingTools(t *testing.T) {
+	granted := strings.Join(grant(t, curator.Options{DryRun: true, CandidatesDir: "/repo/candidates"}), "\x00")
+
+	for _, forbidden := range []string{"Write", "Edit", "memory anchor", "memory index", "Bash(rm "} {
+		if strings.Contains(granted, forbidden) {
+			t.Errorf("a dry run was granted %q", forbidden)
+		}
+	}
+	if !strings.Contains(granted, "Read") || !strings.Contains(granted, "memory candidates") {
+		t.Errorf("a dry run cannot read the backlog it is meant to report on: %q", granted)
+	}
+}
+
+// Stamping is the write that matters most: `agtk memory anchor` clears the one
+// signal saying nobody has checked a claim. A run scoped to one note must not
+// be able to launder the freshness of any other.
+func TestAScopedRunCanOnlyStampTheNotesItNames(t *testing.T) {
+	granted := grant(t, curator.Options{Notes: []string{"pins-shas"}, AgtkPath: "/opt/agtk"})
+
+	if !slices.Contains(granted, "Bash(/opt/agtk memory anchor pins-shas)") {
+		t.Errorf("the scoped run cannot stamp the note it was given: %v", granted)
+	}
+	if slices.Contains(granted, "Bash(/opt/agtk memory anchor*)") {
+		t.Error("the scoped run kept the open stamping grant, so it can stamp any note")
+	}
+}
+
+// Note names are kebab-case, so one name can be a prefix of another. A scoped
+// grant carrying a trailing wildcard would permit stamping a longer-named note
+// the run never looked at — clearing the one signal that says nobody has
+// checked that claim, which is the silent failure the scoping exists to stop.
+func TestAScopedStampingGrantDoesNotReachPrefixedNames(t *testing.T) {
+	granted := grant(t, curator.Options{Notes: []string{"lockfile-pins"}, AgtkPath: "/opt/agtk"})
+
+	for _, tool := range granted {
+		if strings.HasPrefix(tool, "Bash(/opt/agtk memory anchor") && strings.HasSuffix(tool, "*)") {
+			t.Errorf("scoped stamping grant %q ends in a wildcard, so it reaches lockfile-pins-shas-not-tags", tool)
+		}
+	}
+}
+
+// The child also has to be told which notes are in scope; the narrowed grant
+// stops it stamping the others but not reading or rewriting them.
+func TestAScopedRunTellsTheChildItsScope(t *testing.T) {
+	fake, _, err := run(t, curatedEnvelope, curator.Options{Notes: []string{"pins-shas"}})
+	if err != nil {
+		t.Fatalf("Run with notes: %v", err)
+	}
+
+	if !strings.Contains(strings.Join(fake.Recorded(t).Args, "\x00"), "pins-shas") {
+		t.Error("the child was not told which notes are in scope")
+	}
+}
+
+// An unscoped run's scope is the store, so it keeps the open grant. Without
+// this the scoping change would be indistinguishable from one that broke
+// stamping outright.
+func TestAnUnscopedRunKeepsTheOpenStampingGrant(t *testing.T) {
+	if !slices.Contains(grant(t, curator.Options{AgtkPath: "/opt/agtk"}), "Bash(/opt/agtk memory anchor*)") {
+		t.Error("an unscoped run lost the open stamping grant")
+	}
+}
+
+// The stale sweep's first instruction is to run `agtk memory audit --json`. A
+// grant that omits audit leaves the sweep denied at its first command, having
+// spent a model invocation to get there.
+func TestTheStaleSweepMayRunTheAuditItIsToldToRun(t *testing.T) {
+	if !slices.Contains(grant(t, curator.Options{Stale: true, AgtkPath: "/opt/agtk"}), "Bash(/opt/agtk memory audit*)") {
+		t.Error("the sweep cannot run the audit its own instruction points it at")
 	}
 }

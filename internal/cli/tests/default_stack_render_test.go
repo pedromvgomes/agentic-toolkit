@@ -26,6 +26,7 @@ func TestTheDefaultStackRendersEveryThingItLists(t *testing.T) {
 		// Listed only after it was found dispatched-to and unrendered.
 		{".claude/agents/wrap-session-reviewer/AGENT.md", "wrap-session-reviewer"},
 		{".claude/commands/memory-curate.md", "agtk memory curate"},
+		{".claude/commands/memory-seed.md", "memory-explorer"},
 		{".claude/skills/wrap-session/SKILL.md", "wrap-session-reviewer"},
 		{".claude/settings.json", "agtk memory candidates"},
 	} {
@@ -186,5 +187,77 @@ func repoRoot(t *testing.T) string {
 			t.Fatal("no go.mod above the test directory")
 		}
 		dir = parent
+	}
+}
+
+// memory-seed dispatches memory-explorer and hands off to memory-curate. Both
+// pairings are invisible from the command's own file, which is exactly the
+// shape that left wrap-session dispatching to an unrendered agent.
+func TestMemorySeedsDispatchTargetsAreRenderedAlongsideIt(t *testing.T) {
+	apply := renderDefaultStack(t)
+
+	seed, err := os.ReadFile(filepath.Join(apply, ".claude/commands/memory-seed.md"))
+	if err != nil {
+		t.Fatalf("memory-seed did not reach the consumer: %v", err)
+	}
+	if !strings.Contains(string(seed), "memory-explorer") {
+		t.Fatalf("memory-seed does not dispatch the explorer:\n%s", seed)
+	}
+	if _, err := os.Stat(filepath.Join(apply, ".claude/agents/memory-explorer/AGENT.md")); err != nil {
+		t.Errorf("memory-seed dispatches memory-explorer, which never rendered: %v", err)
+	}
+	if !strings.Contains(string(seed), "memory-curate") {
+		t.Error("memory-seed does not hand off to the curator, so a seeded backlog is never promoted")
+	}
+	if _, err := os.Stat(filepath.Join(apply, ".claude/commands/memory-curate.md")); err != nil {
+		t.Errorf("memory-seed hands off to /memory-curate, which never rendered: %v", err)
+	}
+
+	// The seeding pass stages candidates and stops. A command that curated as
+	// well would give notes/ a second writer, which is the rule ADR 0003 and
+	// the curator's whole design rest on.
+	if !strings.Contains(string(seed), "Do not curate") {
+		t.Error("memory-seed does not tell the seeding session to leave curation alone")
+	}
+
+	// The explorer's own bar selects nothing in a cold sweep: it reads
+	// everything fresh, so everything cost it exploration. A seed pass that
+	// forgets to replace the bar stages the file locations the store exists
+	// not to hold.
+	if !strings.Contains(string(seed), "would a competent engineer reading this code get this wrong") {
+		t.Errorf("memory-seed does not replace the cost bar for a cold sweep:\n%s", seed)
+	}
+}
+
+// continuation-session copies the durable half of its handoff into the store's
+// staging area. The two conditions on what qualifies are the whole substance
+// of that step: a note needs at least one anchor, so an entry with no file to
+// point at cannot become one however useful it is, and staging it only buys a
+// rejection later.
+func TestContinuationSessionStagesOnlyAnchorableFindings(t *testing.T) {
+	apply := renderDefaultStack(t)
+
+	skill, err := os.ReadFile(filepath.Join(apply, ".claude/skills/continuation-session/SKILL.md"))
+	if err != nil {
+		t.Fatalf("continuation-session did not reach the consumer: %v", err)
+	}
+	body := string(skill)
+	if !strings.Contains(body, "candidates/") {
+		t.Fatalf("continuation-session does not stage anything into the store:\n%s", body)
+	}
+	if !strings.Contains(body, "can name a file") {
+		t.Error("continuation-session does not require a finding to name a file, so it stages notes lint will reject")
+	}
+	// The handoff still has to carry the whole section: the next session reads
+	// it, and a move would hand it a document with the reasoning cut out.
+	if !strings.Contains(body, "copy, not a move") {
+		t.Error("continuation-session does not say the staging is a copy, so the handoff may lose the section")
+	}
+	// A repo that never adopted memory must not be given an invented path.
+	if !strings.Contains(body, "agtk memory stats") {
+		t.Error("continuation-session stages without locating the store first")
+	}
+	if !strings.Contains(body, "Never write, edit, stamp or delete a note") {
+		t.Error("continuation-session does not hold to the single-writer rule")
 	}
 }

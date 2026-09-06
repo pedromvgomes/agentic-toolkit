@@ -138,3 +138,72 @@ func TestRecordHitWritesGitignore(t *testing.T) {
 		t.Errorf(".gitignore = %q, want it to cover %s", ignore, memory.HitsFile)
 	}
 }
+
+// TestStatsNamesColdNotes: a low hit rate says the store is not repaying its
+// cost; the cold list is what says which notes to drop, so it must name the
+// unread ones and only those.
+func TestStatsNamesColdNotes(t *testing.T) {
+	s := stampedStore(t)
+	writeNote(t, s, "never-read", note("never-read", "  - path: internal/resolver/graph.go\n    blob: 0123456789ab\n"))
+	writeNote(t, s, "also-never-read", note("also-never-read", "  - path: internal/resolver/graph.go\n    blob: 0123456789ab\n"))
+	if err := s.RecordHit("pins-shas", time.Now()); err != nil {
+		t.Fatalf("record hit: %v", err)
+	}
+
+	notes, _ := s.LoadNotes()
+	st, err := s.Stats(notes)
+	if err != nil {
+		t.Fatalf("stats: %v", err)
+	}
+	if got := strings.Join(st.Cold, ","); got != "also-never-read,never-read" {
+		t.Errorf("cold = %q, want the two unread notes in sorted order", got)
+	}
+}
+
+// TestStatsColdIgnoresHitsOnPrunedNotes: hits are matched by name, and a hit
+// on a note that is gone must not warm a live note that happens to be the
+// only one left.
+func TestStatsColdIgnoresHitsOnPrunedNotes(t *testing.T) {
+	s := stampedStore(t)
+	if err := s.RecordHit("deleted-long-ago", time.Now()); err != nil {
+		t.Fatalf("record hit: %v", err)
+	}
+
+	notes, _ := s.LoadNotes()
+	st, err := s.Stats(notes)
+	if err != nil {
+		t.Fatalf("stats: %v", err)
+	}
+	if got := strings.Join(st.Cold, ","); got != "pins-shas" {
+		t.Errorf("cold = %q, want the one live unread note", got)
+	}
+}
+
+// TestStatsReportsIndexSizeAsTheTax: the index is what an explorer loads
+// before it has decided any note is relevant, so its size is the cost the hit
+// rate is judged against. Reported from the generated file, not estimated
+// from the notes.
+func TestStatsReportsIndexSizeAsTheTax(t *testing.T) {
+	s := stampedStore(t)
+	notes, _ := s.LoadNotes()
+
+	st, err := s.Stats(notes)
+	if err != nil {
+		t.Fatalf("stats: %v", err)
+	}
+	if st.IndexBytes != 0 {
+		t.Fatalf("IndexBytes = %d before any index is generated, want 0", st.IndexBytes)
+	}
+
+	if _, err := s.WriteIndex(notes); err != nil {
+		t.Fatalf("write index: %v", err)
+	}
+	st, err = s.Stats(notes)
+	if err != nil {
+		t.Fatalf("stats: %v", err)
+	}
+	want := int64(len(read(t, s.IndexPath())))
+	if st.IndexBytes != want {
+		t.Errorf("IndexBytes = %d, want %d (the generated index's size)", st.IndexBytes, want)
+	}
+}

@@ -885,3 +885,53 @@ func TestMemoryAnchorRefusesTwoDifferentInstructions(t *testing.T) {
 		t.Fatal("anchor accepted --all alongside a named note")
 	}
 }
+
+// TestMemoryStatsReportsBothSidesOfTheLedger: the hit rate alone cannot say
+// whether the store is repaying itself, because the cost it is judged against
+// — the index an explorer loads before it has decided any note is relevant —
+// is not visible anywhere else. Both numbers have to come out of one command.
+func TestMemoryStatsReportsBothSidesOfTheLedger(t *testing.T) {
+	work := memoryProject(t, "skills: []\n")
+	writeFile(t, filepath.Join(work, ".agents/memory/notes/pins-shas.md"), memoryNote)
+	if _, _, err := runCLI(t, work, "memory", "anchor", "--all"); err != nil {
+		t.Fatalf("memory anchor: %v", err)
+	}
+	if _, _, err := runCLI(t, work, "memory", "index"); err != nil {
+		t.Fatalf("memory index: %v", err)
+	}
+
+	stdout, _, err := runCLI(t, work, "memory", "stats")
+	if err != nil {
+		t.Fatalf("memory stats: %v", err)
+	}
+	if !strings.Contains(stdout, "index:") || !strings.Contains(stdout, "the tax") {
+		t.Errorf("stats must report the index size as the tax: %q", stdout)
+	}
+	// A reader who takes the hit rate for a property of the store draws the
+	// opposite conclusion from a fresh clone's zero, so the scope is part of
+	// the number rather than a footnote.
+	if !strings.Contains(stdout, "this checkout") {
+		t.Errorf("stats must scope the hit rate to this checkout: %q", stdout)
+	}
+	if !strings.Contains(stdout, "cold:") || !strings.Contains(stdout, "pins-shas") {
+		t.Errorf("stats must name the unread notes, not just count them: %q", stdout)
+	}
+
+	stdout, _, err = runCLI(t, work, "memory", "stats", "--json")
+	if err != nil {
+		t.Fatalf("memory stats --json: %v", err)
+	}
+	var stats struct {
+		IndexBytes int64    `json:"index_bytes"`
+		Cold       []string `json:"cold"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &stats); err != nil {
+		t.Fatalf("stats json: %v (%s)", err, stdout)
+	}
+	if stats.IndexBytes == 0 {
+		t.Error("index_bytes = 0 after generating an index")
+	}
+	if len(stats.Cold) != 1 || stats.Cold[0] != "pins-shas" {
+		t.Errorf("cold = %v, want the one unread note", stats.Cold)
+	}
+}

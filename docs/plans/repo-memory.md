@@ -1,6 +1,6 @@
 # Plan — repo-resident long-term memory for agentic exploration
 
-Status: Slices A, B and C implemented. Slice D not started.
+Status: Slices A, B, C and D implemented.
 Created: 2026-09-02. Challenged and revised: 2026-09-02.
 
 Decisions that the challenge changed are marked **[revised]** below; the reasoning for
@@ -363,9 +363,25 @@ already being extracted once per session and discarded. Feeding that same sectio
 ## 9. Cold start
 
 The store is empty for the first weeks, so it is pure tax before it is a win. Seed it:
-one pass over the codebase writing the 15–20 highest-value invariants and gotchas. Beyond
+one pass over the codebase writing the highest-value invariants and gotchas. Beyond
 priming the store, this is the first real test of whether the note format survives contact
 with actual content.
+
+**[revised]** Two things about that pass that the original two sentences got wrong.
+
+The explorer's bar does not survive it. §5 gives the explorer one rule — *store what cost real
+exploration* — and says only the explorer can apply it "because only it knows what an answer
+cost". In a cold sweep that rule selects everything: there is no task, the explorer is reading
+fresh, so by construction everything it learns cost it exploration. An explorer honestly
+applying its own rule stages the package layout and the build setup, which is the tier §1
+exists to keep out. So `/memory-seed` replaces the bar for the duration of the sweep with a
+counterfactual one — *would a competent engineer reading this code get this wrong?* Cost is a
+proxy for surprise; a sweep asks for surprise directly.
+
+The "15–20" is a sanity range for the store after curation, not a target handed to an explorer.
+A number given to a sweeping agent is an instruction to keep going until it is met, and §1 says
+the answer to a low hit rate is to prune, never to store more. If the curated store lands far
+outside the range that is a signal to look at, not a quota to fill.
 
 ---
 
@@ -397,8 +413,24 @@ Redirecting `continuation-session`'s decisions section into `candidates/` is **n
 is a change to what a skill writes, independent of the curator, and folding it in would mean
 resurrecting one thing and changing another in the same review.
 
-**Slice D — seeding and measurement.** `/memory-seed`, the `continuation-session` redirect,
-and enough `stats` history to judge whether the tax is being repaid.
+**Slice D — seeding and measurement. Done.** `/memory-seed`, the `continuation-session`
+redirect, and the numbers needed to judge whether the tax is being repaid.
+
+**[revised]** "Enough `stats` history" turned out not to mean history at all. The gap was never
+a time series — it was that `stats` reported only the payout. It now reports `index_bytes`, the
+tax itself, beside the hit rate, and names the **cold** notes, because §1's "prune harder" is
+advice a rate cannot act on and a list can. Bucketing hits over time is not built: §4's "flat
+until it hurts" applies here too, and a series over a handful of reads by one developer is
+noise.
+
+`/memory-seed` fans out `memory-explorer` rather than staging candidates itself, so the slice
+adds no second writer to `candidates/`. It replaces the explorer's cost bar for the duration of
+the sweep — see §9 — and hands off to `/memory-curate` rather than curating, which would give
+`notes/` a second author.
+
+Also here, because the seeding run is the first time the curator faces a large backlog:
+`agtk memory curate --dry-run`, enforced by withholding every writing tool from the grant, and
+note-scoped curation that narrows the stamping grant to the names given.
 
 ---
 
@@ -422,8 +454,20 @@ and enough `stats` history to judge whether the tax is being repaid.
 - ~~Whether `stats` hit-rate tracking needs a written log, and where it lives so it does not
   itself become PR noise.~~ Resolved: `.agents/memory/.hits.jsonl`, appended by
   `agtk memory show`, gitignored by the scaffold.
-- Whether the seeded notes of §9 should be anchored per-file or per-glob by default. Glob
-  anchors catch new files but go stale more often; the answer probably differs by kind.
+- ~~Whether the seeded notes of §9 should be anchored per-file or per-glob by default.~~
+  Resolved: **per file, glob when the claim quantifies over a file set** — *every*, *only*,
+  *no* X in this directory — because a member that does not exist yet is what falsifies such a
+  claim. See `docs/adr/0005-glob-anchors-mark-quantified-claims.md`. It does not differ by
+  kind, which the question had assumed: invariants are simply the kind most often quantified.
+  The curator prompt's earlier phrasing — glob "when the claim is about the absence of
+  something" — was the same rule seen from one side and too narrow to fire, since nobody reads
+  "every command except `lock` uses the frozen provider" as a claim about absence.
+- ~~Whether the hit rate is a fact about the store or about a checkout.~~ Resolved: **about a
+  checkout**, and `stats` now says so. `.hits.jsonl` is gitignored deliberately, so reads never
+  become PR noise — but the consequence is that a rate does not survive a merge and a fresh
+  clone reports zero over a store that is heavily used elsewhere. That is the right semantics
+  and the wrong default reading, so the scope is printed as part of the number. Any claim that
+  the index tax is or is not being repaid has to say whose usage it is claiming it about.
 
 ---
 
