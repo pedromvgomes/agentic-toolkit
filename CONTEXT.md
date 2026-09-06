@@ -115,6 +115,18 @@ One run of the **Curator** over the staged **Candidate**s, or with `--stale` ove
 and safe on the path of a hook.
 _Avoid_: promote, sweep
 
+**Seed**:
+One proactive sweep over a codebase whose **Memory store** holds no **Note**s yet, staging
+**Candidate**s for a **Curate** run to rule on. Unlike an **Explorer**'s ordinary staging it
+answers no question — so the cost bar that asks what an answer cost is meaningless to it, and
+it asks instead what a competent reader would get wrong. A **Seed** never authors a **Note**.
+_Avoid_: bootstrap, backfill, import
+
+**Cold**:
+A **Note** with no recorded **Hit**. The prune signal: a low hit rate says the store is not
+being repaid, and the cold list says which **Note**s to drop.
+_Avoid_: unused, dead, orphaned
+
 ## Flagged ambiguities
 **"Verify"** — was used both for the CI structural check and for a curator confirming a claim
 is true. Resolution: the command is `agtk memory lint`; `verified` is reserved for
@@ -131,6 +143,17 @@ the second.
 **"Agent"** — a **Definition** **Category**, and also the thing that runs one. `memory.agent`
 is neither: it names which coding-agent CLI `agtk` drives when it **Curate**s. Say "provider"
 for that, and qualify the other two.
+
+**"Absence" vs "quantified"** — the rule for when an **Anchor** takes a glob was written as
+"when the claim is about the absence of something", which nobody applies to a sentence like
+"every command except `lock` uses the frozen provider". Resolution: the trigger is
+**quantification** over a file set — *every*, *only*, *no* — because a member that does not
+exist yet is what falsifies such a claim. See `docs/adr/0005-glob-anchors-mark-quantified-claims.md`.
+
+**"Hit rate"** — reads as a property of the **Memory store**, but the **Hit** log is local to
+one checkout and never committed, so a fresh clone reports zero. Resolution: it is a fact about
+one working copy's usage, and any claim that the store is or is not repaying its cost has to
+say whose.
 
 ## Example dialogue
 > **Dev:** `graph.go` changed, so the note about SHA pinning is suspect now, right?

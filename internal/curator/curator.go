@@ -65,7 +65,9 @@ var ErrNoProvider = fmt.Errorf(
 func Prompt() string { return prompt }
 
 // AllowedTools is the grant a curation run is given.
-func AllowedTools(agtk, candidatesDir string) []string { return allowedTools(agtk, candidatesDir) }
+func AllowedTools(agtk, candidatesDir string) []string {
+	return allowedTools(agtk, candidatesDir, grantScope{})
+}
 
 // PermissionMode is how a curation run answers permission prompts.
 func PermissionMode() string { return permissionMode }
@@ -118,7 +120,7 @@ func Check(opts Options) (Ready, error) {
 	return Ready{
 		Provider: driver.Descriptor().ID,
 		Binary:   driver.Binary(),
-		Tools:    allowedTools(opts.AgtkPath, opts.CandidatesDir),
+		Tools:    allowedTools(opts.AgtkPath, opts.CandidatesDir, opts.scope()),
 		Mode:     permissionMode,
 	}, nil
 }
@@ -133,6 +135,15 @@ type Options struct {
 	// Stale asks for a sweep of stale notes rather than the candidate
 	// backlog.
 	Stale bool
+	// DryRun asks the curator to report what it would do and write nothing.
+	// It is enforced by withholding every writing tool from the grant, not by
+	// asking the model nicely: a run told to hold back but handed Write and
+	// Edit is one refusal away from editing the store.
+	DryRun bool
+	// Notes scopes the run to the named notes. It narrows the stamping grant
+	// to exactly those names, so a scoped run cannot clear the staleness
+	// signal on a note it was not asked to check.
+	Notes []string
 	// Timeout overrides the default bound.
 	Timeout time.Duration
 	// Binary pins the executable instead of resolving the provider's name on
@@ -152,6 +163,11 @@ type Options struct {
 	// stamping commands fail and it finishes having verified everything and
 	// recorded nothing.
 	AgtkPath string
+}
+
+// scope is the narrowing this run's grant gets.
+func (o Options) scope() grantScope {
+	return grantScope{dryRun: o.DryRun, notes: o.Notes}
 }
 
 // Result is what a run produced.
@@ -180,36 +196,73 @@ type Result struct {
 // remove anything in the repo — which is the guarantee this list exists to
 // make, given away in its last line. The directory is a parameter because
 // `memory.root` is configurable, so there is no path to hard-code.
-func allowedTools(agtk, candidatesDir string) []string {
+func allowedTools(agtk, candidatesDir string, opts grantScope) []string {
 	if agtk == "" {
 		agtk = "agtk"
 	}
-	deletion := "Bash(rm " + candidatesDir + "/*)"
-	if candidatesDir == "" {
-		// An empty directory would compose to `rm /*`, which is the widest
-		// possible reading of a grant meant to be the narrowest. A caller that
-		// names no staging directory gets no deletion grant at all: the
-		// backlog goes uncleared, which is visible, rather than the curator
-		// holding a licence nobody meant to give it.
-		deletion = ""
-	}
+	// Reading is the whole grant for a dry run. Write, Edit, anchor, index and
+	// the deletion of candidates are exactly the operations that change the
+	// store, so a preview that keeps any of them is a preview only for as long
+	// as the model chooses to make it one.
 	tools := []string{
 		"Read",
 		"Grep",
 		"Glob",
-		"Write",
-		"Edit",
 		"Bash(" + agtk + " memory show *)",
 		"Bash(" + agtk + " memory candidates*)",
 		"Bash(" + agtk + " memory stats*)",
-		"Bash(" + agtk + " memory anchor*)",
-		"Bash(" + agtk + " memory index*)",
+		"Bash(" + agtk + " memory audit*)",
 		"Bash(" + agtk + " memory lint*)",
 	}
-	if deletion != "" {
-		tools = append(tools, deletion)
+	if opts.dryRun {
+		return tools
+	}
+
+	tools = append(tools, "Write", "Edit", "Bash("+agtk+" memory index*)")
+	tools = append(tools, anchorGrants(agtk, opts.notes)...)
+
+	// The deletion grant is scoped to the candidates directory rather than
+	// left as a bare `rm`. Clearing the backlog is the only thing the curator
+	// deletes, and a grant that reads `rm *` would let the one agent with a
+	// constructed grant remove anything in the repo — which is the guarantee
+	// this list exists to make, given away in its last line. The directory is
+	// a parameter because `memory.root` is configurable, so there is no path
+	// to hard-code.
+	//
+	// An empty directory would compose to `rm /*`, which is the widest
+	// possible reading of a grant meant to be the narrowest. A caller that
+	// names no staging directory gets no deletion grant at all: the backlog
+	// goes uncleared, which is visible, rather than the curator holding a
+	// licence nobody meant to give it.
+	if candidatesDir != "" {
+		tools = append(tools, "Bash(rm "+candidatesDir+"/*)")
 	}
 	return tools
+}
+
+// grantScope is what narrows a run's grant below the full one.
+type grantScope struct {
+	dryRun bool
+	notes  []string
+}
+
+// anchorGrants permits stamping.
+//
+// Stamping is the write that matters most, because `agtk memory anchor` clears
+// the one signal saying nobody has checked a claim — so a run scoped to some
+// notes must not be able to stamp the others. With names, the grant lists them
+// individually; the trailing `*` on each covers the flags anchor accepts and
+// stops short of a second note name only because a name cannot contain a
+// space. An unscoped run gets the open grant, since its scope is the store.
+func anchorGrants(agtk string, notes []string) []string {
+	if len(notes) == 0 {
+		return []string{"Bash(" + agtk + " memory anchor*)"}
+	}
+	grants := make([]string, 0, len(notes))
+	for _, n := range notes {
+		grants = append(grants, "Bash("+agtk+" memory anchor "+n+"*)")
+	}
+	return grants
 }
 
 // permissionMode lets the run act on its grant without a prompt nobody is
@@ -247,11 +300,11 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	}
 
 	res, err := driver.Run(ctx, agentic.Request{
-		Prompt: task(opts.Stale, opts.AgtkPath),
+		Prompt: task(opts),
 		Agents: map[string]agentic.Agent{
 			AgentName: {Description: agentDescription, Prompt: prompt},
 		},
-		AllowedTools:   allowedTools(opts.AgtkPath, opts.CandidatesDir),
+		AllowedTools:   allowedTools(opts.AgtkPath, opts.CandidatesDir, opts.scope()),
 		PermissionMode: permissionMode,
 		WorkDir:        opts.WorkDir,
 	})
@@ -279,7 +332,8 @@ const agentDescription = "Promotes, merges and rejects findings staged in the re
 // name would be denied by its own grant, and — worse — the `agtk` on PATH may
 // predate the memory subsystem entirely, so the reach would fail even if it
 // were allowed.
-func task(stale bool, agtk string) string {
+func task(opts Options) string {
+	agtk := opts.AgtkPath
 	if agtk == "" {
 		agtk = "agtk"
 	}
@@ -287,15 +341,32 @@ func task(stale bool, agtk string) string {
 		"` for every agtk command — that exact path, never the bare name `agtk`, which may " +
 		"resolve to an older build without the `memory` subcommand and is not in your tool grant. "
 
-	if stale {
-		return preamble + "Sweep the memory store's stale notes: run `" + agtk +
+	var job string
+	if opts.Stale {
+		job = "Sweep the memory store's stale notes: run `" + agtk +
 			" memory audit --json` for the list, then re-check each stale note's claim against " +
-			"the code its pointers name and update, re-stamp or reject it. " +
-			"Report exactly what the agent reports."
+			"the code its pointers name and update, re-stamp or reject it. "
+	} else {
+		job = "Curate the memory store's staged candidates: run `" + agtk +
+			" memory candidates --json` for the backlog. "
 	}
-	return preamble + "Curate the memory store's staged candidates: run `" + agtk +
-		" memory candidates --json` for the backlog. " +
-		"Report exactly what the agent reports."
+
+	if len(opts.Notes) > 0 {
+		job += "Consider only these notes and the candidates targeting them: " +
+			strings.Join(opts.Notes, ", ") + ". Leave every other note and candidate alone. "
+	}
+
+	if opts.DryRun {
+		// The grant already withholds every writing tool, so this is not what
+		// makes the run safe. It is what stops the curator spending its budget
+		// discovering that one tool call at a time, and reporting a refusal
+		// where a preview was asked for.
+		job += "This is a dry run: report what you would promote, merge, reject or " +
+			"re-stamp, and why, but write nothing. You have no writing tools. " +
+			"Do not stamp anchors, regenerate the index or delete candidates. "
+	}
+
+	return preamble + job + "Report exactly what the agent reports."
 }
 
 // newProvider resolves `memory.agent` to a provider.

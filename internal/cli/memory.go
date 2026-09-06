@@ -714,10 +714,11 @@ func newMemoryCurateCmd(env *Env) *cobra.Command {
 		jsonOut bool
 		stale   bool
 		check   bool
+		dryRun  bool
 		timeout time.Duration
 	)
 	cmd := &cobra.Command{
-		Use:   "curate",
+		Use:   "curate [note...]",
 		Short: "Run the curator over staged candidates, or over stale notes",
 		Long: "Promotes, merges and rejects the findings in candidates/, then stamps and\n" +
 			"regenerates the index. With --stale, sweeps notes whose anchored content has\n" +
@@ -728,9 +729,17 @@ func newMemoryCurateCmd(env *Env) *cobra.Command {
 			"here and passed on the command line, so notes/ has one writer by\n" +
 			"construction rather than by instruction.\n" +
 			"\n" +
+			"Naming notes scopes the run to them and to the candidates targeting them,\n" +
+			"and narrows the stamping grant to those names — so a scoped run cannot clear\n" +
+			"the staleness signal on a note it was not asked to check.\n" +
+			"\n" +
+			"--dry-run reports what the curator would do and writes nothing. The grant it\n" +
+			"runs under has no writing tools at all, so this is a property of the run\n" +
+			"rather than a promise the model keeps.\n" +
+			"\n" +
 			"Names its provider through `memory.agent` in the entry manifest. There is no\n" +
 			"default: this is the only memory command that costs anything.",
-		Args: cobra.NoArgs,
+		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			store, err := memoryStore(env)
 			if err != nil {
@@ -741,12 +750,18 @@ func newMemoryCurateCmd(env *Env) *cobra.Command {
 				return err
 			}
 
+			if err := knownNotes(env, store, args); err != nil {
+				return err
+			}
+
 			if check {
 				ready, err := curator.Check(curator.Options{
 					Provider:      provider,
 					WorkDir:       store.ProjectRoot,
 					CandidatesDir: store.CandidatesPath(),
 					AgtkPath:      selfPath(env),
+					DryRun:        dryRun,
+					Notes:         args,
 				})
 				if err != nil {
 					return err
@@ -780,6 +795,8 @@ func newMemoryCurateCmd(env *Env) *cobra.Command {
 				// and lack `memory` entirely.
 				AgtkPath: selfPath(env),
 				Stale:    stale,
+				DryRun:   dryRun,
+				Notes:    args,
 				Timeout:  timeout,
 			})
 			if err != nil {
@@ -809,8 +826,35 @@ func newMemoryCurateCmd(env *Env) *cobra.Command {
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit machine-readable JSON output")
 	cmd.Flags().BoolVar(&stale, "stale", false, "sweep stale notes instead of the candidate backlog")
 	cmd.Flags().BoolVar(&check, "check", false, "report what a run would use and start nothing")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "report what the curator would do, under a grant with no writing tools")
 	cmd.Flags().DurationVar(&timeout, "timeout", 0, "bound the curation run (default 20m)")
 	return cmd
+}
+
+// knownNotes rejects a name the store does not hold.
+//
+// A typo would otherwise scope the run to nothing and cost a full model
+// invocation to report that it found nothing to do — and the report would read
+// the same as a run that correctly found nothing, which is the reading that
+// matters here.
+func knownNotes(env *Env, store *memory.Store, names []string) error {
+	if len(names) == 0 {
+		return nil
+	}
+	notes, errs := store.LoadNotes()
+	if len(errs) > 0 {
+		return errs[0]
+	}
+	known := make(map[string]bool, len(notes))
+	for _, n := range notes {
+		known[n.Name] = true
+	}
+	for _, name := range names {
+		if !known[name] {
+			return fmt.Errorf("memory: no note named %q; `agtk memory stats` lists the store", name)
+		}
+	}
+	return nil
 }
 
 // selfPath is this binary's own path, for a child that shells back into agtk.
