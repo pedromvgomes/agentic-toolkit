@@ -102,12 +102,18 @@ func TestTheGrantAndTheRosterReachTheChild(t *testing.T) {
 		curator.AgentName,
 		"--allowedTools",
 		"Bash(agtk memory anchor*)",
-		"--permission-mode",
-		curator.PermissionMode(),
 	} {
 		if !strings.Contains(argv, want) {
 			t.Errorf("the child was not given %q", want)
 		}
+	}
+
+	// No mode is passed at all. Every mode the CLI accepts either waives
+	// prompting for something the grant is meant to decide, or asks a question
+	// no one is present to answer; leaving the flag off keeps the constructed
+	// grant as the whole of the run's permission.
+	if strings.Contains(argv, "--permission-mode") {
+		t.Errorf("the child was given a permission mode, which outranks the grant: %q", argv)
 	}
 
 	// The measure that closes apiKeyHelper. A run that loaded settings files
@@ -219,17 +225,24 @@ func TestCheckReportsTheGrantARunWouldUse(t *testing.T) {
 		Provider:      "claudecode",
 		Binary:        fake.Path(),
 		WorkDir:       t.TempDir(),
+		NotesDir:      "/repo/.agents/memory/notes",
 		CandidatesDir: "/repo/.agents/memory/candidates",
 	})
 	if err != nil {
 		t.Fatalf("Check: %v", err)
 	}
-	want := curator.AllowedTools("", "/repo/.agents/memory/candidates")
+	want := curator.AllowedTools("", "/repo/.agents/memory/notes", "/repo/.agents/memory/candidates")
 	if len(ready.Tools) != len(want) {
 		t.Fatalf("Tools = %v, want the run's grant %v", ready.Tools, want)
 	}
+	// Every deletion names a directory inside the store. A bare `rm` would let
+	// the one agent holding a constructed grant remove anything in the repo.
 	for _, tool := range ready.Tools {
-		if strings.Contains(tool, "rm") && !strings.Contains(tool, "/repo/.agents/memory/candidates/") {
+		if !strings.HasPrefix(tool, "Bash(rm ") {
+			continue
+		}
+		if !strings.Contains(tool, "/repo/.agents/memory/candidates/") &&
+			!strings.Contains(tool, "/repo/.agents/memory/notes/") {
 			t.Errorf("check reports an unscoped deletion grant: %q", tool)
 		}
 	}
@@ -352,5 +365,98 @@ func TestAnUnscopedRunKeepsTheOpenStampingGrant(t *testing.T) {
 func TestTheStaleSweepMayRunTheAuditItIsToldToRun(t *testing.T) {
 	if !slices.Contains(grant(t, curator.Options{Stale: true, AgtkPath: "/opt/agtk"}), "Bash(/opt/agtk memory audit*)") {
 		t.Error("the sweep cannot run the audit its own instruction points it at")
+	}
+}
+
+// The deletion grant is scoped to a named directory, and the write grant has
+// to be too. `Write` and `Edit` with no path attached let the one agent in the
+// system holding a constructed grant edit any file in the repo — which is the
+// guarantee the constructed grant exists to make, given away by the two
+// broadest entries in it.
+func TestTheWriteGrantIsScopedToTheNotesDirectory(t *testing.T) {
+	granted := grant(t, curator.Options{
+		NotesDir:      "/repo/.agents/memory/notes",
+		CandidatesDir: "/repo/.agents/memory/candidates",
+	})
+	for _, g := range granted {
+		if g == "Write" || g == "Edit" {
+			t.Errorf("granted bare %q, which reaches every file in the repo", g)
+		}
+	}
+	joined := strings.Join(granted, "\x00")
+	// An Edit rule covers every file-editing tool, Write included. A Write
+	// rule is not consulted by the file permission check, so a grant spelled
+	// that way names the right directory and constrains nothing.
+	if !strings.Contains(joined, "Edit(//repo/.agents/memory/notes/**)") {
+		t.Errorf("missing the scoped Edit rule; the curator cannot author the notes it exists to author: %q", joined)
+	}
+	if strings.Contains(joined, "Write(") {
+		t.Errorf("granted a Write(path) rule, which the file permission check ignores: %q", joined)
+	}
+}
+
+// A single leading slash in a permission pattern reads as relative to the
+// project directory, so an absolute store path has to be doubled at the root.
+// A pattern that resolves nowhere denies every write, including the ones the
+// run exists to make.
+func TestAnAbsoluteNotesPathIsDoubledAtTheRoot(t *testing.T) {
+	granted := strings.Join(grant(t, curator.Options{
+		NotesDir:      "/repo/.agents/memory/notes",
+		CandidatesDir: "/repo/.agents/memory/candidates",
+	}), "\x00")
+
+	if !strings.Contains(granted, "Edit(//repo/") {
+		t.Errorf("absolute notes path was not doubled at the root: %q", granted)
+	}
+}
+
+// A mode that waives prompting outranks AllowedTools rather than combining
+// with it. acceptEdits waives it for exactly the half of the grant that scopes
+// where notes may be written, which turns that boundary into a comment.
+func TestThePermissionModeDoesNotWaiveTheGrant(t *testing.T) {
+	if mode := curator.PermissionMode(); mode != "" {
+		t.Errorf("PermissionMode() = %q; a mode that auto-approves edits leaves the scoped Edit rule as decoration", mode)
+	}
+}
+
+// The store's location is configurable, so there is no notes path to hard-code
+// and no safe default to guess. A run that names no notes directory gets no
+// write grant at all: it finishes having promoted nothing, which is visible,
+// rather than holding a licence over the whole repo that nobody granted it.
+func TestNamingNoNotesDirectoryGrantsNoWrite(t *testing.T) {
+	granted := strings.Join(grant(t, curator.Options{
+		CandidatesDir: "/repo/.agents/memory/candidates",
+	}), "\x00")
+
+	if strings.Contains(granted, "Write") || strings.Contains(granted, "Edit") {
+		t.Errorf("a run with no notes directory was granted a write tool: %q", granted)
+	}
+}
+
+// The prompt tells the curator to delete a note whose claim is simply gone,
+// and a retraction it is instructed to make but not permitted to make leaves
+// the store asserting something false while the run reports success.
+func TestTheGrantPermitsTheRetractionThePromptInstructs(t *testing.T) {
+	granted := strings.Join(grant(t, curator.Options{
+		NotesDir:      "/repo/.agents/memory/notes",
+		CandidatesDir: "/repo/.agents/memory/candidates",
+	}), "\x00")
+
+	if !strings.Contains(granted, "Bash(rm /repo/.agents/memory/notes/*)") {
+		t.Errorf("the curator cannot delete a note it rules now-false: %q", granted)
+	}
+}
+
+// A dry run previews and writes nothing, so the retraction grant is withheld
+// along with every other way of changing the store.
+func TestADryRunCannotDeleteNotes(t *testing.T) {
+	granted := strings.Join(grant(t, curator.Options{
+		DryRun:        true,
+		NotesDir:      "/repo/.agents/memory/notes",
+		CandidatesDir: "/repo/.agents/memory/candidates",
+	}), "\x00")
+
+	if strings.Contains(granted, "rm ") {
+		t.Errorf("a dry run was granted a deletion: %q", granted)
 	}
 }

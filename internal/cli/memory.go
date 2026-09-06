@@ -600,6 +600,15 @@ func printStats(env *Env, store *memory.Store, st memory.Stats) {
 	}
 	if len(st.Cold) > 0 {
 		fmt.Fprintf(env.Stdout, "cold:        %d of %d notes never read\n", len(st.Cold), st.Notes)
+		// n reads can warm at most n notes, so below one read per note a
+		// non-empty cold list is guaranteed whatever the notes are worth. The
+		// list still prints — withholding it would send a reader to --json to
+		// misread the raw field instead — but a caveat it cannot act on is
+		// better than a prune list it can.
+		if st.Hits < st.Notes {
+			fmt.Fprintf(env.Stdout, "             (%s cannot warm more than %d of %d notes — not yet a prune signal)\n",
+				plural(st.Hits, "read"), st.Hits, st.Notes)
+		}
 		for _, name := range st.Cold {
 			fmt.Fprintf(env.Stdout, "             %s\n", name)
 		}
@@ -758,6 +767,7 @@ func newMemoryCurateCmd(env *Env) *cobra.Command {
 				ready, err := curator.Check(curator.Options{
 					Provider:      provider,
 					WorkDir:       store.ProjectRoot,
+					NotesDir:      store.NotesPath(),
 					CandidatesDir: store.CandidatesPath(),
 					AgtkPath:      selfPath(env),
 					DryRun:        dryRun,
@@ -776,7 +786,7 @@ func newMemoryCurateCmd(env *Env) *cobra.Command {
 					})
 				}
 				fmt.Fprintf(env.Stdout, "provider:  %s\nbinary:    %s\nmode:      %s\ntools:     %s\n",
-					ready.Provider, ready.Binary, ready.Mode, strings.Join(ready.Tools, ", "))
+					ready.Provider, ready.Binary, describeMode(ready.Mode), strings.Join(ready.Tools, ", "))
 				return nil
 			}
 
@@ -786,8 +796,9 @@ func newMemoryCurateCmd(env *Env) *cobra.Command {
 				// does — by running `agtk` — so it has to start where agtk
 				// would have.
 				WorkDir: store.ProjectRoot,
-				// Scopes the curator's deletion grant, so it can clear the
-				// backlog and nothing else.
+				// Scope the curator's write and deletion grants, so it can
+				// author notes and clear the backlog and nothing else.
+				NotesDir:      store.NotesPath(),
 				CandidatesDir: store.CandidatesPath(),
 				// The running binary, not whatever PATH resolves: a consumer
 				// installs agtk separately from the lockfile-pinned
@@ -967,4 +978,14 @@ func yesNo(b bool) string {
 		return "yes"
 	}
 	return "no"
+}
+
+// describeMode renders the permission mode for a reader. An empty mode is a
+// decision, not a gap: passing none leaves the grant as the whole of the run's
+// permission, and printing a blank field invites the opposite reading.
+func describeMode(mode string) string {
+	if mode == "" {
+		return "none passed — the grant is the whole permission"
+	}
+	return mode
 }

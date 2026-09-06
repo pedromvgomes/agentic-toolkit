@@ -17,6 +17,7 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -65,8 +66,8 @@ var ErrNoProvider = fmt.Errorf(
 func Prompt() string { return prompt }
 
 // AllowedTools is the grant a curation run is given.
-func AllowedTools(agtk, candidatesDir string) []string {
-	return allowedTools(agtk, candidatesDir, grantScope{})
+func AllowedTools(agtk, notesDir, candidatesDir string) []string {
+	return allowedTools(agtk, notesDir, candidatesDir, grantScope{})
 }
 
 // PermissionMode is how a curation run answers permission prompts.
@@ -120,7 +121,7 @@ func Check(opts Options) (Ready, error) {
 	return Ready{
 		Provider: driver.Descriptor().ID,
 		Binary:   driver.Binary(),
-		Tools:    allowedTools(opts.AgtkPath, opts.CandidatesDir, opts.scope()),
+		Tools:    allowedTools(opts.AgtkPath, opts.NotesDir, opts.CandidatesDir, opts.scope()),
 		Mode:     permissionMode,
 	}, nil
 }
@@ -137,8 +138,8 @@ type Options struct {
 	Stale bool
 	// DryRun asks the curator to report what it would do and write nothing.
 	// It is enforced by withholding every writing tool from the grant, not by
-	// asking the model nicely: a run told to hold back but handed Write and
-	// Edit is one refusal away from editing the store.
+	// asking the model nicely: a run told to hold back but handed the note
+	// write grant is one refusal away from editing the store.
 	DryRun bool
 	// Notes scopes the run to the named notes. It narrows the stamping grant
 	// to exactly those names, so a scoped run cannot clear the staleness
@@ -153,6 +154,9 @@ type Options struct {
 	// CandidatesDir is the staging directory the run may clear. It scopes the
 	// deletion grant, so it is required for a run and not merely cosmetic.
 	CandidatesDir string
+	// NotesDir is the directory the run may author notes in. It scopes the
+	// write grant, so it is required for a run and not merely cosmetic.
+	NotesDir string
 	// AgtkPath is the agtk the curator shells back into to stamp anchors and
 	// regenerate the index.
 	//
@@ -190,13 +194,14 @@ type Result struct {
 // rather than an honour system: it is an argv flag, so no settings file can
 // widen it.
 //
-// The deletion grant is scoped to the candidates directory rather than left as
-// a bare `rm`. Clearing the backlog is the only thing the curator deletes, and
-// a grant that reads `rm *` would let the one agent with a constructed grant
-// remove anything in the repo — which is the guarantee this list exists to
-// make, given away in its last line. The directory is a parameter because
-// `memory.root` is configurable, so there is no path to hard-code.
-func allowedTools(agtk, candidatesDir string, opts grantScope) []string {
+// Both the write grant and the deletion grant are scoped to a named directory
+// rather than left bare. Authoring notes and clearing the backlog are the only
+// things the curator writes and deletes, and grants that read `Write` or
+// `rm *` would let the one agent with a constructed grant touch anything in
+// the repo — which is the guarantee this list exists to make, given away in
+// its own entries. Both directories are parameters because `memory.root` is
+// configurable, so there is no path to hard-code.
+func allowedTools(agtk, notesDir, candidatesDir string, opts grantScope) []string {
 	if agtk == "" {
 		agtk = "agtk"
 	}
@@ -218,7 +223,20 @@ func allowedTools(agtk, candidatesDir string, opts grantScope) []string {
 		return tools
 	}
 
-	tools = append(tools, "Write", "Edit", "Bash("+agtk+" memory index*)")
+	// Spelled `Edit(...)`, never `Write(...)`: an Edit rule covers every
+	// file-editing tool including Write, while a Write rule is not consulted
+	// by the file permission check at all — so a grant written the obvious
+	// way names the right path and constrains nothing.
+	//
+	// An empty directory would compose to a pattern rooted at `/`, which is
+	// the widest possible reading of a grant meant to be the narrowest. A
+	// caller that names no notes directory gets no write grant at all: the
+	// run finishes having promoted nothing, which is visible, rather than the
+	// curator holding a licence over the repo nobody meant to give it.
+	if notesDir != "" {
+		tools = append(tools, "Edit("+editPattern(notesDir)+")")
+	}
+	tools = append(tools, "Bash("+agtk+" memory index*)")
 	tools = append(tools, anchorGrants(agtk, opts.notes)...)
 
 	// The deletion grant is scoped to the candidates directory rather than
@@ -236,6 +254,14 @@ func allowedTools(agtk, candidatesDir string, opts grantScope) []string {
 	// licence nobody meant to give it.
 	if candidatesDir != "" {
 		tools = append(tools, "Bash(rm "+candidatesDir+"/*)")
+	}
+	// Retraction. A note whose claim is simply gone is deleted rather than
+	// kept, and the prompt says so — an instruction the grant denies leaves
+	// the store asserting something false while the run reports success. Same
+	// scoping as the backlog's, and withheld on the same terms when no
+	// directory names it.
+	if notesDir != "" {
+		tools = append(tools, "Bash(rm "+notesDir+"/*)")
 	}
 	return tools
 }
@@ -270,13 +296,33 @@ func anchorGrants(agtk string, notes []string) []string {
 	return grants
 }
 
-// permissionMode lets the run act on its grant without a prompt nobody is
-// there to answer.
+// editPattern renders a directory as the body of an Edit rule matching
+// everything beneath it.
 //
-// Emphatically not a mode that waives prompting altogether: those outrank
-// AllowedTools rather than combining with it, which would leave the grant
-// above as decoration and hollow out the enforcement claim in ADR 0004.
-const permissionMode = "acceptEdits"
+// An absolute path is doubled at the root — `//tmp/x/**` — because a single
+// leading slash is read as relative to the project directory, and a pattern
+// that resolves nowhere denies every write including the ones the run exists
+// to make.
+func editPattern(dir string) string {
+	if filepath.IsAbs(dir) {
+		return "/" + dir + "/**"
+	}
+	return dir + "/**"
+}
+
+// permissionMode is empty, which passes no mode and leaves the CLI's own
+// default in force. Under a constructed grant that is already the behaviour
+// this run wants: every tool in AllowedTools proceeds unprompted, and anything
+// outside it is denied outright rather than prompted for, because a
+// non-interactive run has nobody to ask.
+//
+// Emphatically not a mode that waives prompting. Those outrank AllowedTools
+// rather than combining with it, which would leave the grant above as
+// decoration and hollow out the enforcement claim in ADR 0004. `acceptEdits`
+// is exactly such a mode for the half of the grant that matters most: it
+// approves every file edit anywhere on disk, so the notes directory named in
+// the Edit rule stops being a boundary and becomes a comment.
+const permissionMode = ""
 
 // Run curates the store and returns the curator's report.
 func Run(ctx context.Context, opts Options) (Result, error) {
@@ -309,7 +355,7 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		Agents: map[string]agentic.Agent{
 			AgentName: {Description: agentDescription, Prompt: prompt},
 		},
-		AllowedTools:   allowedTools(opts.AgtkPath, opts.CandidatesDir, opts.scope()),
+		AllowedTools:   allowedTools(opts.AgtkPath, opts.NotesDir, opts.CandidatesDir, opts.scope()),
 		PermissionMode: permissionMode,
 		WorkDir:        opts.WorkDir,
 	})

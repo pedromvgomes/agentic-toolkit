@@ -86,7 +86,7 @@ func TestTheRunDoesNotWaivePermissionsWholesale(t *testing.T) {
 // instruction, so it has to reach the two commands that write to the store and
 // stop well short of a blanket shell.
 func TestTheToolGrantReachesTheStoreWritersAndNoFurther(t *testing.T) {
-	granted := curator.AllowedTools("/opt/agtk", "/repo/.agents/memory/candidates")
+	granted := curator.AllowedTools("/opt/agtk", "/repo/.agents/memory/notes", "/repo/.agents/memory/candidates")
 
 	for _, want := range []string{"Bash(/opt/agtk memory anchor*)", "Bash(/opt/agtk memory index*)"} {
 		if !slices.Contains(granted, want) {
@@ -100,12 +100,12 @@ func TestTheToolGrantReachesTheStoreWritersAndNoFurther(t *testing.T) {
 	}
 }
 
-// Clearing the backlog is the only thing the curator deletes. An unscoped `rm`
-// would hand the one agent with a constructed grant the ability to remove
-// anything in the repo — the guarantee this list exists to make, given away in
-// its last line.
-func TestTheDeletionGrantReachesOnlyTheStagingDirectory(t *testing.T) {
-	granted := curator.AllowedTools("/opt/agtk", "/repo/.agents/memory/candidates")
+// Clearing the backlog and retracting a note are the only things the curator
+// deletes, and each names its own directory. An unscoped `rm` would hand the
+// one agent with a constructed grant the ability to remove anything in the
+// repo — the guarantee this list exists to make, given away in its last line.
+func TestTheDeletionGrantsReachOnlyTheStore(t *testing.T) {
+	granted := curator.AllowedTools("/opt/agtk", "/repo/.agents/memory/notes", "/repo/.agents/memory/candidates")
 
 	var deletions []string
 	for _, tool := range granted {
@@ -113,21 +113,30 @@ func TestTheDeletionGrantReachesOnlyTheStagingDirectory(t *testing.T) {
 			deletions = append(deletions, tool)
 		}
 	}
-	if len(deletions) != 1 {
-		t.Fatalf("deletion grants = %v, want exactly one", deletions)
+	want := []string{
+		"Bash(rm /repo/.agents/memory/candidates/*)",
+		"Bash(rm /repo/.agents/memory/notes/*)",
 	}
-	if !strings.Contains(deletions[0], "/repo/.agents/memory/candidates/") {
-		t.Errorf("deletion grant %q is not scoped to the staging directory", deletions[0])
+	if len(deletions) != len(want) {
+		t.Fatalf("deletion grants = %v, want %v", deletions, want)
+	}
+	for _, w := range want {
+		if !slices.Contains(deletions, w) {
+			t.Errorf("deletion grants = %v, missing %q", deletions, w)
+		}
 	}
 }
 
 // The store is configurable, so a grant built around a hard-coded path would
 // be wrong in exactly the repos that moved their store.
-func TestTheDeletionGrantFollowsTheConfiguredStore(t *testing.T) {
-	granted := curator.AllowedTools("/opt/agtk", "/elsewhere/docs/memory/candidates")
+func TestTheDeletionGrantsFollowTheConfiguredStore(t *testing.T) {
+	granted := curator.AllowedTools("/opt/agtk", "/elsewhere/docs/memory/notes", "/elsewhere/docs/memory/candidates")
 
 	for _, tool := range granted {
-		if strings.HasPrefix(tool, "Bash(rm") && !strings.Contains(tool, "/elsewhere/docs/memory/candidates/") {
+		if !strings.HasPrefix(tool, "Bash(rm") {
+			continue
+		}
+		if !strings.Contains(tool, "/elsewhere/docs/memory/") {
 			t.Errorf("deletion grant %q ignores the configured store", tool)
 		}
 	}
@@ -138,7 +147,7 @@ func TestTheDeletionGrantFollowsTheConfiguredStore(t *testing.T) {
 // enough to lack `memory` entirely. A grant naming the bare name would let the
 // curator verify everything and record none of it.
 func TestTheGrantNamesTheRunningBinaryNotThePathName(t *testing.T) {
-	granted := curator.AllowedTools("/opt/agtk-2.0", "/repo/candidates")
+	granted := curator.AllowedTools("/opt/agtk-2.0", "/repo/notes", "/repo/candidates")
 
 	for _, tool := range granted {
 		if strings.HasPrefix(tool, "Bash(agtk ") {
