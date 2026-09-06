@@ -86,6 +86,7 @@ The resolver writes the lockfile after a successful sync. It pins every source t
 |-------|------|----------|-------------|
 | `version` | `int` | **yes** | Lockfile schema version. Currently must be 1. |
 | `sources` | `[]ResolvedSource` | **yes** | Every source the resolver touched, in deterministic order. |
+| `config_digest` | `string` | no | Digest of the entry manifest these pins were resolved from. |
 
 ### `sources` entry (`ResolvedSource`)
 
