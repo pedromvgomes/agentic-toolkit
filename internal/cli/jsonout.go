@@ -306,11 +306,22 @@ type memoryStatsJSON struct {
 	AnchoredFile int            `json:"anchored_files"`
 	Stale        int            `json:"stale"`
 	Candidates   int            `json:"candidates"`
-	Hits         int            `json:"hits"`
-	NotesHit     int            `json:"notes_hit"`
-	HitRate      float64        `json:"hit_rate"`
-	FirstHit     string         `json:"first_hit,omitempty"`
-	LastHit      string         `json:"last_hit,omitempty"`
+	// IndexBytes is the tax: what an explorer loads before it has decided any
+	// note is relevant. Reported beside HitRate so a consumer reading this
+	// has both halves of the ledger without a second call.
+	IndexBytes int64 `json:"index_bytes"`
+	Hits       int   `json:"hits"`
+	NotesHit   int   `json:"notes_hit"`
+	// HitRate covers this checkout alone. The hits log is gitignored, so a
+	// fresh clone reports zero reads over a store that is heavily used
+	// elsewhere, and a consumer that treats this as a property of the store
+	// reads that as evidence to prune.
+	HitRate float64 `json:"hit_rate"`
+	// Cold names the notes with no recorded hit, sorted. It is the actionable
+	// form of a low HitRate, and carries the same per-checkout caveat.
+	Cold     []string `json:"cold"`
+	FirstHit string   `json:"first_hit,omitempty"`
+	LastHit  string   `json:"last_hit,omitempty"`
 }
 
 func anchorJSONNotes(results []memory.StampResult) []memoryAnchorNoteJSON {
@@ -366,9 +377,16 @@ func statsJSON(env *Env, store *memory.Store, st memory.Stats) memoryStatsJSON {
 		AnchoredFile: st.AnchoredFile,
 		Stale:        st.Stale,
 		Candidates:   st.Candidates,
+		IndexBytes:   st.IndexBytes,
 		Hits:         st.Hits,
 		NotesHit:     st.NotesHit,
 		HitRate:      st.HitRate,
+		Cold:         st.Cold,
+	}
+	if out.Cold == nil {
+		// A JSON consumer branching on this must not have to distinguish null
+		// from empty to learn that every note has been read.
+		out.Cold = []string{}
 	}
 	for k, n := range st.ByKind {
 		out.ByKind[string(k)] = n

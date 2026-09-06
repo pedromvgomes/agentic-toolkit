@@ -577,14 +577,50 @@ func printStats(env *Env, store *memory.Store, st memory.Stats) {
 	fmt.Fprintf(env.Stdout, "anchors:     %d (%d files)\n", st.Anchors, st.AnchoredFile)
 	fmt.Fprintf(env.Stdout, "stale:       %d\n", st.Stale)
 	fmt.Fprintf(env.Stdout, "candidates:  %d\n", st.Candidates)
-	if st.Hits == 0 {
-		fmt.Fprintln(env.Stdout, "hits:        none recorded")
-		return
+	// Both halves of the ledger, adjacent on purpose: a hit rate with nothing
+	// to compare it against says whether notes get read, not whether reading
+	// them was worth what the index cost to carry.
+	if st.IndexBytes == 0 {
+		fmt.Fprintln(env.Stdout, "index:       not generated — run `agtk memory index`")
+	} else {
+		fmt.Fprintf(env.Stdout, "index:       %s (~%s) — the tax, loaded per delegation\n",
+			humanBytes(st.IndexBytes), plural(approxTokens(st.IndexBytes), "token"))
 	}
-	fmt.Fprintf(env.Stdout, "hits:        %s over %d of %d notes (%.0f%% hit rate)\n",
-		plural(st.Hits, "read"), st.NotesHit, st.Notes, st.HitRate*100)
-	fmt.Fprintf(env.Stdout, "  window:    %s .. %s\n",
-		st.FirstHit.Format(time.RFC3339), st.LastHit.Format(time.RFC3339))
+	// "in this checkout" is not hedging. The hits log is gitignored, so the
+	// rate describes one working copy's usage and a fresh clone reports zero;
+	// a reader who takes it for a property of the store draws the opposite
+	// conclusion from the same number.
+	if st.Hits == 0 {
+		fmt.Fprintf(env.Stdout, "hits:        none recorded in this checkout (%s is gitignored)\n", memory.HitsFile)
+	} else {
+		fmt.Fprintf(env.Stdout, "hits:        %s over %d of %d notes (%.0f%% hit rate, this checkout only)\n",
+			plural(st.Hits, "read"), st.NotesHit, st.Notes, st.HitRate*100)
+		fmt.Fprintf(env.Stdout, "  window:    %s .. %s\n",
+			st.FirstHit.Format(time.RFC3339), st.LastHit.Format(time.RFC3339))
+	}
+	if len(st.Cold) > 0 {
+		fmt.Fprintf(env.Stdout, "cold:        %d of %d notes never read\n", len(st.Cold), st.Notes)
+		for _, name := range st.Cold {
+			fmt.Fprintf(env.Stdout, "             %s\n", name)
+		}
+	}
+}
+
+// humanBytes formats a size the way the tax is worth reading — two
+// significant figures, not an exact count nobody compares.
+func humanBytes(n int64) string {
+	if n < 1024 {
+		return fmt.Sprintf("%d B", n)
+	}
+	return fmt.Sprintf("%.1f kB", float64(n)/1024)
+}
+
+// approxTokens estimates what the index costs to carry, at the four-bytes-per
+// token rule of thumb. It is deliberately labelled `~` wherever it is printed:
+// the honest number is tokens, and no exact one is available without a
+// tokenizer for whichever model reads the store.
+func approxTokens(n int64) int {
+	return int((n + 3) / 4)
 }
 
 // ===== candidates =====
