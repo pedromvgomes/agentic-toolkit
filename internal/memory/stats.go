@@ -34,9 +34,14 @@ type Stats struct {
 	HitRate  float64
 	FirstHit time.Time
 	LastHit  time.Time
-	// Cold names the notes with no recorded hit, sorted. HitRate says the
-	// store is not being repaid; this says which notes to drop, which is the
-	// only form of that number anyone can act on.
+	// Cold names the notes with no recorded hit, sorted. Where HitRate says
+	// only that the store is not being repaid, this says which notes to drop,
+	// which is the form of that number anyone can act on.
+	//
+	// Only once there are at least as many hits as notes. Below that the list
+	// is non-empty by arithmetic — n reads reach at most n notes — and says
+	// nothing about the notes in it. A reader of this field owes that
+	// comparison against Hits and Notes before treating it as a prune list.
 	Cold []string
 }
 

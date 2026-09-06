@@ -18,6 +18,37 @@ the same rule seen from one side, and it is too narrow to fire: "every command e
 uses `FrozenProvider`" is a claim about absence, but nobody reads it as one. Quantification is
 the property a curator can actually check in the sentence it just wrote.
 
+## An anchor must cover what would falsify the claim
+
+The same principle decides a second case, which the quantification rule does not reach: a
+note whose claim a *code change* would falsify must anchor the file that change would land
+in.
+
+A large share of what a sweep finds is defect-shaped — "the throttle only advances on
+success", "an empty config silently disables auto-update", "the write grant is not
+path-scoped". These are true, they cost real exploration, and they are worth keeping. They
+also expire, silently, the moment someone fixes them, and a note asserting a bug that is no
+longer there is precisely the confidently-wrong note that is worse than no note.
+
+Anchoring is already the mechanism for this, and it needs no new machinery: a fix touches
+the anchored file, the blob moves, `agtk memory audit` reports the note stale and
+`agtk memory show` prints `stale: yes` above the claim before any reader acts on it. What
+the rule adds is the obligation to check, when writing such a note, that the anchor set
+actually contains the file a fix would touch — which is not automatic, because the file a
+claim is *derived* from and the file a fix *lands in* are often different. A note whose
+anchors cannot satisfy that is rejected: not for being about a defect, but for being
+unfalsifiable in place.
+
+The alternative considered was banning defect-shaped notes outright and sending them to an
+issue tracker. Rejected: the line between "surprising by design" and "defective" is exactly
+what nobody can settle for cases like `sync` re-locking on mtime, so the gate would turn on
+an unanswerable question. Falsifiability is answerable by reading the sentence against its
+own `anchors:` list.
+
+The consequence for whoever fixes one of these: the fix and the note's re-curation belong in
+the same change. The staleness signal makes a stale note visible, not correct, and a fix that
+leaves the note asserting the old behaviour has moved the problem rather than solved it.
+
 ## Considered options
 - **Glob by default, narrow by exception.** Catches every new-file falsification. Rejected:
   most notes are about specific code, and directory anchors go stale on every unrelated edit

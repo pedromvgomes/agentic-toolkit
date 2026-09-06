@@ -123,8 +123,10 @@ it asks instead what a competent reader would get wrong. A **Seed** never author
 _Avoid_: bootstrap, backfill, import
 
 **Cold**:
-A **Note** with no recorded **Hit**. The prune signal: a low hit rate says the store is not
-being repaid, and the cold list says which **Note**s to drop.
+A **Note** with no recorded **Hit**. The prune signal, once there have been at least as many
+**Hit**s as there are **Note**s: a low hit rate says the store is not being repaid, and the
+cold list says which **Note**s to drop. Below that threshold the list is non-empty by
+arithmetic and says nothing about the notes in it.
 _Avoid_: unused, dead, orphaned
 
 ## Flagged ambiguities
@@ -153,7 +155,10 @@ exist yet is what falsifies such a claim. See `docs/adr/0005-glob-anchors-mark-q
 **"Hit rate"** — reads as a property of the **Memory store**, but the **Hit** log is local to
 one checkout and never committed, so a fresh clone reports zero. Resolution: it is a fact about
 one working copy's usage, and any claim that the store is or is not repaying its cost has to
-say whose.
+say whose. It carries a second scope that reads the same way: *n* **Hit**s can warm at most *n*
+**Note**s, so a rate below one read per note is bounded by how much reading has happened rather
+than by how good the notes are, and **Cold** is empty of information over the same range. Both
+scopes have to hold before a rate is evidence for pruning.
 
 ## Example dialogue
 > **Dev:** `graph.go` changed, so the note about SHA pinning is suspect now, right?
