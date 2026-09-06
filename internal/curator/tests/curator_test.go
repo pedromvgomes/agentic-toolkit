@@ -164,3 +164,26 @@ func TestThePromptForbidsStampingTheWholeStore(t *testing.T) {
 		t.Error("the prompt does not warn against the whole-store escape hatch")
 	}
 }
+
+// The trigger for a glob anchor is quantification, not multiplicity. A claim
+// that says every, only or no X in a directory is falsified by a file that
+// does not exist yet, and a per-file anchor can never notice one appearing —
+// so the note stays green while the invariant it protects is gone.
+func TestThePromptGlobsOnQuantificationRatherThanFileCount(t *testing.T) {
+	prompt := curator.Prompt()
+
+	if !strings.Contains(prompt, "quantif") {
+		t.Error("the prompt does not name quantification as the glob trigger")
+	}
+	// The failure this rule exists to prevent is silent, so the prompt has to
+	// say what goes wrong rather than only what to do.
+	if !strings.Contains(prompt, "does not exist yet") {
+		t.Error("the prompt does not say why a quantified claim needs a glob")
+	}
+	// Anchoring everything by directory trades a missed falsification for
+	// staleness churn on every unrelated edit, which trains a reader to ignore
+	// the one signal the scheme exists to preserve.
+	if !strings.Contains(prompt, "is the default") {
+		t.Error("the prompt does not keep per-file anchoring as the default")
+	}
+}

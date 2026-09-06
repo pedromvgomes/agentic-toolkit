@@ -90,11 +90,25 @@ reproducibility for consumers. Tried and reverted in [[fetch-retag-attempt]].
 - Turn the candidate's `saw:` paths into `anchors:`. Write the `path:` only; **never write a
   `blob:` yourself.**
 
-### Anchor per file, glob only when a new file would falsify the claim
+### Anchor per file; glob when the claim quantifies over a file set
 
-`path: internal/cli/memory.go` is the default. Use a glob — `path: .github/workflows/*.yml` —
-when the claim is about the *absence* of something, so that adding a file marks the note stale.
-A glob that merely covers several files goes stale more often for no gain.
+`path: internal/cli/memory.go` is the default. Use a glob — `path: internal/cli/*.go` — when
+the claim quantifies: **every**, **only**, **no** X in this directory. What decides it is not
+how many files the claim came from but what would falsify it. A quantified claim is falsified
+by a file that does not exist yet, and a per-file anchor can never notice one appearing.
+
+> "Every command except `lock` constructs the frozen provider" is quantified. Anchored to the
+> five commands that exist today, a sixth one constructing the live provider breaks the
+> invariant and `agtk memory audit` reports nothing — the note stays green while the thing it
+> protects is gone.
+
+A claim that merely touches several files is not quantified, and gets one anchor per file. A
+glob there goes stale on every unrelated edit in the directory, and churn that a reader learns
+to ignore costs more than the anchors are worth.
+
+This is not a property of `kind`. A quantified gotcha wants a glob; an invariant about one
+function does not. Read the sentence you just wrote and ask what a new file would do to it.
+See `docs/adr/0005-glob-anchors-mark-quantified-claims.md`.
 
 ## Stamping and the index
 
