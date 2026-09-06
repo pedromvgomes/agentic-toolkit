@@ -302,11 +302,25 @@ func TestADryRunIsHandedNoWritingTools(t *testing.T) {
 func TestAScopedRunCanOnlyStampTheNotesItNames(t *testing.T) {
 	granted := grant(t, curator.Options{Notes: []string{"pins-shas"}, AgtkPath: "/opt/agtk"})
 
-	if !slices.Contains(granted, "Bash(/opt/agtk memory anchor pins-shas*)") {
+	if !slices.Contains(granted, "Bash(/opt/agtk memory anchor pins-shas)") {
 		t.Errorf("the scoped run cannot stamp the note it was given: %v", granted)
 	}
 	if slices.Contains(granted, "Bash(/opt/agtk memory anchor*)") {
 		t.Error("the scoped run kept the open stamping grant, so it can stamp any note")
+	}
+}
+
+// Note names are kebab-case, so one name can be a prefix of another. A scoped
+// grant carrying a trailing wildcard would permit stamping a longer-named note
+// the run never looked at — clearing the one signal that says nobody has
+// checked that claim, which is the silent failure the scoping exists to stop.
+func TestAScopedStampingGrantDoesNotReachPrefixedNames(t *testing.T) {
+	granted := grant(t, curator.Options{Notes: []string{"lockfile-pins"}, AgtkPath: "/opt/agtk"})
+
+	for _, tool := range granted {
+		if strings.HasPrefix(tool, "Bash(/opt/agtk memory anchor") && strings.HasSuffix(tool, "*)") {
+			t.Errorf("scoped stamping grant %q ends in a wildcard, so it reaches lockfile-pins-shas-not-tags", tool)
+		}
 	}
 }
 

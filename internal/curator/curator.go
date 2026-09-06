@@ -250,17 +250,22 @@ type grantScope struct {
 //
 // Stamping is the write that matters most, because `agtk memory anchor` clears
 // the one signal saying nobody has checked a claim — so a run scoped to some
-// notes must not be able to stamp the others. With names, the grant lists them
-// individually; the trailing `*` on each covers the flags anchor accepts and
-// stops short of a second note name only because a name cannot contain a
-// space. An unscoped run gets the open grant, since its scope is the store.
+// notes must not be able to stamp the others.
+//
+// A scoped grant names each note exactly, with no trailing wildcard. Note names
+// are kebab-case, so a name may be a prefix of another name: a grant reading
+// `anchor lockfile-pins*` also permits `anchor lockfile-pins-shas-not-tags`,
+// which is a different note the run never checked. The cost of the exact form
+// is that a scoped run stamps one note per call, which the prompt says to do.
+//
+// An unscoped run gets the open grant, since its scope is the store.
 func anchorGrants(agtk string, notes []string) []string {
 	if len(notes) == 0 {
 		return []string{"Bash(" + agtk + " memory anchor*)"}
 	}
 	grants := make([]string, 0, len(notes))
 	for _, n := range notes {
-		grants = append(grants, "Bash("+agtk+" memory anchor "+n+"*)")
+		grants = append(grants, "Bash("+agtk+" memory anchor "+n+")")
 	}
 	return grants
 }

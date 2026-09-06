@@ -115,10 +115,14 @@ See `docs/adr/0005-glob-anchors-mark-quantified-claims.md`.
 You never compute a hash. After writing notes:
 
 ```bash
-agtk memory anchor <name> [<name>...]   # stamp ONLY the notes you checked
-agtk memory index                       # regenerate INDEX.md
-agtk memory lint                        # structural check; fix anything it reports
+agtk memory anchor <name>   # stamp ONLY the notes you checked, one call per note
+agtk memory index           # regenerate INDEX.md
+agtk memory lint            # structural check; fix anything it reports
 ```
+
+Stamp one note per call. When a run is scoped to named notes its grant names each one
+exactly, so a call listing two notes is denied — and a run that batched them would be a run
+whose grant could not tell the notes apart.
 
 **Name every note you stamp.** `anchor` refuses to run without names for this reason, and
 `--all` exists only for a deliberate whole-store sweep — never reach for it to get past the
