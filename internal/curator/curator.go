@@ -16,15 +16,14 @@ package curator
 import (
 	"context"
 	_ "embed"
-	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
 	"time"
 
 	agentic "github.com/pedromvgomes/agentic-driver"
-	"github.com/pedromvgomes/agentic-driver/claudecode"
-	"github.com/pedromvgomes/agentic-driver/codex"
+
+	"github.com/pedromvgomes/agentic-toolkit/internal/provider"
 )
 
 // prompt is the curator's instructions, and their single home. It ships with
@@ -44,7 +43,11 @@ const AgentName = "memory-curator"
 const defaultTimeout = 20 * time.Minute
 
 // Providers are the names `memory.agent` accepts, in the order help lists them.
-var Providers = []string{"claudecode", "codex"}
+//
+// One list, shared with every other subsystem that resolves a provider: two
+// copies drift, and a name one of them knows and the other does not reads as a
+// typo in the manifest rather than as a gap in the toolkit.
+var Providers = provider.Names
 
 // ErrNoProvider means the repo has not named one. There is deliberately no
 // default: this is the only memory operation that spends money and reaches
@@ -329,14 +332,9 @@ type bound struct {
 }
 
 // sandboxReadOnly is the mode a provider without a per-tool allowlist is
-// confined with.
-//
-// The spelling is one CLI's vocabulary, which is exactly what this package
-// should not know. It is asked for rather than assumed: confine puts it
-// through the provider's own PermissionArgs and refuses when that comes back
-// with a refusal, so a provider spelling confinement differently produces an
-// error naming what it does accept rather than a run that was never bounded.
-const sandboxReadOnly = "read-only"
+// confined with. The spelling belongs to the provider package, which asks a
+// provider whether it accepts it rather than assuming any CLI's vocabulary.
+const sandboxReadOnly = provider.SandboxReadOnly
 
 // confine works out how to bound this run on this provider.
 //
@@ -352,17 +350,12 @@ const sandboxReadOnly = "read-only"
 // preview writes nothing, so a read-only sandbox expresses it exactly — more
 // tightly, in fact, than withholding tools from a list does.
 func confine(p agentic.Provider, tools []string, dryRun bool) (bound, error) {
-	perm, ok := p.(agentic.Permitter)
-	if !ok {
-		return bound{}, fmt.Errorf(
-			"%s cannot be told what a scripted run may do, so curation cannot be bounded on it",
-			p.Descriptor().ID)
+	granted, err := provider.GrantsTools(p, permissionMode, tools)
+	if err != nil {
+		return bound{}, fmt.Errorf("%w, so curation cannot be bounded on it", err)
 	}
-
-	if _, err := perm.PermissionArgs(permissionMode, tools); err == nil {
+	if granted {
 		return bound{mode: permissionMode, tools: tools}, nil
-	} else if !errors.Is(err, agentic.ErrInvalidRequest) {
-		return bound{}, err
 	}
 
 	if !dryRun {
@@ -372,12 +365,10 @@ func confine(p agentic.Provider, tools []string, dryRun bool) (bound, error) {
 			p.Descriptor().ID, sandboxReadOnly)
 	}
 
-	b := bound{mode: sandboxReadOnly}
-	if _, err := perm.PermissionArgs(b.mode, nil); err != nil {
-		return bound{}, fmt.Errorf("%s has no per-tool allowlist and does not accept the %q sandbox mode: %w",
-			p.Descriptor().ID, sandboxReadOnly, err)
+	if err := provider.AcceptsSandbox(p, sandboxReadOnly); err != nil {
+		return bound{}, fmt.Errorf("%s has no per-tool allowlist and %w", p.Descriptor().ID, err)
 	}
-	return b, nil
+	return bound{mode: sandboxReadOnly}, nil
 }
 
 // roster is the curator's agent definition, or nil for a provider that cannot
@@ -517,25 +508,15 @@ func task(opts Options, delegates bool) string {
 	return preamble + job + "Report exactly what the agent reports."
 }
 
-// newProvider resolves `memory.agent` to a provider.
-//
-// A name the driver has no provider for is a gap to fill in the driver, where
-// the dialect knowledge is tested, rather than an escape hatch here.
+// newProvider resolves `memory.agent` to a provider, naming the setting in its
+// refusal so the fix is where the reader is looking.
 func newProvider(name string) (agentic.Provider, error) {
-	switch name {
-	case "":
+	if name == "" {
 		return nil, ErrNoProvider
-	case "claudecode":
-		// On PATH, not vendored: curation runs on a developer's machine
-		// against the CLI they are already authenticated with.
-		return claudecode.NewOnPath()
-	case "codex":
-		// On PATH for the same reason claudecode is: curation runs on a
-		// developer's machine against the CLI they are already authenticated
-		// with, not against a vendored build this repo would have to pin.
-		return codex.NewOnPath()
-	default:
-		return nil, fmt.Errorf("memory.agent %q is not a provider; use one of %s",
-			name, strings.Join(Providers, ", "))
 	}
+	p, err := provider.New(name)
+	if err != nil {
+		return nil, fmt.Errorf("memory.agent %v", err)
+	}
+	return p, nil
 }
