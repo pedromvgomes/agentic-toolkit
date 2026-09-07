@@ -135,6 +135,14 @@ One configured critic of a change — a name, a **Provider**, a model, and a pro
 in the **Review manifest**. The unit that is spawned, and the unit a **Finding** is attributed to.
 _Avoid_: agent, critic, panelist
 
+**Runner**:
+One configured model invocation — a **Provider**, a model and a prompt body. The shape a
+**Reviewer**, the **Judge** and the **Validator** all take, because the three differ in what
+they are asked and not in how they are launched. It says nothing about what a run may do:
+every run in a review is read-only, and how that is enforced is a fact about the provider
+rather than something a **Review manifest** can weaken.
+_Avoid_: run, invocation, job
+
 **Panel**:
 A named set of **Reviewer**s, with how many instances of each to run and whether findings are
 validated. One panel runs per review. Which one is a **Context**'s default, possibly raised by
@@ -153,6 +161,12 @@ A rule that raises the **Panel** above the **Context**'s default when a change m
 condition. Rules only ever raise, so a mistaken rule costs money and never yields a shallower
 review than the default; every rule is evaluated and the highest target wins, so their order
 carries no meaning.
+
+"Highest" is what a **Panel** spends — its **Reviewer** count times its **Quorum**. Depth needs
+a total order over panels and panels carry only names, so the order is the thing "deeper"
+already meant. A declared rank would be a second thing to keep true, and a manifest whose
+`deep` panel was cheaper than its `standard` one would then be ordered by an adjective rather
+than by what it does. Equal cost is not a raise.
 _Avoid_: matcher, trigger, override
 
 **Signal**:

@@ -1,0 +1,51 @@
+# The review a repo gets when it declares none of its own.
+#
+# A consumer that writes its own manifest replaces this one whole: prompt
+# bodies stay shareable through `builtin:` references rather than through a
+# merge algorithm, so there is one roster per repo and never half of two.
+version: 1
+
+reviewers:
+  unified:     {provider: claudecode, model: sonnet, prompt: builtin:unified}
+  correctness: {provider: claudecode, model: sonnet, prompt: builtin:correctness}
+  security:    {provider: claudecode, model: opus,   prompt: builtin:security}
+  performance: {provider: claudecode, model: sonnet, prompt: builtin:performance}
+
+judge:     {provider: claudecode, model: opus,   prompt: builtin:judge}
+validator: {provider: claudecode, model: sonnet, prompt: builtin:validator}
+
+panels:
+  quick:    {reviewers: [unified]}
+  standard: {reviewers: [correctness, security]}
+  deep:     {reviewers: [correctness, security, performance], quorum: 2}
+
+defaults:
+  worktree: quick
+  pr:       standard
+
+escalate:
+  # Code that decides who may do what, and code that rewrites data in place.
+  # Both are changes whose damage is discovered by someone other than the
+  # author.
+  - to: deep
+    all:
+      - touches: {matches: ["**/auth/**", "**/authz/**", "**/migrations/**"]}
+
+  # Concerns where being nearly right is indistinguishable from being right
+  # until production, and where a review is the last place it is cheap to fix.
+  - to: deep
+    any:
+      - signals: {in: [concurrency, crypto, fix-revert]}
+
+  # Widely used code: the count is what separates a one-line change nobody
+  # depends on from a one-line change everybody does.
+  - to: deep
+    all:
+      - referencing_files: {gte: 20}
+
+  # Size alone. It raises to standard rather than deep, because bulk is a
+  # reason to look at more of a change, not a reason to look harder at each
+  # part of it.
+  - to: standard
+    all:
+      - changed_files: {gte: 20}

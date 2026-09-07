@@ -1,6 +1,8 @@
 # Plan — bot code review on GitHub PRs
 
-Status: designed, not started.
+Status: the deterministic surface is built — the manifest, the change profile, signals,
+`referencing_files`, panel selection and `agtk code-review explain`. Nothing invokes a model
+yet: reviewers, the judge, prompts, GitHub, fingerprints and approval are not built.
 Created: 2026-09-07. Challenged: 2026-09-07.
 
 The decisions that are hard to reverse live in `docs/adr/0005-reviews-run-locally-not-in-ci.md`,
@@ -33,10 +35,15 @@ only credential is the App's private key, and it is machine-local.
 
 ## 2. The manifest
 
-`.agents/code-review/manifest.yaml`, beside `.agents/memory/`, with `review.root` in the
-entry manifest for the same reason `memory.root` exists. A repo with no manifest uses the
-embedded default; a repo with one is using it **whole**, because prompt bodies stay
+`.agents/code-review/manifest.yaml`, beside `.agents/memory/`. A repo with no manifest uses
+the embedded default; a repo with one is using it **whole**, because prompt bodies stay
 shareable through `builtin:` references rather than through a merge algorithm.
+
+The location is fixed, with no entry-manifest key to move it. `memory.root` exists because
+the store is committed *content* a repo has opinions about placing; a review manifest is
+configuration. Making it relocatable would buy one thing — a repo that dislikes `.agents/` —
+and cost three: a name colliding with the **Review root**, a `DiagIgnoredReviewConfig` check
+mirrored into the resolver's traversal, and a schema entry. Adding the key later is additive.
 
 ```yaml
 version: 1
@@ -96,8 +103,14 @@ The **Context** picks a default; **Escalation** rules raise it. Rules never lowe
 misconfigured rule can cost money and can never produce a shallower review than the default.
 Every rule is evaluated and the highest target wins, so rule order carries no meaning.
 
-`agtk code-review --panel deep` overrides both. `agtk code-review --explain` prints the
-default, every rule that fired, and the panel that resulted.
+`--panel deep` overrides both. `agtk code-review explain` prints the change's profile, the
+default, every rule that fired, and the panel that resulted — and spends nothing, so it is
+the answer to "why is this review deeper than I expected" available before paying for the
+review that would tell you.
+
+"Highest" is what a panel spends: its reviewer count times its quorum. Depth needs a total
+order over panels and panels carry only names, so the order is the thing "deeper" already
+meant. A declared rank would be a second thing to keep true. Equal cost is not a raise.
 
 A condition is always `key: {operator: value}`. There is no bare form, so no combinator is
 ever inferred:
@@ -108,6 +121,13 @@ ever inferred:
 | `signals` | names from the built-in vocabulary | `in`, `not_in`, `all_in` |
 | `changed_lines`, `changed_files` | integer, counted after mechanical exclusions | `gt`, `gte`, `lt`, `lte`, `eq` |
 | `referencing_files` | integer — files referencing the symbols the change modifies | `gt`, `gte`, `lt`, `lte`, `eq` |
+
+A count or a signal the change could not produce makes a rule reading it an error, not a
+false. Three cases separate: a language with an extractor contributes its symbols; a format
+that exports nothing callable — YAML, Markdown, SQL — contributes zero, which is an answer;
+anything else makes the count unavailable. The table of formats that export nothing fails in
+the safe direction, since a name missing from it produces a refusal rather than a count that
+quietly omitted a language.
 
 Each rule carries exactly one of `all:` or `any:`, named on the rule. A list inside an
 operator means "any of", which the operator's own name forces; conjunction over a set is
