@@ -37,6 +37,9 @@ func reviewRepo(t *testing.T) (dir, base string) {
 	run("init", "-b", "main")
 	run("config", "user.email", "test@example.invalid")
 	run("config", "user.name", "Test")
+	// A contributor whose global config signs commits would otherwise need a
+	// signing key present for this fixture to commit at all.
+	run("config", "commit.gpgsign", "false")
 	write("CLAUDE.md", "# House rules\n\nNever narrate the change.\n")
 	write("a.go", "package main\n\nfunc main() {}\n")
 	run("add", "-A")

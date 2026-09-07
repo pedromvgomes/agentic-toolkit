@@ -240,6 +240,9 @@ func TestCodeReviewExplainRunsWithNoProviderInstalled(t *testing.T) {
 		{"init", "-b", "main"},
 		{"config", "user.email", "test@example.invalid"},
 		{"config", "user.name", "Test"},
+		// A contributor whose global config signs commits would otherwise
+		// need a signing key present for this fixture to commit at all.
+		{"config", "commit.gpgsign", "false"},
 	} {
 		cmd := exec.Command("git", args...)
 		cmd.Dir = work

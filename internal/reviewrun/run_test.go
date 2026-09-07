@@ -41,6 +41,10 @@ func newGitRepo(t *testing.T) *gitRepo {
 	r.run("init", "-b", "main")
 	r.run("config", "user.email", "test@example.invalid")
 	r.run("config", "user.name", "Test")
+	// A contributor whose global config signs commits would otherwise need a
+	// signing key present for these fixtures to commit at all.
+	r.run("config", "commit.gpgsign", "false")
+	r.run("config", "tag.gpgsign", "false")
 	return r
 }
 
@@ -432,28 +436,56 @@ func TestRangeLabelNamesTheWorkingTreeWhenThereIsNoHead(t *testing.T) {
 	}
 }
 
-// The production invoker asks the provider its limit rather than switching on
-// its name. claudecode's credential is a static bearer token and it reports no
-// limit; codex rewrites its credential in place and reports one.
+// The production invoker asks each provider its own limit rather than
+// switching on its name. claudecode's credential is a static bearer token and
+// it reports no limit; codex rewrites its credential in place with single-use
+// refresh tokens and reports one.
+//
+// Reading a limit builds a driver, which resolves the CLI on PATH, so each
+// half runs only where that CLI is installed. The claim that scheduling
+// HONOURS a limit is asserted without any CLI in the scheduler's own tests,
+// which supply the resolver directly.
 func TestTheProductionInvokerAsksEachProviderItsOwnLimit(t *testing.T) {
-	inv := driverInvoker{}
-	free, err := inv.Limit(review.Runner{Provider: "claudecode"})
+	for provider, want := range map[string]int{"claudecode": 0, "codex": 1} {
+		t.Run(provider, func(t *testing.T) {
+			got, err := driverInvoker{}.Limit(review.Runner{Provider: provider})
+			if err != nil {
+				t.Skipf("%s is not installed, so its limit cannot be read here: %v", provider, err)
+			}
+			if got != want {
+				t.Errorf("%s reports a limit of %d, want %d", provider, got, want)
+			}
+		})
+	}
+}
+
+// A concurrency limit is a fact about how a provider's credential works, not
+// about where its CLI is installed, so pinning the binary makes it readable
+// without one on PATH. That is what lets the limit be asserted on a machine
+// that has neither CLI.
+func TestALimitIsReadableFromAPinnedBinaryWithoutTheCLIOnPath(t *testing.T) {
+	inv := driverInvoker{binary: filepath.Join(t.TempDir(), "claude")}
+	got, err := inv.Limit(review.Runner{Provider: "claudecode"})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("a pinned binary could not report its limit: %v", err)
 	}
-	if free != 0 {
-		t.Errorf("claudecode reports a limit of %d, want none", free)
+	if got != 0 {
+		t.Errorf("claudecode reports a limit of %d; its credential is a static token and is shareable", got)
 	}
-	// codex resolves only where its CLI is installed, so its limit is asserted
-	// where it can be read at all. The claim being protected is that the limit
-	// is ASKED of the provider rather than switched on its name, and the
-	// claudecode half already shows the asking.
-	serial, err := inv.Limit(review.Runner{Provider: "codex"})
+}
+
+// codex reports one because its credential is a file it rewrites in place with
+// single-use refresh tokens, so a second concurrent run invalidates the first.
+// Asked of the provider, never switched on its name — and readable from a
+// pinned binary, so this holds on a machine with no codex installed.
+func TestCodexReportsThatItsCredentialCannotBeShared(t *testing.T) {
+	inv := driverInvoker{binary: filepath.Join(t.TempDir(), "codex")}
+	got, err := inv.Limit(review.Runner{Provider: "codex"})
 	if err != nil {
-		t.Skipf("codex is not installed, so its limit cannot be read here: %v", err)
+		t.Skipf("codex could not be resolved here: %v", err)
 	}
-	if serial != 1 {
-		t.Errorf("codex reports a limit of %d, want 1 — its credential cannot be shared", serial)
+	if got != 1 {
+		t.Errorf("codex reports a limit of %d, want 1", got)
 	}
 }
 

@@ -25,6 +25,10 @@ func newRepo(t *testing.T) *repo {
 	r.git("init", "-b", "main")
 	r.git("config", "user.email", "test@example.invalid")
 	r.git("config", "user.name", "Test")
+	// A contributor whose global config signs commits would otherwise need a
+	// signing key present for these fixtures to commit at all.
+	r.git("config", "commit.gpgsign", "false")
+	r.git("config", "tag.gpgsign", "false")
 	return r
 }
 
