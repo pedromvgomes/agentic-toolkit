@@ -16,6 +16,7 @@ package curator
 import (
 	"context"
 	_ "embed"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -118,11 +119,19 @@ func Check(opts Options) (Ready, error) {
 	if err := driver.Ready(); err != nil {
 		return Ready{}, err
 	}
+	// Confinement is resolved here rather than only in Run, because a grant the
+	// provider cannot express is exactly the misconfiguration this command
+	// exists to surface. Reporting a tool list codex has no vocabulary for is a
+	// green light for a run that cannot start.
+	b, err := confine(provider, allowedTools(opts.AgtkPath, opts.NotesDir, opts.CandidatesDir, opts.scope()), opts.DryRun)
+	if err != nil {
+		return Ready{}, err
+	}
 	return Ready{
 		Provider: driver.Descriptor().ID,
 		Binary:   driver.Binary(),
-		Tools:    allowedTools(opts.AgtkPath, opts.NotesDir, opts.CandidatesDir, opts.scope()),
-		Mode:     permissionMode,
+		Tools:    b.tools,
+		Mode:     b.mode,
 	}, nil
 }
 
@@ -310,6 +319,79 @@ func editPattern(dir string) string {
 	return dir + "/**"
 }
 
+// bound is how one run is confined, in the vocabulary its provider has. The
+// two fields are alternatives rather than layers: a provider that takes a
+// per-tool allowlist is bounded by the list, and one that does not is bounded
+// by a sandbox mode.
+type bound struct {
+	mode  string
+	tools []string
+}
+
+// sandboxReadOnly is the mode a provider without a per-tool allowlist is
+// confined with.
+//
+// The spelling is one CLI's vocabulary, which is exactly what this package
+// should not know. It is asked for rather than assumed: confine puts it
+// through the provider's own PermissionArgs and refuses when that comes back
+// with a refusal, so a provider spelling confinement differently produces an
+// error naming what it does accept rather than a run that was never bounded.
+const sandboxReadOnly = "read-only"
+
+// confine works out how to bound this run on this provider.
+//
+// It discovers the vocabulary by asking, never by switching on the provider's
+// ID: the narrower grant — the per-tool allowlist — is offered first, and a
+// provider with no such vocabulary refuses it with ErrInvalidRequest, which is
+// the signal to fall back to a sandbox mode.
+//
+// A run that writes is refused outright on a provider with no allowlist. The
+// widest sandbox that would let it write covers the whole workspace, and
+// accepting that would make the store's own notes false: they say the grant is
+// what confines the curator and that it is scoped to the notes directory. A
+// preview writes nothing, so a read-only sandbox expresses it exactly — more
+// tightly, in fact, than withholding tools from a list does.
+func confine(p agentic.Provider, tools []string, dryRun bool) (bound, error) {
+	perm, ok := p.(agentic.Permitter)
+	if !ok {
+		return bound{}, fmt.Errorf(
+			"%s cannot be told what a scripted run may do, so curation cannot be bounded on it",
+			p.Descriptor().ID)
+	}
+
+	if _, err := perm.PermissionArgs(permissionMode, tools); err == nil {
+		return bound{mode: permissionMode, tools: tools}, nil
+	} else if !errors.Is(err, agentic.ErrInvalidRequest) {
+		return bound{}, err
+	}
+
+	if !dryRun {
+		return bound{}, fmt.Errorf(
+			"%s has no per-tool allowlist, so a curation run that writes notes cannot be confined to the store on it; "+
+				"re-run with --dry-run, which is bounded by the %q sandbox, or point memory.agent at a provider that grants tools",
+			p.Descriptor().ID, sandboxReadOnly)
+	}
+
+	b := bound{mode: sandboxReadOnly}
+	if _, err := perm.PermissionArgs(b.mode, nil); err != nil {
+		return bound{}, fmt.Errorf("%s has no per-tool allowlist and does not accept the %q sandbox mode: %w",
+			p.Descriptor().ID, sandboxReadOnly, err)
+	}
+	return b, nil
+}
+
+// roster is the curator's agent definition, or nil for a provider that cannot
+// define one. A nil roster means the policy travels in the prompt instead —
+// see task.
+func roster(p agentic.Provider) map[string]agentic.Agent {
+	if _, ok := p.(agentic.AgentDefiner); !ok {
+		return nil
+	}
+	return map[string]agentic.Agent{
+		AgentName: {Description: agentDescription, Prompt: prompt},
+	}
+}
+
 // permissionMode is empty, which passes no mode and leaves the CLI's own
 // default in force. Under a constructed grant that is already the behaviour
 // this run wants: every tool in AllowedTools proceeds unprompted, and anything
@@ -350,13 +432,17 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		return Result{}, err
 	}
 
+	b, err := confine(provider, allowedTools(opts.AgtkPath, opts.NotesDir, opts.CandidatesDir, opts.scope()), opts.DryRun)
+	if err != nil {
+		return Result{}, err
+	}
+	agents := roster(provider)
+
 	res, err := driver.Run(ctx, agentic.Request{
-		Prompt: task(opts),
-		Agents: map[string]agentic.Agent{
-			AgentName: {Description: agentDescription, Prompt: prompt},
-		},
-		AllowedTools:   allowedTools(opts.AgtkPath, opts.NotesDir, opts.CandidatesDir, opts.scope()),
-		PermissionMode: permissionMode,
+		Prompt:         task(opts, agents != nil),
+		Agents:         agents,
+		AllowedTools:   b.tools,
+		PermissionMode: b.mode,
 		WorkDir:        opts.WorkDir,
 	})
 	if err != nil {
@@ -374,21 +460,31 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 // roster entry, so it says when — not what.
 const agentDescription = "Promotes, merges and rejects findings staged in the repo's memory store, and re-checks notes whose anchors have moved. The only author of notes."
 
-// task is the instruction the run itself receives. The curator's own content
-// policy lives in the roster entry; this says which of its two jobs to do, and
-// which binary to do it with.
+// task is the instruction the run itself receives. It says which of the two
+// jobs to do and which binary to do it with; where the curator's content policy
+// travels depends on whether this provider has a roster.
+//
+// With a roster the policy is the roster entry and this delegates to it. Without
+// one, the policy is prepended here instead. It cannot simply be dropped: a run
+// given the job and none of the rules would promote candidates without the
+// quality bar, the anchoring rule or the single-writer discipline that make it
+// curation rather than filing.
 //
 // The path is spelled out because the prompt speaks of `agtk` generically while
 // the grant permits exactly one executable. A curator that reached for the bare
 // name would be denied by its own grant, and — worse — the `agtk` on PATH may
 // predate the memory subsystem entirely, so the reach would fail even if it
 // were allowed.
-func task(opts Options) string {
+func task(opts Options, delegates bool) string {
 	agtk := opts.AgtkPath
 	if agtk == "" {
 		agtk = "agtk"
 	}
-	preamble := "Delegate to the " + AgentName + " agent. Use `" + agtk +
+	preamble := "Delegate to the " + AgentName + " agent. "
+	if !delegates {
+		preamble = prompt + "\n\n---\n\nThose are your instructions. "
+	}
+	preamble += "Use `" + agtk +
 		"` for every agtk command — that exact path, never the bare name `agtk`, which may " +
 		"resolve to an older build without the `memory` subcommand and is not in your tool grant. "
 
@@ -408,12 +504,13 @@ func task(opts Options) string {
 	}
 
 	if opts.DryRun {
-		// The grant already withholds every writing tool, so this is not what
+		// The confinement already makes this true, so the sentence is not what
 		// makes the run safe. It is what stops the curator spending its budget
-		// discovering that one tool call at a time, and reporting a refusal
-		// where a preview was asked for.
+		// discovering that one refusal at a time, and reporting a denial where
+		// a preview was asked for. Phrased without naming a mechanism because
+		// there are two: a withheld tool grant, or a read-only sandbox.
 		job += "This is a dry run: report what you would promote, merge, reject or " +
-			"re-stamp, and why, but write nothing. You have no writing tools. " +
+			"re-stamp, and why, but write nothing. Writing is not available to you. " +
 			"Do not stamp anchors, regenerate the index or delete candidates. "
 	}
 
@@ -433,7 +530,10 @@ func newProvider(name string) (agentic.Provider, error) {
 		// against the CLI they are already authenticated with.
 		return claudecode.NewOnPath()
 	case "codex":
-		return codex.New(), nil
+		// On PATH for the same reason claudecode is: curation runs on a
+		// developer's machine against the CLI they are already authenticated
+		// with, not against a vendored build this repo would have to pin.
+		return codex.NewOnPath()
 	default:
 		return nil, fmt.Errorf("memory.agent %q is not a provider; use one of %s",
 			name, strings.Join(Providers, ", "))

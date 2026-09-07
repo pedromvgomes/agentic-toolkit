@@ -786,7 +786,7 @@ func newMemoryCurateCmd(env *Env) *cobra.Command {
 					})
 				}
 				fmt.Fprintf(env.Stdout, "provider:  %s\nbinary:    %s\nmode:      %s\ntools:     %s\n",
-					ready.Provider, ready.Binary, describeMode(ready.Mode), strings.Join(ready.Tools, ", "))
+					ready.Provider, ready.Binary, describeMode(ready.Mode), describeTools(ready.Tools))
 				return nil
 			}
 
@@ -978,6 +978,17 @@ func yesNo(b bool) string {
 		return "yes"
 	}
 	return "no"
+}
+
+// describeTools renders the tool grant for a reader. An empty grant is a
+// decision, not a gap: a provider with no per-tool vocabulary is confined by
+// its sandbox mode instead, and a blank field invites the reading that nothing
+// confines the run at all.
+func describeTools(tools []string) string {
+	if len(tools) == 0 {
+		return "none — this provider has no per-tool grant; the mode is the whole confinement"
+	}
+	return strings.Join(tools, ", ")
 }
 
 // describeMode renders the permission mode for a reader. An empty mode is a
