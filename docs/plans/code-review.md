@@ -68,6 +68,10 @@ escalate:
     any:
       - signals: {in: [concurrency, crypto, fix-revert]}
 
+  - to: deep
+    all:
+      - referencing_files: {gte: 20}
+
   - to: standard
     all:
       - changed_files: {gte: 20}
@@ -103,6 +107,7 @@ ever inferred:
 | `touches` | globs over changed paths | `matches`, `not_matches` |
 | `signals` | names from the built-in vocabulary | `in`, `not_in`, `all_in` |
 | `changed_lines`, `changed_files` | integer, counted after mechanical exclusions | `gt`, `gte`, `lt`, `lte`, `eq` |
+| `referencing_files` | integer — files referencing the symbols the change modifies | `gt`, `gte`, `lt`, `lte`, `eq` |
 
 Each rule carries exactly one of `all:` or `any:`, named on the rule. A list inside an
 operator means "any of", which the operator's own name forces; conjunction over a set is
@@ -111,12 +116,23 @@ operator means "any of", which the operator's own name forces; conjunction over 
 Operators are words. `>=` opens a YAML folded block scalar and fails before the schema is
 reached, with an error about header options that no amount of care could improve.
 
-## 4. Signals
+## 4. Signals and referencing files
 
 Built into the binary, language-aware, listed by `agtk code-review signals`. A repo does not
 declare them: a signal the toolkit cannot detect is a gap to fill upstream where it is tested
 across languages, exactly as ADR 0002 argues for driver providers. A repo's own escape hatch
 is `touches`, which is honest about being path-only.
+
+`referencing_files` rides the same language table. Changed exported symbols are extracted,
+then counted across the repo the way `sizing.md` counts them — with `grep`, which is that
+doc's own primary method; serena is a precision upgrade behind the same key and changes
+nothing a manifest can see.
+
+A language the extractor does not know makes the count unavailable, and a manifest using
+`referencing_files` is then **refused**, naming the key and the language. Unavailable is not
+low. An escalation rule that silently never fires leaves a repo believing it has a protection
+it does not have, which is the failure `CONTEXT.md` refuses for a **Panel** that cannot staff
+itself.
 
 ## 5. The pipeline
 
@@ -144,16 +160,12 @@ process starts rather than discovered by a failed run.
 
 ## 6. Considered and rejected
 
-**The rung ladder.** `deep-code-review` sizes a review from size class, twelve criticality
-signals, and measured reference fan-in. It exists because a *model* invokes that skill from a
-session, where nobody chose a depth. Here a person types the command having just decided the
-change is ready, so the ladder infers something the caller knows. What survives is the part
-the caller genuinely forgets: escalation on paths.
-
-**Reference fan-in.** The ladder's strongest input — `≥20 referencing files` forces the
-deepest rung regardless of size. It needs per-language symbol extraction, and the skill gets
-it by being in a session that can reach serena, which a binary cannot. Dropped rather than
-approximated badly. `touches` recovers the intent by hand.
+**The rung ladder.** `deep-code-review` maps size class, criticality signals and reference
+counts onto four rungs. It exists because a *model* invokes that skill from a session, where
+nobody chose a depth. Here a person types the command having just decided the change is ready,
+so the ladder infers a depth the caller already knows. Its inputs survive as escalation
+conditions, where each stands alone and says what it does; the size taxonomy and the rung
+arithmetic on top of them do not.
 
 **Repo-declared content patterns.** Zones matching regexes against the diff were considered
 so a repo could define `concurrency` itself. Rejected: a repo that writes `sync\.Mutex` gets
