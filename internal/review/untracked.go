@@ -30,12 +30,17 @@ func collectUntracked(dir string) ([]DiffFile, string, error) {
 	var patch strings.Builder
 	for _, name := range names {
 		full := filepath.Join(dir, filepath.FromSlash(name))
-		// Lstat rather than Stat, and regular files only. git records a
-		// symlink as a blob holding its target path, so refusing to follow one
-		// loses nothing a review needs — while following one would copy a file
-		// from outside the repository into the patch every reviewer reads.
+		// Lstat rather than Stat: following a link would copy a file from
+		// outside the repository into the patch every reviewer reads. The
+		// entry is still recorded, with no content, because a change that adds
+		// a link has added something and a profile that omitted it would
+		// report the file as never having existed.
 		info, err := os.Lstat(full)
-		if err != nil || !info.Mode().IsRegular() {
+		if err != nil {
+			continue
+		}
+		if !info.Mode().IsRegular() {
+			files = append(files, DiffFile{Path: name, Symlink: true})
 			continue
 		}
 		body, err := os.ReadFile(full) // #nosec G304 -- a regular file git listed inside the repository

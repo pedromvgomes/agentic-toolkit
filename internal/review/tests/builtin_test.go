@@ -72,3 +72,38 @@ func TestABarePromptNameIsRefused(t *testing.T) {
 		t.Errorf("error = %q", err)
 	}
 }
+
+// A base ref that declares no manifest is the embedded default's case.
+func TestLoadAtRefFallsBackWhenTheRefDeclaresNoManifest(t *testing.T) {
+	r := newRepo(t)
+	r.write("seed.txt", "x\n")
+	rev := r.commit("base")
+
+	m, path, builtin, err := review.LoadAtRef(r.dir, rev)
+	if err != nil {
+		t.Fatalf("LoadAtRef: %v", err)
+	}
+	if !builtin || path != "" {
+		t.Errorf("LoadAtRef = (path %q, builtin %v), want the embedded default", path, builtin)
+	}
+	if m == nil || !m.Builtin {
+		t.Error("the fallback manifest should be marked built-in")
+	}
+}
+
+// A ref that does not resolve is a failure, not a repo declaring no manifest.
+// Collapsing the two would quietly review an unfetched base under the default
+// instead of the repo's own rules.
+func TestLoadAtRefRefusesARefThatDoesNotResolve(t *testing.T) {
+	r := newRepo(t)
+	r.write("seed.txt", "x\n")
+	r.commit("base")
+
+	_, _, builtin, err := review.LoadAtRef(r.dir, "0000000000000000000000000000000000000001")
+	if err == nil {
+		t.Fatalf("LoadAtRef accepted a ref that does not exist (builtin=%v)", builtin)
+	}
+	if !strings.Contains(err.Error(), "resolve") {
+		t.Errorf("error = %q, want it to say the ref could not be resolved", err)
+	}
+}

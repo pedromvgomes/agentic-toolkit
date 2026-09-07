@@ -75,19 +75,29 @@ const ManifestRelPath = ManifestDir + "/" + ManifestFile
 // it. A ref with no manifest uses the embedded default, exactly as a repo with
 // none does.
 func LoadAtRef(dir, ref string) (m *Manifest, path string, builtin bool, err error) {
-	raw, code, err := gitStatus(dir, "show", ref+":"+ManifestRelPath)
+	// The ref is resolved before the path is read, because git answers both
+	// "this ref has no such file" and "this ref does not exist" with the same
+	// fatal status. Collapsing the two would let an unresolvable base ref —
+	// an unfetched commit, a typo — quietly review under the built-in default
+	// instead of the repo's own rules, with nothing in the output saying so.
+	if _, _, err := gitStatus(dir, "rev-parse", "--verify", "--quiet", ref+"^{commit}"); err != nil {
+		return nil, "", false, fmt.Errorf("resolve %s: %w", ref, err)
+	}
+
+	spec := ref + ":" + ManifestRelPath
+	if _, _, err := gitStatus(dir, "cat-file", "-e", spec); err != nil {
+		// The ref resolves and the path is not in it: this repo declares no
+		// manifest at the base, which is the embedded default's case.
+		m, err = DefaultManifest()
+		return m, "", true, err
+	}
+
+	raw, _, err := gitStatus(dir, "show", spec)
 	if err != nil {
-		if code == 128 {
-			// git reports a path that does not exist at that ref this way,
-			// which is the repo declaring no manifest rather than a failure.
-			m, err = DefaultManifest()
-			return m, "", true, err
-		}
 		return nil, "", false, err
 	}
-	path = ref + ":" + ManifestRelPath
-	m, err = ParseBytes(path, raw)
-	return m, path, false, err
+	m, err = ParseBytes(spec, raw)
+	return m, spec, false, err
 }
 
 // Load returns the manifest governing projectRoot: the repo's own if it has

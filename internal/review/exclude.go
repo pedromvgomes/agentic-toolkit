@@ -28,6 +28,10 @@ const (
 	// ExcludedPureRename is a file that moved and was not edited. The move is
 	// mechanical; had it also been edited, its edits would count.
 	ExcludedPureRename Exclusion = "pure rename"
+	// ExcludedSymlink is a link. Its target is not read — it may be a file
+	// outside the repository — but the link is part of the change and is
+	// reported, because a change that adds one has added something.
+	ExcludedSymlink Exclusion = "symlink"
 )
 
 // Reason renders the exclusion for --explain.
@@ -99,6 +103,9 @@ var generatedSuffixes = []string{
 func Classify(f DiffFile, attrGenerated map[string]bool) Exclusion {
 	if attrGenerated[f.Path] {
 		return ExcludedGenerated
+	}
+	if f.Symlink {
+		return ExcludedSymlink
 	}
 	if f.Binary {
 		return ExcludedBinary

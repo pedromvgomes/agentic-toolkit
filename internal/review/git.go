@@ -34,6 +34,13 @@ func git(dir string, args ...string) ([]byte, error) {
 func gitStatus(dir string, args ...string) (stdout []byte, exitCode int, err error) {
 	cmd := exec.Command("git", args...) // #nosec G204 -- arguments are built here, never interpolated from a diff
 	cmd.Dir = dir
+	// `--` ends option parsing; it does not end pathspec magic. A file named
+	// `:(exclude)a.go` on the branch under review would otherwise remove a.go
+	// from the patch every detector reads, letting the author of a change
+	// choose how deeply it is reviewed. Set on the environment rather than as
+	// a flag so it covers every invocation, including ones that grow a
+	// pathspec later.
+	cmd.Env = append(os.Environ(), "GIT_LITERAL_PATHSPECS=1")
 	var out, stderr bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &stderr
@@ -81,6 +88,9 @@ type DiffFile struct {
 	Removed int
 	// Binary reports that git counted no lines because it could not.
 	Binary bool
+	// Symlink reports that the path names a link rather than a file. Its
+	// content is deliberately not read, but the change still contains it.
+	Symlink bool
 }
 
 // Renamed reports whether the file moved.
@@ -129,7 +139,10 @@ func parseNumstat(out []byte) ([]DiffFile, error) {
 		if rec == "" {
 			continue
 		}
-		fields := strings.Split(rec, "\t")
+		// SplitN with a limit of 3: a path may itself contain a tab, and
+		// splitting on every one truncates the name at its first — leaving a
+		// file the review then cannot recognise, count or read.
+		fields := strings.SplitN(rec, "\t", 3)
 		if len(fields) < 3 {
 			return nil, fmt.Errorf("numstat record %q has %d fields, want 3", rec, len(fields))
 		}
@@ -325,6 +338,15 @@ var hunkHeaderRE = regexp.MustCompile(`^@@ -(\d+)(?:,(\d+))? \+\d+(?:,\d+)? @@`)
 type diffSection struct {
 	oldPath string
 	newPath string
+	// inHunk records that the first `@@` has been seen, so the lines that
+	// follow are content rather than headers.
+	//
+	// Under `-U0` a body line is `+` or `-` followed by whatever the author
+	// wrote. A removed `-- comment` — ordinary in SQL, Lua and Haskell —
+	// arrives as `--- comment`, and an added line beginning `++ ` arrives as
+	// `+++ ...`; read as headers, either one silently renames the section and
+	// every following line is credited to a path that does not exist.
+	inHunk bool
 }
 
 // path is the name the section's lines belong to: the file as it is now, or —
@@ -346,6 +368,12 @@ func (s *diffSection) track(line string) bool {
 		// up wearing its predecessor's name.
 		*s = diffSection{}
 		return true
+	case strings.HasPrefix(line, "@@"):
+		s.inHunk = true
+		return false
+	case s.inHunk:
+		// Content. Whatever it starts with, it is not a header.
+		return false
 	case strings.HasPrefix(line, "--- "):
 		s.oldPath = diffHeaderPath(strings.TrimPrefix(line, "--- "), "a/")
 		return true
@@ -469,7 +497,11 @@ func FileHeads(dir, rev string, paths []string, limit int) map[string]string {
 		requested = append(requested, p)
 		fmt.Fprintf(&stdin, "%s:%s\x00", rev, p)
 	}
-	cmd := exec.Command("git", "cat-file", "--batch", "-z") // #nosec G204 -- fixed argv; the paths travel on stdin
+	// -Z, not -z: `-z` delimits only the INPUT, leaving the response
+	// newline-framed and a `missing` record echoing its request verbatim — so
+	// a deleted file whose name contains a newline still splits one record
+	// into two and shifts every later file's head onto the wrong file.
+	cmd := exec.Command("git", "cat-file", "--batch", "-Z") // #nosec G204 -- fixed argv; the paths travel on stdin
 	cmd.Dir = dir
 	cmd.Stdin = &stdin
 	out, err := cmd.Output()
@@ -479,23 +511,33 @@ func FileHeads(dir, rev string, paths []string, limit int) map[string]string {
 		return heads
 	}
 
-	// Records are `<sha> <type> <size>\n<contents>\n`, in the order asked for.
-	// A missing path answers `<spec> missing\n` and consumes no body.
+	// Records are `<sha> <type> <size>\0<contents>\0`, in the order asked for.
+	// A missing path answers `<spec> missing\0` and consumes no body. Framing
+	// on NUL is what makes a record boundary impossible to forge from a path,
+	// and it is why a bodiless record can be skipped rather than ending the
+	// walk: the next boundary is still known.
 	rest := out
 	for _, p := range requested {
-		nl := bytes.IndexByte(rest, '\n')
-		if nl < 0 {
+		sep := bytes.IndexByte(rest, 0)
+		if sep < 0 {
 			break
 		}
-		header := string(rest[:nl])
-		rest = rest[nl+1:]
+		header := string(rest[:sep])
+		rest = rest[sep+1:]
+
 		fields := strings.Fields(header)
-		if len(fields) != 3 {
-			// A `missing` or `ambiguous` answer: no body follows.
+		size := -1
+		if len(fields) == 3 {
+			if n, err := strconv.Atoi(fields[2]); err == nil {
+				size = n
+			}
+		}
+		if size < 0 {
+			// `missing` or `ambiguous`: this path has no head, and the next
+			// record belongs to the next path.
 			continue
 		}
-		size, err := strconv.Atoi(fields[2])
-		if err != nil || size > len(rest) {
+		if size > len(rest) {
 			break
 		}
 		body := rest[:size]
@@ -503,9 +545,9 @@ func FileHeads(dir, rev string, paths []string, limit int) map[string]string {
 			body = body[:limit]
 		}
 		heads[p] = string(body)
-		// The body is followed by a newline the size does not count.
+		// The body is followed by a NUL the size does not count.
 		rest = rest[size:]
-		if len(rest) > 0 && rest[0] == '\n' {
+		if len(rest) > 0 && rest[0] == 0 {
 			rest = rest[1:]
 		}
 	}
@@ -516,7 +558,14 @@ func FileHeads(dir, rev string, paths []string, limit int) map[string]string {
 // more than that: the marker every convention defines is a header, so a
 // generated file of any size costs one small read rather than its own length.
 func readHead(path string, limit int) string {
-	f, err := os.Open(path) // #nosec G304 -- reads a file git listed inside the repository
+	// Regular files only, the same rule collectUntracked applies. A
+	// repo-relative name that resolves through a symlink names a file outside
+	// the repository, and one reader honouring that while its sibling does not
+	// is how the two drift apart.
+	if info, err := os.Lstat(path); err != nil || !info.Mode().IsRegular() {
+		return ""
+	}
+	f, err := os.Open(path) // #nosec G304 -- a regular file git listed inside the repository
 	if err != nil {
 		return ""
 	}

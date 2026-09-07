@@ -322,3 +322,63 @@ func TestExplainSummarisesExclusions(t *testing.T) {
 		}
 	}
 }
+
+// A signal that could not be determined only blocks an answer it could still
+// change. `in:` is satisfied by any one member, so a change that demonstrably
+// carries concurrency escalates even when fix-revert's budget ran out — which
+// is what happens on exactly the large changes the deep panel exists for.
+func TestAnUndeterminedSignalDoesNotMaskOneThatIsPresent(t *testing.T) {
+	m, err := review.DefaultManifest()
+	if err != nil {
+		t.Fatalf("DefaultManifest: %v", err)
+	}
+
+	set := review.NewSignalSet()
+	set.Add(review.SignalConcurrency)
+	set.MarkUndetermined(review.SignalFixRevert, "the 200-hunk history budget ran out")
+	p := &review.Profile{ChangedFiles: 3, ChangedLines: 40, Signals: set, ReferencingFiles: review.AvailableCount(0)}
+
+	sel, err := review.Select(m, review.ContextPR, p, "")
+	if err != nil {
+		t.Fatalf("Select: %v", err)
+	}
+	if sel.Panel != "deep" {
+		t.Errorf("panel = %q, want deep — concurrency is present and the rule is any/in", sel.Panel)
+	}
+	if len(sel.Skipped) != 0 {
+		t.Errorf("skipped = %v, want the rule evaluated rather than abandoned", sel.Skipped)
+	}
+}
+
+// An `any:` rule fires on any one condition, so one that cannot be read does
+// not abandon the rest.
+func TestAnAnyRuleSurvivesOneUnreadableCondition(t *testing.T) {
+	src := `
+version: 1
+reviewers:
+  correctness: {provider: claudecode, prompt: builtin:correctness}
+  security:    {provider: claudecode, prompt: builtin:security}
+judge:     {provider: claudecode, prompt: builtin:judge}
+validator: {provider: claudecode, prompt: builtin:validator}
+panels:
+  light: {reviewers: [correctness]}
+  heavy: {reviewers: [correctness, security], quorum: 2}
+defaults: {worktree: light, pr: light}
+escalate:
+  - to: heavy
+    any:
+      - referencing_files: {gte: 20}
+      - changed_files: {gte: 1}
+`
+	m := mustParse(t, src)
+	m.Builtin = true
+	p := profile(3, 30, review.UnavailableCount("no symbol extractor for unrecognised files"))
+
+	sel, err := review.Select(m, review.ContextWorktree, p, "")
+	if err != nil {
+		t.Fatalf("Select: %v", err)
+	}
+	if sel.Panel != "heavy" {
+		t.Errorf("panel = %q, want heavy — the second condition holds", sel.Panel)
+	}
+}

@@ -1,6 +1,7 @@
 package review
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -122,7 +123,11 @@ func Select(m *Manifest, ctx Context, p *Profile, override string) (*Selection, 
 		conds, all := rule.Conditions()
 		results := make([]ConditionResult, 0, len(conds))
 		fired := all
-		skipped := false
+		// An `any:` rule is not abandoned because one of its conditions could
+		// not be read: another may still hold, and the rule fires on any one.
+		// An `all:` rule cannot fire without every condition, so an unreadable
+		// one ends it.
+		unreadable := ""
 		for _, cond := range conds {
 			held, err := Evaluate(cond, p)
 			if err != nil {
@@ -131,9 +136,14 @@ func Select(m *Manifest, ctx Context, p *Profile, override string) (*Selection, 
 					// advice only a repo that wrote the rule can take.
 					return nil, fmt.Errorf("escalate[%d]: %w. Remove the rule, or narrow it with `touches`, rather than leaving an escalation that can never fire", i, err)
 				}
-				sel.Skipped = append(sel.Skipped, SkippedRule{Index: i, To: rule.To, Reason: err.Error()})
-				skipped = true
-				break
+				if unreadable == "" {
+					unreadable = err.Error()
+				}
+				if all {
+					fired = false
+					break
+				}
+				continue
 			}
 			results = append(results, ConditionResult{Condition: cond, Held: held})
 			if all {
@@ -142,7 +152,13 @@ func Select(m *Manifest, ctx Context, p *Profile, override string) (*Selection, 
 				fired = fired || held
 			}
 		}
-		if skipped || !fired {
+		if !fired {
+			// A rule that could not be read is reported rather than dropped:
+			// a rule that quietly never fires is what leaves a repo believing
+			// it has a protection it does not.
+			if unreadable != "" {
+				sel.Skipped = append(sel.Skipped, SkippedRule{Index: i, To: rule.To, Reason: unreadable})
+			}
 			continue
 		}
 		sel.Fired = append(sel.Fired, FiredRule{Index: i, To: rule.To, All: all, Conditions: results})
@@ -210,38 +226,55 @@ func evaluateTouches(c Condition, p *Profile) bool {
 }
 
 // evaluateSignals tests the change's signals against the named ones.
+//
+// A signal that could not be determined is only an obstacle when it could
+// still change the answer. `in:` is satisfied by any one member, so a signal
+// found present decides the condition however many of its siblings are
+// unknown — and refusing there would turn a change that demonstrably carries
+// `concurrency` into a shallower review because the blame budget ran out
+// measuring something else.
 func evaluateSignals(c Condition, p *Profile) (bool, error) {
-	present := make([]bool, len(c.Signals))
-	for i, sig := range c.Signals {
+	undetermined := ""
+
+	for _, sig := range c.Signals {
 		has, known := p.Signals.Has(sig)
 		if !known {
-			return false, fmt.Errorf("signal `%s` could not be determined for this change: %s (a signal that could not be read is not a signal the change does not carry)",
-				sig, p.Signals.Undetermined(sig))
+			if undetermined == "" {
+				undetermined = fmt.Sprintf("signal `%s` could not be determined for this change: %s (a signal that could not be read is not a signal the change does not carry)",
+					sig, p.Signals.Undetermined(sig))
+			}
+			continue
 		}
-		present[i] = has
-	}
-
-	switch c.Operator {
-	case OpIn:
-		for _, has := range present {
+		switch c.Operator {
+		case OpIn:
+			// One member present settles it.
 			if has {
 				return true, nil
 			}
-		}
-		return false, nil
-	case OpNotIn:
-		for _, has := range present {
+		case OpNotIn:
+			// One member present settles it.
 			if has {
 				return false, nil
 			}
-		}
-		return true, nil
-	case OpAllIn:
-		for _, has := range present {
+		case OpAllIn:
+			// One member absent settles it.
 			if !has {
 				return false, nil
 			}
+		default:
+			return false, fmt.Errorf("%q is not an operator for %s", c.Operator, c.Key)
 		}
+	}
+
+	// Nothing settled the condition, so the unknown members are what stands
+	// between here and an answer.
+	if undetermined != "" {
+		return false, errors.New(undetermined)
+	}
+	switch c.Operator {
+	case OpIn:
+		return false, nil
+	case OpNotIn, OpAllIn:
 		return true, nil
 	}
 	return false, fmt.Errorf("%q is not an operator for %s", c.Operator, c.Key)

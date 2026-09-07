@@ -82,12 +82,18 @@ type Profile struct {
 	// reviewable caches the filtered slice. Selection asks for it once per
 	// `touches` rule and Explain asks again, and refiltering every changed
 	// file each time is work that grows with both the change and the manifest.
-	reviewable []ChangedFile
+	//
+	// reviewableFor is the length of Files the cache was built from. Files is
+	// exported, so a caller can append to it after the cache exists; without
+	// that check the appended file would be invisible to every later reader
+	// while appearing in Files, which is worse than not caching at all.
+	reviewable    []ChangedFile
+	reviewableFor int
 }
 
 // ReviewableFiles returns the files that count.
 func (p *Profile) ReviewableFiles() []ChangedFile {
-	if p.reviewable != nil {
+	if p.reviewable != nil && p.reviewableFor == len(p.Files) {
 		return p.reviewable
 	}
 	out := make([]ChangedFile, 0, len(p.Files))
@@ -97,6 +103,7 @@ func (p *Profile) ReviewableFiles() []ChangedFile {
 		}
 	}
 	p.reviewable = out
+	p.reviewableFor = len(p.Files)
 	return out
 }
 
