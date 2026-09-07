@@ -530,7 +530,10 @@ func newProvider(name string) (agentic.Provider, error) {
 		// against the CLI they are already authenticated with.
 		return claudecode.NewOnPath()
 	case "codex":
-		return codex.New(), nil
+		// On PATH for the same reason claudecode is: curation runs on a
+		// developer's machine against the CLI they are already authenticated
+		// with, not against a vendored build this repo would have to pin.
+		return codex.NewOnPath()
 	default:
 		return nil, fmt.Errorf("memory.agent %q is not a provider; use one of %s",
 			name, strings.Join(Providers, ", "))
