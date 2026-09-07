@@ -109,7 +109,7 @@ func TestClassifyRefusesSymlinksAndGitlinks(t *testing.T) {
 			record("100644", "blob", "eee", "../escape.go"),
 	))
 
-	write, skipped := classify(entries)
+	write, skipped := classifyEntries(entries)
 	if len(write) != 1 || write[0].Path != "main.go" {
 		t.Fatalf("the review root would hold: %+v", write)
 	}

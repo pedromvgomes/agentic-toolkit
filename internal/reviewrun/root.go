@@ -162,9 +162,9 @@ func gitBase(p string) string {
 	return p
 }
 
-// classify splits a tree into the entries the review root writes and the ones
+// classifyEntries splits a tree into the entries the review root writes and the ones
 // it refuses.
-func classify(entries []treeEntry) (write []treeEntry, skipped []Skipped) {
+func classifyEntries(entries []treeEntry) (write []treeEntry, skipped []Skipped) {
 	for _, e := range entries {
 		switch {
 		case e.Mode == modeSymlink:

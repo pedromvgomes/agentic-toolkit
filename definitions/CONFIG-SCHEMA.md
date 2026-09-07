@@ -95,6 +95,7 @@ The location is fixed rather than configurable: the manifest is configuration, a
 | `panels` | `map[string]Panel` | **yes** | Named sets of reviewers, keyed by name. Exactly one panel runs per review. |
 | `defaults` | `Defaults` | **yes** | The panel each context starts from, before escalation. |
 | `escalate` | `[]Escalation` | no | Rules that raise the panel above a context's default. Every rule is evaluated and the highest target wins, so their order carries no meaning. |
+| `conventions` | `[]string` | no | Documents holding this repo's own written rules, as paths from the repo root, read at the base ref and injected raw into every reviewer's prompt. Replaces the default list rather than adding to it. Absent means the defaults: CLAUDE.md, AGENTS.md, .claude/CLAUDE.md, CONTEXT.md, CONTRIBUTING.md, docs/ARCHITECTURE.md, docs/CODE_STANDARDS.md. |
 
 ### `reviewers` entry, `judge`, `validator` (`Runner`)
 

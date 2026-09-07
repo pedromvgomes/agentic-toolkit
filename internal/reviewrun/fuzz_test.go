@@ -50,22 +50,22 @@ func FuzzParseLsTree(f *testing.F) {
 			}
 		}
 
-		// classify must reach a decision about every entry without panicking,
+		// classifyEntries must reach a decision about every entry without panicking,
 		// and must never route a path it would refuse into the write set.
-		write, skipped := classify(entries)
+		write, skipped := classifyEntries(entries)
 		if len(write)+len(skipped) > len(entries) {
-			t.Fatalf("classify produced %d+%d decisions for %d entries",
+			t.Fatalf("classifyEntries produced %d+%d decisions for %d entries",
 				len(write), len(skipped), len(entries))
 		}
 		for _, e := range write {
 			if !safeRelPath(e.Path) {
-				t.Fatalf("classify would write an unsafe path: %q", e.Path)
+				t.Fatalf("classifyEntries would write an unsafe path: %q", e.Path)
 			}
 			if isInstruction(e.Path) {
-				t.Fatalf("classify would write an instruction file: %q", e.Path)
+				t.Fatalf("classifyEntries would write an instruction file: %q", e.Path)
 			}
 			if e.Mode == modeSymlink || e.Mode == modeGitlink {
-				t.Fatalf("classify would write mode %s: %q", e.Mode, e.Path)
+				t.Fatalf("classifyEntries would write mode %s: %q", e.Mode, e.Path)
 			}
 		}
 	})

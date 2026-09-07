@@ -103,7 +103,7 @@ func BuildRoot(dir, head string) (*Root, error) {
 		_ = root.Close()
 		return nil, fmt.Errorf("list the reviewed tree: %w", err)
 	}
-	write, skipped := classify(parseLsTree(out))
+	write, skipped := classifyEntries(parseLsTree(out))
 	root.Skipped = skipped
 	root.Files = len(write)
 
