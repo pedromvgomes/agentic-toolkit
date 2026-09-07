@@ -3,6 +3,7 @@ package review
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"os"
 	"path"
 	"path/filepath"
@@ -359,16 +360,31 @@ func decodeStrings(v interface{}) ([]string, error) {
 // Counts are never negative, and a rule comparing one against a negative
 // number either always holds or never does — which is a rule that reads as a
 // protection and is not one.
+//
+// The same is true of a number too large to hold. A value past the platform's
+// int silently becomes a different number, and on a 32-bit build
+// `changed_files: {gte: 4294967296}` would land on zero and make the rule fire
+// on every change — so the range is checked before the conversion rather than
+// the result inspected afterwards.
 func decodeInt(v interface{}) (int, error) {
 	var n int
 	switch val := v.(type) {
 	case int:
 		n = val
 	case int64:
+		if val > math.MaxInt || val < math.MinInt {
+			return 0, fmt.Errorf("%d is outside the range a count can take", val)
+		}
 		n = int(val)
 	case uint64:
+		if val > math.MaxInt {
+			return 0, fmt.Errorf("%d is larger than any count a change can produce", val)
+		}
 		n = int(val)
 	case uint:
+		if val > math.MaxInt {
+			return 0, fmt.Errorf("%d is larger than any count a change can produce", val)
+		}
 		n = int(val)
 	default:
 		return 0, fmt.Errorf("%v is not a whole number", v)

@@ -190,3 +190,21 @@ func refuse(t *testing.T, src string) error {
 	}
 	return err
 }
+
+// A number too large to hold is refused before the conversion, not inspected
+// after it. Past the platform's int a value silently becomes a different
+// number — on a 32-bit build `gte: 4294967296` lands on zero and the rule then
+// fires on every change, which is the protection-that-is-not-one this grammar
+// exists to prevent.
+func TestACountTooLargeToHoldIsRefused(t *testing.T) {
+	for _, value := range []string{"18446744073709551615", "9223372036854775808"} {
+		t.Run(value, func(t *testing.T) {
+			err := refuse(t, rule(`changed_files: {gte: `+value+`}`))
+
+			if !strings.Contains(err.Error(), "larger than any count") &&
+				!strings.Contains(err.Error(), "outside the range") {
+				t.Errorf("error = %q, want it to say the number is out of range", err)
+			}
+		})
+	}
+}
