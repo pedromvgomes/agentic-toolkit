@@ -260,6 +260,15 @@ func writeFile(dir string, e treeEntry, body []byte) error {
 		return fmt.Errorf("refusing to write %q: it does not stay inside the review root", e.Path)
 	}
 	full := filepath.Join(dir, filepath.FromSlash(e.Path))
+
+	// Confinement is checked on the joined, cleaned path as well as on the
+	// components that produced it. safeRelPath reasons about the git path;
+	// this reasons about what the filesystem will actually be handed, which is
+	// the only thing that decides where the bytes land.
+	if !isUnder(dir, full) {
+		return fmt.Errorf("refusing to write %q: it resolves outside the review root", e.Path)
+	}
+
 	if err := os.MkdirAll(filepath.Dir(full), 0o700); err != nil {
 		return err
 	}
@@ -267,5 +276,20 @@ func writeFile(dir string, e treeEntry, body []byte) error {
 	if e.Mode == modeExec {
 		perm = 0o700
 	}
+	// #nosec G703 -- the path is confined to dir twice over: safeRelPath
+	// rejects an absolute path and every "." or ".." component, and isUnder
+	// re-checks the cleaned join against dir immediately above.
 	return os.WriteFile(full, body, perm)
+}
+
+// isUnder reports whether path is dir or something beneath it.
+//
+// Compared after cleaning rather than by string prefix: "/tmp/rootx" has
+// "/tmp/root" as a prefix and is a different directory.
+func isUnder(dir, path string) bool {
+	rel, err := filepath.Rel(dir, path)
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }

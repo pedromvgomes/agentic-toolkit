@@ -178,3 +178,23 @@ func TestWriteFileRefusesAPathThatLeavesTheRoot(t *testing.T) {
 		t.Fatal("a path outside the review root was written")
 	}
 }
+
+func TestIsUnderComparesPathsRatherThanStringPrefixes(t *testing.T) {
+	for _, tc := range []struct {
+		dir, path string
+		want      bool
+	}{
+		{"/tmp/root", "/tmp/root/a.go", true},
+		{"/tmp/root", "/tmp/root/a/b/c.go", true},
+		{"/tmp/root", "/tmp/root", true},
+		// A sibling directory whose name merely starts with the root's.
+		{"/tmp/root", "/tmp/rootx/a.go", false},
+		{"/tmp/root", "/tmp/other/a.go", false},
+		{"/tmp/root", "/etc/passwd", false},
+		{"/tmp/root", "/tmp", false},
+	} {
+		if got := isUnder(tc.dir, tc.path); got != tc.want {
+			t.Errorf("isUnder(%q, %q) = %v, want %v", tc.dir, tc.path, got, tc.want)
+		}
+	}
+}
