@@ -793,3 +793,42 @@ func TestAReviewerThatFoundNothingCountsAsHavingAnswered(t *testing.T) {
 		t.Error("a judge run counts as a reviewer having answered")
 	}
 }
+
+// The report names the base the caller asked for; the work is anchored to the
+// merge base. A range rendered from the merge base is a bare commit id where
+// the reader wrote a branch name, and it differs from what `explain` prints
+// for the same change.
+func TestTheReportNamesTheBaseRefWhileTheWorkUsesTheMergeBase(t *testing.T) {
+	r, base := reviewedRepo(t)
+
+	plan, _, _, root, err := Prepare(Options{
+		Dir: r.dir, Base: base, BaseLabel: "origin/main", Context: review.ContextWorktree,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = root.Close() }()
+
+	if plan.Range != "origin/main...working tree" {
+		t.Errorf("the range is %q, want it to name the ref the caller gave", plan.Range)
+	}
+	if strings.Contains(plan.Range, base) {
+		t.Errorf("the range renders the merge-base commit id: %q", plan.Range)
+	}
+}
+
+// With no label the commit stands in for itself, rather than the range coming
+// out empty.
+func TestTheRangeFallsBackToTheResolvedBaseWhenNoLabelIsGiven(t *testing.T) {
+	r, base := reviewedRepo(t)
+
+	plan, _, _, root, err := Prepare(Options{Dir: r.dir, Base: base, Context: review.ContextWorktree})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = root.Close() }()
+
+	if !strings.Contains(plan.Range, base) {
+		t.Errorf("an unlabelled range does not name the base at all: %q", plan.Range)
+	}
+}

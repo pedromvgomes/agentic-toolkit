@@ -33,8 +33,19 @@ type Options struct {
 	// Dir is the repository the change lives in.
 	Dir string
 	// Base is the ref the change is measured against, already resolved to a
-	// merge base by the caller.
+	// merge base by the caller. It is what the diff, the manifest and the
+	// convention documents are read at.
 	Base string
+	// BaseLabel is what the report calls the base — the ref the caller named,
+	// before it was resolved.
+	//
+	// Separate from Base because they are read by different audiences. A
+	// merge base is a commit id, which is what the work needs and the last
+	// thing a person recognises: a reader who typed `--base origin/main`
+	// wants that back, and gets a bare forty-character hash if the report
+	// renders what the diff was anchored to. Empty means the resolved commit
+	// stands in for itself.
+	BaseLabel string
 	// Head is the ref the change ends at, or "" for the working tree.
 	Head string
 	// Context is what the review runs against.
@@ -122,7 +133,7 @@ func Prepare(opts Options) (*Plan, *review.Manifest, *review.Selection, *Root, e
 		Patch:        patch,
 		Conventions:  readConventions(opts.Dir, opts.Base, m.ConventionDocs(DefaultConventionDocs)),
 		Root:         root,
-		Range:        rangeLabel(opts.Base, opts.Head),
+		Range:        rangeLabel(opts.baseLabel(), opts.Head),
 	}
 
 	plan := &Plan{
@@ -645,6 +656,15 @@ func manifestLabel(path string, builtin bool) string {
 		return "built-in default"
 	}
 	return path
+}
+
+// baseLabel is what the report calls the base: the ref the caller named, or
+// the resolved commit when they named none.
+func (o Options) baseLabel() string {
+	if o.BaseLabel != "" {
+		return o.BaseLabel
+	}
+	return o.Base
 }
 
 // rangeLabel renders what the change was measured over.

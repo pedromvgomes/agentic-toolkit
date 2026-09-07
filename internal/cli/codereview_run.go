@@ -53,7 +53,7 @@ func newCodeReviewRunCmd(env *Env) *cobra.Command {
 }
 
 func runCodeReviewRun(cmd *cobra.Command, env *Env, target reviewTarget, flags runFlags) error {
-	root, _, mergeBase, err := resolveTarget(env, target)
+	root, base, mergeBase, err := resolveTarget(env, target)
 	if err != nil {
 		return err
 	}
@@ -61,6 +61,7 @@ func runCodeReviewRun(cmd *cobra.Command, env *Env, target reviewTarget, flags r
 	opts := reviewrun.Options{
 		Dir:         root,
 		Base:        mergeBase,
+		BaseLabel:   base,
 		Head:        target.head,
 		Context:     review.Context(target.context),
 		Panel:       target.panel,

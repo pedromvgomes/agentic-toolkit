@@ -180,3 +180,39 @@ func TestCodeReviewRunIsListedOnTheCommandGroup(t *testing.T) {
 		}
 	}
 }
+
+// `run` and `explain` describe the same change the same way. A run that
+// rendered the merge-base commit id would hand back a bare hash where the
+// caller wrote a branch name.
+func TestCodeReviewRunAndExplainNameTheRangeIdentically(t *testing.T) {
+	dir, _ := reviewRepo(t)
+	t.Setenv("PATH", gitOnlyPath(t))
+
+	rangeOf := func(out string) string {
+		t.Helper()
+		for _, line := range strings.Split(out, "\n") {
+			if strings.HasPrefix(line, "range:") {
+				return strings.TrimSpace(strings.TrimPrefix(line, "range:"))
+			}
+		}
+		t.Fatalf("no range line in:\n%s", out)
+		return ""
+	}
+
+	explainOut, _, err := runCLI(t, dir, "code-review", "explain", "--base", "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	runOut, _, err := runCLI(t, dir, "code-review", "run", "--dry-run", "--base", "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want, got := rangeOf(explainOut), rangeOf(runOut)
+	if got != want {
+		t.Errorf("run reports the range as %q and explain as %q", got, want)
+	}
+	if !strings.Contains(got, "main") {
+		t.Errorf("the range does not name the ref the caller gave: %q", got)
+	}
+}
