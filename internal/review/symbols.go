@@ -74,6 +74,9 @@ func languageLabel(lang Language) string {
 func changedSymbols(files []ChangedFile, patch string, budget int) []string {
 	byPath := make(map[string]Language, len(files))
 	for _, f := range files {
+		if IsTestFile(f.Path) {
+			continue
+		}
 		byPath[f.Path] = f.Language
 	}
 

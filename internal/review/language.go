@@ -440,6 +440,31 @@ func ExportedSymbols(lang Language, line string) []string {
 	return out
 }
 
+// testFilePatterns recognise a file whose symbols nothing outside it calls.
+//
+// A test declares plenty of exported-looking names — `TestSomething` is
+// capitalised in Go, and a fixture class is public in Java — and not one of
+// them is reachable from anywhere. Counting them fills the symbol budget with
+// names that have exactly one referencing file, which turns a blast-radius
+// measure into a count of how many tests a change added.
+//
+// Tests still count as reviewable files and still carry signals. It is only
+// the symbol extraction that skips them.
+var testFilePatterns = []string{
+	"**/*_test.go",
+	"**/*_test.py", "**/test_*.py",
+	"**/*.test.ts", "**/*.test.tsx", "**/*.test.js", "**/*.test.jsx",
+	"**/*.spec.ts", "**/*.spec.tsx", "**/*.spec.js", "**/*.spec.jsx",
+	"**/*Test.java", "**/*Tests.java", "**/*Test.kt", "**/*Tests.kt",
+	"**/*Test.cs", "**/*Tests.cs",
+	"**/*_spec.rb", "**/*_test.rb",
+	"**/*_test.rs", "**/tests/**", "**/test/**", "**/__tests__/**",
+}
+
+// IsTestFile reports whether a path is a test, by the conventions each
+// ecosystem actually follows.
+func IsTestFile(p string) bool { return MatchAnyGlob(testFilePatterns, p) }
+
 // symbolNameRE is what a name has to look like to be worth counting. It is
 // also what makes the count safe to shell out for: a name that reaches grep
 // is matched against this first, so nothing from a diff somebody else wrote

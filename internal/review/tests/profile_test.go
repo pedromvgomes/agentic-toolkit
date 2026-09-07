@@ -302,3 +302,34 @@ func TestAnExhaustedBlameBudgetLeavesTheSignalUndetermined(t *testing.T) {
 		t.Errorf("reason = %q, want it to say the budget ran out", p.Signals.Undetermined(review.SignalFixRevert))
 	}
 }
+
+// A test declares plenty of exported-looking names and not one of them is
+// reachable from anywhere. Counting them fills the symbol budget with names
+// that have exactly one referencing file, which turns a blast-radius measure
+// into a count of how many tests a change added.
+func TestSymbolsAreNotTakenFromTestFiles(t *testing.T) {
+	r := newRepo(t)
+	r.write("lib/lib.go", "package lib\n\nfunc Widget() {}\n")
+	for _, name := range []string{"a", "b", "c"} {
+		r.write("app/"+name+".go", "package app\n\nimport \"lib\"\n\nvar _ = lib.Widget\n")
+	}
+	base := r.commit("base")
+
+	r.write("lib/lib.go", "package lib\n\nfunc Widget() int { return 1 }\n")
+	r.write("lib/lib_test.go", "package lib\n\nimport \"testing\"\n\nfunc TestWidget(t *testing.T) { Widget() }\n")
+
+	p := buildProfile(t, r, base)
+
+	for _, sym := range p.Symbols {
+		if strings.HasPrefix(sym, "Test") {
+			t.Errorf("symbols include %q, taken from a test file: %v", sym, p.Symbols)
+		}
+	}
+	// The test file is still part of the change; only its symbols are skipped.
+	if _, found := excludedFor(p, "lib/lib_test.go"); !found {
+		t.Error("the test file should still count as a reviewable file")
+	}
+	if n, _ := p.ReferencingFiles.Value(); n != 3 {
+		t.Errorf("referencing files = %d, want 3 — the count is not diluted by the test", n)
+	}
+}
