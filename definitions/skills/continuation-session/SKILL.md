@@ -50,7 +50,46 @@ Include only the minimum a fresh agent needs to be productive immediately:
 
 Do NOT duplicate content already captured in other artifacts (PRDs, plans, ADRs, issues, commits, diffs). Reference them by path or URL instead.
 
-## 5. Hand off (manual context reset)
+## 5. Stage the durable half into the memory store
+
+The "Key context & decisions" section is written, read once by the next session, and thrown
+away with the temp file. Some of it is worth more than that: a constraint that took this
+session an hour to find costs the next one the same hour unless it is written down somewhere
+that outlives a handoff.
+
+```bash
+agtk memory stats --json
+```
+
+If `agtk` is not installed, or the command exits non-zero, or the output has no `root`, skip
+this section entirely and say nothing about it — the repo has not adopted a memory store, or
+cannot reach one, and inventing a path loses the finding silently.
+
+Otherwise, go through the section entry by entry and stage the ones that are **durable facts
+about the codebase** and **can name a file they came from**. Both conditions, not either:
+
+| Stage it | Leave it in the handoff only |
+|---|---|
+| Tests live in sibling `tests/` packages, so coverage needs `-coverpkg` | PR #12 is open; rebase before pushing |
+| The hook timeout is seconds, and is written through unconverted | The build is slow, budget for it |
+| Approach X was tried against `resolver.go` and reverted because Y | Ask the user which branch to target |
+
+The right-hand column is true and worth handing off, and it is not a fact about the codebase.
+A note must carry at least one anchor, so an entry with no file to point at cannot become a
+note however useful it is — staging it just makes the curator reject it later.
+
+This is a **copy, not a move**. The handoff document still carries the whole section; the next
+session needs it in full.
+
+One file per finding, at `<root>/candidates/<YYYYMMDD>-<short-slug>.md`, with `about`, `saw`
+and a body carrying a pointer for every claim — the format the `memory-explorer` agent uses.
+No `targets` or `verdict`: these are new findings, not re-checks of an existing note.
+
+**Never write, edit, stamp or delete a note**, and never run `agtk memory anchor` or
+`agtk memory index`. `notes/` has exactly one writer, the curator, and it runs from
+`/memory-curate`. Mention in your output that candidates are waiting.
+
+## 6. Hand off (manual context reset)
 
 You CANNOT clear your own context or start the new session yourself — that is a manual step the user must perform. Do not claim otherwise.
 

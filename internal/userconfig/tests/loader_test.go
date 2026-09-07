@@ -51,3 +51,30 @@ func TestLoadFrom_RejectsUnknownKeys(t *testing.T) {
 		t.Fatal("expected error on unknown field")
 	}
 }
+
+// An empty or comment-only file carries no settings, which is the same
+// information a missing file carries, so it must yield the defaults.
+// Reported as a parse error instead, it reaches a caller whose only
+// recovery is the zero Config — and a blank config.yaml then turns
+// auto-update off while looking like it configures nothing.
+func TestLoadFrom_EmptyFileYieldsDefaults(t *testing.T) {
+	for name, contents := range map[string]string{
+		"empty":        "",
+		"blank lines":  "\n\n",
+		"comment only": "# nothing configured yet\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.yaml")
+			if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			cfg, err := userconfig.LoadFrom(path)
+			if err != nil {
+				t.Fatalf("LoadFrom: %v", err)
+			}
+			if cfg != userconfig.Default() {
+				t.Errorf("LoadFrom() = %+v, want %+v", cfg, userconfig.Default())
+			}
+		})
+	}
+}

@@ -120,7 +120,7 @@ func runUpdate(env *Env, checkOnly, yes, noCompletion bool) error {
 	// non-fatal: the binary update already succeeded, so we surface a
 	// hint to stderr and let the user re-run install.sh or
 	// `agtk completion <shell>` manually if needed.
-	disabled := noCompletion || os.Getenv("AGTK_NO_COMPLETION") == "1"
+	disabled := noCompletion || os.Getenv(completioninstall.EnvNoCompletion) == "1"
 	if _, err := completioninstall.Install(env.Stdout, completioninstall.Options{Disabled: disabled}); err != nil {
 		fmt.Fprintf(env.Stderr, "agtk: completion refresh skipped: %v\n", err)
 		fmt.Fprintln(env.Stderr, "  run 'agtk completion <shell>' manually to regenerate")

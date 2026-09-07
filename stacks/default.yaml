@@ -1,4 +1,4 @@
-description: Default toolkit stack — workflow-agnostic skills, the plan-approval and memory-first instructions, the memory-explorer and wrap-session-reviewer agents, the memory-curate command and the upstream skill-creator skill.
+description: Default toolkit stack — workflow-agnostic skills, the plan-approval and memory-first instructions, the memory-explorer and wrap-session-reviewer agents, the memory-curate and memory-seed commands and the upstream skill-creator skill.
 skills:
   - agents-md-creator
   - challenge
@@ -14,6 +14,7 @@ agents:
   - wrap-session-reviewer
 commands:
   - memory-curate
+  - memory-seed
 mcp:
   - context7
 instructions:

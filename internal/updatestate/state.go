@@ -33,7 +33,9 @@ const DirName = "agentic-toolkit"
 // State is the persisted throttle metadata for auto-update.
 type State struct {
 	// LastUpdateCheck is the wall-clock time of the most recent live
-	// GitHub API check. Zero when never run.
+	// GitHub API attempt, whether or not it answered. Zero when never
+	// run. Recording only answered checks would leave an offline machine
+	// unthrottled.
 	LastUpdateCheck time.Time `yaml:"last_update_check,omitempty"`
 	// LatestKnownVersion is the most recent release tag the checker
 	// has observed. Empty when never run.

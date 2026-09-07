@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"sort"
 	"strings"
 	"time"
 )
@@ -22,11 +23,26 @@ type Stats struct {
 	Stale        int
 	Candidates   int
 
+	// IndexBytes is the size of the generated INDEX.md, and is the tax
+	// itself rather than a proxy for it: it is what an explorer loads before
+	// it has decided any note is relevant. Zero when no index has been
+	// generated yet.
+	IndexBytes int64
+
 	Hits     int
 	NotesHit int
 	HitRate  float64
 	FirstHit time.Time
 	LastHit  time.Time
+	// Cold names the notes with no recorded hit, sorted. Where HitRate says
+	// only that the store is not being repaid, this says which notes to drop,
+	// which is the form of that number anyone can act on.
+	//
+	// Only once there are at least as many hits as notes. Below that the list
+	// is non-empty by arithmetic — n reads reach at most n notes — and says
+	// nothing about the notes in it. A reader of this field owes that
+	// comparison against Hits and Notes before treating it as a prune list.
+	Cold []string
 }
 
 // Stats computes the store's shape, including a staleness pass over the
@@ -94,6 +110,21 @@ func (s *Store) Stats(notes []*Note) (Stats, error) {
 	st.NotesHit = len(seen)
 	if st.Notes > 0 {
 		st.HitRate = float64(st.NotesHit) / float64(st.Notes)
+	}
+	for _, n := range notes {
+		if !seen[n.Name] {
+			st.Cold = append(st.Cold, n.Name)
+		}
+	}
+	sort.Strings(st.Cold)
+
+	// A missing index is not an error here: `stats` is what a hook calls on a
+	// store that may never have had `index` run against it, and reporting a
+	// zero tax is more useful than refusing to report anything.
+	if fi, err := os.Stat(s.IndexPath()); err == nil {
+		st.IndexBytes = fi.Size()
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return st, err
 	}
 	return st, nil
 }

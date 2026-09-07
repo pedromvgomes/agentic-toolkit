@@ -577,14 +577,59 @@ func printStats(env *Env, store *memory.Store, st memory.Stats) {
 	fmt.Fprintf(env.Stdout, "anchors:     %d (%d files)\n", st.Anchors, st.AnchoredFile)
 	fmt.Fprintf(env.Stdout, "stale:       %d\n", st.Stale)
 	fmt.Fprintf(env.Stdout, "candidates:  %d\n", st.Candidates)
-	if st.Hits == 0 {
-		fmt.Fprintln(env.Stdout, "hits:        none recorded")
-		return
+	// Both halves of the ledger, adjacent on purpose: a hit rate with nothing
+	// to compare it against says whether notes get read, not whether reading
+	// them was worth what the index cost to carry.
+	if st.IndexBytes == 0 {
+		fmt.Fprintln(env.Stdout, "index:       not generated — run `agtk memory index`")
+	} else {
+		fmt.Fprintf(env.Stdout, "index:       %s (~%s) — the tax, loaded per delegation\n",
+			humanBytes(st.IndexBytes), plural(approxTokens(st.IndexBytes), "token"))
 	}
-	fmt.Fprintf(env.Stdout, "hits:        %s over %d of %d notes (%.0f%% hit rate)\n",
-		plural(st.Hits, "read"), st.NotesHit, st.Notes, st.HitRate*100)
-	fmt.Fprintf(env.Stdout, "  window:    %s .. %s\n",
-		st.FirstHit.Format(time.RFC3339), st.LastHit.Format(time.RFC3339))
+	// "in this checkout" is not hedging. The hits log is gitignored, so the
+	// rate describes one working copy's usage and a fresh clone reports zero;
+	// a reader who takes it for a property of the store draws the opposite
+	// conclusion from the same number.
+	if st.Hits == 0 {
+		fmt.Fprintf(env.Stdout, "hits:        none recorded in this checkout (%s is gitignored)\n", memory.HitsFile)
+	} else {
+		fmt.Fprintf(env.Stdout, "hits:        %s over %d of %d notes (%.0f%% hit rate, this checkout only)\n",
+			plural(st.Hits, "read"), st.NotesHit, st.Notes, st.HitRate*100)
+		fmt.Fprintf(env.Stdout, "  window:    %s .. %s\n",
+			st.FirstHit.Format(time.RFC3339), st.LastHit.Format(time.RFC3339))
+	}
+	if len(st.Cold) > 0 {
+		fmt.Fprintf(env.Stdout, "cold:        %d of %d notes never read\n", len(st.Cold), st.Notes)
+		// n reads can warm at most n notes, so below one read per note a
+		// non-empty cold list is guaranteed whatever the notes are worth. The
+		// list still prints — withholding it would send a reader to --json to
+		// misread the raw field instead — but a caveat it cannot act on is
+		// better than a prune list it can.
+		if st.Hits < st.Notes {
+			fmt.Fprintf(env.Stdout, "             (%s cannot warm more than %d of %d notes — not yet a prune signal)\n",
+				plural(st.Hits, "read"), st.Hits, st.Notes)
+		}
+		for _, name := range st.Cold {
+			fmt.Fprintf(env.Stdout, "             %s\n", name)
+		}
+	}
+}
+
+// humanBytes formats a size the way the tax is worth reading — two
+// significant figures, not an exact count nobody compares.
+func humanBytes(n int64) string {
+	if n < 1024 {
+		return fmt.Sprintf("%d B", n)
+	}
+	return fmt.Sprintf("%.1f kB", float64(n)/1024)
+}
+
+// approxTokens estimates what the index costs to carry, at the four-bytes-per
+// token rule of thumb. It is deliberately labelled `~` wherever it is printed:
+// the honest number is tokens, and no exact one is available without a
+// tokenizer for whichever model reads the store.
+func approxTokens(n int64) int {
+	return int((n + 3) / 4)
 }
 
 // ===== candidates =====
@@ -678,10 +723,11 @@ func newMemoryCurateCmd(env *Env) *cobra.Command {
 		jsonOut bool
 		stale   bool
 		check   bool
+		dryRun  bool
 		timeout time.Duration
 	)
 	cmd := &cobra.Command{
-		Use:   "curate",
+		Use:   "curate [note...]",
 		Short: "Run the curator over staged candidates, or over stale notes",
 		Long: "Promotes, merges and rejects the findings in candidates/, then stamps and\n" +
 			"regenerates the index. With --stale, sweeps notes whose anchored content has\n" +
@@ -692,9 +738,17 @@ func newMemoryCurateCmd(env *Env) *cobra.Command {
 			"here and passed on the command line, so notes/ has one writer by\n" +
 			"construction rather than by instruction.\n" +
 			"\n" +
+			"Naming notes scopes the run to them and to the candidates targeting them,\n" +
+			"and narrows the stamping grant to those names — so a scoped run cannot clear\n" +
+			"the staleness signal on a note it was not asked to check.\n" +
+			"\n" +
+			"--dry-run reports what the curator would do and writes nothing. The grant it\n" +
+			"runs under has no writing tools at all, so this is a property of the run\n" +
+			"rather than a promise the model keeps.\n" +
+			"\n" +
 			"Names its provider through `memory.agent` in the entry manifest. There is no\n" +
 			"default: this is the only memory command that costs anything.",
-		Args: cobra.NoArgs,
+		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			store, err := memoryStore(env)
 			if err != nil {
@@ -705,12 +759,19 @@ func newMemoryCurateCmd(env *Env) *cobra.Command {
 				return err
 			}
 
+			if err := knownNotes(env, store, args); err != nil {
+				return err
+			}
+
 			if check {
 				ready, err := curator.Check(curator.Options{
 					Provider:      provider,
 					WorkDir:       store.ProjectRoot,
+					NotesDir:      store.NotesPath(),
 					CandidatesDir: store.CandidatesPath(),
 					AgtkPath:      selfPath(env),
+					DryRun:        dryRun,
+					Notes:         args,
 				})
 				if err != nil {
 					return err
@@ -725,7 +786,7 @@ func newMemoryCurateCmd(env *Env) *cobra.Command {
 					})
 				}
 				fmt.Fprintf(env.Stdout, "provider:  %s\nbinary:    %s\nmode:      %s\ntools:     %s\n",
-					ready.Provider, ready.Binary, ready.Mode, strings.Join(ready.Tools, ", "))
+					ready.Provider, ready.Binary, describeMode(ready.Mode), strings.Join(ready.Tools, ", "))
 				return nil
 			}
 
@@ -735,8 +796,9 @@ func newMemoryCurateCmd(env *Env) *cobra.Command {
 				// does — by running `agtk` — so it has to start where agtk
 				// would have.
 				WorkDir: store.ProjectRoot,
-				// Scopes the curator's deletion grant, so it can clear the
-				// backlog and nothing else.
+				// Scope the curator's write and deletion grants, so it can
+				// author notes and clear the backlog and nothing else.
+				NotesDir:      store.NotesPath(),
 				CandidatesDir: store.CandidatesPath(),
 				// The running binary, not whatever PATH resolves: a consumer
 				// installs agtk separately from the lockfile-pinned
@@ -744,6 +806,8 @@ func newMemoryCurateCmd(env *Env) *cobra.Command {
 				// and lack `memory` entirely.
 				AgtkPath: selfPath(env),
 				Stale:    stale,
+				DryRun:   dryRun,
+				Notes:    args,
 				Timeout:  timeout,
 			})
 			if err != nil {
@@ -773,8 +837,35 @@ func newMemoryCurateCmd(env *Env) *cobra.Command {
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit machine-readable JSON output")
 	cmd.Flags().BoolVar(&stale, "stale", false, "sweep stale notes instead of the candidate backlog")
 	cmd.Flags().BoolVar(&check, "check", false, "report what a run would use and start nothing")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "report what the curator would do, under a grant with no writing tools")
 	cmd.Flags().DurationVar(&timeout, "timeout", 0, "bound the curation run (default 20m)")
 	return cmd
+}
+
+// knownNotes rejects a name the store does not hold.
+//
+// A typo would otherwise scope the run to nothing and cost a full model
+// invocation to report that it found nothing to do — and the report would read
+// the same as a run that correctly found nothing, which is the reading that
+// matters here.
+func knownNotes(env *Env, store *memory.Store, names []string) error {
+	if len(names) == 0 {
+		return nil
+	}
+	notes, errs := store.LoadNotes()
+	if len(errs) > 0 {
+		return errs[0]
+	}
+	known := make(map[string]bool, len(notes))
+	for _, n := range notes {
+		known[n.Name] = true
+	}
+	for _, name := range names {
+		if !known[name] {
+			return fmt.Errorf("memory: no note named %q; `agtk memory stats` lists the store", name)
+		}
+	}
+	return nil
 }
 
 // selfPath is this binary's own path, for a child that shells back into agtk.
@@ -887,4 +978,14 @@ func yesNo(b bool) string {
 		return "yes"
 	}
 	return "no"
+}
+
+// describeMode renders the permission mode for a reader. An empty mode is a
+// decision, not a gap: passing none leaves the grant as the whole of the run's
+// permission, and printing a blank field invites the opposite reading.
+func describeMode(mode string) string {
+	if mode == "" {
+		return "none passed — the grant is the whole permission"
+	}
+	return mode
 }

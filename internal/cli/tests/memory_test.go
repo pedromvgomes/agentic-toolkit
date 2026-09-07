@@ -34,6 +34,18 @@ confidence: verified
 See internal/resolver/graph.go:88.
 `
 
+const secondMemoryNote = `---
+name: never-read
+kind: gotcha
+description: A note nobody has reached for.
+anchors:
+  - path: internal/resolver/graph.go
+confidence: verified
+---
+
+See internal/resolver/graph.go:12.
+`
+
 // TestMemoryIndexScaffoldsStore: `index` on a repo with no store creates
 // the layout, including the gitignore that keeps hit telemetry out of
 // commits and the placeholder that keeps candidates/ alive through a clone.
@@ -883,5 +895,85 @@ func TestMemoryAnchorRefusesTwoDifferentInstructions(t *testing.T) {
 
 	if _, _, err := runCLI(t, work, "memory", "anchor", "--all", "pins-shas"); err == nil {
 		t.Fatal("anchor accepted --all alongside a named note")
+	}
+}
+
+// TestMemoryStatsReportsBothSidesOfTheLedger: the hit rate alone cannot say
+// whether the store is repaying itself, because the cost it is judged against
+// — the index an explorer loads before it has decided any note is relevant —
+// is not visible anywhere else. Both numbers have to come out of one command.
+func TestMemoryStatsReportsBothSidesOfTheLedger(t *testing.T) {
+	work := memoryProject(t, "skills: []\n")
+	writeFile(t, filepath.Join(work, ".agents/memory/notes/pins-shas.md"), memoryNote)
+	if _, _, err := runCLI(t, work, "memory", "anchor", "--all"); err != nil {
+		t.Fatalf("memory anchor: %v", err)
+	}
+	if _, _, err := runCLI(t, work, "memory", "index"); err != nil {
+		t.Fatalf("memory index: %v", err)
+	}
+
+	stdout, _, err := runCLI(t, work, "memory", "stats")
+	if err != nil {
+		t.Fatalf("memory stats: %v", err)
+	}
+	if !strings.Contains(stdout, "index:") || !strings.Contains(stdout, "the tax") {
+		t.Errorf("stats must report the index size as the tax: %q", stdout)
+	}
+	// A reader who takes the hit rate for a property of the store draws the
+	// opposite conclusion from a fresh clone's zero, so the scope is part of
+	// the number rather than a footnote.
+	if !strings.Contains(stdout, "this checkout") {
+		t.Errorf("stats must scope the hit rate to this checkout: %q", stdout)
+	}
+	if !strings.Contains(stdout, "cold:") || !strings.Contains(stdout, "pins-shas") {
+		t.Errorf("stats must name the unread notes, not just count them: %q", stdout)
+	}
+	// Fewer reads than notes cannot warm every note, so a non-empty cold list
+	// is arithmetic rather than evidence. Printed without that, it reads as a
+	// prune list, and §1's "prune harder" gets applied to notes that have not
+	// yet had the chance to be read.
+	if !strings.Contains(stdout, "not yet a prune signal") {
+		t.Errorf("a cold list computed from fewer reads than notes must say it is not yet a signal: %q", stdout)
+	}
+
+	// Once reads reach the note count, every cold note could have been warm,
+	// so silence about one is a fact about that note rather than about the
+	// sample, and the caveat has to get out of the way while the list stays.
+	writeFile(t, filepath.Join(work, ".agents/memory/notes/never-read.md"), secondMemoryNote)
+	if _, _, err := runCLI(t, work, "memory", "anchor", "--all"); err != nil {
+		t.Fatalf("memory anchor: %v", err)
+	}
+	for i := 0; i < 2; i++ {
+		if _, _, err := runCLI(t, work, "memory", "show", "pins-shas"); err != nil {
+			t.Fatalf("memory show: %v", err)
+		}
+	}
+	warmed, _, err := runCLI(t, work, "memory", "stats")
+	if err != nil {
+		t.Fatalf("memory stats: %v", err)
+	}
+	if !strings.Contains(warmed, "cold:") || !strings.Contains(warmed, "never-read") {
+		t.Fatalf("the cold list must still name the unread note: %q", warmed)
+	}
+	if strings.Contains(warmed, "not yet a prune signal") {
+		t.Errorf("the caveat outlived the sample-size problem it describes: %q", warmed)
+	}
+
+	stdout, _, err = runCLI(t, work, "memory", "stats", "--json")
+	if err != nil {
+		t.Fatalf("memory stats --json: %v", err)
+	}
+	var stats struct {
+		IndexBytes int64    `json:"index_bytes"`
+		Cold       []string `json:"cold"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &stats); err != nil {
+		t.Fatalf("stats json: %v (%s)", err, stdout)
+	}
+	if stats.IndexBytes == 0 {
+		t.Error("index_bytes = 0 after generating an index")
+	}
+	if len(stats.Cold) != 1 || stats.Cold[0] != "never-read" {
+		t.Errorf("cold = %v, want the one unread note", stats.Cold)
 	}
 }
