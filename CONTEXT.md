@@ -129,7 +129,127 @@ cold list says which **Note**s to drop. Below that threshold the list is non-emp
 arithmetic and says nothing about the notes in it.
 _Avoid_: unused, dead, orphaned
 
+### Code review
+**Reviewer**:
+One configured critic of a change — a name, a **Provider**, a model, and a prompt body. Declared
+in the **Review manifest**. The unit that is spawned, and the unit a **Finding** is attributed to.
+_Avoid_: agent, critic, panelist
+
+**Panel**:
+A named set of **Reviewer**s, with how many instances of each to run and whether findings are
+validated. One panel runs per review. Which one is a **Context**'s default, possibly raised by
+an **Escalation**.
+_Avoid_: profile, preset, tier
+
+**Context**:
+What a review runs against — the local working tree, or an open PR. It names the default
+**Panel**, and it decides what a run is obliged to do rather than what it may: a context that
+posts always validates. One manifest therefore describes both the pre-push review and the PR
+review.
+_Avoid_: environment, mode, target
+
+**Escalation**:
+A rule that raises the **Panel** above the **Context**'s default when a change meets its
+condition. Rules only ever raise, so a mistaken rule costs money and never yields a shallower
+review than the default; every rule is evaluated and the highest target wins, so their order
+carries no meaning.
+_Avoid_: matcher, trigger, override
+
+**Signal**:
+A property of a change that `agtk` detects itself — a touched concern like `auth`,
+`concurrency` or `fix-revert`. The vocabulary is closed and ships with the binary, because
+detecting one is language knowledge that has to be tested somewhere other than a consumer's
+YAML. A repo names paths instead.
+_Avoid_: heuristic, marker, flag
+
+**Finding**:
+One issue a **Reviewer** reports: a file, a line range, a severity, and a body. The unit
+**Judge**ment is applied to and the unit that becomes an inline comment.
+_Avoid_: issue, comment, result
+
+**Judge**:
+The single run that reads every surviving **Finding**, merges near-duplicates, sets final
+severity and decides which reach the PR. It reconciles a set; judging one claim on its own
+evidence is the **Validator**'s job, and the two are separate because they are different
+questions. It decides; it does not transmit — the App credential never
+enters a model's process, so `agtk` alone calls GitHub. The same separation of authority from
+action that ADR 0003 makes for the **Curator**.
+_Avoid_: reducer, arbiter, referee
+
+**Quorum**:
+How many independent instances of each **Reviewer** a **Panel** runs. Agreement between them is
+the confidence signal: a **Finding** two instances reach independently is corroborated, and
+corroboration is what spares it from demotion.
+_Avoid_: duplicates, redundancy, disputed
+
+**Validator**:
+A run handed one candidate **Finding** and its evidence and asked whether it holds. Optional per
+**Panel**, and on where a **Review** is posted: a false finding there is published and blocks
+**Approval**, rather than merely cluttering a terminal. Independent of the **Judge** by
+construction — it sees one claim, not the set — which is the whole of what it adds.
+_Avoid_: verifier, checker, second pass
+
+**Review**:
+The one artifact a review run posts: a single GitHub review with event `COMMENT`, carrying a
+summary body and one inline comment per surviving **Finding**. A review run posts nothing else
+— **Approval** is a separate act, reachable only from its own subcommand.
+_Avoid_: report, verdict, comment
+
+**Severity**:
+How much a **Finding** matters: `RED | AMBER | GREEN`. RED means must fix before merge, and is
+the default **Approval floor**.
+_Avoid_: priority, level
+
+**Approval**:
+A GitHub review with event `APPROVE`, posted by the App so it counts toward a repo's required
+approvals — which a solo author cannot satisfy alone, since nobody may approve their own PR.
+Granted only when a **Review** exists for the PR's current head commit and no **Finding** at or
+above the **Severity** floor survived, unless forced.
+
+Never reachable from a review run. No model decides it, no tool grant contains it, and the
+**Judge** cannot reach it: a run that could approve the code it just reviewed is the hazard
+GitHub blocks `GITHUB_TOKEN` approvals to prevent. The person types the command.
+_Avoid_: sign-off, gate, merge
+
+**Review root**:
+The detached worktree of the code under review, created by `agtk` outside the project
+directory. No **Reviewer** ever runs with it as its working directory, and the instruction
+files a coding-agent CLI discovers by walking upward — `AGENTS.md`, `AGENTS.override.md`,
+`CLAUDE.md`, `.codex/`, `.claude/` — are neutralised inside it before any child starts.
+Codex has no equivalent of `--setting-sources ""`, so discovery is closed by where the child
+runs and what the directory contains, not by a flag.
+_Avoid_: checkout, workspace, head
+
+**Fingerprint**:
+What identifies a **Finding** across runs: its path, its category and the code it quotes,
+hashed. Not its line, which moves on every push, and not its prose, which differs between two
+runs describing one bug — so identity means "this code, this kind of problem". Carried in a
+posted comment so a later run reads it rather than re-deriving it.
+_Avoid_: id, key, hash
+
+**Review manifest**:
+`.agents/code-review/manifest.yaml`: the single declaration of **Reviewer**s, **Panel**s and the
+prompt bodies they use. Read by both engines — the in-session skill and `agtk code-review` — so
+there is one roster and not two.
+_Avoid_: panels.json, roster file, review config
+
 ## Flagged ambiguities
+**"Candidate"** — a staged memory finding awaiting a **Curator**, and also a **Finding** that
+has not yet passed a **Validator**. The memory sense owns the bare noun; in review, say
+"candidate finding" and never "candidate" alone.
+
+**"Panel"** — `deep-code-review` used it for a per-stack group of reviewers *within* one run,
+so a polyglot change had several. A **Panel** here is the entire roster for a run — one runs,
+named by a **Context**'s default and possibly raised by an **Escalation**. The per-stack sense
+has no name because per-stack partitioning is not built.
+
+**"Review"** — the activity and the artifact. **Review** is the artifact posted to the PR; say
+"review run" for the activity, and **Approval** is never part of either.
+
+**"Judge" vs "Curator"** — both are single model runs holding final authority over what
+survives, and neither performs the act its judgment authorises. Deliberately parallel; they
+share no code and no store.
+
 **"Verify"** — was used both for the CI structural check and for a curator confirming a claim
 is true. Resolution: the command is `agtk memory lint`; `verified` is reserved for
 **Confidence**.

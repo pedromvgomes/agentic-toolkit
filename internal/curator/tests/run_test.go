@@ -12,30 +12,14 @@ import (
 	"github.com/pedromvgomes/agentic-toolkit/internal/curator"
 )
 
-// A finished `claude -p … --output-format json` turn, trimmed to the fields
-// the provider reads.
-const curatedEnvelope = `{
-  "type": "result",
-  "subtype": "success",
-  "is_error": false,
-  "session_id": "s1",
-  "num_turns": 4,
-  "total_cost_usd": 0.42,
-  "result": "Promoted: lockfile-pins-shas-not-tags\nRejected: 20260905-where-render-lives — re-derivable\nStore: 9 notes, 0 stale",
-  "modelUsage": {
-    "claude-opus-5[1m]": {"canonicalModel": "claude-opus-5", "inputTokens": 12, "cacheReadInputTokens": 9000}
-  }
-}`
+// The terminal `result` line of a run. Every provider streams, so a fake's
+// stdout is NDJSON and a whole turn fits on one line; the fields are trimmed to
+// the ones the provider reads.
+const curatedEnvelope = `{"type":"result","subtype":"success","is_error":false,"session_id":"s1","num_turns":4,"total_cost_usd":0.42,"result":"Promoted: lockfile-pins-shas-not-tags\nRejected: 20260905-where-render-lives — re-derivable\nStore: 9 notes, 0 stale","modelUsage":{"claude-opus-5[1m]":{"canonicalModel":"claude-opus-5","inputTokens":12,"cacheReadInputTokens":9000}}}`
 
 // A failing turn. The CLI reporting its own failure is a verdict, not an
 // outage: the report is populated and carries the explanation.
-const refusedEnvelope = `{
-  "type": "result",
-  "subtype": "success",
-  "is_error": true,
-  "session_id": "s2",
-  "result": "could not reach the store"
-}`
+const refusedEnvelope = `{"type":"result","subtype":"success","is_error":true,"session_id":"s2","result":"could not reach the store"}`
 
 func run(t *testing.T, stdout string, opts curator.Options) (*agentictest.Fake, curator.Result, error) {
 	t.Helper()
