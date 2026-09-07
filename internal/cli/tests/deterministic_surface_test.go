@@ -52,6 +52,17 @@ func TestTheDriverIsReachedThroughNamedSeamsOnly(t *testing.T) {
 		if strings.HasPrefix(rel, "internal/curator/") || driverSeams[rel] {
 			return nil
 		}
+		// Tests are not in the binary, so what they import cannot decide
+		// whether a deterministic command runs without a driver — and a test
+		// that could not name the driver could not build the fake provider it
+		// takes to assert how a real one is confined.
+		//
+		// The construction guard below still covers them: a test that built
+		// something able to spawn a CLI would be caught there, which is the
+		// half that would actually cost a run.
+		if strings.HasSuffix(rel, "_test.go") {
+			return nil
+		}
 		f, err := parser.ParseFile(fset, path, nil, parser.ImportsOnly)
 		if err != nil {
 			return err
