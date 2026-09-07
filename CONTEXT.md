@@ -206,6 +206,13 @@ Codex has no equivalent of `--setting-sources ""`, so discovery is closed by whe
 runs and what the directory contains, not by a flag.
 _Avoid_: checkout, workspace, head
 
+**Fingerprint**:
+What identifies a **Finding** across runs: its path, its category and the code it quotes,
+hashed. Not its line, which moves on every push, and not its prose, which differs between two
+runs describing one bug — so identity means "this code, this kind of problem". Carried in a
+posted comment so a later run reads it rather than re-deriving it.
+_Avoid_: id, key, hash
+
 **Review manifest**:
 `.agents/code-review/manifest.yaml`: the single declaration of **Reviewer**s, **Panel**s and the
 prompt bodies they use. Read by both engines — the in-session skill and `agtk code-review` — so

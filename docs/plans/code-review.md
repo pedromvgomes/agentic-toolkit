@@ -185,9 +185,82 @@ combinators in adjacent lines.
 `code-review` unusable on a repo that has not rendered, which includes the repo that just
 adopted the toolkit.
 
-## 7. Not yet designed
+## 7. Re-reviewing a PR that already carries one
 
-**Re-review deduplication.** The 4↔5 loop re-runs against a PR that already carries a bot
-review. Findings already posted and addressed must not be raised again, which needs keying
-to the head commit, reading back the bot's own threads and their resolution state, and
-minimising superseded ones. This is the next design pass, before any posting code.
+The loop re-runs reviewers over a PR the bot has already reviewed. They re-derive what was
+not fixed, which is correct, and would say it again, which is not. Nothing may accumulate
+except genuinely new findings.
+
+### What a finding is, across runs
+
+`path` + `category` + normalized `evidence`, hashed. The finding schema already compels the
+quote — "every finding must quote the offending line(s) in `evidence`. A finding without
+quotable code does not get filed" — so nothing new is asked of a reviewer.
+
+Identity is deliberately *not* the line, which moves on every push, and not the `issue`
+sentence, which is generated prose and differs between two runs describing one bug. Anchoring
+on the quoted code makes identity mean **this code, this kind of problem**.
+
+Normalization takes the first non-empty line of the quote, trims it and collapses internal
+whitespace. The hash is the first 12 hex characters of its sha256, the same width the memory
+store uses for blob hashes.
+
+Each posted comment carries its fingerprint as an HTML comment, invisible in rendered
+markdown, so a later run looks identity up rather than re-deriving it:
+
+```
+<!-- agtk:finding v1 cdbb1d5c5dec -->
+```
+
+The `v1` is load-bearing. A change to what is hashed makes every old marker mismatch, and
+without a version that reads as "all findings are new" instead of "the scheme moved".
+
+### What each thread state does
+
+State is read back from the PR, never cached: `reviewThreads` gives `isResolved`,
+`isOutdated`, `path` and the comment bodies the fingerprints live in. The PR is what the
+person actually looked at, and it survives a fresh clone.
+
+| Existing thread with this fingerprint | Then |
+|---|---|
+| none | post it |
+| open | do not post — it is already there and visible |
+| resolved | do not post — a person read this exact code and made a call |
+| outdated | post it — GitHub collapses an outdated thread, so the finding is invisible where it now lives |
+
+Resolution is ambiguous on its own: it means *fixed* and *won't fix* equally. Evidence-based
+identity separates them without a rule. A fixed finding has different code, so a different
+fingerprint, so nothing suppresses it — which is what protects against a fix that did not
+work. Only a finding whose quoted code is byte-identical to one somebody resolved is
+suppressed, and that is the case where suppressing is right.
+
+The **Judge** additionally receives the open threads, so it can fold a near-duplicate the hash
+missed into the thread that already exists. It may drop a finding as already said; it may
+never resurrect a suppressed one. Suppression is deterministic and one-directional, and the
+judge's reconciliation only ever narrows what gets posted.
+
+### Cross-cutting findings need no identity
+
+A finding with no line — an architectural claim about a subsystem — cannot be an inline
+comment, because GitHub requires a path and a line. It goes in the review body, which is a
+complete statement about one commit. Nothing accumulates inside a review, and an older review
+is history rather than stale current state, so there is nothing to deduplicate.
+
+### Reviewing the same commit twice
+
+A run whose target head already carries a bot review is a no-op that says so and exits, naming
+the commit. `--force` reviews anyway. Re-reviewing an unchanged commit spends a panel to
+re-derive what the PR already displays.
+
+This is also what makes **Approval** meaningful: it requires a review for the PR's current
+head, and reviews are bound to a commit. That binding is the reason the summary lives in the
+review body rather than in an edited-in-place comment, which would always describe "now" and
+could never be evidence that a particular commit was reviewed.
+
+### What this does not solve
+
+The fingerprint is exactly as stable as the model's quoting. A run that quotes one line where
+the last quoted three produces a different hash and therefore a duplicate comment. The judge's
+pass over open threads is the mitigation, and it is a mitigation rather than a guarantee.
+Making `evidence` a single line in the reviewer prompts would tighten it, at the cost of
+findings whose evidence genuinely spans a hunk.
