@@ -164,8 +164,13 @@ func parseNumstat(out []byte) ([]DiffFile, error) {
 		// An empty path field means the next two records are the old and new
 		// names of a rename.
 		if fields[2] == "" {
-			if i+2 >= len(records) {
-				return nil, fmt.Errorf("numstat record %q announces a rename with no paths after it", rec)
+			// The record announces a rename; its two names are the next two
+			// records. Both must be there and both must be names: the output
+			// ends with a separator, so a truncated stream leaves an empty
+			// trailing record that would otherwise be read as a file whose
+			// name is nothing.
+			if i+2 >= len(records) || records[i+1] == "" || records[i+2] == "" {
+				return nil, fmt.Errorf("numstat record %q announces a rename without both of its names", rec)
 			}
 			f.OldPath = records[i+1]
 			f.Path = records[i+2]
@@ -470,12 +475,12 @@ func LineHistory(dir, rev, file string, start, length int, limit int) ([]string,
 // on a change big enough to need this reading is hundreds of spawns to answer
 // a question about hundreds of first lines.
 func FileHeads(dir, rev string, paths []string, limit int) map[string]string {
-	heads := make(map[string]string, len(paths))
 	if len(paths) == 0 {
-		return heads
+		return map[string]string{}
 	}
 
 	if rev == "" {
+		heads := make(map[string]string, len(paths))
 		for _, p := range paths {
 			heads[p] = readHead(filepath.Join(dir, filepath.FromSlash(p)), limit)
 		}
@@ -508,14 +513,25 @@ func FileHeads(dir, rev string, paths []string, limit int) map[string]string {
 	if err != nil {
 		// Unreadable heads cost the content marker and nothing else: the name
 		// patterns and the repo's own .gitattributes still classify.
-		return heads
+		return map[string]string{}
 	}
 
-	// Records are `<sha> <type> <size>\0<contents>\0`, in the order asked for.
-	// A missing path answers `<spec> missing\0` and consumes no body. Framing
-	// on NUL is what makes a record boundary impossible to forge from a path,
-	// and it is why a bodiless record can be skipped rather than ending the
-	// walk: the next boundary is still known.
+	return parseBatchResponse(out, requested, limit)
+}
+
+// parseBatchResponse folds a `git cat-file --batch -Z` response into a head
+// per requested path.
+//
+// Records are `<sha> <type> <size>\0<contents>\0`, in the order asked for. A
+// missing path answers `<spec> missing\0` and consumes no body. Framing on NUL
+// is what makes a record boundary impossible to forge from a path, and it is
+// why a bodiless record can be skipped rather than ending the walk: the next
+// boundary is still known.
+//
+// Split out from FileHeads so the framing can be exercised against hostile
+// input without a process.
+func parseBatchResponse(out []byte, requested []string, limit int) map[string]string {
+	heads := make(map[string]string, len(requested))
 	rest := out
 	for _, p := range requested {
 		sep := bytes.IndexByte(rest, 0)
@@ -528,7 +544,7 @@ func FileHeads(dir, rev string, paths []string, limit int) map[string]string {
 		fields := strings.Fields(header)
 		size := -1
 		if len(fields) == 3 {
-			if n, err := strconv.Atoi(fields[2]); err == nil {
+			if n, err := strconv.Atoi(fields[2]); err == nil && n >= 0 {
 				size = n
 			}
 		}
