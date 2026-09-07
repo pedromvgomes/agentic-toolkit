@@ -27,6 +27,7 @@ import (
 
 	defs "github.com/pedromvgomes/agentic-toolkit/internal/definitions"
 	lock "github.com/pedromvgomes/agentic-toolkit/internal/lockfile"
+	rev "github.com/pedromvgomes/agentic-toolkit/internal/review"
 	"github.com/pedromvgomes/agentic-toolkit/internal/sourceref"
 	stk "github.com/pedromvgomes/agentic-toolkit/internal/stack"
 )
@@ -226,6 +227,8 @@ func renderConfig() ([]byte, error) {
 	fmt.Fprintln(&b, "- `.agentic-toolkit.yaml` — entry-point **stack manifest**: declares which other stacks to extend and which definitions to layer on top. Hand-edited.")
 	fmt.Fprintln(&b, "- `.agentic-toolkit.lock.yaml` — pinned record of what the resolver actually fetched. Resolver-written; commit it.")
 	fmt.Fprintln(&b)
+	fmt.Fprintf(&b, "A repo that wants its own code review declares one more, optional file: `%s/%s`.\n", rev.ManifestDir, rev.ManifestFile)
+	fmt.Fprintln(&b)
 
 	fmt.Fprintln(&b, "## Stack manifest")
 	fmt.Fprintln(&b)
@@ -278,6 +281,77 @@ func renderConfig() ([]byte, error) {
 	fmt.Fprintln(&b, "  - github.com/some-team/their-skills.git/skills/lint-helper@v1")
 	fmt.Fprintln(&b, "rules:")
 	fmt.Fprintln(&b, "  - github.com/some-team/their-rules.git/rules/style.md@v1")
+	fmt.Fprintln(&b, "```")
+	fmt.Fprintln(&b)
+
+	fmt.Fprintln(&b, "## Review manifest")
+	fmt.Fprintln(&b)
+	fmt.Fprintf(&b, "**Path:** `%s/%s` at the repo root.\n", rev.ManifestDir, rev.ManifestFile)
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "Declares the reviewers `agtk code-review` can staff a panel with, the panels themselves, and the rules that raise one panel to another. A repo with no manifest is reviewed by the one built into `agtk`; a repo with one is using it **whole**, because prompt bodies stay shareable through `builtin:` references rather than through a merge algorithm.")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "The location is fixed rather than configurable: the manifest is configuration, and `agtk` reads the whole directory at a git ref — the manifest together with the prompt bodies it names — so that a branch cannot rewrite the rules its own change is judged against.")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "### Fields")
+	fmt.Fprintln(&b)
+	writeFieldTable(&b, docForType(reflect.TypeOf(rev.Manifest{})).Fields)
+	fmt.Fprintln(&b)
+
+	fmt.Fprintln(&b, "### `reviewers` entry, `judge`, `validator` (`Runner`)")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "One configured model invocation. It says which CLI, which model and which prompt, and nothing about what the run may do: every run in a review is read-only, and how that is enforced is a fact about the provider rather than something a manifest can weaken. A provider that cannot be confined to reading, or cannot bind its answer to a schema, is refused when the manifest is read rather than discovered by a failed run.")
+	fmt.Fprintln(&b)
+	writeFieldTable(&b, docForType(reflect.TypeOf(rev.Runner{})).Fields)
+	fmt.Fprintln(&b)
+
+	fmt.Fprintln(&b, "### `panels` entry (`Panel`)")
+	fmt.Fprintln(&b)
+	writeFieldTable(&b, docForType(reflect.TypeOf(rev.Panel{})).Fields)
+	fmt.Fprintln(&b)
+
+	fmt.Fprintln(&b, "### `defaults`")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "The panel each **context** starts from. A context is what a review runs against, and it decides what a run is obliged to do rather than what it may: a context that posts always validates.")
+	fmt.Fprintln(&b)
+	writeFieldTable(&b, docForType(reflect.TypeOf(rev.Defaults{})).Fields)
+	fmt.Fprintln(&b)
+
+	fmt.Fprintln(&b, "### `escalate` entry (`Escalation`)")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "Rules only ever raise, so a mistaken rule costs money and never yields a shallower review than the default. Every rule is evaluated and the highest target wins, so the order they are written in carries no meaning. Depth is what a panel spends: reviewers × quorum.")
+	fmt.Fprintln(&b)
+	writeFieldTable(&b, docForType(reflect.TypeOf(rev.Escalation{})).Fields)
+	fmt.Fprintln(&b)
+
+	fmt.Fprintln(&b, "### Conditions")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "A condition is always `key: {operator: value}`. There is no bare form, because a bare form means a combinator is inferred — from how clauses nest, or from a neighbouring list — and two invisible combinators in adjacent lines is the defect this grammar exists to avoid. A list inside an operator means \"any of\", which the operator's own name forces; conjunction over a set is `all_in`, and conjunction over globs is two members of `all:`.")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "Operators are words. `>=` opens a YAML folded block scalar, so a rule written with one fails on the header option before any schema is consulted, and no error message produced afterwards can recover it.")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "| Key | Operators | Meaning |")
+	fmt.Fprintln(&b, "|---|---|---|")
+	for _, key := range rev.ConditionKeys {
+		ops := make([]string, 0, len(key.Operators()))
+		for _, op := range key.Operators() {
+			ops = append(ops, "`"+string(op)+"`")
+		}
+		fmt.Fprintf(&b, "| `%s` | %s | %s |\n", key, strings.Join(ops, ", "), key.Description())
+	}
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "The `signals` vocabulary is closed and ships with the binary; `agtk code-review signals` lists it. Detecting a signal is language knowledge, which has to be tested somewhere other than a consumer's YAML — a repo that wrote its own patterns gets nothing the day it adds a second language. A repo's own escape hatch is `touches`, which is honest about being path-only.")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "| Signal | Fires on |")
+	fmt.Fprintln(&b, "|---|---|")
+	for _, sig := range rev.Signals {
+		fmt.Fprintf(&b, "| `%s` | %s |\n", sig, sig.Description())
+	}
+	fmt.Fprintln(&b)
+
+	fmt.Fprintln(&b, "### Example")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "```yaml")
+	b.Write(rev.DefaultManifestYAML())
 	fmt.Fprintln(&b, "```")
 	fmt.Fprintln(&b)
 

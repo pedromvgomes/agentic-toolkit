@@ -1,0 +1,221 @@
+package tests
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/pedromvgomes/agentic-toolkit/internal/review"
+)
+
+// profile builds a change profile directly, so selection is tested without a
+// repository, a diff or a process.
+func profile(files, lines int, refs review.Count, signals ...review.Signal) *review.Profile {
+	set := review.NewSignalSet()
+	for _, s := range signals {
+		set.Add(s)
+	}
+	p := &review.Profile{ChangedFiles: files, ChangedLines: lines, Signals: set, ReferencingFiles: refs}
+	for i := 0; i < files; i++ {
+		p.Files = append(p.Files, review.ChangedFile{
+			DiffFile: review.DiffFile{Path: "internal/resolver/f.go", Added: 1},
+			Language: review.LangGo,
+		})
+	}
+	return p
+}
+
+// withPaths replaces a profile's paths, keeping its counts: a test about
+// which paths were touched should not silently also change how many.
+func withPaths(p *review.Profile, paths ...string) *review.Profile {
+	p.Files = nil
+	for _, path := range paths {
+		p.Files = append(p.Files, review.ChangedFile{
+			DiffFile: review.DiffFile{Path: path, Added: 1},
+			Language: review.LanguageOf(path),
+		})
+	}
+	return p
+}
+
+func selectPanel(t *testing.T, m *review.Manifest, ctx review.Context, p *review.Profile, override string) *review.Selection {
+	t.Helper()
+	sel, err := review.Select(m, ctx, p, override)
+	if err != nil {
+		t.Fatalf("Select: %v", err)
+	}
+	return sel
+}
+
+// With nothing firing, a context runs the panel it declared.
+func TestTheDefaultRunsWhenNothingFires(t *testing.T) {
+	m := mustParse(t, complete)
+
+	sel := selectPanel(t, m, review.ContextWorktree, profile(1, 10, review.AvailableCount(0)), "")
+	if sel.Panel != "quick" {
+		t.Errorf("panel = %q, want quick", sel.Panel)
+	}
+	if len(sel.Fired) != 0 {
+		t.Errorf("fired = %v, want nothing", sel.Fired)
+	}
+}
+
+// A rule raises the panel. The whole point of the mechanism.
+func TestARuleRaisesThePanel(t *testing.T) {
+	m := mustParse(t, complete)
+
+	sel := selectPanel(t, m, review.ContextWorktree,
+		profile(1, 10, review.AvailableCount(0), review.SignalConcurrency), "")
+
+	if sel.Panel != "deep" {
+		t.Errorf("panel = %q, want deep", sel.Panel)
+	}
+	if len(sel.Fired) != 1 || sel.Fired[0].Index != 1 {
+		t.Errorf("fired = %v, want escalate[1]", sel.Fired)
+	}
+}
+
+// Rules only ever raise. A rule whose target is shallower than the context's
+// default fires and changes nothing, so a mistaken rule costs money and never
+// produces a review shallower than the repo asked for.
+func TestARuleNeverLowersThePanel(t *testing.T) {
+	m := mustParse(t, complete)
+
+	// The pr context defaults to standard; the changed_files rule targets
+	// standard, and the signals rule targets deep. Against a change that
+	// triggers only the shallower one, the default holds.
+	sel := selectPanel(t, m, review.ContextPR, profile(40, 900, review.AvailableCount(0)), "")
+
+	if sel.Panel != "standard" {
+		t.Errorf("panel = %q, want standard", sel.Panel)
+	}
+	if len(sel.Fired) != 1 {
+		t.Fatalf("fired = %v, want the changed_files rule", sel.Fired)
+	}
+}
+
+// Every rule is evaluated and the highest target wins, so the order they are
+// written in carries no meaning.
+func TestOrderCarriesNoMeaning(t *testing.T) {
+	m := mustParse(t, complete)
+	p := withPaths(profile(30, 900, review.AvailableCount(0)), "internal/auth/token.go")
+
+	sel := selectPanel(t, m, review.ContextWorktree, p, "")
+
+	if sel.Panel != "deep" {
+		t.Errorf("panel = %q, want deep — the deepest target among the rules that fired", sel.Panel)
+	}
+	if len(sel.Fired) != 2 {
+		t.Fatalf("fired = %v, want both the touches rule and the changed_files rule", sel.Fired)
+	}
+	// The rule targeting the shallower panel fired last and did not win, so
+	// neither the order they are written in nor the order they fired decides.
+	if sel.Fired[1].To != "standard" {
+		t.Errorf("fired[1] targets %q, want standard", sel.Fired[1].To)
+	}
+}
+
+// An override names the panel outright, and the rules are still reported so
+// --explain can show what would have happened.
+func TestAnOverrideDecidesButStillReports(t *testing.T) {
+	m := mustParse(t, complete)
+
+	sel := selectPanel(t, m, review.ContextWorktree,
+		profile(1, 10, review.AvailableCount(0), review.SignalConcurrency), "quick")
+
+	if sel.Panel != "quick" {
+		t.Errorf("panel = %q, want the override", sel.Panel)
+	}
+	if !sel.Overridden {
+		t.Error("Overridden should record that the rules did not decide")
+	}
+	if len(sel.Fired) != 1 {
+		t.Errorf("fired = %v, want the rule reported even though it did not decide", sel.Fired)
+	}
+}
+
+func TestAnOverrideNamingNoPanelIsRefused(t *testing.T) {
+	m := mustParse(t, complete)
+
+	_, err := review.Select(m, review.ContextWorktree, profile(1, 10, review.AvailableCount(0)), "thorough")
+	if err == nil {
+		t.Fatal("Select accepted a panel that does not exist")
+	}
+	if !strings.Contains(err.Error(), "deep, quick, standard") {
+		t.Errorf("error = %q, want it to list the declared panels", err)
+	}
+}
+
+// Unavailable is never low. A rule reading a count the change could not
+// produce is refused, rather than evaluating as though the count were zero and
+// leaving a repo with an escalation that can never fire.
+func TestARuleOverAnUnavailableCountIsRefused(t *testing.T) {
+	m := mustParse(t, strings.Replace(complete,
+		"      - changed_files: {gte: 20}", "      - referencing_files: {gte: 20}", 1))
+	p := profile(1, 10, review.UnavailableCount("no symbol extractor for kotlin"))
+
+	_, err := review.Select(m, review.ContextWorktree, p, "")
+	if err == nil {
+		t.Fatal("Select evaluated a rule over a count that does not exist")
+	}
+	for _, want := range []string{"referencing_files", "no symbol extractor for kotlin", "can never fire"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error = %q, want it to mention %q", err, want)
+		}
+	}
+}
+
+// The same rule for a signal that could not be determined: a budget that ran
+// out is not evidence that nothing was undone.
+func TestARuleOverAnUndeterminedSignalIsRefused(t *testing.T) {
+	m := mustParse(t, complete)
+	set := review.NewSignalSet()
+	set.MarkUndetermined(review.SignalFixRevert, "the 200-file blame budget ran out")
+	p := &review.Profile{ChangedFiles: 1, ChangedLines: 10, Signals: set, ReferencingFiles: review.AvailableCount(0)}
+
+	_, err := review.Select(m, review.ContextWorktree, p, "")
+	if err == nil {
+		t.Fatal("Select evaluated a rule over a signal that could not be read")
+	}
+	if !strings.Contains(err.Error(), "not a signal the change does not carry") {
+		t.Errorf("error = %q", err)
+	}
+}
+
+// A context that posts validates whatever its panel says, because a false
+// finding there is published and blocks approval.
+func TestAPostingContextAlwaysValidates(t *testing.T) {
+	src := strings.Replace(complete,
+		"  standard: {reviewers: [correctness, security]}",
+		"  standard: {reviewers: [correctness, security], validate: false}", 1)
+	m := mustParse(t, src)
+
+	pr := selectPanel(t, m, review.ContextPR, profile(1, 10, review.AvailableCount(0)), "")
+	if !pr.Validates {
+		t.Error("the pr context must validate even against a panel that says not to")
+	}
+
+	worktree := selectPanel(t, m, review.ContextWorktree, profile(1, 10, review.AvailableCount(0)), "")
+	if worktree.Validates {
+		t.Error("the worktree context follows the panel, which said not to")
+	}
+}
+
+// --explain names the default, every rule that fired, and what resulted.
+func TestExplainShowsTheWholeDecision(t *testing.T) {
+	m := mustParse(t, complete)
+	p := withPaths(profile(30, 900, review.AvailableCount(4)), "internal/auth/token.go")
+	sel := selectPanel(t, m, review.ContextWorktree, p, "")
+
+	out := sel.Explain(m, p)
+	for _, want := range []string{
+		"default: quick",
+		"escalate[0] all → deep",
+		"escalate[2] all → standard",
+		"panel:   deep",
+		"quorum 2",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("explain missing %q:\n%s", want, out)
+		}
+	}
+}

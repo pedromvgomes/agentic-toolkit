@@ -7,6 +7,8 @@ A consumer repo opts into the toolkit by committing two files at the repo root:
 - `.agentic-toolkit.yaml` — entry-point **stack manifest**: declares which other stacks to extend and which definitions to layer on top. Hand-edited.
 - `.agentic-toolkit.lock.yaml` — pinned record of what the resolver actually fetched. Resolver-written; commit it.
 
+A repo that wants its own code review declares one more, optional file: `.agents/code-review/manifest.yaml`.
+
 ## Stack manifest
 
 **Path:** `.agentic-toolkit.yaml` at the repo root, or any `stacks/<name>.yaml` file in any repo published for sharing.
@@ -72,6 +74,150 @@ skills:
   - github.com/some-team/their-skills.git/skills/lint-helper@v1
 rules:
   - github.com/some-team/their-rules.git/rules/style.md@v1
+```
+
+## Review manifest
+
+**Path:** `.agents/code-review/manifest.yaml` at the repo root.
+
+Declares the reviewers `agtk code-review` can staff a panel with, the panels themselves, and the rules that raise one panel to another. A repo with no manifest is reviewed by the one built into `agtk`; a repo with one is using it **whole**, because prompt bodies stay shareable through `builtin:` references rather than through a merge algorithm.
+
+The location is fixed rather than configurable: the manifest is configuration, and `agtk` reads the whole directory at a git ref — the manifest together with the prompt bodies it names — so that a branch cannot rewrite the rules its own change is judged against.
+
+### Fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `version` | `int` | **yes** | Manifest schema version. Currently always 1. |
+| `reviewers` | `map[string]Runner` | **yes** | The critics this repo can staff a panel with, keyed by name. The name is what a panel lists and what a finding is attributed to. |
+| `judge` | `Runner` | **yes** | The single run that merges findings, sets final severity and decides which survive. It decides; it does not transmit. |
+| `validator` | `Runner` | **yes** | The run handed one candidate finding and asked whether it holds. A context that posts always validates, so this is required whatever the panels say. |
+| `panels` | `map[string]Panel` | **yes** | Named sets of reviewers, keyed by name. Exactly one panel runs per review. |
+| `defaults` | `Defaults` | **yes** | The panel each context starts from, before escalation. |
+| `escalate` | `[]Escalation` | no | Rules that raise the panel above a context's default. Every rule is evaluated and the highest target wins, so their order carries no meaning. |
+
+### `reviewers` entry, `judge`, `validator` (`Runner`)
+
+One configured model invocation. It says which CLI, which model and which prompt, and nothing about what the run may do: every run in a review is read-only, and how that is enforced is a fact about the provider rather than something a manifest can weaken. A provider that cannot be confined to reading, or cannot bind its answer to a schema, is refused when the manifest is read rather than discovered by a failed run.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `provider` | `string` | **yes** | Coding-agent CLI this run is driven through, e.g. "claudecode" or "codex". |
+| `model` | `string` | no | Model to run, by family alias ("opus", "sonnet") or exact name. Empty leaves the CLI's own default. |
+| `prompt` | `PromptRef` | **yes** | The prompt body: "builtin:<name>" for one that ships with agtk, or "./<path>" for one in this repo's review manifest directory. |
+
+### `panels` entry (`Panel`)
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `reviewers` | `[]string` | **yes** | Names from the manifest's reviewers map. A panel that names one this manifest does not declare cannot staff itself, and is refused. |
+| `quorum` | `int` | no | How many independent instances of each reviewer to run. Agreement between them is the confidence signal. Defaults to 1. |
+| `validate` | `bool` | no | Whether findings are put to the validator. Unset leaves it to the context, and a context that posts validates regardless: a false finding on a PR is published and blocks approval. |
+
+### `defaults`
+
+The panel each **context** starts from. A context is what a review runs against, and it decides what a run is obliged to do rather than what it may: a context that posts always validates.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `worktree` | `string` | **yes** | Panel a local working-tree review starts from. |
+| `pr` | `string` | **yes** | Panel a pull-request review starts from. |
+
+### `escalate` entry (`Escalation`)
+
+Rules only ever raise, so a mistaken rule costs money and never yields a shallower review than the default. Every rule is evaluated and the highest target wins, so the order they are written in carries no meaning. Depth is what a panel spends: reviewers × quorum.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `to` | `string` | **yes** | Panel to raise to when this rule fires. |
+| `all` | `[]Condition` | no | Conditions that must all hold. Exactly one of all: or any: is set on a rule. |
+| `any` | `[]Condition` | no | Conditions of which at least one must hold. Exactly one of all: or any: is set on a rule. |
+
+### Conditions
+
+A condition is always `key: {operator: value}`. There is no bare form, because a bare form means a combinator is inferred — from how clauses nest, or from a neighbouring list — and two invisible combinators in adjacent lines is the defect this grammar exists to avoid. A list inside an operator means "any of", which the operator's own name forces; conjunction over a set is `all_in`, and conjunction over globs is two members of `all:`.
+
+Operators are words. `>=` opens a YAML folded block scalar, so a rule written with one fails on the header option before any schema is consulted, and no error message produced afterwards can recover it.
+
+| Key | Operators | Meaning |
+|---|---|---|
+| `touches` | `matches`, `not_matches` | Globs over the changed paths. The path-only escape hatch a repo owns, and honest about being path-only. |
+| `signals` | `in`, `not_in`, `all_in` | Names from the built-in signal vocabulary. `in` holds when the change carries any of them; `all_in` when it carries every one. |
+| `changed_lines` | `gt`, `gte`, `lt`, `lte`, `eq` | Lines added plus removed, counted after mechanical exclusions. A pure rename contributes nothing; a rename with edits contributes its edits. |
+| `changed_files` | `gt`, `gte`, `lt`, `lte`, `eq` | Reviewable files, counted after mechanical exclusions. |
+| `referencing_files` | `gt`, `gte`, `lt`, `lte`, `eq` | Files referencing the exported symbols the change modifies. Unavailable when no extractor knows the change's languages, and a rule reading an unavailable count is refused rather than read as low. |
+
+The `signals` vocabulary is closed and ships with the binary; `agtk code-review signals` lists it. Detecting a signal is language knowledge, which has to be tested somewhere other than a consumer's YAML — a repo that wrote its own patterns gets nothing the day it adds a second language. A repo's own escape hatch is `touches`, which is honest about being path-only.
+
+| Signal | Fires on |
+|---|---|
+| `auth` | Authentication, authorization, sessions, tokens, permissions, and the middleware that gates requests. |
+| `migrations` | Schema migrations — DDL, changesets, migration directories. A column made NOT NULL without a default is the shape that hurts. |
+| `shared-kernel` | Code under a directory many other modules import, where one edit reaches everything downstream. |
+| `public-api` | Wire-visible contracts: exported signatures, REST, gRPC and GraphQL schemas, serialized formats. |
+| `message-consumers` | Code that runs with no request in front of it: queue and topic handlers, event consumers, schedulers. |
+| `ci-cd` | The pipeline itself: workflow files, release and publish scripts, the images they build on. |
+| `iac` | Infrastructure as code — Terraform, CloudFormation, Helm charts, Kubernetes manifests. |
+| `concurrency` | New or changed mutexes, channels, transactions, atomics, and optimistic-lock version fields. |
+| `sensitive-data` | PII handling, payment and billing code, and logging changes near either. |
+| `crypto` | Key material, hashing done for security, TLS configuration, random-token generation. |
+| `feature-flags` | Flag definitions, default flips, and the removal of a guard. |
+| `fix-revert` | Touched lines that trace back to a commit describing a fix, a security repair or a revert — the change may be undoing it. |
+
+### Example
+
+```yaml
+# The review a repo gets when it declares none of its own.
+#
+# A consumer that writes its own manifest replaces this one whole: prompt
+# bodies stay shareable through `builtin:` references rather than through a
+# merge algorithm, so there is one roster per repo and never half of two.
+version: 1
+
+reviewers:
+  unified:     {provider: claudecode, model: sonnet, prompt: builtin:unified}
+  correctness: {provider: claudecode, model: sonnet, prompt: builtin:correctness}
+  security:    {provider: claudecode, model: opus,   prompt: builtin:security}
+  performance: {provider: claudecode, model: sonnet, prompt: builtin:performance}
+
+judge:     {provider: claudecode, model: opus,   prompt: builtin:judge}
+validator: {provider: claudecode, model: sonnet, prompt: builtin:validator}
+
+panels:
+  quick:    {reviewers: [unified]}
+  standard: {reviewers: [correctness, security]}
+  deep:     {reviewers: [correctness, security, performance], quorum: 2}
+
+defaults:
+  worktree: quick
+  pr:       standard
+
+escalate:
+  # Code that decides who may do what, and code that rewrites data in place.
+  # Both are changes whose damage is discovered by someone other than the
+  # author.
+  - to: deep
+    all:
+      - touches: {matches: ["**/auth/**", "**/authz/**", "**/migrations/**"]}
+
+  # Concerns where being nearly right is indistinguishable from being right
+  # until production, and where a review is the last place it is cheap to fix.
+  - to: deep
+    any:
+      - signals: {in: [concurrency, crypto, fix-revert]}
+
+  # Widely used code: the count is what separates a one-line change nobody
+  # depends on from a one-line change everybody does.
+  - to: deep
+    all:
+      - referencing_files: {gte: 20}
+
+  # Size alone. It raises to standard rather than deep, because bulk is a
+  # reason to look at more of a change, not a reason to look harder at each
+  # part of it.
+  - to: standard
+    all:
+      - changed_files: {gte: 20}
 ```
 
 ## Lockfile
