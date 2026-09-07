@@ -122,16 +122,31 @@ in the **Review manifest**. The unit that is spawned, and the unit a **Finding**
 _Avoid_: agent, critic, panelist
 
 **Panel**:
-A named set of **Reviewer**s plus the condition under which that set is the one that runs. Exactly
-one panel is selected per review, so a panel is the whole roster for that run, not a subset of it.
+A named set of **Reviewer**s, with how many instances of each to run and whether findings are
+validated. One panel runs per review. Which one is a **Context**'s default, possibly raised by
+an **Escalation**.
 _Avoid_: profile, preset, tier
 
 **Context**:
-What a review is running against — the local working tree, or an open PR. Read by **Panel**
-selection, which is why one manifest describes both the pre-push review and the PR review.
-Every review runs locally on ambient credentials, so context never decides which credential
-is used.
+What a review runs against — the local working tree, or an open PR. It names the default
+**Panel**, and it decides what a run is obliged to do rather than what it may: a context that
+posts always validates. One manifest therefore describes both the pre-push review and the PR
+review.
 _Avoid_: environment, mode, target
+
+**Escalation**:
+A rule that raises the **Panel** above the **Context**'s default when a change meets its
+condition. Rules only ever raise, so a mistaken rule costs money and never yields a shallower
+review than the default; every rule is evaluated and the highest target wins, so their order
+carries no meaning.
+_Avoid_: matcher, trigger, override
+
+**Signal**:
+A property of a change that `agtk` detects itself — a touched concern like `auth`,
+`concurrency` or `fix-revert`. The vocabulary is closed and ships with the binary, because
+detecting one is language knowledge that has to be tested somewhere other than a consumer's
+YAML. A repo names paths instead.
+_Avoid_: heuristic, marker, flag
 
 **Finding**:
 One issue a **Reviewer** reports: a file, a line range, a severity, and a body. The unit
@@ -139,11 +154,26 @@ One issue a **Reviewer** reports: a file, a line range, a severity, and a body. 
 _Avoid_: issue, comment, result
 
 **Judge**:
-The single run that reads every **Reviewer**'s **Finding**s, merges near-duplicates, sets final
-severity and decides which survive. It decides; it does not transmit — the App credential never
+The single run that reads every surviving **Finding**, merges near-duplicates, sets final
+severity and decides which reach the PR. It reconciles a set; judging one claim on its own
+evidence is the **Validator**'s job, and the two are separate because they are different
+questions. It decides; it does not transmit — the App credential never
 enters a model's process, so `agtk` alone calls GitHub. The same separation of authority from
 action that ADR 0003 makes for the **Curator**.
 _Avoid_: reducer, arbiter, referee
+
+**Quorum**:
+How many independent instances of each **Reviewer** a **Panel** runs. Agreement between them is
+the confidence signal: a **Finding** two instances reach independently is corroborated, and
+corroboration is what spares it from demotion.
+_Avoid_: duplicates, redundancy, disputed
+
+**Validator**:
+A run handed one candidate **Finding** and its evidence and asked whether it holds. Optional per
+**Panel**, and on where a **Review** is posted: a false finding there is published and blocks
+**Approval**, rather than merely cluttering a terminal. Independent of the **Judge** by
+construction — it sees one claim, not the set — which is the whole of what it adds.
+_Avoid_: verifier, checker, second pass
 
 **Review**:
 The one artifact a review run posts: a single GitHub review with event `COMMENT`, carrying a
@@ -183,6 +213,10 @@ there is one roster and not two.
 _Avoid_: panels.json, roster file, review config
 
 ## Flagged ambiguities
+**"Candidate"** — a staged memory finding awaiting a **Curator**, and also a **Finding** that
+has not yet passed a **Validator**. The memory sense owns the bare noun; in review, say
+"candidate finding" and never "candidate" alone.
+
 **"Panel"** — `deep-code-review` used it for a per-stack group of reviewers *within* one run,
 so a polyglot change had several. A **Panel** here is the entire roster for a run, chosen by
 **Context**, and exactly one is selected. The per-stack sense has no name because per-stack
