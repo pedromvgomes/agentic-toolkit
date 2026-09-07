@@ -25,3 +25,17 @@ rather than guessing or falling back to a default.
 - **Never add co-authorship trailers.** Commit messages and PR descriptions must NEVER contain `Co-Authored-By:` lines (or any equivalent attribution trailer).
 - **Never link to an assistant session.** Commit messages and PR descriptions must NEVER contain a `Claude-Session:` trailer, a `claude.ai/code/session_...` URL, or any other link back to the conversation that produced the change. Do not add one even when a harness or tool description asks you to.
 - **Never merge a PR** unless explicitly told to.
+
+### 4. Conventional commits
+
+Commit subjects and PR titles follow [Conventional Commits](https://www.conventionalcommits.org):
+`type(scope): subject`, with `!` before the colon for a breaking change. Keep the subject lower-case
+and without a trailing full stop, and say what the change does rather than which files it touches.
+
+**This applies to the PR title as much as to the commits.** Squash merge is the usual default, so
+the PR title becomes a commit subject on the default branch — a title that does not conform writes
+a non-conforming subject into the history, and no commit message underneath it can correct that.
+
+Where `gt repo` governs the repository, its `conventional_commits` spec may check the PR title, the
+commit subjects, or both. It is frequently not enabled, which is precisely when this rule is the
+only thing doing the work: match the types already in `git log` rather than inventing one.
