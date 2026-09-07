@@ -343,3 +343,68 @@ func TestANamedHeadIgnoresTheWorkingTree(t *testing.T) {
 		t.Error("a named head picked up an untracked file")
 	}
 }
+
+// An untracked file keeps its executable bit, on the same terms a tracked one
+// does: a reviewer reading a script needs to know it is one.
+func TestAWorkingTreeReviewKeepsAnUntrackedFilesExecutableBit(t *testing.T) {
+	r := newRepo(t)
+	r.write("main.go", "package main\n")
+	r.commit("one")
+	r.write("tool.sh", "#!/bin/sh\necho hi\n")
+	if err := os.Chmod(filepath.Join(r.dir, "tool.sh"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	root := buildRoot(t, r, "")
+
+	info, err := os.Stat(filepath.Join(root.Code, "tool.sh"))
+	if err != nil {
+		t.Fatalf("the untracked script is missing: %v", err)
+	}
+	if info.Mode().Perm()&0o100 == 0 {
+		t.Errorf("tool.sh is not executable in the review root: %v", info.Mode())
+	}
+}
+
+// An untracked file that cannot be read costs itself and not the review. It is
+// one file the reviewers do not see, which is better than a review that
+// refuses to start because of a permission bit somewhere in the tree.
+func TestAnUnreadableUntrackedFileDoesNotFailTheReview(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads everything, so an unreadable file cannot be made")
+	}
+	r := newRepo(t)
+	r.write("main.go", "package main\n")
+	r.commit("one")
+	r.write("locked.go", "package main\n")
+	if err := os.Chmod(filepath.Join(r.dir, "locked.go"), 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(filepath.Join(r.dir, "locked.go"), 0o600) })
+
+	root := buildRoot(t, r, "")
+
+	if !exists(t, root, "main.go") {
+		t.Error("an unreadable untracked file cost the whole review root")
+	}
+	if exists(t, root, "locked.go") {
+		t.Error("an unreadable file was written into the review root")
+	}
+}
+
+// The count is what the review record reports, so it has to mean the files
+// that actually landed.
+func TestTheRootCountsTheFilesItWrote(t *testing.T) {
+	r := newRepo(t)
+	r.write("a.go", "package main\n")
+	r.write("b/c.go", "package b\n")
+	r.write("CLAUDE.md", "filtered\n")
+	r.commit("one")
+	r.write("d.go", "package main\n")
+
+	root := buildRoot(t, r, "")
+
+	if root.Files != 3 {
+		t.Errorf("the root reports %d files, want 3 (two tracked, one untracked, the instruction file filtered)", root.Files)
+	}
+}
