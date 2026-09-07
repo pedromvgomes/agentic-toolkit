@@ -6,8 +6,9 @@ yet: reviewers, the judge, prompts, GitHub, fingerprints and approval are not bu
 Created: 2026-09-07. Challenged: 2026-09-07.
 
 The decisions that are hard to reverse live in `docs/adr/0005-reviews-run-locally-not-in-ci.md`,
-`docs/adr/0006-the-judge-decides-agtk-transmits.md` and
-`docs/adr/0007-untrusted-heads-are-closed-structurally.md`; the vocabulary lives in
+`docs/adr/0006-the-judge-decides-agtk-transmits.md`,
+`docs/adr/0007-untrusted-heads-are-closed-structurally.md` and
+`docs/adr/0008-the-judge-returns-ids-agtk-carries-the-evidence.md`; the vocabulary lives in
 `CONTEXT.md`.
 
 `agtk code-review` runs a panel of reviewers over a change and posts what survives to a
