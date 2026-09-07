@@ -11,8 +11,8 @@ github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2
 github.com/inconshreveable/mousetrap v1.1.0/go.mod h1:vpF70FUmC8bwa3OWnCshd2FqLfsEA9PFc4w1p2J65bw=
 github.com/minio/selfupdate v0.6.0 h1:i76PgT0K5xO9+hjzKcacQtO7+MjJ4JKA8Ak8XQ9DDwU=
 github.com/minio/selfupdate v0.6.0/go.mod h1:bO02GTIPCMQFTEvE5h4DjYB58bCoZ35XLeBf0buTDdM=
-github.com/pedromvgomes/agentic-driver v0.4.0 h1:+Gx3eFkmoeyeV0KIGYwtbDkNhF/SjnGa8wvBJBLIBUo=
-github.com/pedromvgomes/agentic-driver v0.4.0/go.mod h1:Lk4UbJ83b9h7HAdXc2xVOT1w33FhsHHdehFBDWlWSjA=
+github.com/pedromvgomes/agentic-driver v0.5.0 h1:xmz40otwIbJFoBAbrXfNGTIxHXTOMlsfoeXU6IRYu2o=
+github.com/pedromvgomes/agentic-driver v0.5.0/go.mod h1:Lk4UbJ83b9h7HAdXc2xVOT1w33FhsHHdehFBDWlWSjA=
 github.com/russross/blackfriday/v2 v2.1.0/go.mod h1:+Rmxgy9KzJVeS9/2gXHxylqXiyQDYRxCVz55jmeOWTM=
 github.com/spf13/cobra v1.10.2 h1:DMTTonx5m65Ic0GOoRY2c16WCbHxOOw6xxezuLaBpcU=
 github.com/spf13/cobra v1.10.2/go.mod h1:7C1pvHqHw5A4vrJfjNwvOdzYu0Gml16OCs2GRiTUUS4=
