@@ -29,7 +29,16 @@ func collectUntracked(dir string) ([]DiffFile, string, error) {
 	var files []DiffFile
 	var patch strings.Builder
 	for _, name := range names {
-		body, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(name))) // #nosec G304 -- reads a file git listed inside the repository
+		full := filepath.Join(dir, filepath.FromSlash(name))
+		// Lstat rather than Stat, and regular files only. git records a
+		// symlink as a blob holding its target path, so refusing to follow one
+		// loses nothing a review needs — while following one would copy a file
+		// from outside the repository into the patch every reviewer reads.
+		info, err := os.Lstat(full)
+		if err != nil || !info.Mode().IsRegular() {
+			continue
+		}
+		body, err := os.ReadFile(full) // #nosec G304 -- a regular file git listed inside the repository
 		if err != nil {
 			// A file that vanished between the listing and the read is not a
 			// change to report on, and is not worth failing a review over.

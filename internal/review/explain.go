@@ -42,6 +42,14 @@ func (s *Selection) Explain(m *Manifest, p *Profile) string {
 		fmt.Fprintf(&b, "%s %s\n", label, rule)
 	}
 
+	for i, rule := range s.Skipped {
+		label := "skipped:"
+		if i > 0 {
+			label = "        "
+		}
+		fmt.Fprintf(&b, "%s %s\n", label, rule)
+	}
+
 	if s.Overridden {
 		fmt.Fprintf(&b, "panel:   %s%s (named on the command line; the rules above did not decide)\n",
 			s.Panel, panelShape(m, s.Panel))

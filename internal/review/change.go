@@ -78,16 +78,25 @@ type Profile struct {
 	// Symbols are the exported symbols the count was taken over, kept so
 	// --explain can name them.
 	Symbols []string
+
+	// reviewable caches the filtered slice. Selection asks for it once per
+	// `touches` rule and Explain asks again, and refiltering every changed
+	// file each time is work that grows with both the change and the manifest.
+	reviewable []ChangedFile
 }
 
 // ReviewableFiles returns the files that count.
 func (p *Profile) ReviewableFiles() []ChangedFile {
+	if p.reviewable != nil {
+		return p.reviewable
+	}
 	out := make([]ChangedFile, 0, len(p.Files))
 	for _, f := range p.Files {
 		if f.Reviewable() {
 			out = append(out, f)
 		}
 	}
+	p.reviewable = out
 	return out
 }
 
@@ -214,11 +223,7 @@ func BuildProfile(opts ProfileOptions) (*Profile, error) {
 	}
 
 	reviewable := p.ReviewableFiles()
-	names := make([]string, 0, len(reviewable))
-	for _, f := range reviewable {
-		names = append(names, f.Path)
-	}
-	patch, err := Patch(opts.Dir, opts.Base, opts.Head, names)
+	patch, err := Patch(opts.Dir, opts.Base, opts.Head, reviewable)
 	if err != nil {
 		return nil, err
 	}

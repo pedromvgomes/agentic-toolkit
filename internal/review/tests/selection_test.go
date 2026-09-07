@@ -219,3 +219,106 @@ func TestExplainShowsTheWholeDecision(t *testing.T) {
 		}
 	}
 }
+
+// Equal cost is not a raise. Two panels that spend the same are the same
+// depth, and swapping one for the other would change what runs for no reason
+// a reader of the manifest could see — here it would trade a reviewer run
+// twice for two reviewers run once, losing the corroboration the quorum was
+// configured for without gaining depth.
+func TestAnEqualCostPanelDoesNotReplaceTheDefault(t *testing.T) {
+	src := `
+version: 1
+reviewers:
+  correctness: {provider: claudecode, prompt: builtin:correctness}
+  security:    {provider: claudecode, prompt: builtin:security}
+judge:     {provider: claudecode, prompt: builtin:judge}
+validator: {provider: claudecode, prompt: builtin:validator}
+panels:
+  doubled: {reviewers: [correctness], quorum: 2}
+  paired:  {reviewers: [correctness, security]}
+defaults: {worktree: doubled, pr: doubled}
+escalate:
+  - to: paired
+    all:
+      - changed_files: {gte: 1}
+`
+	m := mustParse(t, src)
+	if m.Panels["doubled"].Cost() != m.Panels["paired"].Cost() {
+		t.Fatalf("the two panels must cost the same for this test to mean anything")
+	}
+
+	sel := selectPanel(t, m, review.ContextWorktree, profile(5, 50, review.AvailableCount(0)), "")
+
+	if sel.Panel != "doubled" {
+		t.Errorf("panel = %q, want the default to hold against an equal-cost target", sel.Panel)
+	}
+	if len(sel.Fired) != 1 {
+		t.Errorf("the rule should still be reported as fired, having simply raised nothing: %v", sel.Fired)
+	}
+}
+
+// A rule a repo wrote is a protection it asked for, so a change the rule
+// cannot be read against is a refusal it needs to see.
+func TestARepoOwnRuleIsRefusedWhenItCannotBeRead(t *testing.T) {
+	m := mustParse(t, strings.Replace(complete,
+		"      - changed_files: {gte: 20}", "      - referencing_files: {gte: 20}", 1))
+	p := profile(1, 10, review.UnavailableCount("no symbol extractor for unrecognised files"))
+
+	_, err := review.Select(m, review.ContextWorktree, p, "")
+	if err == nil {
+		t.Fatal("a repo's own rule was skipped rather than refused")
+	}
+	if !strings.Contains(err.Error(), "can never fire") {
+		t.Errorf("the refusal should say what to do about it: %v", err)
+	}
+}
+
+// The built-in default was never asked for. Refusing there turns a language
+// the toolkit does not recognise into a review that cannot run at all, in
+// exactly the repos with no manifest to edit — and the advice the refusal
+// gives cannot be taken, because the rule ships in the binary.
+func TestTheBuiltinDefaultSkipsARuleItCannotRead(t *testing.T) {
+	m, err := review.DefaultManifest()
+	if err != nil {
+		t.Fatalf("DefaultManifest: %v", err)
+	}
+	p := profile(1, 10, review.UnavailableCount("no symbol extractor for unrecognised files"))
+
+	sel, err := review.Select(m, review.ContextWorktree, p, "")
+	if err != nil {
+		t.Fatalf("the built-in default refused a review it was never asked to gate: %v", err)
+	}
+	if len(sel.Skipped) != 1 {
+		t.Fatalf("skipped = %v, want the referencing_files rule reported", sel.Skipped)
+	}
+	// Reported, never silent: a rule that quietly never fires is the failure
+	// the whole unavailable-is-never-low rule exists to prevent.
+	if !strings.Contains(sel.Explain(m, p), "skipped:") {
+		t.Errorf("explain does not report the skipped rule:\n%s", sel.Explain(m, p))
+	}
+}
+
+// Excluded files are grouped by reason and truncated, so a dependency bump
+// reports one line rather than four hundred.
+func TestExplainSummarisesExclusions(t *testing.T) {
+	m := mustParse(t, complete)
+	p := profile(1, 10, review.AvailableCount(0))
+	for _, name := range []string{"a", "b", "c", "d", "e"} {
+		p.Files = append(p.Files, review.ChangedFile{
+			DiffFile: review.DiffFile{Path: "vendor/" + name + ".go"},
+			Excluded: review.ExcludedVendored,
+		})
+	}
+	p.Files = append(p.Files, review.ChangedFile{
+		DiffFile: review.DiffFile{Path: "go.sum"},
+		Excluded: review.ExcludedLockfile,
+	})
+
+	out := selectPanel(t, m, review.ContextWorktree, p, "").Explain(m, p)
+
+	for _, want := range []string{"excluded (6)", "lockfile: go.sum", "vendored: ", "and 2 more"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("explain missing %q:\n%s", want, out)
+		}
+	}
+}

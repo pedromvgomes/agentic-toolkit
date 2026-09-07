@@ -10,7 +10,7 @@ import (
 	"github.com/pedromvgomes/agentic-toolkit/internal/review"
 )
 
-// The code-review command group is deliberately model-free at this point:
+// The code-review command group is deliberately model-free:
 // every subcommand here reads a manifest, profiles a change and decides which
 // panel would run, and none of them starts a process. That is what makes
 // `explain` free to run on a hook, and it is checkable — internal/review
@@ -89,14 +89,6 @@ func runCodeReviewExplain(env *Env, target reviewTarget) error {
 		return fmt.Errorf("locate the repository: %w", err)
 	}
 
-	m, path, builtin, err := review.Load(root)
-	if err != nil {
-		return err
-	}
-	if err := review.CheckCapabilities(manifestLabel(path, builtin), m); err != nil {
-		return err
-	}
-
 	base := target.base
 	if base == "" {
 		if base, err = review.DetectBase(root); err != nil {
@@ -106,6 +98,27 @@ func runCodeReviewExplain(env *Env, target reviewTarget) error {
 	mergeBase, err := review.MergeBase(root, base, target.head)
 	if err != nil {
 		return fmt.Errorf("anchor the change to %s: %w", base, err)
+	}
+
+	// A context that posts reads its rules from the base ref. Everything on
+	// the branch under review is written by its author, so a manifest read
+	// from the working tree would let a change name the reviewers that judge
+	// it — the closure ADR 0007 makes structural rather than instructed.
+	var (
+		m       *review.Manifest
+		path    string
+		builtin bool
+	)
+	if ctx.Posts() {
+		m, path, builtin, err = review.LoadAtRef(root, mergeBase)
+	} else {
+		m, path, builtin, err = review.Load(root)
+	}
+	if err != nil {
+		return err
+	}
+	if err := review.CheckCapabilities(manifestLabel(path, builtin), m); err != nil {
+		return err
 	}
 
 	profile, err := review.BuildProfile(review.ProfileOptions{

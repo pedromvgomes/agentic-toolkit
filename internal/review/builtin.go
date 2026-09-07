@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 // defaultManifest is the review a repo gets when it declares none of its own.
@@ -47,7 +46,12 @@ func IsBuiltinPrompt(name string) bool {
 // validation every consumer's manifest is: a default that could not itself
 // pass would be a rule the toolkit does not follow.
 func DefaultManifest() (*Manifest, error) {
-	return ParseBytes("<built-in default>", defaultManifest)
+	m, err := ParseBytes("<built-in default>", defaultManifest)
+	if err != nil {
+		return nil, err
+	}
+	m.Builtin = true
+	return m, nil
 }
 
 // DefaultManifestYAML is the embedded default's source, for `agtk
@@ -57,6 +61,33 @@ func DefaultManifestYAML() []byte { return defaultManifest }
 // ManifestPath is where a repo's own manifest lives.
 func ManifestPath(projectRoot string) string {
 	return filepath.Join(projectRoot, filepath.FromSlash(ManifestDir), ManifestFile)
+}
+
+// ManifestRelPath is the manifest's location as git names it, from the repo
+// root, with forward slashes on every platform.
+const ManifestRelPath = ManifestDir + "/" + ManifestFile
+
+// LoadAtRef returns the manifest as it stands at a git ref.
+//
+// A review that posts reads its rules from the base ref, never from the tree
+// under review: everything on the branch is written by its author, so a
+// manifest read from the head would let a change name the reviewers that judge
+// it. A ref with no manifest uses the embedded default, exactly as a repo with
+// none does.
+func LoadAtRef(dir, ref string) (m *Manifest, path string, builtin bool, err error) {
+	raw, code, err := gitStatus(dir, "show", ref+":"+ManifestRelPath)
+	if err != nil {
+		if code == 128 {
+			// git reports a path that does not exist at that ref this way,
+			// which is the repo declaring no manifest rather than a failure.
+			m, err = DefaultManifest()
+			return m, "", true, err
+		}
+		return nil, "", false, err
+	}
+	path = ref + ":" + ManifestRelPath
+	m, err = ParseBytes(path, raw)
+	return m, path, false, err
 }
 
 // Load returns the manifest governing projectRoot: the repo's own if it has
@@ -85,5 +116,5 @@ func (p PromptRef) PromptSource(projectRoot string) string {
 	if p.IsBuiltin() {
 		return "built-in " + p.Name
 	}
-	return filepath.Join(projectRoot, filepath.FromSlash(ManifestDir), filepath.FromSlash(strings.TrimPrefix(p.Path, "./")))
+	return filepath.Join(projectRoot, filepath.FromSlash(ManifestDir), filepath.FromSlash(p.Path))
 }

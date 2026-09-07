@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -331,5 +332,84 @@ func TestSymbolsAreNotTakenFromTestFiles(t *testing.T) {
 	}
 	if n, _ := p.ReferencingFiles.Value(); n != 3 {
 		t.Errorf("referencing files = %d, want 3 — the count is not diluted by the test", n)
+	}
+}
+
+// The pathspec that scopes the patch carries both names of a renamed file.
+// Given only the destination, git has nothing to pair it with and reports the
+// move as a wholly new file — so unchanged code arrives wearing the change's
+// name, and signals and symbols are read out of lines nobody touched.
+func TestARenameDoesNotReportUntouchedCode(t *testing.T) {
+	r := newRepo(t)
+	r.write("old.go", "package p\n\nimport \"sync\"\n\nvar mu sync.Mutex\n\nfunc Widget() {}\n")
+	base := r.commit("base")
+
+	r.git("mv", "old.go", "new.go")
+	r.write("new.go", "package p\n\nimport \"sync\"\n\nvar mu sync.Mutex\n\nfunc Widget() {}\n// a note\n")
+	r.commit("move and comment")
+
+	p, err := review.BuildProfile(review.ProfileOptions{Dir: r.dir, Base: base, Head: "HEAD"})
+	if err != nil {
+		t.Fatalf("BuildProfile: %v", err)
+	}
+
+	if has, _ := p.Signals.Has(review.SignalConcurrency); has {
+		t.Errorf("concurrency fired on locking the change never touched; signals were %s", p.Signals)
+	}
+	if len(p.Symbols) != 0 {
+		t.Errorf("symbols = %v, want none — the change declares nothing", p.Symbols)
+	}
+	if p.ChangedLines > 4 {
+		t.Errorf("changed lines = %d; a move plus one comment is not a rewrite", p.ChangedLines)
+	}
+}
+
+// The reference count is taken at the revision under review. Searching the
+// working tree instead would make a fixed commit range's answer move whenever
+// an unrelated uncommitted edit did.
+func TestTheReferenceCountIsTakenAtTheReviewedRevision(t *testing.T) {
+	r := newRepo(t)
+	r.write("lib/lib.go", "package lib\n\nfunc Widget() {}\n")
+	for i := 0; i < 5; i++ {
+		r.write(fmt.Sprintf("app/a%d.go", i), "package app\n\nvar _ = Widget\n")
+	}
+	base := r.commit("base")
+	r.write("lib/lib.go", "package lib\n\nfunc Widget() int { return 1 }\n")
+	r.commit("change")
+
+	atHead := func() int {
+		t.Helper()
+		p, err := review.BuildProfile(review.ProfileOptions{Dir: r.dir, Base: base, Head: "HEAD"})
+		if err != nil {
+			t.Fatalf("BuildProfile: %v", err)
+		}
+		n, ok := p.ReferencingFiles.Value()
+		if !ok {
+			t.Fatalf("referencing files unavailable: %s", p.ReferencingFiles.Reason)
+		}
+		return n
+	}
+
+	before := atHead()
+	for i := 0; i < 5; i++ {
+		r.write(fmt.Sprintf("app/a%d.go", i), "package app\n")
+	}
+	if after := atHead(); after != before {
+		t.Errorf("count moved from %d to %d because of uncommitted edits outside the range", before, after)
+	}
+}
+
+// A search that did not run is not a count of zero. Reading it as one makes a
+// referencing_files escalation silently never fire.
+func TestASearchThatCannotRunIsNotACountOfZero(t *testing.T) {
+	r := newRepo(t)
+	r.write("lib.go", "package lib\n")
+	r.commit("base")
+
+	if _, found := review.GrepFiles(r.dir, "no-such-revision", "Widget"); found {
+		t.Error("GrepFiles reported a result for a revision that does not exist")
+	}
+	if _, found := review.GrepFiles(r.dir, "", "NothingMatchesThis"); !found {
+		t.Error("GrepFiles reported no search for a search that ran and matched nothing")
 	}
 }

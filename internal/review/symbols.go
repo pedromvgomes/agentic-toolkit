@@ -49,9 +49,9 @@ func countReferencingFiles(opts ProfileOptions, files []ChangedFile, patch strin
 
 	total := 0
 	for _, sym := range symbols {
-		n, err := countSymbolReferences(opts.Dir, sym, files)
-		if err != nil {
-			return symbols, UnavailableCount("counting references to %s failed: %v", sym, err)
+		n, ok := countSymbolReferences(opts, sym, files)
+		if !ok {
+			return symbols, UnavailableCount("the search for references to %s did not run", sym)
 		}
 		if n > total {
 			total = n
@@ -102,38 +102,38 @@ func changedSymbols(files []ChangedFile, patch string, budget int) []string {
 // files the change itself touched — a symbol's own definition and its
 // neighbours are not downstream users.
 //
+// ok reports whether the search ran. A search that failed is not a count of
+// zero: reading it as one would make a `referencing_files` escalation silently
+// never fire, which is the protection-you-do-not-have failure the Count type
+// exists to prevent.
+//
 // The symbol reaches git as a pattern, so it is checked against symbolNameRE
 // first: under a PR review the names come out of a diff somebody else wrote,
 // and a name is only ever counted when it is a plain identifier.
-func countSymbolReferences(dir, sym string, changed []ChangedFile) (int, error) {
+func countSymbolReferences(opts ProfileOptions, sym string, changed []ChangedFile) (int, bool) {
 	if !isSymbolName(sym) {
-		return 0, nil
+		return 0, true
 	}
-	// -w matches whole words, -l lists files rather than lines, and the
-	// pattern is passed with -e so a name beginning with a dash could never
-	// be read as an option.
-	out, err := git(dir, "grep", "--no-color", "-l", "-w", "-e", regexp.QuoteMeta(sym), "--")
-	if err != nil {
-		// git grep exits 1 with no output when nothing matched, which is an
-		// answer of zero rather than a failure.
-		if strings.TrimSpace(string(out)) == "" {
-			return 0, nil
-		}
-		return 0, err
+	hits, found := GrepFiles(opts.Dir, opts.Head, regexp.QuoteMeta(sym))
+	if !found {
+		return 0, false
 	}
 
 	touched := make(map[string]bool, len(changed))
 	for _, f := range changed {
 		touched[f.Path] = true
+		if f.OldPath != "" {
+			touched[f.OldPath] = true
+		}
 	}
 	count := 0
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		if line == "" || touched[line] {
+	for _, path := range hits {
+		if touched[path] {
 			continue
 		}
 		count++
 	}
-	return count, nil
+	return count, true
 }
 
 // fixCommitRE is what marks a commit as a deliberate repair. Matched against

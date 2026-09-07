@@ -21,12 +21,7 @@ func (p Panel) Cost() int { return len(p.Reviewers) * p.EffectiveQuorum() }
 // Ties are not raises. Two panels that spend the same are the same depth, and
 // a rule pointing at the second would otherwise swap one for the other for no
 // reason a reader could see.
-func deeper(a, b Panel) bool {
-	if a.Cost() != b.Cost() {
-		return a.Cost() > b.Cost()
-	}
-	return len(a.Reviewers) > len(b.Reviewers)
-}
+func deeper(a, b Panel) bool { return a.Cost() > b.Cost() }
 
 // ConditionResult is one clause and whether it held.
 type ConditionResult struct {
@@ -61,6 +56,22 @@ func (f FiredRule) String() string {
 	return fmt.Sprintf("escalate[%d] %s → %s: %s", f.Index, combinator, f.To, strings.Join(held, "; "))
 }
 
+// SkippedRule is an escalation that could not be evaluated against this
+// change, and why.
+//
+// Only the built-in default produces these. A rule a repo wrote is refused
+// instead, because a protection a repo asked for and cannot get is something
+// it has to be told about rather than something to work around.
+type SkippedRule struct {
+	Index  int
+	To     string
+	Reason string
+}
+
+func (s SkippedRule) String() string {
+	return fmt.Sprintf("escalate[%d] → %s: %s", s.Index, s.To, s.Reason)
+}
+
 // Selection is which panel runs, and every step of how that was decided.
 type Selection struct {
 	Context Context
@@ -75,6 +86,10 @@ type Selection struct {
 	// Overridden records that a caller named the panel outright, in which
 	// case the default and the rules are reported but did not decide.
 	Overridden bool
+	// Skipped lists the rules that could not be evaluated against this change.
+	// They are reported rather than silently dropped: a rule that never fires
+	// is exactly what leaves a repo believing it has a protection it does not.
+	Skipped []SkippedRule
 	// Validates reports whether findings go to the validator.
 	Validates bool
 }
@@ -107,10 +122,18 @@ func Select(m *Manifest, ctx Context, p *Profile, override string) (*Selection, 
 		conds, all := rule.Conditions()
 		results := make([]ConditionResult, 0, len(conds))
 		fired := all
+		skipped := false
 		for _, cond := range conds {
 			held, err := Evaluate(cond, p)
 			if err != nil {
-				return nil, fmt.Errorf("escalate[%d]: %w", i, err)
+				if !m.Builtin {
+					// The remedy belongs here and not in Evaluate: it is
+					// advice only a repo that wrote the rule can take.
+					return nil, fmt.Errorf("escalate[%d]: %w. Remove the rule, or narrow it with `touches`, rather than leaving an escalation that can never fire", i, err)
+				}
+				sel.Skipped = append(sel.Skipped, SkippedRule{Index: i, To: rule.To, Reason: err.Error()})
+				skipped = true
+				break
 			}
 			results = append(results, ConditionResult{Condition: cond, Held: held})
 			if all {
@@ -119,7 +142,7 @@ func Select(m *Manifest, ctx Context, p *Profile, override string) (*Selection, 
 				fired = fired || held
 			}
 		}
-		if !fired {
+		if skipped || !fired {
 			continue
 		}
 		sel.Fired = append(sel.Fired, FiredRule{Index: i, To: rule.To, All: all, Conditions: results})
@@ -159,7 +182,7 @@ func Evaluate(c Condition, p *Profile) (bool, error) {
 	case KeyReferencingFiles:
 		n, ok := p.ReferencingFiles.Value()
 		if !ok {
-			return false, fmt.Errorf("`%s` cannot be read for this change: %s. Remove the rule, or narrow it with `touches`, rather than leaving an escalation that can never fire",
+			return false, fmt.Errorf("`%s` cannot be read for this change: %s",
 				KeyReferencingFiles, p.ReferencingFiles.Reason)
 		}
 		return compare(c.Operator, n, c.Number), nil
@@ -192,7 +215,7 @@ func evaluateSignals(c Condition, p *Profile) (bool, error) {
 	for i, sig := range c.Signals {
 		has, known := p.Signals.Has(sig)
 		if !known {
-			return false, fmt.Errorf("signal `%s` could not be determined for this change: %s. A signal that could not be read is not a signal the change does not carry",
+			return false, fmt.Errorf("signal `%s` could not be determined for this change: %s (a signal that could not be read is not a signal the change does not carry)",
 				sig, p.Signals.Undetermined(sig))
 		}
 		present[i] = has

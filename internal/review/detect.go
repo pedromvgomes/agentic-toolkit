@@ -158,20 +158,25 @@ func detectSignals(files []ChangedFile, patch string) *SignalSet {
 // Only changed lines are read. Context lines are what the change left alone,
 // and a signal detected in one would fire on every neighbouring edit to a file
 // that happens to contain a mutex somewhere.
+//
+// A deleted file's lines are delivered under its own name, taken from the
+// `---` side, because its `+++` side is `/dev/null`. Deleting the locking a
+// repair added is a change to locking, and attributing those lines to
+// whichever file happened to come before them in the patch reads them with the
+// wrong language and credits them to the wrong path.
 func walkPatch(patch string, fn func(file, line string)) {
-	file := ""
+	var section diffSection
 	for _, line := range strings.Split(patch, "\n") {
+		if section.track(line) {
+			continue
+		}
 		switch {
-		case strings.HasPrefix(line, "+++ b/"):
-			file = strings.TrimPrefix(line, "+++ b/")
-		case strings.HasPrefix(line, "--- "), strings.HasPrefix(line, "+++ "):
-			// The other half of the header pair, and the /dev/null form.
-		case strings.HasPrefix(line, "diff --git "), strings.HasPrefix(line, "@@"):
-			// Hunk and file headers carry no content.
-		case file == "":
+		case strings.HasPrefix(line, "@@"):
+			// Hunk headers carry no content.
+		case section.path() == "":
 			// Preamble before the first file header.
 		case strings.HasPrefix(line, "+"), strings.HasPrefix(line, "-"):
-			fn(file, line[1:])
+			fn(section.path(), line[1:])
 		}
 	}
 }

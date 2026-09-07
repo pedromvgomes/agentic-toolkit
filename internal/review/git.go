@@ -2,7 +2,9 @@ package review
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,19 +19,53 @@ import (
 // named, and each ends with `--` before any path, because under a PR review
 // the paths come from a branch somebody else wrote.
 func git(dir string, args ...string) ([]byte, error) {
+	out, _, err := gitStatus(dir, args...)
+	return out, err
+}
+
+// gitStatus is git plus the exit status, and it returns stdout whether or not
+// the command succeeded.
+//
+// Some git commands answer a question by exiting non-zero: `grep` exits 1 to
+// say "no match", which is a count of nothing rather than a failure. A helper
+// that discarded stdout and collapsed every status into one error would make
+// those two indistinguishable, so a failed search would read as an answer of
+// zero — and a count that is really unknown must never read as low.
+func gitStatus(dir string, args ...string) (stdout []byte, exitCode int, err error) {
 	cmd := exec.Command("git", args...) // #nosec G204 -- arguments are built here, never interpolated from a diff
 	cmd.Dir = dir
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
+	var out, stderr bytes.Buffer
+	cmd.Stdout = &out
 	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		msg := strings.TrimSpace(stderr.String())
-		if msg == "" {
-			msg = err.Error()
-		}
-		return nil, fmt.Errorf("git %s: %s", strings.Join(args, " "), msg)
+	runErr := cmd.Run()
+	if runErr == nil {
+		return out.Bytes(), 0, nil
 	}
-	return stdout.Bytes(), nil
+	msg := strings.TrimSpace(stderr.String())
+	if msg == "" {
+		msg = runErr.Error()
+	}
+	code := -1
+	var exitErr *exec.ExitError
+	if errors.As(runErr, &exitErr) {
+		code = exitErr.ExitCode()
+	}
+	return out.Bytes(), code, fmt.Errorf("git %s: %s", strings.Join(args, " "), msg)
+}
+
+// diffArgs are the options every diff invocation carries, so the form the
+// patch parsers depend on is a property of the invocation rather than of the
+// invoking user's configuration.
+//
+// `diff.noprefix` and `diff.mnemonicPrefix` both rewrite the `a/` and `b/`
+// header prefixes, and `diff.external` replaces the diff wholesale. Any of the
+// three turns every content signal, every extracted symbol and fix-revert
+// silently off — a review reporting nothing rather than reporting that it
+// could not look. `core.quotePath=false` keeps non-ASCII paths unescaped, so a
+// file named in a language other than English is read rather than skipped.
+var diffArgs = []string{
+	"-c", "core.quotePath=false",
+	"diff", "-M", "--no-ext-diff", "--src-prefix=a/", "--dst-prefix=b/",
 }
 
 // DiffFile is one file's line counts in a change, before any judgement about
@@ -70,7 +106,8 @@ func rangeArg(base, head string) string {
 
 // DiffRange returns the per-file line counts between base and head.
 func DiffRange(dir, base, head string) ([]DiffFile, error) {
-	out, err := git(dir, "diff", "-M", "-z", "--numstat", rangeArg(base, head), "--")
+	args := append(append([]string(nil), diffArgs...), "-z", "--numstat", rangeArg(base, head), "--")
+	out, err := git(dir, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -149,14 +186,30 @@ func UntrackedFiles(dir string) ([]string, error) {
 	return files, nil
 }
 
-// Patch returns the diff text for the named paths, which is what signal
+// Patch returns the diff text for the named files, which is what signal
 // detection reads: a signal like concurrency is a property of the lines a
 // change touched, not of the files it touched.
-func Patch(dir, base, head string, paths []string) (string, error) {
-	if len(paths) == 0 {
+//
+// The pathspec carries both names of a renamed file. Given only the
+// destination, git has nothing to pair it with and reports the move as a whole
+// new file — so every line of it reads as added, and unchanged code arrives
+// wearing the change's name.
+//
+// `-U0` drops context lines. A hunk header's pre-image length otherwise spans
+// the three unchanged lines either side, which would hand fix-revert line
+// ranges the change never touched: an added comment beside repaired code would
+// report the repair as rewritten.
+func Patch(dir, base, head string, files []ChangedFile) (string, error) {
+	if len(files) == 0 {
 		return "", nil
 	}
-	args := append([]string{"diff", "-M", rangeArg(base, head), "--"}, paths...)
+	args := append(append([]string(nil), diffArgs...), "-U0", rangeArg(base, head), "--")
+	for _, f := range files {
+		args = append(args, f.Path)
+		if f.OldPath != "" {
+			args = append(args, f.OldPath)
+		}
+	}
 	out, err := git(dir, args...)
 	if err != nil {
 		return "", err
@@ -198,6 +251,45 @@ func DetectBase(dir string) (string, error) {
 		strings.Join(baseCandidates, ", "))
 }
 
+// GrepFiles lists the files mentioning sym, searched at rev — or in the
+// working tree when rev is empty.
+//
+// The revision matters: `git grep` with no revision searches the working tree,
+// so a count taken over a fixed commit range would move whenever an unrelated
+// uncommitted edit did, and the panel a review runs would depend on what
+// happened to be saved at the time.
+//
+// found reports whether the search ran at all. git grep exits 1 to say "no
+// match", which is an answer of zero; any other status is a search that did
+// not happen, and a count that did not happen is not a count of zero.
+func GrepFiles(dir, rev, sym string) (files []string, found bool) {
+	args := []string{"grep", "--no-color", "-l", "-w", "-e", sym}
+	if rev != "" {
+		args = append(args, rev)
+	}
+	args = append(args, "--")
+
+	out, code, err := gitStatus(dir, args...)
+	if err != nil && code != 1 {
+		return nil, false
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if line == "" {
+			continue
+		}
+		// With a revision, each result is reported as `<rev>:<path>`.
+		if rev != "" {
+			_, path, ok := strings.Cut(line, ":")
+			if !ok {
+				continue
+			}
+			line = path
+		}
+		files = append(files, line)
+	}
+	return files, true
+}
+
 // RepoRoot returns the working tree dir contains.
 func RepoRoot(dir string) (string, error) {
 	out, err := git(dir, "rev-parse", "--show-toplevel")
@@ -223,17 +315,84 @@ type Hunk struct {
 // line, which is what the unified format's shorthand means.
 var hunkHeaderRE = regexp.MustCompile(`^@@ -(\d+)(?:,(\d+))? \+\d+(?:,\d+)? @@`)
 
+// diffSection tracks which file a diff's lines currently belong to.
+//
+// It exists because a file has two names in a patch and either may be absent.
+// A deletion's `+++` side is `/dev/null`, so a walker that only reads `+++ b/`
+// keeps pointing at whatever file it saw last — and every removed line, every
+// hunk range and every blamed region of the deleted file is then attributed to
+// a file they do not belong to.
+type diffSection struct {
+	oldPath string
+	newPath string
+}
+
+// path is the name the section's lines belong to: the file as it is now, or —
+// for a deletion — the file as it was, which is where its history lives.
+func (s diffSection) path() string {
+	if s.newPath != "" {
+		return s.newPath
+	}
+	return s.oldPath
+}
+
+// track folds one line of a patch into the section, reporting whether the line
+// was a header it consumed.
+func (s *diffSection) track(line string) bool {
+	switch {
+	case strings.HasPrefix(line, "diff --git "):
+		// A new file section begins; neither name is known until its headers
+		// arrive, and carrying the previous file's over is how a deletion ends
+		// up wearing its predecessor's name.
+		*s = diffSection{}
+		return true
+	case strings.HasPrefix(line, "--- "):
+		s.oldPath = diffHeaderPath(strings.TrimPrefix(line, "--- "), "a/")
+		return true
+	case strings.HasPrefix(line, "+++ "):
+		s.newPath = diffHeaderPath(strings.TrimPrefix(line, "+++ "), "b/")
+		return true
+	}
+	return false
+}
+
+// diffHeaderPath reads the file name out of a `---`/`+++` header, or returns
+// "" for the `/dev/null` side of an addition or a deletion.
+//
+// Git quotes a name containing characters it considers unusual, and the quoted
+// form is C-style. Unquoting rather than skipping is what lets a file whose
+// name carries a tab or a non-ASCII character be reviewed instead of silently
+// dropped.
+func diffHeaderPath(field, prefix string) string {
+	field = strings.TrimSpace(field)
+	if field == "/dev/null" {
+		return ""
+	}
+	if strings.HasPrefix(field, `"`) {
+		unquoted, err := strconv.Unquote(field)
+		if err != nil {
+			return ""
+		}
+		field = unquoted
+	}
+	return strings.TrimPrefix(field, prefix)
+}
+
 // Hunks reads the changed regions out of a unified diff.
+//
+// The patch is captured with `-U0`, so a hunk's pre-image length counts the
+// lines the change actually removed. With context lines included it would span
+// the three unchanged lines either side, and a hunk that only adds would still
+// report a nonzero length.
 func Hunks(patch string) []Hunk {
 	var out []Hunk
-	file := ""
+	var section diffSection
 	for _, line := range strings.Split(patch, "\n") {
-		if strings.HasPrefix(line, "+++ b/") {
-			file = strings.TrimPrefix(line, "+++ b/")
+		if section.track(line) {
 			continue
 		}
 		m := hunkHeaderRE.FindStringSubmatch(line)
-		if m == nil || file == "" {
+		if m == nil || section.path() == "" {
 			continue
 		}
 		start, err := strconv.Atoi(m[1])
@@ -246,7 +405,7 @@ func Hunks(patch string) []Hunk {
 				continue
 			}
 		}
-		out = append(out, Hunk{File: file, Start: start, Length: length})
+		out = append(out, Hunk{File: section.path(), Start: start, Length: length})
 	}
 	return out
 }
@@ -290,23 +449,27 @@ func FileHeads(dir, rev string, paths []string, limit int) map[string]string {
 
 	if rev == "" {
 		for _, p := range paths {
-			body, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(p))) // #nosec G304 -- reads a file git listed inside the repository
-			if err != nil {
-				continue
-			}
-			if len(body) > limit {
-				body = body[:limit]
-			}
-			heads[p] = string(body)
+			heads[p] = readHead(filepath.Join(dir, filepath.FromSlash(p)), limit)
 		}
 		return heads
 	}
 
+	// NUL-terminated requests, because the response stream is matched to the
+	// requests positionally. With newline-terminated input a path containing a
+	// newline splits into two requests, and every later response is assigned
+	// to the wrong file — which decides whether a file is classified generated
+	// and dropped from the review. Path order is deterministic, so that is a
+	// file an author of the branch under review could choose.
 	var stdin bytes.Buffer
+	requested := make([]string, 0, len(paths))
 	for _, p := range paths {
-		fmt.Fprintf(&stdin, "%s:%s\n", rev, p)
+		if strings.ContainsAny(p, "\x00") {
+			continue
+		}
+		requested = append(requested, p)
+		fmt.Fprintf(&stdin, "%s:%s\x00", rev, p)
 	}
-	cmd := exec.Command("git", "cat-file", "--batch") // #nosec G204 -- fixed argv; the paths travel on stdin
+	cmd := exec.Command("git", "cat-file", "--batch", "-z") // #nosec G204 -- fixed argv; the paths travel on stdin
 	cmd.Dir = dir
 	cmd.Stdin = &stdin
 	out, err := cmd.Output()
@@ -319,7 +482,7 @@ func FileHeads(dir, rev string, paths []string, limit int) map[string]string {
 	// Records are `<sha> <type> <size>\n<contents>\n`, in the order asked for.
 	// A missing path answers `<spec> missing\n` and consumes no body.
 	rest := out
-	for _, p := range paths {
+	for _, p := range requested {
 		nl := bytes.IndexByte(rest, '\n')
 		if nl < 0 {
 			break
@@ -347,6 +510,23 @@ func FileHeads(dir, rev string, paths []string, limit int) map[string]string {
 		}
 	}
 	return heads
+}
+
+// readHead returns at most limit bytes from the head of a file, reading no
+// more than that: the marker every convention defines is a header, so a
+// generated file of any size costs one small read rather than its own length.
+func readHead(path string, limit int) string {
+	f, err := os.Open(path) // #nosec G304 -- reads a file git listed inside the repository
+	if err != nil {
+		return ""
+	}
+	defer f.Close() //nolint:errcheck // read-only handle
+	buf := make([]byte, limit)
+	n, err := io.ReadFull(f, buf)
+	if n == 0 && err != nil {
+		return ""
+	}
+	return string(buf[:n])
 }
 
 // headBytes is how much of a file is read to look for a generated marker.

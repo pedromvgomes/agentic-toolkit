@@ -24,12 +24,24 @@ const SchemaVersion = 1
 // from where.
 type Manifest struct {
 	Version   int               `yaml:"version"   agtkdoc:"required;Manifest schema version. Currently always 1."`
-	Reviewers map[string]Runner `yaml:"reviewers" agtkdoc:"required;The critics this repo can staff a panel with, keyed by name. The name is what a panel lists and what a finding is attributed to."`
+	Reviewers map[string]Runner `yaml:"reviewers" agtkdoc:"required;The reviewers this repo can staff a panel with, keyed by name. The name is what a panel lists and what a finding is attributed to."`
 	Judge     *Runner           `yaml:"judge,omitempty"     agtkdoc:"required;The single run that merges findings, sets final severity and decides which survive. It decides; it does not transmit."`
 	Validator *Runner           `yaml:"validator,omitempty" agtkdoc:"required;The run handed one candidate finding and asked whether it holds. A context that posts always validates, so this is required whatever the panels say."`
 	Panels    map[string]Panel  `yaml:"panels"    agtkdoc:"required;Named sets of reviewers, keyed by name. Exactly one panel runs per review."`
 	Defaults  Defaults          `yaml:"defaults"  agtkdoc:"required;The panel each context starts from, before escalation."`
 	Escalate  []Escalation      `yaml:"escalate,omitempty" agtkdoc:"Rules that raise the panel above a context's default. Every rule is evaluated and the highest target wins, so their order carries no meaning."`
+
+	// Builtin records that this is the manifest that ships with agtk rather
+	// than one a repo wrote. Not a field a manifest may set: it is a fact
+	// about where the document came from.
+	//
+	// It decides what an unreadable condition means. A rule a repo wrote is a
+	// protection it asked for, so a change the rule cannot be evaluated
+	// against is a refusal. A rule in the built-in default was never asked
+	// for, and refusing there turns a language the toolkit does not recognise
+	// into a review that cannot run at all — in exactly the repos with no
+	// manifest to edit, and with no way to take the advice the refusal gives.
+	Builtin bool `yaml:"-"`
 }
 
 // Runner is one configured model invocation — the shape a reviewer, the judge
@@ -124,8 +136,8 @@ type PromptKind int
 const (
 	// PromptBuiltin names a prompt that ships in the binary: `builtin:<name>`.
 	PromptBuiltin PromptKind = iota
-	// PromptPath names a file in the repo's review manifest directory.
-	// Always starts with "./".
+	// PromptPath names a file in the repo's review manifest directory,
+	// cleaned and guaranteed not to climb out of it.
 	PromptPath
 )
 

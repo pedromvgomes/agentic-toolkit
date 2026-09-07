@@ -99,7 +99,7 @@ var conditionKeys = map[ConditionKey]keySpec{
 	KeyReferencingFiles: {
 		Operand:     operandInt,
 		Operators:   []Operator{OpGT, OpGTE, OpLT, OpLTE, OpEq},
-		Description: "Files referencing the exported symbols the change modifies. Unavailable when no extractor knows the change's languages, and a rule reading an unavailable count is refused rather than read as low.",
+		Description: "Files referencing the exported symbols the change *declares* — a change confined to the body of an existing function declares none, and counts zero. Unavailable when no extractor knows the change's languages, and a rule reading an unavailable count is refused rather than read as low.",
 	},
 }
 

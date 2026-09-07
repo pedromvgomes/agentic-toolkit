@@ -175,6 +175,12 @@ const generatedMarkerScanLines = 20
 // Two attributes, because repos use both: `linguist-generated` is what GitHub
 // reads to collapse a diff, and `-diff` is what git itself reads to stop
 // producing one. Either is the repo saying nobody wrote this file.
+//
+// Each is honoured in both spellings git reports. `a.ts linguist-generated`
+// yields the value `set`, while `a.ts linguist-generated=true` — the form
+// Linguist's own documentation uses — yields `true`; a check that accepted
+// only one of them would ignore half the repos that mark their generated
+// trees.
 func AttrGenerated(dir string, paths []string) (map[string]bool, error) {
 	out := map[string]bool{}
 	if len(paths) == 0 {
@@ -195,9 +201,9 @@ func AttrGenerated(dir string, paths []string) (map[string]bool, error) {
 	for i := 0; i+2 < len(fields); i += 3 {
 		p, attr, value := fields[i], fields[i+1], fields[i+2]
 		switch {
-		case attr == "linguist-generated" && value == "set":
+		case attr == "linguist-generated" && (value == "set" || value == "true"):
 			out[p] = true
-		case attr == "diff" && value == "unset":
+		case attr == "diff" && (value == "unset" || value == "false"):
 			out[p] = true
 		}
 	}

@@ -89,7 +89,7 @@ The location is fixed rather than configurable: the manifest is configuration, a
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `version` | `int` | **yes** | Manifest schema version. Currently always 1. |
-| `reviewers` | `map[string]Runner` | **yes** | The critics this repo can staff a panel with, keyed by name. The name is what a panel lists and what a finding is attributed to. |
+| `reviewers` | `map[string]Runner` | **yes** | The reviewers this repo can staff a panel with, keyed by name. The name is what a panel lists and what a finding is attributed to. |
 | `judge` | `Runner` | **yes** | The single run that merges findings, sets final severity and decides which survive. It decides; it does not transmit. |
 | `validator` | `Runner` | **yes** | The run handed one candidate finding and asked whether it holds. A context that posts always validates, so this is required whatever the panels say. |
 | `panels` | `map[string]Panel` | **yes** | Named sets of reviewers, keyed by name. Exactly one panel runs per review. |
@@ -145,7 +145,7 @@ Operators are words. `>=` opens a YAML folded block scalar, so a rule written wi
 | `signals` | `in`, `not_in`, `all_in` | Names from the built-in signal vocabulary. `in` holds when the change carries any of them; `all_in` when it carries every one. |
 | `changed_lines` | `gt`, `gte`, `lt`, `lte`, `eq` | Lines added plus removed, counted after mechanical exclusions. A pure rename contributes nothing; a rename with edits contributes its edits. |
 | `changed_files` | `gt`, `gte`, `lt`, `lte`, `eq` | Reviewable files, counted after mechanical exclusions. |
-| `referencing_files` | `gt`, `gte`, `lt`, `lte`, `eq` | Files referencing the exported symbols the change modifies. Unavailable when no extractor knows the change's languages, and a rule reading an unavailable count is refused rather than read as low. |
+| `referencing_files` | `gt`, `gte`, `lt`, `lte`, `eq` | Files referencing the exported symbols the change *declares* — a change confined to the body of an existing function declares none, and counts zero. Unavailable when no extractor knows the change's languages, and a rule reading an unavailable count is refused rather than read as low. |
 
 The `signals` vocabulary is closed and ships with the binary; `agtk code-review signals` lists it. Detecting a signal is language knowledge, which has to be tested somewhere other than a consumer's YAML — a repo that wrote its own patterns gets nothing the day it adds a second language. A repo's own escape hatch is `touches`, which is honest about being path-only.
 
