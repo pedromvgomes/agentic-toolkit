@@ -129,7 +129,7 @@ func Select(m *Manifest, ctx Context, p *Profile, override string) (*Selection, 
 		// one ends it.
 		unreadable := ""
 		for _, cond := range conds {
-			held, err := Evaluate(cond, p)
+			held, err := Evaluate(cond, p, ctx)
 			if err != nil {
 				if !m.Builtin {
 					// The remedy belongs here and not in Evaluate: it is
@@ -181,8 +181,14 @@ func Select(m *Manifest, ctx Context, p *Profile, override string) (*Selection, 
 // than a false: a rule that silently never fires leaves a repo believing it
 // has a protection it does not have, which is the failure the whole
 // unavailable-is-never-low rule exists for.
-func Evaluate(c Condition, p *Profile) (bool, error) {
+func Evaluate(c Condition, p *Profile, ctx Context) (bool, error) {
 	switch c.Key {
+	case KeyContext:
+		// Never unavailable: the context is what the caller asked for, not
+		// something read off the change. It is the one condition that cannot
+		// fail to be evaluated.
+		return evaluateContext(c, ctx), nil
+
 	case KeyTouches:
 		return evaluateTouches(c, p), nil
 
@@ -295,4 +301,20 @@ func compare(op Operator, got, want int) bool {
 		return got == want
 	}
 	return false
+}
+
+// evaluateContext reports whether the review's context is one the condition
+// names.
+func evaluateContext(c Condition, ctx Context) bool {
+	found := false
+	for _, named := range c.Contexts {
+		if named == ctx {
+			found = true
+			break
+		}
+	}
+	if c.Operator == OpNotIn {
+		return !found
+	}
+	return found
 }

@@ -152,6 +152,7 @@ Operators are words. `>=` opens a YAML folded block scalar, so a rule written wi
 | `changed_lines` | `gt`, `gte`, `lt`, `lte`, `eq` | Lines added plus removed, counted after mechanical exclusions. A pure rename contributes nothing; a rename with edits contributes its edits. |
 | `changed_files` | `gt`, `gte`, `lt`, `lte`, `eq` | Reviewable files, counted after mechanical exclusions. |
 | `referencing_files` | `gt`, `gte`, `lt`, `lte`, `eq` | Files referencing the exported symbols the change *declares* — a change confined to the body of an existing function declares none, and counts zero. Unavailable when no extractor knows the change's languages, and a rule reading an unavailable count is refused rather than read as low. |
+| `context` | `in`, `not_in` | Contexts the rule applies in: worktree, pr. The only key that tests the run rather than the change, so a criterion can raise to one roster locally and another on a pull request. |
 
 The `signals` vocabulary is closed and ships with the binary; `agtk code-review signals` lists it. Detecting a signal is language knowledge, which has to be tested somewhere other than a consumer's YAML — a repo that wrote its own patterns gets nothing the day it adds a second language. A repo's own escape hatch is `touches`, which is honest about being path-only.
 
@@ -178,33 +179,69 @@ The `signals` vocabulary is closed and ships with the binary; `agtk code-review 
 # A consumer that writes its own manifest replaces this one whole: prompt
 # bodies stay shareable through `builtin:` references rather than through a
 # merge algorithm, so there is one roster per repo and never half of two.
+#
+# It assumes Claude Code with codex available, and the cross-model check is the
+# whole point of how it is arranged: the local pass is Claude and the pull
+# request is codex, so by the time a change is proposed it has been read by two
+# models trained differently, which miss different things. A panel mixing both
+# would spend twice for one opinion of each; two stages spend once each and
+# disagree across the boundary that matters.
+#
+# Every model is named. A reviewer left on the CLI's own default is a model
+# nobody chose, which changes under the operator rather than in a diff.
 version: 1
 
 reviewers:
-  unified:     {provider: claudecode, model: sonnet, prompt: builtin:unified}
-  correctness: {provider: claudecode, model: sonnet, prompt: builtin:correctness}
-  security:    {provider: claudecode, model: opus,   prompt: builtin:security}
-  performance: {provider: claudecode, model: sonnet, prompt: builtin:performance}
+  # The local pass. One reviewer over every axis, because what a pre-push
+  # review is worth is being fast enough to run before every push.
+  unified: {provider: claudecode, model: sonnet, prompt: builtin:unified}
 
+  # The pull request, and everything the rules escalate to. Codex, so these
+  # never re-run the model that already read the change locally.
+  #
+  # Families are OpenAI's own; the driver refuses to call one the counterpart
+  # of an Anthropic model, and so does this file. `astra` sits on security for
+  # the same reason `opus` would: it is the newest family the driver names, and
+  # security is the axis where being second-best is most expensive.
+  correctness: {provider: codex, model: sol,   prompt: builtin:correctness}
+  security:    {provider: codex, model: astra, prompt: builtin:security}
+  performance: {provider: codex, model: sol,   prompt: builtin:performance}
+
+# The local pass reconciles on Claude, which is the model that formed its
+# findings. The codex panels override both below, so a pull request is read,
+# validated and judged without Claude — the local review is the other half of
+# the pair, and a shared judge would put one model on both sides of it.
 judge:     {provider: claudecode, model: opus,   prompt: builtin:judge}
 validator: {provider: claudecode, model: sonnet, prompt: builtin:validator}
 
 panels:
   quick:
-    description: One reviewer over all three axes. The pre-push pass, for a change you already understand.
+    description: One Claude reviewer over all three axes. The pre-push pass, where being fast is what it is worth.
     reviewers: [unified]
+
   standard:
-    description: Correctness and security as separate reviewers, each with its own scope.
+    description: Correctness and security on codex, each with its own scope. The second model's first look at the change.
     reviewers: [correctness, security]
+    judge:     {provider: codex, model: astra, prompt: builtin:judge}
+    validator: {provider: codex, model: sol,   prompt: builtin:validator}
+
   deep:
-    description: Every axis, run twice, so agreement between independent instances is the confidence signal.
+    description: Every axis on codex, run twice, so agreement between independent instances is the confidence signal.
     reviewers: [correctness, security, performance]
     quorum: 2
+    judge:     {provider: codex, model: astra, prompt: builtin:judge}
+    validator: {provider: codex, model: sol,   prompt: builtin:validator}
 
 defaults:
   worktree: quick
   pr:       standard
 
+# An escalation names one panel, and a rule cannot name a different one per
+# context — so `deep` is reached from a local review as well as from a pull
+# request, and it is codex either way. That is the intended reading rather than
+# a compromise: routine local work is Claude's, and a change these rules call
+# risky earns the second model immediately instead of waiting for the pull
+# request.
 escalate:
   # Code that decides who may do what, and code that rewrites data in place.
   # Both are changes whose damage is discovered by someone other than the
