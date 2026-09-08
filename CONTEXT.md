@@ -226,13 +226,33 @@ GitHub blocks `GITHUB_TOKEN` approvals to prevent. The person types the command.
 _Avoid_: sign-off, gate, merge
 
 **Review root**:
-The detached worktree of the code under review, created by `agtk` outside the project
-directory. No **Reviewer** ever runs with it as its working directory, and the instruction
-files a coding-agent CLI discovers by walking upward — `AGENTS.md`, `AGENTS.override.md`,
-`CLAUDE.md`, `.codex/`, `.claude/` — are neutralised inside it before any child starts.
-Codex has no equivalent of `--setting-sources ""`, so discovery is closed by where the child
-runs and what the directory contains, not by a flag.
-_Avoid_: checkout, workspace, head
+The copy of the code under review that `agtk` writes outside the project directory, one file
+at a time from `git ls-tree`. No **Reviewer** ever runs with it as its working directory —
+that is the **Review workdir** — and the instruction files a coding-agent CLI discovers by
+walking upward (`AGENTS.md`, `AGENTS.override.md`, `TEAM_GUIDE.md`, `.agents.md`,
+`CLAUDE.md`, `.codex/`, `.claude/`) are never written into it, so there is no window in which
+they exist to be neutralised.
+
+Written rather than checked out, because both ways of checking out hand the reviewed branch
+something. A `git worktree` leaves a `.git` behind, which gives a codex reviewer the whole
+repository through a directory the sandbox has no reason to refuse. `git archive` honours the
+reviewed head's own `.gitattributes`, so `export-ignore` lets a branch hide files from the
+review and `export-subst` lets it rewrite them. Codex has no equivalent of
+`--setting-sources ""`, so discovery is closed by where the child runs and what that directory
+holds, not by a flag.
+
+A symlink or a gitlink in the tree is refused and named rather than written: either one makes
+"the reviewed code is a copy outside the project directory" untrue, since following it leads
+back out.
+_Avoid_: checkout, workspace, head, worktree
+
+**Review workdir**:
+The empty directory a **Runner**'s child process actually runs in — a sibling of the **Review
+root**, holding nothing and belonging to no repository. It is what makes "no reviewer runs
+with the reviewed code as its working directory" a fact about the filesystem rather than an
+instruction: everything under the review root is material a run opens by absolute path, and
+nothing above the workdir is a project to walk up into.
+_Avoid_: scratch dir, sandbox, cwd, temp
 
 **Fingerprint**:
 What identifies a **Finding** across runs: its path, its category and the code it quotes,

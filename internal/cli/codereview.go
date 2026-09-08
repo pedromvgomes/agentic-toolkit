@@ -10,12 +10,14 @@ import (
 	"github.com/pedromvgomes/agentic-toolkit/internal/review"
 )
 
-// The code-review command group is deliberately model-free:
-// every subcommand here reads a manifest, profiles a change and decides which
-// panel would run, and none of them starts a process. That is what makes
-// `explain` free to run on a hook, and it is checkable — internal/review
-// names the driver in one file, which asserts capabilities and constructs
-// nothing.
+// `explain` and `signals` are deliberately model-free: they read a manifest,
+// profile a change and decide which panel would run, and neither starts a
+// process. That is what makes `explain` free to run on a hook, and it is
+// checkable — internal/review names the driver in one file, which asserts
+// capabilities and constructs nothing.
+//
+// `run` is the one subcommand that invokes a model, and it reaches one through
+// internal/reviewrun rather than by constructing a driver here.
 func newCodeReviewCmd(env *Env) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "code-review",
@@ -36,18 +38,59 @@ func newCodeReviewCmd(env *Env) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error { return cmd.Help() },
 	}
 	cmd.AddCommand(
+		newCodeReviewRunCmd(env),
 		newCodeReviewExplainCmd(env),
 		newCodeReviewSignalsCmd(env),
 	)
 	return cmd
 }
 
-// reviewTarget is what the explain command was pointed at.
+// reviewTarget is what a code-review subcommand was pointed at.
 type reviewTarget struct {
 	base    string
 	head    string
 	context string
 	panel   string
+}
+
+// targetFlags registers the flags that name a change, so `explain` and `run`
+// take the same words for the same things.
+func targetFlags(cmd *cobra.Command, target *reviewTarget) {
+	cmd.Flags().StringVar(&target.base, "base", "",
+		"ref the change is measured against (default: the remote's default branch)")
+	cmd.Flags().StringVar(&target.head, "head", "",
+		"ref the change ends at (default: the working tree, uncommitted changes included)")
+	cmd.Flags().StringVar(&target.context, "context", string(review.ContextWorktree),
+		"what the review runs against: "+contextNames())
+	cmd.Flags().StringVar(&target.panel, "panel", "",
+		"run this panel instead of the one the rules choose")
+}
+
+// resolveTarget turns a target into the repository root and the merge base the
+// change is anchored to.
+// base is the ref the caller named or the one detected; mergeBase is where it
+// and the head diverged, which is what the change is actually measured from.
+// Both are returned because the report names the first and the work uses the
+// second.
+func resolveTarget(env *Env, target reviewTarget) (root, base, mergeBase string, err error) {
+	if !knownContext(review.Context(target.context)) {
+		return "", "", "", fmt.Errorf("%q is not a context; use one of %s", target.context, contextNames())
+	}
+	root, err = review.RepoRoot(env.WorkDir)
+	if err != nil {
+		return "", "", "", fmt.Errorf("locate the repository: %w", err)
+	}
+	base = target.base
+	if base == "" {
+		if base, err = review.DetectBase(root); err != nil {
+			return "", "", "", err
+		}
+	}
+	mergeBase, err = review.MergeBase(root, base, target.head)
+	if err != nil {
+		return "", "", "", fmt.Errorf("anchor the change to %s: %w", base, err)
+	}
+	return root, base, mergeBase, nil
 }
 
 func newCodeReviewExplainCmd(env *Env) *cobra.Command {
@@ -67,37 +110,15 @@ func newCodeReviewExplainCmd(env *Env) *cobra.Command {
 			return runCodeReviewExplain(env, target)
 		},
 	}
-	cmd.Flags().StringVar(&target.base, "base", "",
-		"ref the change is measured against (default: the remote's default branch)")
-	cmd.Flags().StringVar(&target.head, "head", "",
-		"ref the change ends at (default: the working tree, uncommitted changes included)")
-	cmd.Flags().StringVar(&target.context, "context", string(review.ContextWorktree),
-		"what the review runs against: "+contextNames())
-	cmd.Flags().StringVar(&target.panel, "panel", "",
-		"run this panel instead of the one the rules choose")
+	targetFlags(cmd, &target)
 	return cmd
 }
 
 func runCodeReviewExplain(env *Env, target reviewTarget) error {
 	ctx := review.Context(target.context)
-	if !knownContext(ctx) {
-		return fmt.Errorf("%q is not a context; use one of %s", target.context, contextNames())
-	}
-
-	root, err := review.RepoRoot(env.WorkDir)
+	root, base, mergeBase, err := resolveTarget(env, target)
 	if err != nil {
-		return fmt.Errorf("locate the repository: %w", err)
-	}
-
-	base := target.base
-	if base == "" {
-		if base, err = review.DetectBase(root); err != nil {
-			return err
-		}
-	}
-	mergeBase, err := review.MergeBase(root, base, target.head)
-	if err != nil {
-		return fmt.Errorf("anchor the change to %s: %w", base, err)
+		return err
 	}
 
 	// A context that posts reads its rules from the base ref. Everything on

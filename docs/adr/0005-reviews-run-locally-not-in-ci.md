@@ -27,8 +27,8 @@ the one-file-one-process rule by construction.
 survives between jobs, which is the arrangement OpenAI actually recommends. Rejected on cost:
 this ships to hobby and open-source repositories, where standing up hosts to review pull
 requests is a bill that scales with the number of repos and buys nothing a laptop already has.
-It also serialises GPT reviewers, so quorum stops working for exactly the provider it was
-wanted for.
+It also serialises GPT reviewers — which the local shape does too, for the same
+one-file-one-process reason, so it buys nothing there either.
 
 **A Claude-only panel in CI, GPT locally.** Buildable, and briefly the plan. Rejected because it
 splits one feature across two execution models to rescue an automation nobody had asked for:
@@ -46,8 +46,18 @@ review was not simply switched on.
 - Nothing in a consumer repository holds a credential, so a fork, a clone or a leaked secret
   scan has nothing to find. The blast radius of the App key is one machine.
 - The reviewer runs on ambient credentials, which means it inherits the operator's environment.
-  Isolation is available but unused, and a future need for it is a deliberate change rather
-  than a default already in place.
+  Isolation is available and unused: `codex.WithConfigDir` sets a per-run `CODEX_HOME`, so a
+  run can be pointed at its own credential directory rather than the operator's. Using it is a
+  deliberate change rather than a default already in place.
+
+  It does not rescue a concurrent quorum, which is the thing it looks like it would. Copying
+  `auth.json` into N config directories produces N processes holding the same refresh token,
+  and that token is effectively single-use — the first refresh invalidates it for the rest, so
+  the copies destroy each other and the original. Per-run isolation separates where the
+  credential is read from, not whose credential it is.
+- A codex run therefore reports `MaxConcurrentRuns() == 1`, and a review schedules that
+  provider's runs one at a time. Quorum on codex costs wall-clock rather than correctness; a
+  provider with a static bearer token reports no limit and its runs go in parallel.
 - A repository cannot be reviewed by someone who has not installed the App and `agtk`. Bot
   review is a property of the operator, not of the repository — which is the trade for it
   costing nothing to run.

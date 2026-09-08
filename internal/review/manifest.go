@@ -31,6 +31,11 @@ type Manifest struct {
 	Defaults  Defaults          `yaml:"defaults"  agtkdoc:"required;The panel each context starts from, before escalation."`
 	Escalate  []Escalation      `yaml:"escalate,omitempty" agtkdoc:"Rules that raise the panel above a context's default. Every rule is evaluated and the highest target wins, so their order carries no meaning."`
 
+	// Conventions replaces the default rule documents rather than adding to
+	// them. A repo that names its own has said where its rules live, and
+	// appending the defaults would hold it against documents it did not name.
+	Conventions []string `yaml:"conventions,omitempty" agtkdoc:"Documents holding this repo's own written rules, as paths from the repo root, read at the base ref and injected raw into every reviewer's prompt. Replaces the default list rather than adding to it. Absent means the defaults: CLAUDE.md, AGENTS.md, .claude/CLAUDE.md, CONTEXT.md, CONTRIBUTING.md, docs/ARCHITECTURE.md, docs/CODE_STANDARDS.md."`
+
 	// Builtin records that this is the manifest that ships with agtk rather
 	// than one a repo wrote. Not a field a manifest may set: it is a fact
 	// about where the document came from.
@@ -44,7 +49,7 @@ type Manifest struct {
 	Builtin bool `yaml:"-"`
 }
 
-// Runner is one configured model invocation — the shape a reviewer, the judge
+// Runner is one configured model run — the shape a reviewer, the judge
 // and the validator all take. It says which CLI, which model and which prompt,
 // and nothing about what the run may do: every run here is read-only, and how
 // that is enforced is a fact about the provider rather than something a
@@ -173,3 +178,16 @@ type PromptRef struct {
 
 // IsBuiltin reports whether this prompt ships with agtk.
 func (p PromptRef) IsBuiltin() bool { return p.Kind == PromptBuiltin }
+
+// ConventionDocs returns the documents this repo is held against.
+//
+// A manifest that names its own replaces the defaults rather than extending
+// them: a repo that has said where its rules live has also said where they do
+// not, and appending would hold it against documents it did not name and may
+// not have meant as rules.
+func (m *Manifest) ConventionDocs(defaults []string) []string {
+	if len(m.Conventions) > 0 {
+		return m.Conventions
+	}
+	return defaults
+}

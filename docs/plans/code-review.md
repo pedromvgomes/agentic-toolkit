@@ -1,13 +1,17 @@
 # Plan — bot code review on GitHub PRs
 
-Status: the deterministic surface is built — the manifest, the change profile, signals,
-`referencing_files`, panel selection and `agtk code-review explain`. Nothing invokes a model
-yet: reviewers, the judge, prompts, GitHub, fingerprints and approval are not built.
+Status: the deterministic surface and the model-invoking pipeline are both built — the
+manifest, the change profile, signals, `referencing_files`, panel selection and `agtk
+code-review explain`, then the review root, the built-in prompts, reviewers at quorum,
+validators, the judge and `agtk code-review run`. Findings carry a fingerprint. What is not
+built is everything that talks to GitHub: posting a **Review**, reading back existing threads
+to deduplicate against, and **Approval**.
 Created: 2026-09-07. Challenged: 2026-09-07.
 
 The decisions that are hard to reverse live in `docs/adr/0005-reviews-run-locally-not-in-ci.md`,
-`docs/adr/0006-the-judge-decides-agtk-transmits.md` and
-`docs/adr/0007-untrusted-heads-are-closed-structurally.md`; the vocabulary lives in
+`docs/adr/0006-the-judge-decides-agtk-transmits.md`,
+`docs/adr/0007-untrusted-heads-are-closed-structurally.md` and
+`docs/adr/0008-the-judge-returns-ids-agtk-carries-the-evidence.md`; the vocabulary lives in
 `CONTEXT.md`.
 
 `agtk code-review` runs a panel of reviewers over a change and posts what survives to a

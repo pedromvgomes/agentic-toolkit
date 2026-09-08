@@ -15,7 +15,7 @@ import (
 
 // git runs one git command in dir and returns its stdout.
 //
-// Every argument list here is built from constants and from refs the invoker
+// Every argument list here is built from constants and from refs the caller
 // named, and each ends with `--` before any path, because under a PR review
 // the paths come from a branch somebody else wrote.
 func git(dir string, args ...string) ([]byte, error) {
@@ -38,7 +38,7 @@ func gitStatus(dir string, args ...string) (stdout []byte, exitCode int, err err
 	// `:(exclude)a.go` on the branch under review would otherwise remove a.go
 	// from the patch every detector reads, letting the author of a change
 	// choose how deeply it is reviewed. Set on the environment rather than as
-	// a flag so it covers every invocation, including ones that grow a
+	// a flag so it covers every git command, including ones that grow a
 	// pathspec later.
 	cmd.Env = append(os.Environ(), "GIT_LITERAL_PATHSPECS=1")
 	var out, stderr bytes.Buffer
@@ -60,9 +60,9 @@ func gitStatus(dir string, args ...string) (stdout []byte, exitCode int, err err
 	return out.Bytes(), code, fmt.Errorf("git %s: %s", strings.Join(args, " "), msg)
 }
 
-// diffArgs are the options every diff invocation carries, so the form the
-// patch parsers depend on is a property of the invocation rather than of the
-// invoking user's configuration.
+// diffArgs are the options every diff command carries, so the form the
+// patch parsers depend on is a property of the command rather than of the
+// calling user's configuration.
 //
 // `diff.noprefix` and `diff.mnemonicPrefix` both rewrite the `a/` and `b/`
 // header prefixes, and `diff.external` replaces the diff wholesale. Any of the

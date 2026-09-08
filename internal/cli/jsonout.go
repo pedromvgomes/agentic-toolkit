@@ -9,6 +9,7 @@ import (
 	"github.com/pedromvgomes/agentic-toolkit/internal/lockfile"
 	"github.com/pedromvgomes/agentic-toolkit/internal/memory"
 	"github.com/pedromvgomes/agentic-toolkit/internal/resolver"
+	"github.com/pedromvgomes/agentic-toolkit/internal/reviewrun"
 )
 
 // jsonVersion is the schema version emitted by every --json output of
@@ -397,6 +398,150 @@ func statsJSON(env *Env, store *memory.Store, st memory.Stats) memoryStatsJSON {
 	if !st.FirstHit.IsZero() {
 		out.FirstHit = st.FirstHit.Format(time.RFC3339)
 		out.LastHit = st.LastHit.Format(time.RFC3339)
+	}
+	return out
+}
+
+// ===== code review =====
+
+type reviewOutJSON struct {
+	Version     int             `json:"version"`
+	Manifest    string          `json:"manifest"`
+	Range       string          `json:"range"`
+	Panel       string          `json:"panel"`
+	Available   bool            `json:"available"`
+	Reason      string          `json:"reason,omitempty"`
+	Partial     bool            `json:"partial"`
+	Findings    []findingJSON   `json:"findings"`
+	Good        []string        `json:"good,omitempty"`
+	Runs        []runReportJSON `json:"runs"`
+	Skipped     []skippedJSON   `json:"skipped,omitempty"`
+	Conventions []string        `json:"conventions,omitempty"`
+	Discarded   []string        `json:"discarded_judge_ids,omitempty"`
+	Reattached  []string        `json:"reattached_injection_ids,omitempty"`
+	Dropped     int             `json:"dropped_by_validator"`
+	CostUSD     float64         `json:"cost_usd"`
+}
+
+type findingJSON struct {
+	ID            string `json:"id"`
+	Fingerprint   string `json:"fingerprint"`
+	Reviewer      string `json:"reviewer"`
+	Path          string `json:"path"`
+	StartLine     *int   `json:"start_line"`
+	EndLine       *int   `json:"end_line"`
+	Category      string `json:"category"`
+	Severity      string `json:"severity"`
+	Confidence    string `json:"confidence,omitempty"`
+	Issue         string `json:"issue"`
+	Evidence      string `json:"evidence"`
+	Suggestion    string `json:"suggestion,omitempty"`
+	Corroboration int    `json:"corroboration"`
+	Verdict       string `json:"verdict,omitempty"`
+}
+
+type runReportJSON struct {
+	Label     string  `json:"label"`
+	Role      string  `json:"role"`
+	Provider  string  `json:"provider"`
+	Model     string  `json:"model,omitempty"`
+	Available bool    `json:"available"`
+	Reason    string  `json:"reason,omitempty"`
+	Findings  int     `json:"findings"`
+	CostUSD   float64 `json:"cost_usd"`
+}
+
+type skippedJSON struct {
+	Path   string `json:"path"`
+	Reason string `json:"reason"`
+}
+
+// reviewJSON renders a finished review.
+//
+// The fingerprint is emitted alongside the id because they answer different
+// questions: the id is what the judge was asked about in this run and means
+// nothing outside it, and the fingerprint is what identifies the finding on a
+// later review of the same change.
+func reviewJSON(r *reviewrun.Review) reviewOutJSON {
+	out := reviewOutJSON{
+		Version:     jsonVersion,
+		Manifest:    r.Manifest,
+		Range:       r.Range,
+		Panel:       r.Panel,
+		Available:   r.Available,
+		Reason:      r.Reason,
+		Partial:     r.Partial(),
+		Findings:    []findingJSON{},
+		Runs:        []runReportJSON{},
+		Good:        r.Good,
+		Conventions: r.Conventions,
+		Discarded:   r.DiscardedIDs,
+		Reattached:  r.ReattachedIDs,
+		Dropped:     r.DroppedByValidator,
+		CostUSD:     r.CostUSD,
+	}
+	for _, f := range r.Findings {
+		row := findingJSON{
+			ID: f.ID, Fingerprint: f.Fingerprint(), Reviewer: f.Reviewer,
+			Path: f.Path, StartLine: f.StartLine, EndLine: f.EndLine,
+			Category: f.Category, Severity: string(f.Severity), Confidence: f.Confidence,
+			Issue: f.Issue, Evidence: f.Evidence, Suggestion: f.Suggestion,
+			Corroboration: f.Corroboration,
+		}
+		if f.Verdict != nil {
+			row.Verdict = f.Verdict.Verdict
+		}
+		out.Findings = append(out.Findings, row)
+	}
+	for _, run := range r.Reports {
+		out.Runs = append(out.Runs, runReportJSON{
+			Label: run.Label, Role: run.Role, Provider: run.Provider, Model: run.Model,
+			Available: run.Report.Available, Reason: run.Report.Reason,
+			Findings: run.Report.Count(), CostUSD: run.CostUSD,
+		})
+	}
+	for _, s := range r.Skipped {
+		out.Skipped = append(out.Skipped, skippedJSON{Path: s.Path, Reason: s.Reason})
+	}
+	return out
+}
+
+type reviewPlanJSON struct {
+	Version     int              `json:"version"`
+	Manifest    string           `json:"manifest"`
+	Range       string           `json:"range"`
+	Panel       string           `json:"panel"`
+	Root        string           `json:"review_root"`
+	WorkDir     string           `json:"review_workdir"`
+	Conventions []string         `json:"conventions,omitempty"`
+	Runs        []plannedRunJSON `json:"runs"`
+}
+
+type plannedRunJSON struct {
+	Label    string `json:"label"`
+	Role     string `json:"role"`
+	Provider string `json:"provider"`
+	Model    string `json:"model,omitempty"`
+	Prompt   string `json:"prompt"`
+}
+
+// planRunJSON renders what a review would do, prompts included: a preview that
+// withheld them would not be a preview of what gets sent.
+func planRunJSON(p *reviewrun.Plan) reviewPlanJSON {
+	out := reviewPlanJSON{
+		Version:     jsonVersion,
+		Manifest:    p.Manifest,
+		Range:       p.Range,
+		Panel:       p.Panel,
+		Root:        p.Material.Root.Code,
+		WorkDir:     p.Material.Root.Work,
+		Conventions: p.Material.ConventionPaths(),
+		Runs:        []plannedRunJSON{},
+	}
+	for _, r := range p.Runs {
+		out.Runs = append(out.Runs, plannedRunJSON{
+			Label: r.Label, Role: r.Role, Provider: r.Provider, Model: r.Model, Prompt: r.Prompt,
+		})
 	}
 	return out
 }
