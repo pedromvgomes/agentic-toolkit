@@ -114,9 +114,19 @@ func (m *Manifest) validate(filePath string) error {
 			return fieldErr(filePath, field+".quorum", ErrInvalidPanel,
 				"a quorum of %d runs nothing; omit it for one instance of each reviewer", panel.Quorum)
 		}
-		if panel.Validate != nil && *panel.Validate && m.Validator == nil {
+		if panel.Judge != nil {
+			if err := panel.Judge.validate(filePath, field+".judge"); err != nil {
+				return err
+			}
+		}
+		if panel.Validator != nil {
+			if err := panel.Validator.validate(filePath, field+".validator"); err != nil {
+				return err
+			}
+		}
+		if panel.Validate != nil && *panel.Validate && m.EffectiveValidator(name) == nil {
 			return fieldErr(filePath, field+".validate", ErrMissingRequired,
-				"this panel validates, but the manifest declares no validator")
+				"this panel validates, but neither it nor the manifest declares a validator")
 		}
 	}
 
@@ -135,9 +145,19 @@ func (m *Manifest) validate(filePath string) error {
 		// A context that posts always validates, so it needs a validator
 		// whatever its panels say. A false finding on a PR is published and
 		// blocks approval, rather than merely cluttering a terminal.
-		if ctx.Posts() && m.Validator == nil {
-			return fieldErr(filePath, "validator", ErrMissingRequired,
-				"the %s context posts, and a context that posts always validates, so a validator is required", ctx)
+		//
+		// Every panel is checked, not the context's default alone: an
+		// escalation raises to another panel and --panel names any of them, so
+		// a panel that resolves no validator is a review that cannot post,
+		// discovered when the rule that raised to it fires rather than now.
+		if ctx.Posts() {
+			for _, panelName := range sortedMapKeys(m.Panels) {
+				if m.EffectiveValidator(panelName) == nil {
+					return fieldErr(filePath, "panels."+panelName+".validator", ErrMissingRequired,
+						"the %s context posts, and a context that posts always validates, so panel %q needs a validator: declare one on the panel or on the manifest",
+						ctx, panelName)
+				}
+			}
 		}
 	}
 

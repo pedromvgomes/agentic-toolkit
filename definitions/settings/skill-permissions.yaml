@@ -1,5 +1,5 @@
 name: skill-permissions
-description: Pre-approve the file and shell operations the bundled skills/agents need (memory-explorer store reads and candidate writes, backlog reporting, Serena memories, deep-code-review scripts, pr-code-review read-only gh calls) so they run without permission prompts.
+description: Pre-approve the file and shell operations the bundled skills/agents need (memory-explorer store reads and candidate writes, backlog reporting, Serena memories, panel-code-review's model-free code-review commands, read-only gh calls) so they run without permission prompts.
 platforms: [claude]
 value:
   permissions:
@@ -15,10 +15,10 @@ value:
       # pre-approval, so the only cost of a miss is a prompt, never a block.
       - "Read(**/.agents/memory/INDEX.md)"
       - "Write(**/.agents/memory/candidates/**)"
-      - "Bash(git checkout *)"
-      - "Bash(*/skills/deep-code-review/scripts/detect-parent.sh*)"
-      - "Bash(*/skills/deep-code-review/scripts/capture-diff.sh*)"
-      - "Bash(*/skills/deep-code-review/scripts/list-changed.sh*)"
-      - "Bash(*/skills/deep-code-review/scripts/find-convention-docs.sh*)"
+      # The code-review subcommands that spend nothing: they read a manifest,
+      # profile a change and say which panel would run. `run` is absent because
+      # it costs money, and `approve` because a person types that one.
+      - "Bash(agtk code-review panels*)"
+      - "Bash(agtk code-review explain*)"
+      - "Bash(agtk code-review signals*)"
       - "Bash(gh pr view *)"
-      - "Bash(gh pr diff *)"

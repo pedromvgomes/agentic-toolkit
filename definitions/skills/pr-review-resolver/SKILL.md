@@ -32,26 +32,25 @@ the feedback loop by responding to reviewers.
 
 ### Phase 2: Analyze and Present Findings
 
-For each review comment, produce a structured analysis:
+Present the comments as findings, in the shape `references/findings.md` prescribes — read that
+file before writing the report. Every reviewed finding a user sees uses it, whoever found it, so
+someone who has read one such list can read this one without relearning where the location is or
+how to say "fix that one".
 
-```
-### Finding [N]: [Short title summarizing the concern]
-**Reviewer:** @handle
-**File:** path/to/file.kt:L42-L50
-**Comment:** [The reviewer's original comment]
+Each comment maps onto a block: the reviewer's handle on the `Found by:` line, the file and line
+range as the location, the reviewer's own words as the quote, your explanation of what they are
+flagging as the body, and your concrete approach as `Fix:`. Because these are somebody else's
+claims rather than findings that arrived already validated, every block carries the
+`Assessment:` line — `Valid concern`, `Partially valid`, `Not applicable` or `Already
+addressed`, with why.
 
-**Analysis:**
-[Your explanation of what the reviewer is flagging and why it matters or doesn't]
+Severity is your judgement of the underlying concern, not the reviewer's tone: what must be
+fixed is RED, what should be is AMBER, and a nit is GREEN. A comment you assess as `Not
+applicable` still gets a block — the user needs to see it to disagree with you — and its
+severity is the one the concern would carry if it held.
 
-**Assessment:** Valid concern | Partially valid | Not applicable | Already addressed
-[Justify your assessment — why you agree or disagree with the reviewer]
-
-**Suggested fix:** (if valid)
-[Concrete approach to resolve the concern, with enough detail for the user to evaluate]
-```
-
-Present **all findings at once** in a numbered list. The user can then respond with which ones to fix
-(e.g., "fix all", "fix 1, 3, 5", "fix all except 2").
+Present **all findings at once**, and close with the choice that file gives, so the selection
+grammar is the same wherever findings are shown.
 
 **Important considerations when analyzing:**
 - Be honest in your assessment — don't rubber-stamp every comment as valid. Some automated reviewers

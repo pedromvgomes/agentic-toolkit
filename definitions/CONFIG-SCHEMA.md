@@ -116,6 +116,8 @@ One configured model invocation. It says which CLI, which model and which prompt
 | `reviewers` | `[]string` | **yes** | Names from the manifest's reviewers map. A panel that names one this manifest does not declare cannot staff itself, and is refused. |
 | `quorum` | `int` | no | How many independent instances of each reviewer to run. Agreement between them is the confidence signal. Defaults to 1. |
 | `validate` | `bool` | no | Whether findings are put to the validator. Unset leaves it to the context, and a context that posts validates regardless: a false finding on a PR is published and blocks approval. |
+| `judge` | `Runner` | no | Judge for reviews this panel produces, instead of the manifest's. Unset uses the manifest's. |
+| `validator` | `Runner` | no | Validator for reviews this panel produces, instead of the manifest's. Unset uses the manifest's. |
 
 ### `defaults`
 

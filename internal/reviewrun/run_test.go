@@ -894,3 +894,62 @@ func TestTheRangeFallsBackToTheResolvedBaseWhenNoLabelIsGiven(t *testing.T) {
 		t.Errorf("an unlabelled range does not name the base at all: %q", plan.Range)
 	}
 }
+
+// mixedManifest reviews the working tree with one provider and pull requests
+// with another, judge included.
+const mixedManifest = `version: 1
+reviewers:
+  correctness: {provider: claudecode, model: sonnet, prompt: "builtin:correctness"}
+judge:     {provider: claudecode, model: opus,   prompt: "builtin:judge"}
+validator: {provider: claudecode, model: sonnet, prompt: "builtin:validator"}
+panels:
+  local: {reviewers: [correctness]}
+  gpt:
+    reviewers: [correctness]
+    judge:     {provider: codex, model: gpt-5, prompt: "builtin:judge"}
+    validator: {provider: codex, model: gpt-5, prompt: "builtin:validator"}
+defaults:
+  worktree: local
+  pr:       gpt
+`
+
+// The judge a review is planned with is the panel's own where it declares one.
+// It runs in every review, so a plan that read the manifest's would send the
+// pull request's findings to the provider the repo chose for its local reviews
+// — and nothing in the output would say so.
+func TestThePlannedJudgeIsThePanelsOwn(t *testing.T) {
+	r := newGitRepo(t)
+	r.write(review.ManifestRelPath, mixedManifest)
+	r.write("a.go", "package main\n\nfunc main() {}\n")
+	base := r.commit("base")
+	r.write("a.go", "package main\n\nfunc main() { panic(\"boom\") }\n")
+	r.commit("the change")
+
+	for _, tc := range []struct {
+		name     string
+		panel    string
+		provider string
+		model    string
+	}{
+		{"a panel with its own judge", "gpt", "codex", "gpt-5"},
+		{"a panel with none", "local", "claudecode", "opus"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			plan, _, _, root, err := Prepare(Options{
+				Dir: r.dir, Base: base, Context: review.ContextWorktree, Panel: tc.panel,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = root.Close() }()
+
+			judge := plan.Runs[len(plan.Runs)-1]
+			if judge.Role != RoleJudge {
+				t.Fatalf("last planned run is %q, want the judge", judge.Role)
+			}
+			if judge.Provider != tc.provider || judge.Model != tc.model {
+				t.Errorf("judge is %s/%s, want %s/%s", judge.Provider, judge.Model, tc.provider, tc.model)
+			}
+		})
+	}
+}

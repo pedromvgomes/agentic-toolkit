@@ -147,6 +147,13 @@ _Avoid_: run, invocation, job
 A named set of **Reviewer**s, with how many instances of each to run and whether findings are
 validated. One panel runs per review. Which one is a **Context**'s default, possibly raised by
 an **Escalation**.
+
+It may also name the **Judge** and the **Validator** that answer for it, instead of the ones the
+**Review manifest** declares. A panel is how one context's reviewers are chosen, so it is where
+the runs that reconcile them belong: the judge runs in every review, and without this a repo
+reviewing locally with one **Provider** and its pull requests with another could say so for its
+reviewers and not for its judge. Both are overrides — a panel naming neither uses the
+manifest's, so declaring them on one panel is never the price of declaring them on all.
 _Avoid_: profile, preset, tier
 
 **Context**:
@@ -378,8 +385,8 @@ _Avoid_: summary, header, footer, marker (bare)
 
 **Review manifest**:
 `.agents/code-review/manifest.yaml`: the single declaration of **Reviewer**s, **Panel**s and the
-prompt bodies they use. Read by both engines — the in-session skill and `agtk code-review` — so
-there is one roster and not two.
+prompt bodies they use. Read by `agtk code-review` and by nothing else. A roster a skill also
+carried would be a second one, and the two would disagree the first time either changed.
 _Avoid_: panels.json, roster file, review config
 
 ## Flagged ambiguities
@@ -396,9 +403,9 @@ finding is posted, stays posted, and is declared not to be a defect. Suppression
 has not yet passed a **Validator**. The memory sense owns the bare noun; in review, say
 "candidate finding" and never "candidate" alone.
 
-**"Panel"** — `deep-code-review` used it for a per-stack group of reviewers *within* one run,
-so a polyglot change had several. A **Panel** here is the entire roster for a run — one runs,
-named by a **Context**'s default and possibly raised by an **Escalation**. The per-stack sense
+**"Panel"** — reads as a per-stack group of reviewers *within* one run, so that a polyglot
+change would have several. A **Panel** is the entire roster for a run, and exactly one runs:
+the one a **Context** defaults to, possibly raised by an **Escalation**. The per-stack sense
 has no name because per-stack partitioning is not built.
 
 **"Review"** — the activity and the artifact. **Review** is the artifact posted to the PR; say
