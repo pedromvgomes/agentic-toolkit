@@ -49,7 +49,7 @@ type Manifest struct {
 	Builtin bool `yaml:"-"`
 }
 
-// Runner is one configured model invocation — the shape a reviewer, the judge
+// Runner is one configured model run — the shape a reviewer, the judge
 // and the validator all take. It says which CLI, which model and which prompt,
 // and nothing about what the run may do: every run here is read-only, and how
 // that is enforced is a fact about the provider rather than something a
