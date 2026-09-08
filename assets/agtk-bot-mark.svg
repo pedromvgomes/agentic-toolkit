@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024"><title>Code-visor chat bot mark</title>
+  <!-- Hand-traced vector rebuild. Layer order matters: ear plates and their
+       white slots sit behind the head, which crops them at its edge. -->
+  <defs>
+    <linearGradient id="chevGradL" gradientUnits="userSpaceOnUse" x1="334.18" y1="387.46" x2="427.33" y2="498.68">
+      <stop offset="0" stop-color="#1AD082"/>
+      <stop offset="1" stop-color="#0AB6B2"/>
+    </linearGradient>
+    <linearGradient id="chevGradR" gradientUnits="userSpaceOnUse" x1="587.78" y1="413.56" x2="722.08" y2="440.62">
+      <stop offset="0" stop-color="#17C88C"/>
+      <stop offset="1" stop-color="#08B0B5"/>
+    </linearGradient>
+    <linearGradient id="mouthGrad" gradientUnits="userSpaceOnUse" x1="449.4" y1="527.11" x2="572.38" y2="733.89">
+      <stop offset="0" stop-color="#1FDE82"/>
+      <stop offset="1" stop-color="#04BAD3"/>
+    </linearGradient>
+  </defs>
+
+  <g id="ears" fill="#1D242A">
+    <rect x="117.72" y="321.86" width="159.92" height="238.83" rx="69.64"/>
+    <rect x="746.69" y="321.86" width="159.92" height="238.83" rx="69.64"/>
+  </g>
+
+  <g id="ear-slots" fill="#FDFDFD">
+    <rect x="149.66" y="353.16" width="94.57" height="175.26" rx="47.29" ry="31.26"/>
+    <rect x="780.1" y="353.16" width="94.57" height="175.26" rx="47.29" ry="31.26"/>
+  </g>
+
+  <path id="tail" fill="#1D242A" d="M 257.41 719.14 L 258.43 881.41 A 14.49 14.49 0 0 0 282.22 892.43 L 452.41 750.07 A 14.49 14.49 0 0 0 444.79 724.56 L 273.57 704.66 A 14.49 14.49 0 0 0 257.41 719.14 Z"/>
+  <path id="head" fill="#1D242A" d="M 363.91 158.8 H 660.41 A 187.66 187.66 0 0 1 848.07 346.46 V 641.03 A 136.98 136.98 0 0 1 711.09 778.01 H 313.23 A 136.98 136.98 0 0 1 176.25 641.03 V 346.46 A 187.66 187.66 0 0 1 363.91 158.8 Z"/>
+  <path id="visor" fill="#FDFDFD" d="M 210.89 475.63 L 210.89 362.8 C 210.89 320.64 239.15 270.88 309.68 270.88 C 358.43 270.88 458.91 297.42 512.16 297.42 C 565.42 297.42 665.9 270.88 714.65 270.88 C 785.18 270.88 813.43 320.64 813.43 362.8 L 813.43 475.63 C 813.43 526.77 774.0 571.27 712.34 571.27 L 648.09 571.27 C 604.28 571.27 552.37 510.24 512.16 510.24 C 471.96 510.24 420.05 571.27 376.23 571.27 L 311.99 571.27 C 250.33 571.27 210.89 526.77 210.89 475.63 Z"/>
+
+  <g fill="none" stroke-width="42.95" stroke-linecap="round" stroke-linejoin="round">
+    <path id="chevron-left"  stroke="url(#chevGradL)" d="M 402.96 361.38 L 320.87 427.41 L 402.96 493.44"/>
+    <path id="chevron-right" stroke="url(#chevGradR)" d="M 621.37 361.38 L 703.45 427.41 L 621.37 493.44"/>
+  </g>
+
+  <rect id="mouth-bar" x="297.92" y="608.42" width="428.5" height="44.8" rx="22.4" fill="url(#mouthGrad)"/>
+  <rect id="status-bar" x="297.92" y="679.52" width="309.87" height="42.47" rx="21.23" fill="#707175"/>
+</svg>
