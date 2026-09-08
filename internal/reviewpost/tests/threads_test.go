@@ -94,7 +94,7 @@ func TestTheBodySaysWhenTheExistingThreadsCouldNotBeRead(t *testing.T) {
 	r.Threads = reviewrun.ThreadsUnreadable("GitHub refused the review threads query: FORBIDDEN")
 	_, place := reviewpost.Build(r, pr, added)
 
-	body := reviewpost.Body(r, place)
+	body := reviewpost.Body(r, pr, place)
 	if !strings.Contains(body, "could not be read") {
 		t.Errorf("the body does not say the threads could not be read:\n%s", body)
 	}
@@ -112,7 +112,7 @@ func TestTheBodySaysNothingAboutThreadsWhenNoneWereSought(t *testing.T) {
 	r := reviewWith(finding("a.go", at(10), at(10), "correctness"))
 	_, place := reviewpost.Build(r, pr, added)
 
-	body := reviewpost.Body(r, place)
+	body := reviewpost.Body(r, pr, place)
 	if strings.Contains(body, "could not be read") {
 		t.Errorf("a review that sought no threads reports a failed read:\n%s", body)
 	}
@@ -127,7 +127,7 @@ func TestTheBodyNamesWhatWasAlreadyOnThePullRequest(t *testing.T) {
 	r.Suppressed = []reviewrun.Suppression{{Finding: withheld, Reason: reviewrun.SuppressedResolved}}
 	_, place := reviewpost.Build(r, pr, added)
 
-	body := reviewpost.Body(r, place)
+	body := reviewpost.Body(r, pr, place)
 	for _, want := range []string{"Already on this pull request (1)", "b.go:3", "security", reviewrun.SuppressedResolved} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the body does not carry %q:\n%s", want, body)
@@ -145,7 +145,7 @@ func TestTheBodySaysWhenAThreadIsAtAnotherSchemeVersion(t *testing.T) {
 	})
 	_, place := reviewpost.Build(r, pr, added)
 
-	body := reviewpost.Body(r, place)
+	body := reviewpost.Body(r, pr, place)
 	if !strings.Contains(body, "another scheme version") {
 		t.Errorf("the body does not report the scheme move:\n%s", body)
 	}

@@ -48,9 +48,28 @@ is the one place where an injected instruction in a diff would convert directly 
 - The judge writes comment bodies and severities and does not lose expressiveness; it loses
   only the ability to transmit them.
 - `--dry-run` costs nothing to build, because rendering and posting are already separate.
-- Approval is granted only when a review exists for the PR's current head commit and nothing at
-  or above the configured severity floor survived. `--force` overrides that and says so in the
-  approval body; a `security:prompt-injection` finding blocks approval regardless of the floor.
-- The floor makes the gate a checklist rather than a control: an operator who can type
-  `--force` can always approve. It catches a head that was never reviewed, not a person who
-  decided not to review.
+- Approval is granted only when a review exists for the PR's current head commit and reached a
+  verdict, every finding it reports at or above the configured severity floor is marked a false
+  positive, and no comment thread on the pull request is unresolved. A
+  `security:prompt-injection` finding agtk could not attach to the pull request blocks
+  regardless of all of it.
+- Nothing overrides the gate. There is no `--force`, because a flag that approves anyway makes
+  every clause above a checklist rather than a control, and the operator who would type it is
+  the one person the gate exists to slow down. Both ways past a finding are acts on the pull
+  request instead: change the code, so the evidence changes and the next review does not report
+  it; or reply on its thread saying it is not a defect. Each is attributable to an account,
+  visible to anyone reading the change, and reversible.
+- A false positive may be marked only by an account with write access. The author of a change
+  is the party a review does not trust, and a finding its own author could dismiss is one an
+  injected instruction can dismiss too.
+- Approval reads what the last review found out of that review's own body, from a marker naming
+  the commit, the verdict and every finding by fingerprint and severity. Nothing is persisted
+  between runs and the pull request is the only record, so the alternatives were to re-derive
+  the review — which approval must not do, since it requires a review to *exist* rather than to
+  run one — or to read severity out of rendered prose, which makes a rendering change a silent
+  approval bug.
+- A review posts one call; approval is a second command that makes another. A finding stated in
+  the review body carries no thread until agtk attaches one, which is one further request per
+  such finding, and GitHub refuses one whose path the change does not touch. So "exactly one API
+  call" holds for the review proper and not for the file-level threads that follow it: one that
+  fails leaves a finding in the body, which is reported rather than lost.

@@ -32,24 +32,48 @@ func FingerprintMarker(fingerprint string) string {
 
 // Placement is what became of each surviving finding when the review was laid
 // out for GitHub.
+//
+// The grouping is by what a reader can do about a finding, not by why it is
+// not inline. A finding blocks approval only where agtk can give somebody a
+// thread to answer on, so the one distinction that matters downstream is
+// whether the finding got a comment at all.
 type Placement struct {
 	// Inline are the findings that became inline comments, in the order they
-	// were posted.
+	// were posted. They ride inside the review's one request.
 	Inline []reviewrun.Finding
-	// CrossCutting are the findings that carry no line. GitHub requires a
-	// path and a line for an inline comment, and a claim about a subsystem
-	// has neither, so they are stated in the review body.
-	CrossCutting []reviewrun.Finding
-	// Unpositioned are findings that name a line the pull request's diff does
-	// not add. They cannot be inline comments — one comment GitHub refuses
-	// costs the entire review, including every comment that was right — so
-	// they are stated in the body and reported as having been moved there.
-	Unpositioned []reviewrun.Finding
+	// FileLevel are the findings that hang off a whole file: one that carries
+	// no line, and one whose line the diff does not add. GitHub will not
+	// accept either as an inline comment and will accept both against the
+	// path, so each becomes a comment of its own — a separate request after
+	// the review, because subject_type is not a field a review's draft
+	// comments carry.
+	FileLevel []reviewrun.Finding
+	// Unattachable are the findings agtk can give nobody a thread to answer
+	// on: one naming no path, and one naming a path the change does not
+	// touch, which GitHub refuses. They are stated in the review body and
+	// gate nothing — a gate with no remedy is a deadlock rather than a
+	// control. A prompt-injection finding here is the one exception, and the
+	// deadlock is the point.
+	Unattachable []reviewrun.Finding
 }
 
 // Total is how many findings were laid out.
 func (p Placement) Total() int {
-	return len(p.Inline) + len(p.CrossCutting) + len(p.Unpositioned)
+	return len(p.Inline) + len(p.FileLevel) + len(p.Unattachable)
+}
+
+// Deadlocked lists the prompt-injection findings agtk could not attach.
+//
+// The material under review addresses the reviewer, agtk can offer nobody a
+// thread to answer on, and the remedy is to change the code. ADR 0007.
+func (p Placement) Deadlocked() []reviewrun.Finding {
+	var out []reviewrun.Finding
+	for _, f := range p.Unattachable {
+		if f.Injected() {
+			out = append(out, f)
+		}
+	}
+	return out
 }
 
 // AddedLines is which lines of each file a change adds, keyed by path.
@@ -61,21 +85,35 @@ func (a AddedLines) holds(path string, line int) bool {
 	return ok && lines[line]
 }
 
-// Build lays a finished review out as the payload that posts it.
+// touches reports whether the change names this path at all, which is what
+// decides whether GitHub will accept a comment against the whole file.
 //
-// Every finding reaches the pull request. Which half of the review it reaches
-// — an inline comment or the body — is decided here, by whether GitHub will
-// accept a comment where the finding points.
+// An empty path is not a path: a finding that names no file has nowhere to
+// hang even when the diff is enormous.
+func (a AddedLines) touches(path string) bool {
+	if path == "" {
+		return false
+	}
+	_, ok := a[path]
+	return ok
+}
+
+// Build lays a finished review out as the payload that posts it, and the
+// file-level comments that follow it.
+//
+// Every finding reaches the pull request. Where it reaches — an inline
+// comment, a comment against the file, or the review body — is decided here,
+// by whether GitHub will accept a comment where the finding points.
 func Build(r *reviewrun.Review, pr githubapp.PullRequest, added AddedLines) (githubapp.ReviewPayload, Placement) {
 	var place Placement
 	comments := []githubapp.ReviewComment{}
 
 	for _, f := range r.Findings {
 		switch {
-		case !f.HasLine() || f.Path == "":
-			place.CrossCutting = append(place.CrossCutting, f)
-		case !positionable(f, added):
-			place.Unpositioned = append(place.Unpositioned, f)
+		case !added.touches(f.Path):
+			place.Unattachable = append(place.Unattachable, f)
+		case !f.HasLine() || !positionable(f, added):
+			place.FileLevel = append(place.FileLevel, f)
 		default:
 			comments = append(comments, comment(f, added))
 			place.Inline = append(place.Inline, f)
@@ -84,10 +122,24 @@ func Build(r *reviewrun.Review, pr githubapp.PullRequest, added AddedLines) (git
 
 	return githubapp.ReviewPayload{
 		CommitID: pr.HeadSHA,
-		Body:     Body(r, place),
+		Body:     Body(r, pr, place),
 		Event:    githubapp.EventComment,
 		Comments: comments,
 	}, place
+}
+
+// FileComments renders the comments that are posted against a whole file,
+// after the review itself.
+func FileComments(pr githubapp.PullRequest, place Placement) []githubapp.FileComment {
+	out := make([]githubapp.FileComment, 0, len(place.FileLevel))
+	for _, f := range place.FileLevel {
+		out = append(out, githubapp.FileComment{
+			CommitID: pr.HeadSHA,
+			Path:     f.Path,
+			Body:     CommentBody(f),
+		})
+	}
+	return out
 }
 
 // positionable reports whether a finding names a line a comment can land on.

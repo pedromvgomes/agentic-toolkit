@@ -293,3 +293,132 @@ the last quoted three produces a different hash and therefore a duplicate commen
 pass over open threads is the mitigation, and it is a mitigation rather than a guarantee.
 Making `evidence` a single line in the reviewer prompts would tighten it, at the cost of
 findings whose evidence genuinely spans a hunk.
+
+## 8. Approving a reviewed head
+
+`agtk code-review approve --pr N` posts one GitHub review with event `APPROVE`, as the App, bound
+to the pull request's current head. A person types it. Nothing in a review run reaches it.
+
+### What it requires
+
+All four, and nothing overrides any of them:
+
+| # | condition |
+|---|---|
+| a | a review exists, posted by this installation, bound to the current head commit |
+| b | that review reached a verdict: the judge answered, no reviewer failed to answer, and the thread list was readable |
+| c | every finding it reports at or above the severity floor is marked a false positive |
+| d | every comment thread on the pull request is resolved |
+
+A `security:prompt-injection` finding that `agtk` could not attach to the pull request refuses
+regardless of all four.
+
+Each refusal names what is missing and what would answer it: the commit that carries no review
+and the `run --pr N` that would make one, the reviewer that did not answer, the findings still
+unmarked, the threads still open.
+
+### There is no `--force`
+
+A flag that approves anyway makes every row of that table a checklist rather than a control, and
+the person who would type it is the one the gate exists to slow down. There are two ways past a
+finding and both are acts on the pull request: change the code, so the evidence changes and the
+next review does not report the finding; or say on its thread that it is not a defect. Each is
+attributable to an account, visible to anybody reading the change, and reversible.
+
+That is a deliberate reversal of an earlier consequence of ADR 0006, which had `--force`
+overriding the floor and saying so in the approval body.
+
+### How approval learns what the last review found
+
+Nothing is persisted. Ids are per-run and the pull request is the only record, so the review says
+what it found in its own body, in a marker distinct from the fingerprint marker:
+
+```
+<!-- agtk:review v1 head=<sha> verdict=complete abc123=RED def456=AMBER aaa111=GREEN
+     unanswerable=def456 deadlocked=fff222 -->
+```
+
+A flat list of `key=value` tokens. `head`, `verdict`, `unanswerable` and `deadlocked` are
+reserved and everything else is a fingerprint at a severity — the two namespaces cannot collide,
+because a fingerprint is twelve hex characters. The two lists name the findings `agtk` could
+give nobody a thread to answer on: `unanswerable` gates nothing, and `deadlocked` — a
+prompt-injection finding among them — refuses outright. Approval must know the difference, since
+demanding an answer nobody can write is the deadlock this design allows in exactly one place.
+
+The body rather than the comments, because a review is one statement about one commit and some of
+its findings never become comments. A per-comment record cannot carry a finding with no line, and
+cannot say that a run reached no verdict — which is the one thing approval must never read as a
+clean review.
+
+`verdict=complete` means all three of the judge answering, every reviewer answering, and the
+pull request's thread list being readable. Any one of them missing makes the run's silence about
+something a fact it does not know rather than one it established.
+
+Written and parsed in one file, for the reason `marker.go` already gives: two definitions of one
+format drift, and the failure is silent. Only a review this installation authored is read, so the
+marker is only ever believed from the account that writes it.
+
+`FingerprintVersion` is not bumped. The scheme it versions is unchanged, and a bump would make
+every existing fingerprint marker on every open pull request stop matching once — a cost worth
+paying when what is hashed changes, and not for a marker that did not exist before.
+
+### False positives
+
+A finding at or above the floor is cleared by a reply on its thread, from an account with write
+access, opening a line with `agtk: false positive` and carrying a reason. The marking opens the
+line so that a reply quoting the syntax while arguing against it clears nothing, and the reason
+is required because a marking without one is the click this asks for a sentence instead of. Resolving is not enough: resolution says the
+conversation is finished, which is a different claim from "this is not a defect", and a defect
+cleared by a click is the checklist this design removed `--force` to avoid.
+
+Write access rather than anyone who can comment, because the author of a change is the party a
+review does not trust. A finding its own author could dismiss is one an injected instruction can
+dismiss too — the conversion ADR 0007 exists to prevent, reached at the last step instead of the
+first. `authorAssociation` on the reply is what decides it.
+
+Reading it means reading a thread's replies and not only the comment that opened it. Identity is
+still read from the root alone: a reply is written by whoever replied, so it may assert that a
+finding is wrong and may never assert which finding it is.
+
+### Every blocking finding must be answerable
+
+A finding blocks only where `agtk` can give somebody a thread to answer on:
+
+| finding | thread |
+|---|---|
+| a line the diff adds | inline comment, inside the review |
+| no line, path in the diff | file-level comment, one request each, after the review |
+| line off the diff, path in the diff | file-level comment, the same |
+| a path the change does not touch | none — GitHub refuses the path |
+| no path at all | none |
+
+The first three block. The last two are stated in the review body and gate nothing, because a
+gate with no remedy is a deadlock rather than a control, and because a finding about code the
+change does not touch is not a finding about the change. Prompt injection is the single
+exception, and the deadlock there is the point.
+
+File-level comments cost the "exactly one API call" property for the findings that need them:
+`subject_type` is not a field on a review's draft comments, so they are separate requests made
+after the review lands. One that fails leaves its finding in the body, which is reported.
+
+### What guards it
+
+`internal/reviewapprove` owns the `APPROVE` literal and the call that posts it. Three assertions
+replace the walk that banned the literal everywhere:
+
+1. `"APPROVE"` appears in no other package.
+2. `internal/reviewrun`, `internal/reviewpost`, `internal/review` and `internal/curator` cannot
+   reach `internal/reviewapprove` in the import graph. This is the load-bearing one: it holds
+   even if somebody spells the event differently, where a string guard does not.
+3. `internal/reviewapprove` joins the credential surface, so the no-`Setenv` and no-disk-write
+   guards cover it whole.
+
+The severity floor is a manifest key, `approval.floor`, read at the base ref like every other
+rule a pull request is judged by — a floor read from the head would let a change raise the bar
+its own findings have to clear. It defaults to AMBER, and a value off the ladder is refused when
+the manifest is read rather than ranked below every severity and quietly obliging nothing.
+
+A fourth guard is about the grant rather than the act: no file under `internal/` names an
+endpoint that writes contents, refs, trees, blobs or a merge. The App holds `contents: write`
+only so that its approvals count — ADR 0009 — and the guard is what keeps the permission held and
+never spent.

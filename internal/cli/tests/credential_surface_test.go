@@ -19,7 +19,7 @@ const credentialPackage = "github.com/pedromvgomes/agentic-toolkit/internal/gith
 // credentialSurface are the packages a credential passes through: the one that
 // holds it, and the one that builds what it is spent on. Both are walked
 // whole, so a guard keeps covering a package as files are added to it.
-var credentialSurface = []string{"internal/githubapp", "internal/reviewpost"}
+var credentialSurface = []string{"internal/githubapp", "internal/reviewpost", "internal/reviewapprove"}
 
 // The App installation token reaches every repository the App is installed on,
 // and a review run is driven by a model reading a diff somebody else wrote.
@@ -146,23 +146,30 @@ func TestNoInstallationTokenIsWrittenAnywhere(t *testing.T) {
 	}
 }
 
-// Approval is a GitHub review with event APPROVE, and no code path from a
-// review run may reach one. The guarantee is that the code does not exist,
-// rather than that a prompt was told not to.
-func TestNothingInTheBinaryCanPostAnApproval(t *testing.T) {
+// approvalPackage owns the approval event and the one call that sends it.
+const approvalPackage = "internal/reviewapprove"
+
+// Approval is a GitHub review with event APPROVE, and one package names it.
+//
+// The guarantee is that the code does not exist where it must not, rather than
+// that a prompt was told not to write it. This is the weaker of the two checks
+// that make it so — it holds only until somebody spells the event differently —
+// and it is here because a stray literal is the cheap mistake the import graph
+// would not notice.
+func TestOnlyOnePackageNamesTheApprovalEvent(t *testing.T) {
 	repo := repoRoot(t)
 	var offenders []string
 	err := filepath.Walk(filepath.Join(repo, "internal"), func(path string, info os.FileInfo, err error) error {
 		if err != nil || info.IsDir() || !strings.HasSuffix(path, ".go") {
 			return err
 		}
+		rel := filepath.ToSlash(mustRel(t, repo, path))
+		if rel == "internal/cli/tests/credential_surface_test.go" || strings.HasPrefix(rel, approvalPackage+"/") {
+			return nil
+		}
 		body, readErr := os.ReadFile(path) // #nosec G304 -- a .go file inside this repository
 		if readErr != nil {
 			return readErr
-		}
-		rel := filepath.ToSlash(mustRel(t, repo, path))
-		if rel == "internal/cli/tests/credential_surface_test.go" {
-			return nil
 		}
 		for lineNo, line := range strings.Split(string(body), "\n") {
 			if strings.Contains(line, `"APPROVE"`) {
@@ -175,6 +182,93 @@ func TestNothingInTheBinaryCanPostAnApproval(t *testing.T) {
 		t.Fatalf("walk: %v", err)
 	}
 	if len(offenders) > 0 {
-		t.Errorf("the binary can name the approval event: %v", offenders)
+		t.Errorf("the approval event is named outside %s: %v", approvalPackage, offenders)
+	}
+}
+
+// A review run must not be able to approve the code it just reviewed. That is
+// the hazard GitHub blocks GITHUB_TOKEN approvals to prevent, and ADR 0006
+// makes it a property of the import graph.
+//
+// The load-bearing half of the pair. A literal ban holds only while the event
+// is spelt one way; an import that does not exist cannot be reached however it
+// is spelt, and adding one is a deliberate act rather than a forgotten
+// deletion.
+func TestNoReviewPathCanReachTheApproval(t *testing.T) {
+	approval := "github.com/pedromvgomes/agentic-toolkit/" + approvalPackage
+	for _, pkg := range []string{
+		"github.com/pedromvgomes/agentic-toolkit/internal/reviewrun",
+		"github.com/pedromvgomes/agentic-toolkit/internal/reviewpost",
+		"github.com/pedromvgomes/agentic-toolkit/internal/review",
+		"github.com/pedromvgomes/agentic-toolkit/internal/curator",
+	} {
+		out, err := exec.Command("go", "list", "-deps", "-f", "{{.ImportPath}}", pkg).Output()
+		if err != nil {
+			t.Fatalf("go list %s: %v", pkg, err)
+		}
+		for dep := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
+			if dep == approval {
+				t.Errorf("%s depends on %s, so a review run can reach the code that approves it", pkg, approval)
+			}
+		}
+	}
+}
+
+// writeEndpoints are the API paths that would change what is in the
+// repository, as they appear in a request path.
+//
+// Matched as path fragments rather than as words. "merge" is a word this
+// codebase uses constantly — a merge base is where a change is measured from —
+// and a guard that fired on it would be turned off within a week.
+var writeEndpoints = []string{
+	"/contents/",
+	"/git/refs",
+	"/git/blobs",
+	"/git/trees",
+	"/git/commits",
+	"/git/tags",
+	"/merges",
+	"/merge",
+}
+
+// The App holds `contents: write` only so that its approvals count.
+//
+// GitHub weighs a review by whether its author can push, and drops one from an
+// author who cannot out of the set it decides from — so without the grant an
+// approval reads as APPROVED and satisfies nothing. ADR 0009.
+//
+// The grant is wider than the use, and this is what keeps the difference
+// honest. Removing the permission breaks approval silently; removing this
+// guard breaks nothing visibly, which is why the guard rather than a convention
+// carries the claim that the permission is held and never spent.
+func TestNothingInTheBinaryWritesToARepository(t *testing.T) {
+	repo := repoRoot(t)
+	var offenders []string
+	err := filepath.Walk(filepath.Join(repo, "internal"), func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() || !strings.HasSuffix(path, ".go") {
+			return err
+		}
+		rel := filepath.ToSlash(mustRel(t, repo, path))
+		if rel == "internal/cli/tests/credential_surface_test.go" {
+			return nil
+		}
+		body, readErr := os.ReadFile(path) // #nosec G304 -- a .go file inside this repository
+		if readErr != nil {
+			return readErr
+		}
+		for lineNo, line := range strings.Split(string(body), "\n") {
+			for _, endpoint := range writeEndpoints {
+				if strings.Contains(line, `"`+endpoint) || strings.Contains(line, endpoint+`"`) {
+					offenders = append(offenders, rel+":"+strconv.Itoa(lineNo+1)+" names "+endpoint)
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk: %v", err)
+	}
+	if len(offenders) > 0 {
+		t.Errorf("the binary names an endpoint that writes to a repository; the App holds contents: write only so that its approvals count: %v", offenders)
 	}
 }

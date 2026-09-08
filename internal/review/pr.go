@@ -120,8 +120,14 @@ var commitIDRE = regexp.MustCompile(`^(?:[0-9a-f]{40}|[0-9a-f]{64})$`)
 // be an option, a revision expression or a pathspec whatever else is true.
 func isCommitID(s string) bool { return commitIDRE.MatchString(s) }
 
-// AddedLines reports, per file, which lines of the post-image a unified diff
-// adds.
+// AddedLines reports, per file the diff touches, which lines of the post-image
+// it adds.
+//
+// Every path with a hunk is a key, including one the change only deletes from,
+// whose set of added lines is empty. The two questions the result answers are
+// different: whether an inline comment may name a line, and whether the diff
+// touches a path at all — and GitHub refuses a file-level comment on a path
+// the change does not touch, which is what makes a finding there unanswerable.
 //
 // It is what decides whether a finding can be an inline comment. GitHub
 // rejects the entire review with a 422 when one comment names a line outside
@@ -142,6 +148,15 @@ func AddedLines(patch string) map[string]map[int]bool {
 			continue
 		}
 		if m := newSideRE.FindStringSubmatch(text); m != nil {
+			// The path is registered on the hunk header rather than on the
+			// first added line, so a file the change only deletes from is
+			// still a path the diff touches. GitHub accepts a file-level
+			// comment there and refuses one on a path the change never names,
+			// and that difference is what decides whether a finding with no
+			// line can be answered at all.
+			if path := section.path(); path != "" && out[path] == nil {
+				out[path] = map[int]bool{}
+			}
 			start, err := strconv.Atoi(m[1])
 			if err != nil {
 				line = 0

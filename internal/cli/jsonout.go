@@ -912,14 +912,28 @@ type reviewCommentJSON struct {
 
 type placementJSON struct {
 	Inline int `json:"inline"`
-	// NoLine and OffDiff are never omitted: a consumer branching on whether a
-	// finding reached the diff must not have to tell absent from zero.
-	NoLine  int           `json:"no_line"`
-	OffDiff int           `json:"off_diff"`
-	Moved   []findingJSON `json:"moved_to_body"`
+	// FileLevel and Unattachable are never omitted: a consumer branching on
+	// whether a finding got a thread must not have to tell absent from zero.
+	FileLevel    int `json:"file_level"`
+	Unattachable int `json:"unattachable"`
+	// Deadlocked counts the unattachable findings that quote an instruction
+	// addressed at the reviewer. Approval is closed while any is present, and
+	// nothing but a change to the code opens it.
+	Deadlocked int           `json:"deadlocked"`
+	Moved      []findingJSON `json:"moved_to_body"`
+	// Unthreaded are the file-level comments GitHub refused. Their findings
+	// are stated in the review body and carry no thread, so nobody can answer
+	// them and the head cannot be approved until they are posted again.
+	Unthreaded []unthreadedJSON `json:"unthreaded,omitempty"`
 }
 
-func pullRequestPostJSON(t *pullRequestTarget, r *reviewrun.Review, payload githubapp.ReviewPayload, place reviewpost.Placement, posted *githubapp.PostedReview) reviewPostJSON {
+// unthreadedJSON is one file-level comment that did not land.
+type unthreadedJSON struct {
+	Path   string `json:"path"`
+	Reason string `json:"reason"`
+}
+
+func pullRequestPostJSON(t *pullRequestTarget, r *reviewrun.Review, payload githubapp.ReviewPayload, place reviewpost.Placement, posted *githubapp.PostedReview, failures []fileCommentFailure) reviewPostJSON {
 	out := reviewPostJSON{
 		Version:     jsonVersion,
 		PullRequest: pullRequestRow(t),
@@ -933,10 +947,11 @@ func pullRequestPostJSON(t *pullRequestTarget, r *reviewrun.Review, payload gith
 			Comments: []reviewCommentJSON{},
 		},
 		Placement: placementJSON{
-			Inline:  len(place.Inline),
-			NoLine:  len(place.CrossCutting),
-			OffDiff: len(place.Unpositioned),
-			Moved:   []findingJSON{},
+			Inline:       len(place.Inline),
+			FileLevel:    len(place.FileLevel),
+			Unattachable: len(place.Unattachable),
+			Deadlocked:   len(place.Deadlocked()),
+			Moved:        []findingJSON{},
 		},
 		Threads: threadsRow(r),
 	}
@@ -945,8 +960,11 @@ func pullRequestPostJSON(t *pullRequestTarget, r *reviewrun.Review, payload gith
 			Path: c.Path, Line: c.Line, StartLine: c.StartLine, Side: c.Side, Body: c.Body,
 		})
 	}
-	for _, f := range append(append([]reviewrun.Finding{}, place.CrossCutting...), place.Unpositioned...) {
+	for _, f := range place.Unattachable {
 		out.Placement.Moved = append(out.Placement.Moved, findingRow(f))
+	}
+	for _, f := range failures {
+		out.Placement.Unthreaded = append(out.Placement.Unthreaded, unthreadedJSON{Path: f.Path, Reason: f.Reason})
 	}
 	if posted != nil {
 		out.Posted = true

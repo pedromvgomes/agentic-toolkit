@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/pedromvgomes/agentic-toolkit/internal/githubapp"
 	"github.com/pedromvgomes/agentic-toolkit/internal/reviewrun"
 )
 
@@ -14,7 +15,7 @@ import (
 // inside it and an older review is history rather than stale current state,
 // so the body restates the whole picture each time rather than referring to
 // what an earlier one said.
-func Body(r *reviewrun.Review, place Placement) string {
+func Body(r *reviewrun.Review, pr githubapp.PullRequest, place Placement) string {
 	var b strings.Builder
 
 	fmt.Fprintf(&b, "## Review by `agtk` — panel `%s`\n\n", r.Panel)
@@ -22,15 +23,16 @@ func Body(r *reviewrun.Review, place Placement) string {
 	if !r.Available {
 		fmt.Fprintf(&b, "**This review did not reach a verdict:** %s\n\n", r.Reason)
 		writeRuns(&b, r)
-		writeRecord(&b, r)
+		writeRecord(&b, r, pr, place)
 		return b.String()
 	}
 
 	writeSummaryLine(&b, r, place)
-	writeFindingList(&b, "Findings with no line", place.CrossCutting,
-		"A claim about a subsystem rather than about a statement. GitHub requires a path and a line for an inline comment, so it is stated here.")
-	writeFindingList(&b, "Findings outside this diff", place.Unpositioned,
-		"These name code the pull request does not change. GitHub refuses an inline comment there, and one refused comment discards every comment in the review, so they are stated here instead.")
+	writeFindingList(&b, "Findings with nowhere to answer", place.Unattachable,
+		"Each names a path this pull request does not change, or no path at all. GitHub refuses a "+
+			"comment there, so there is no thread to answer on and these block nothing — a gate with "+
+			"no remedy is a deadlock rather than a control.")
+	writeDeadlock(&b, place)
 
 	if len(r.Good) > 0 {
 		b.WriteString("### What's good\n\n")
@@ -41,8 +43,60 @@ func Body(r *reviewrun.Review, place Placement) string {
 	}
 
 	writeRuns(&b, r)
-	writeRecord(&b, r)
+	writeRecord(&b, r, pr, place)
 	return b.String()
+}
+
+// writeDeadlock says that a prompt-injection finding could not be attached,
+// and that approval is therefore closed until the code changes.
+//
+// It is the one finding a reader cannot answer their way past. The material
+// under review addresses the reviewer, agtk can offer nobody a thread, and the
+// deadlock is the point — ADR 0007.
+func writeDeadlock(b *strings.Builder, place Placement) {
+	deadlocked := place.Deadlocked()
+	if len(deadlocked) == 0 {
+		return
+	}
+	fmt.Fprintf(b, "**This pull request cannot be approved until the code changes.** %d of the findings "+
+		"above quote text in the reviewed material addressed at the reviewer, and name a path no comment "+
+		"can hang off. There is nothing to reply to and no flag that overrides it: the remedy is to remove "+
+		"the text.\n\n", len(deadlocked))
+}
+
+// reviewMarker renders what approval later reads back out of this body.
+//
+// Nothing is persisted between runs, so the pull request is the only record of
+// what a review found. A finding agtk could give nobody a thread to answer on
+// is recorded as such, because approval must not demand an answer that cannot
+// be written.
+func reviewMarker(r *reviewrun.Review, pr githubapp.PullRequest, place Placement) string {
+	marker := reviewrun.ReviewMarker{
+		Head: pr.HeadSHA,
+		// A verdict is the judge answering, every reviewer answering, and the
+		// pull request's threads being readable. A run missing any of those
+		// found less than it would have, and "found nothing" is the one thing
+		// approval must never read that as.
+		Complete: r.Available && !r.Partial() && r.Threads.Available,
+	}
+	for _, group := range []struct {
+		findings   []reviewrun.Finding
+		answerable bool
+	}{
+		{place.Inline, true},
+		{place.FileLevel, true},
+		{place.Unattachable, false},
+	} {
+		for _, f := range group.findings {
+			marker.Findings = append(marker.Findings, reviewrun.MarkedFinding{
+				Fingerprint: f.Fingerprint(),
+				Severity:    f.Severity,
+				Answerable:  group.answerable,
+				Injected:    f.Injected(),
+			})
+		}
+	}
+	return marker.Render()
 }
 
 // writeSummaryLine states the count at each severity, and says plainly when
@@ -59,7 +113,8 @@ func writeSummaryLine(b *strings.Builder, r *reviewrun.Review, place Placement) 
 			parts = append(parts, fmt.Sprintf("%d %s", n, sev))
 		}
 	}
-	fmt.Fprintf(b, "%s. %d posted as inline comments.\n\n", strings.Join(parts, ", "), len(place.Inline))
+	fmt.Fprintf(b, "%s. %d posted as inline comments, %d against a whole file.\n\n",
+		strings.Join(parts, ", "), len(place.Inline), len(place.FileLevel))
 }
 
 // writeFindingList renders the findings that could not be inline comments.
@@ -193,7 +248,12 @@ func writeThreads(b *strings.Builder, r *reviewrun.Review) {
 	}
 }
 
-// writeRecord closes with what ran and what it cost.
-func writeRecord(b *strings.Builder, r *reviewrun.Review) {
+// writeRecord closes with what ran, what it cost, and the marker approval
+// reads this review back out of.
+//
+// The marker is last and on its own line: it is invisible in rendered markdown
+// either way, and a reader diffing raw bodies should find it in one place.
+func writeRecord(b *strings.Builder, r *reviewrun.Review, pr githubapp.PullRequest, place Placement) {
 	fmt.Fprintf(b, "<sub>%s · range `%s` · manifest `%s`</sub>\n", r.Record(), r.Range, r.Manifest)
+	fmt.Fprintf(b, "\n%s\n", reviewMarker(r, pr, place))
 }

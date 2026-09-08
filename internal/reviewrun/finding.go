@@ -5,41 +5,32 @@ import (
 	"encoding/hex"
 	"sort"
 	"strings"
+
+	"github.com/pedromvgomes/agentic-toolkit/internal/review"
 )
 
 // Severity is how much a finding matters.
-type Severity string
+//
+// An alias rather than a type of its own: the ladder is declared in
+// internal/review, where the manifest that names the approval floor can be
+// validated against it, and a finding's severity and a manifest's floor are
+// rungs of one ladder rather than two vocabularies that happen to agree.
+type Severity = review.Severity
 
 const (
-	// SeverityRed means it must be fixed before merge, and is the default
-	// approval floor.
-	SeverityRed Severity = "RED"
-	// SeverityAmber means it should be addressed but does not block.
-	SeverityAmber Severity = "AMBER"
+	// SeverityRed means a defect serious enough that merging with it is the
+	// wrong call.
+	SeverityRed = review.SeverityRed
+	// SeverityAmber means a defect that is real and smaller, and is the
+	// default approval floor.
+	SeverityAmber = review.SeverityAmber
 	// SeverityGreen is a remark rather than a defect.
-	SeverityGreen Severity = "GREEN"
+	SeverityGreen = review.SeverityGreen
 )
 
 // Severities are the severities a finding can carry, ordered most serious
 // first, which is the order a triage table lists them in.
-var Severities = []Severity{SeverityRed, SeverityAmber, SeverityGreen}
-
-// Rank orders severities so a set can be sorted without a table at each call
-// site. Lower is more serious.
-func (s Severity) Rank() int {
-	for i, known := range Severities {
-		if known == s {
-			return i
-		}
-	}
-	// An unrecognised severity sorts last rather than first. A judge that
-	// invents one has said something the ladder does not describe, and the
-	// safe reading of "I do not know how bad this is" is not "worst".
-	return len(Severities)
-}
-
-// Valid reports whether s is on the ladder.
-func (s Severity) Valid() bool { return s.Rank() < len(Severities) }
+var Severities = review.Severities
 
 // Finding is one issue a reviewer reports.
 //

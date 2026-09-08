@@ -210,20 +210,51 @@ summary body and one inline comment per surviving **Finding**. A review run post
 _Avoid_: report, verdict, comment
 
 **Severity**:
-How much a **Finding** matters: `RED | AMBER | GREEN`. RED means must fix before merge, and is
-the default **Approval floor**.
+How much a **Finding** matters: `RED | AMBER | GREEN`. RED and AMBER are both defects and
+differ in the strength of the claim rather than in what they oblige: each must be fixed, or
+marked a **False positive**, before **Approval**. GREEN is a remark, and obliges only that its
+**Comment thread** be resolved.
+
+AMBER is the default **Approval floor**, so "at or above the floor" reads as "a defect rather
+than a remark". A repo that wants only RED to oblige a fix sets the floor to RED.
 _Avoid_: priority, level
 
 **Approval**:
 A GitHub review with event `APPROVE`, posted by the App so it counts toward a repo's required
 approvals — which a solo author cannot satisfy alone, since nobody may approve their own PR.
-Granted only when a **Review** exists for the PR's current head commit and no **Finding** at or
-above the **Severity** floor survived, unless forced.
+
+It counts only because the App can push. GitHub weighs a review by whether its author has write
+access, and drops one that does not out of the set it decides from, so the App's write grant on
+repository contents is what makes an approval an approval rather than a decoration. See ADR
+0009.
+
+Granted only when a **Review** exists for the PR's current head commit and reached a verdict,
+every **Finding** it reports at or above the **Severity** floor is marked a **False positive**,
+and no **Comment thread** on the PR is unresolved. Nothing overrides any of it. A defect is
+cleared by changing the code, and a wrong **Finding** by saying so on the PR, and those are the
+only two ways: there is no flag that approves anyway, because one would make the whole of this
+a checklist rather than a control.
 
 Never reachable from a review run. No model decides it, no tool grant contains it, and the
 **Judge** cannot reach it: a run that could approve the code it just reviewed is the hazard
 GitHub blocks `GITHUB_TOKEN` approvals to prevent. The person types the command.
 _Avoid_: sign-off, gate, merge
+
+**False positive**:
+A **Finding** somebody with write access has said is not a defect, marked by replying on its
+**Comment thread**. It clears that finding for **Approval** and nothing else: the thread
+stays, the comment stays, and a later **Review** reports the finding again while the code still
+quotes the same evidence.
+
+A reply rather than resolution, because the two are different claims. Resolving says the
+conversation is finished; it does not say the defect was never there, and a **Severity** at or
+above the floor is a defect until somebody writes down that it is not.
+
+Write access rather than anyone who can comment, because the author of a change is the party a
+review does not trust. A **Finding** its own author could dismiss is one an injected
+instruction can dismiss too, and that is the conversion ADR 0007 exists to prevent, reached at
+the last step instead of the first.
+_Avoid_: suppression, waiver, dismissal, ignore
 
 **Review root**:
 The copy of the code under review that `agtk` writes outside the project directory, one file
@@ -296,6 +327,15 @@ actually looked at, and it survives a fresh clone. Its state is what a re-review
 finding, and an **outdated** one does not, because GitHub collapses an outdated thread and the
 finding is invisible where the code now lives.
 
+A thread hangs off a line, or off a whole file where a **Finding** names no line the change
+adds. The second is the only way a finding stated in the **Review** body becomes something a
+person can answer, and a finding naming a path the change does not touch can be neither — it is
+stated in the body alone, and blocks nothing, because `agtk` can offer no way to answer it.
+
+Resolution ends a conversation; it does not clear a defect. **Approval** requires every thread
+resolved, and separately requires each **Finding** at or above the floor to be marked a **False
+positive** — so resolving is necessary for approval and never sufficient.
+
 Only a thread the App itself opened carries an identity. Anyone who can comment on a pull
 request can type the characters that open a **Fingerprint marker**, and one naming a finding's
 fingerprint would make a review silent about code somebody chose without touching the code.
@@ -320,6 +360,22 @@ reach because a dropped one converts an injected instruction into a clean review
 suppressor that removed it first would open that hole from the other side.
 _Avoid_: dedupe, skip, filter, squelch
 
+**Review marker**:
+The HTML comment a posted **Review**'s body carries, naming the commit reviewed, whether the
+run reached a verdict, every surviving **Finding** by **Fingerprint** and **Severity**, and
+which of them `agtk` could give no **Comment thread** to. It is how **Approval** learns what the
+last review found, since nothing is persisted and the pull request is the only record.
+
+The last of those is what keeps the gate from demanding an answer nobody can write: a
+**Finding** with no thread blocks nothing, and a `security:prompt-injection` finding with no
+thread blocks everything.
+
+In the body rather than in the comments, because a **Review** is one statement about one commit
+and some of its findings never become comments at all. A per-comment record could not carry a
+finding with no line, and could not say that a run reached no verdict — which is the one thing
+approval must never read as a clean review.
+_Avoid_: summary, header, footer, marker (bare)
+
 **Review manifest**:
 `.agents/code-review/manifest.yaml`: the single declaration of **Reviewer**s, **Panel**s and the
 prompt bodies they use. Read by both engines — the in-session skill and `agtk code-review` — so
@@ -329,6 +385,12 @@ _Avoid_: panels.json, roster file, review config
 ## Flagged ambiguities
 **"Marker"** — the bare noun is a **Signal** synonym to avoid; the HTML comment that carries a
 **Fingerprint** is a **Fingerprint marker**, always both words.
+
+**"False positive" vs "Suppression"** — both withhold something, and they are opposite acts.
+**Suppression** is `agtk`'s and mechanical: a **Finding** is not posted again because a thread
+already carries it. A **False positive** is a person's and is about the claim itself: the
+finding is posted, stays posted, and is declared not to be a defect. Suppression never affects
+**Approval**; a false positive is the only thing that clears a defect without a code change.
 
 **"Candidate"** — a staged memory finding awaiting a **Curator**, and also a **Finding** that
 has not yet passed a **Validator**. The memory sense owns the bare noun; in review, say

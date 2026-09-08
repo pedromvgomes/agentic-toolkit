@@ -229,8 +229,17 @@ func TestAddedLinesReadsThePostImageOfEveryHunk(t *testing.T) {
 			}
 		}
 	}
-	if _, ok := added["gone.go"]; ok {
-		t.Error("a deleted file offers a line an inline comment could be attached to")
+	// A file the change only deletes from is a path the diff touches and a
+	// path no inline comment can land on, and the two answers are carried by
+	// the same entry: present, and empty. GitHub accepts a comment against
+	// that whole file and refuses one on a path the change never names, which
+	// is what decides whether a finding there can be answered at all.
+	deleted, touched := added["gone.go"]
+	if !touched {
+		t.Error("a file the change deletes from is not a path this diff touches")
+	}
+	if len(deleted) > 0 {
+		t.Errorf("a deleted file offers lines %v an inline comment could be attached to", keys(deleted))
 	}
 }
 
