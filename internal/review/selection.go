@@ -122,41 +122,53 @@ func Select(m *Manifest, ctx Context, p *Profile, override string) (*Selection, 
 	for i, rule := range m.Escalate {
 		conds, all := rule.Conditions()
 		results := make([]ConditionResult, 0, len(conds))
-		fired := all
-		// An `any:` rule is not abandoned because one of its conditions could
-		// not be read: another may still hold, and the rule fires on any one.
-		// An `all:` rule cannot fire without every condition, so an unreadable
-		// one ends it.
+
+		// Every condition is evaluated, including the ones after an unreadable
+		// one. An `all:` rule that a readable condition already answered `no`
+		// does not apply to this change, and whether some other clause could
+		// have been read is then beside the point — a rule guarded to the
+		// other context is the ordinary case.
 		unreadable := ""
+		anyHeld, anyRefused := false, false
 		for _, cond := range conds {
 			held, err := Evaluate(cond, p, ctx)
 			if err != nil {
-				if !m.Builtin {
-					// The remedy belongs here and not in Evaluate: it is
-					// advice only a repo that wrote the rule can take.
-					return nil, fmt.Errorf("escalate[%d]: %w. Remove the rule, or narrow it with `touches`, rather than leaving an escalation that can never fire", i, err)
-				}
 				if unreadable == "" {
 					unreadable = err.Error()
-				}
-				if all {
-					fired = false
-					break
 				}
 				continue
 			}
 			results = append(results, ConditionResult{Condition: cond, Held: held})
-			if all {
-				fired = fired && held
+			if held {
+				anyHeld = true
 			} else {
-				fired = fired || held
+				anyRefused = true
 			}
+		}
+
+		// An `all:` rule needs every condition, so one that could not be read
+		// stops it. An `any:` rule fires on one, so an unreadable clause costs
+		// it nothing as long as another holds.
+		fired := anyHeld
+		if all {
+			fired = !anyRefused && unreadable == "" && len(results) == len(conds)
+		}
+
+		// Undecided means the unreadable clause is what stopped the rule,
+		// rather than the change simply not meeting it. An `all:` rule is
+		// settled by any readable `no`; an `any:` rule is settled by a
+		// readable `yes`, which is already `fired`.
+		undecided := unreadable != "" && !fired && !(all && anyRefused)
+		if undecided && !m.Builtin {
+			// The remedy belongs here and not in Evaluate: it is advice only a
+			// repo that wrote the rule can take.
+			return nil, fmt.Errorf("escalate[%d]: %s. Remove the rule, or narrow it with `touches`, rather than leaving an escalation that can never fire", i, unreadable)
 		}
 		if !fired {
 			// A rule that could not be read is reported rather than dropped:
 			// a rule that quietly never fires is what leaves a repo believing
 			// it has a protection it does not.
-			if unreadable != "" {
+			if undecided {
 				sel.Skipped = append(sel.Skipped, SkippedRule{Index: i, To: rule.To, Reason: unreadable})
 			}
 			continue
