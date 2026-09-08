@@ -12,7 +12,7 @@ anchors:
   - path: internal/lockfile/parser.go
     blob: 2039f12de5d8
   - path: go.mod
-    blob: 90459e98b3bd
+    blob: 0f0370fd51bc
 confidence: verified
 ---
 
