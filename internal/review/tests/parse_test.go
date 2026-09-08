@@ -243,3 +243,37 @@ func removeBlock(src, from, to string) string {
 	}
 	return strings.Join(out, "\n")
 }
+
+// RED and AMBER are both defects and differ in the strength of the claim
+// rather than in what they oblige, so the floor sits at AMBER unless a repo
+// says otherwise.
+func TestAManifestNamingNoApprovalFloorObligesAnAnswerFromAmber(t *testing.T) {
+	m := mustParse(t, complete)
+	if got := m.Approval.EffectiveFloor(); got != review.SeverityAmber {
+		t.Errorf("the default approval floor is %q, want AMBER", got)
+	}
+}
+
+// A repo that wants only RED to oblige a fix says so, and is read as saying
+// it.
+func TestARepoCanRaiseItsApprovalFloor(t *testing.T) {
+	m := mustParse(t, complete+"\napproval:\n  floor: RED\n")
+	if got := m.Approval.EffectiveFloor(); got != review.SeverityRed {
+		t.Errorf("the approval floor is %q, want the RED the manifest names", got)
+	}
+}
+
+// A word off the ladder ranks below every severity, so an unchecked one would
+// oblige nothing and grant approval over every finding on the pull request —
+// silently, in the repo that took the trouble to set it.
+func TestAnApprovalFloorThatIsNotASeverityIsRefused(t *testing.T) {
+	_, err := parse(t, complete+"\napproval:\n  floor: CRITICAL\n")
+	if err == nil {
+		t.Fatal("a floor that names no severity was accepted")
+	}
+	for _, want := range []string{"approval.floor", "CRITICAL", "RED", "AMBER", "GREEN"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not carry %q: %v", want, err)
+		}
+	}
+}

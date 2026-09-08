@@ -141,6 +141,15 @@ func (m *Manifest) validate(filePath string) error {
 		}
 	}
 
+	// A floor is refused rather than defaulted when it is not a rung. A word
+	// off the ladder ranks below every severity, so an unchecked one would
+	// oblige nothing and grant approval over every finding on the pull
+	// request — silently, in the repo that took the trouble to set it.
+	if floor := m.Approval.Floor; floor != "" && !floor.Valid() {
+		return fieldErr(filePath, "approval.floor", ErrUnknownName,
+			"%q is not a severity; use one of %s", floor, strings.Join(SeverityNames(), ", "))
+	}
+
 	for i, rule := range m.Escalate {
 		field := fmt.Sprintf("escalate[%d]", i)
 		if rule.To == "" {

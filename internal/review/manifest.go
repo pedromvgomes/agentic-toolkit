@@ -30,6 +30,7 @@ type Manifest struct {
 	Panels    map[string]Panel  `yaml:"panels"    agtkdoc:"required;Named sets of reviewers, keyed by name. Exactly one panel runs per review."`
 	Defaults  Defaults          `yaml:"defaults"  agtkdoc:"required;The panel each context starts from, before escalation."`
 	Escalate  []Escalation      `yaml:"escalate,omitempty" agtkdoc:"Rules that raise the panel above a context's default. Every rule is evaluated and the highest target wins, so their order carries no meaning."`
+	Approval  Approval          `yaml:"approval,omitempty" agtkdoc:"What approving a reviewed head requires of a finding's severity. Absent means the default floor, AMBER."`
 
 	// Conventions replaces the default rule documents rather than adding to
 	// them. A repo that names its own has said where its rules live, and
@@ -47,6 +48,35 @@ type Manifest struct {
 	// into a review that cannot run at all — in exactly the repos with no
 	// manifest to edit, and with no way to take the advice the refusal gives.
 	Builtin bool `yaml:"-"`
+}
+
+// Approval is what this repo requires before a reviewed head may be approved.
+//
+// The floor is the only thing here that a repo gets a say in. Everything else
+// approval requires — a review of the current head that reached a verdict,
+// every finding at or above the floor answered in writing, every thread
+// resolved — is the control itself, and a manifest that could weaken it would
+// be a --force written in YAML.
+type Approval struct {
+	// Floor is the severity at which a finding obliges an answer: a fix, or a
+	// written statement on its thread that it is not a defect.
+	//
+	// AMBER by default, because RED and AMBER are both defects and differ in
+	// the strength of the claim rather than in what they oblige. A repo that
+	// wants only RED to oblige a fix says so here.
+	Floor Severity `yaml:"floor,omitempty" agtkdoc:"Severity at or above which a finding must be fixed or marked a false positive before an approval is granted: RED, AMBER or GREEN. Defaults to AMBER, since RED and AMBER are both defects and differ in the strength of the claim rather than in what they oblige."`
+}
+
+// DefaultApprovalFloor is the floor a manifest that names none is read as
+// naming.
+const DefaultApprovalFloor = SeverityAmber
+
+// EffectiveFloor is the floor this manifest sets, or the default.
+func (a Approval) EffectiveFloor() Severity {
+	if a.Floor == "" {
+		return DefaultApprovalFloor
+	}
+	return a.Floor
 }
 
 // Runner is one configured model run — the shape a reviewer, the judge
