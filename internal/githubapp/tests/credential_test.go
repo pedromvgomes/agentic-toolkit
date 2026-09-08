@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"bytes"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -9,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"testing"
 
 	"github.com/pedromvgomes/agentic-toolkit/internal/githubapp"
@@ -234,22 +234,52 @@ func TestInitializeNarrowsAConfigDirectoryThatAlreadyExisted(t *testing.T) {
 }
 
 // The key is never readable by another account, including while it is being
-// written. Truncating in place would put the new key into whatever mode the
-// old file carried and narrow it afterwards, so the file is replaced — which
-// shows up as a different inode.
+// written. Truncating in place would put the new key into whatever mode the old
+// file carried and narrow it afterwards, so the old file is unlinked and a new
+// one created at 0600.
+//
+// A hard link is what proves it. The link is a second name for the file the old
+// key lives in, so it follows that file and not the path: a run that unlinked
+// and recreated leaves the link holding the old key, and a run that wrote in
+// place leaves it holding the new one. An inode comparison asks the same
+// question and gets an unreliable answer, because a filesystem is free to hand
+// the freed inode straight back — ext4 does, APFS does not, and the difference
+// decides the test rather than the code does.
 func TestReplacingAKeyNeverWritesItIntoAWiderFile(t *testing.T) {
 	dir := register(t, 7, pkcs1PEM(t))
 	key := filepath.Join(dir, githubapp.KeyFile)
 	if err := os.Chmod(key, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	before := inodeOf(t, key)
-
-	if err := githubapp.Initialize(dir, 7, pkcs8PEM(t)); err != nil {
+	old, err := os.ReadFile(key)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if after := inodeOf(t, key); after == before {
-		t.Error("the key file was written in place, so the new key existed at the old file's mode before being narrowed")
+	witness := filepath.Join(dir, "witness.pem")
+	if err := os.Link(key, witness); err != nil {
+		t.Skipf("this filesystem does not support hard links: %v", err)
+	}
+
+	replacement := pkcs8PEM(t)
+	if err := githubapp.Initialize(dir, 7, replacement); err != nil {
+		t.Fatal(err)
+	}
+
+	held, err := os.ReadFile(witness)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(held, old) {
+		t.Error("the file the old key lived in now holds the new key, so it was written at that file's wider mode before being narrowed")
+	}
+	written, err := os.ReadFile(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Without this the test passes on a run that wrote nothing at all: an
+	// untouched witness and an untouched key are the same two reads.
+	if !bytes.Equal(written, replacement) {
+		t.Fatal("the replacement key was not written")
 	}
 	info, err := os.Stat(key)
 	if err != nil {
@@ -258,19 +288,4 @@ func TestReplacingAKeyNeverWritesItIntoAWiderFile(t *testing.T) {
 	if got := info.Mode().Perm(); got != githubapp.FileMode {
 		t.Errorf("the replaced key is mode %04o, want %04o", got, githubapp.FileMode)
 	}
-}
-
-// inodeOf identifies the file behind a path, so a test can tell a file that
-// was replaced from one that was rewritten.
-func inodeOf(t *testing.T, path string) uint64 {
-	t.Helper()
-	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	st, ok := info.Sys().(*syscall.Stat_t)
-	if !ok {
-		t.Skip("this platform does not report inodes")
-	}
-	return uint64(st.Ino)
 }
