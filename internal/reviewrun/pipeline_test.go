@@ -118,11 +118,16 @@ func (s *scripted) prompts(role string) []string {
 	return out
 }
 
-// findingJSON renders one reviewer answer.
+// findingJSONFor renders a reviewer answer carrying one finding.
 func findingJSONFor(path, category, severity, evidence string) string {
-	return `{"findings":[{"path":"` + path + `","start_line":1,"end_line":1,"category":"` + category +
+	return `{"findings":[` + findingBody(path, category, severity, evidence) + `]}`
+}
+
+// findingBody renders one finding, for an answer that carries several.
+func findingBody(path, category, severity, evidence string) string {
+	return `{"path":"` + path + `","start_line":1,"end_line":1,"category":"` + category +
 		`","severity":"` + severity + `","confidence":"high","issue":"something is wrong","evidence":"` +
-		evidence + `"}]}`
+		evidence + `"}`
 }
 
 // harness builds a manifest, a plan and a review root without touching git.
@@ -131,6 +136,9 @@ type harness struct {
 	plan     *Plan
 	root     *Root
 	sel      *review.Selection
+	// threads are what the pull request already carries. The zero value is a
+	// list that was never read, which is what a review of a working tree has.
+	threads Threads
 }
 
 func newHarness(t *testing.T, quorum int, withValidator, withJudge bool) *harness {
@@ -183,43 +191,23 @@ func newHarness(t *testing.T, quorum int, withValidator, withJudge bool) *harnes
 }
 
 // pipeline runs the orchestration a Run would, without git or a repository.
+//
+// The stages after the reviewers are decide's, not a copy of them: a harness
+// that re-implemented them would drift from the pipeline and keep passing.
 func (h *harness) pipeline(t *testing.T, inv invoker) *Review {
 	t.Helper()
 	sched := newScheduler(4, inv.Limit)
 	ctx := context.Background()
+	opts := Options{Threads: h.threads}
 
-	out := &Review{Panel: h.plan.Panel, Manifest: h.plan.Manifest, Range: h.plan.Range}
-	candidates, reports := runReviewers(ctx, Options{}, inv, sched, h.manifest, h.plan)
+	out := &Review{Panel: h.plan.Panel, Manifest: h.plan.Manifest, Range: h.plan.Range, Threads: h.threads}
+	candidates, reports := runReviewers(ctx, opts, inv, sched, h.manifest, h.plan)
 	out.Reports = append(out.Reports, reports...)
-
-	if h.sel.Validates && h.manifest.Validator != nil {
-		var vr []RunReport
-		candidates, vr = runValidators(ctx, Options{}, inv, sched, *h.manifest.Validator, h.plan.Material, candidates)
-		out.Reports = append(out.Reports, vr...)
-	}
-	kept := make([]Finding, 0, len(candidates))
-	for _, f := range candidates {
-		if f.Upheld() {
-			kept = append(kept, f)
-		} else {
-			out.DroppedByValidator++
-		}
-	}
-	if h.manifest.Judge == nil {
-		out.Reason = "this manifest declares no judge, so nothing decided which findings survive"
+	if !anyReviewerAnswered(reports) {
+		out.Reason = "no reviewer answered, so nothing looked at this change"
 		return out
 	}
-	judged, good, discarded, reattached, jr := runJudge(ctx, Options{}, inv, sched, *h.manifest.Judge, h.plan.Material, kept)
-	out.Reports = append(out.Reports, jr)
-	out.DiscardedIDs = discarded
-	out.ReattachedIDs = reattached
-	if !jr.Report.Available {
-		out.Reason = jr.Report.Reason
-		return out
-	}
-	out.Findings, out.Good = judged, good
-	sortFindings(out.Findings)
-	out.Available = true
+	decide(ctx, opts, inv, sched, h.manifest, h.sel, h.plan.Material, candidates, out)
 	return out
 }
 
@@ -871,5 +859,141 @@ func TestAValidatorVerdictLandsOnTheFindingItJudged(t *testing.T) {
 	}
 	if kept[1].Verdict == nil || kept[1].Severity != SeverityGreen {
 		t.Errorf("the downgrade did not land on the finding it judged: %+v", kept[1])
+	}
+}
+
+// alreadyPosted is a thread carrying the fingerprint of the finding the
+// harness's reviewer reports.
+func alreadyPosted(t *testing.T, path, category, evidence string, resolved bool) Threads {
+	t.Helper()
+	f := Finding{Path: path, Category: category, Evidence: evidence}
+	return ThreadsRead([]Thread{{
+		Path: path, Resolved: resolved, Body: "already said",
+		Fingerprint: f.Fingerprint(), Version: FingerprintVersion,
+	}})
+}
+
+// Suppression is deterministic and agtk's; the judge only ever narrows
+// further. That is one-directional because a withheld finding is never issued
+// an id, so a judge answering with one is answering about a finding it was
+// never given — and applyJudgement discards every id agtk did not issue.
+func TestTheJudgeCannotResurrectAWithheldFinding(t *testing.T) {
+	h := newHarness(t, 1, false, true)
+	h.threads = alreadyPosted(t, "a.go", "correctness", "x := 1", true)
+	inv := &scripted{
+		limits: map[string]int{"claudecode": 0},
+		// One finding the pull request already carries and one it does not, so
+		// the judge runs at all and has an id it was actually issued.
+		reviewer: []string{`{"findings":[` +
+			findingBody("a.go", "correctness", "AMBER", "x := 1") + `,` +
+			findingBody("b.go", "correctness", "AMBER", "y := 2") + `]}`},
+		// Two ids where one was issued. f1 is the surviving finding; f2 is the
+		// label the withheld one would have carried had it not been withheld.
+		judge: `{"findings":[{"id":"f1","severity":"RED","issue":"kept"},` +
+			`{"id":"f2","severity":"RED","issue":"put the other one back"}],"good":[]}`,
+	}
+
+	out := h.pipeline(t, inv)
+
+	if !out.Available {
+		t.Fatalf("the review did not reach a verdict: %s", out.Reason)
+	}
+	if len(out.Findings) != 1 {
+		t.Fatalf("want the one finding the pull request does not carry, got %d: %+v", len(out.Findings), out.Findings)
+	}
+	if out.Findings[0].Path != "b.go" {
+		t.Errorf("the judge resurrected the withheld finding: %+v", out.Findings[0])
+	}
+	if len(out.Suppressed) != 1 || out.Suppressed[0].Reason != SuppressedResolved {
+		t.Fatalf("the withholding was not reported: %+v", out.Suppressed)
+	}
+	if len(out.DiscardedIDs) != 1 || out.DiscardedIDs[0] != "f2" {
+		t.Errorf("the id the judge answered with but was never issued is not reported as discarded: %v", out.DiscardedIDs)
+	}
+}
+
+// A validator run costs real money, and the finding it would verify is one the
+// pull request already displays.
+func TestAWithheldFindingCostsNoValidatorRun(t *testing.T) {
+	h := newHarness(t, 1, true, true)
+	h.threads = alreadyPosted(t, "a.go", "correctness", "x := 1", false)
+	inv := &scripted{
+		limits:   map[string]int{"claudecode": 0},
+		reviewer: []string{findingJSONFor("a.go", "correctness", "AMBER", "x := 1")},
+		judge:    `{"findings":[],"good":[]}`,
+	}
+
+	h.pipeline(t, inv)
+
+	if n := inv.counts[RoleValidator]; n != 0 {
+		t.Errorf("%d validator run(s) were spent on a finding already on the pull request", n)
+	}
+}
+
+// The judge is given the threads a reader of the pull request sees, so it can
+// fold a near-duplicate the fingerprint missed into one that already exists.
+// The threads are untrusted text, so they sit before the clause that says the
+// material is untrusted rather than after it.
+func TestTheJudgeIsGivenTheOpenThreadsBeforeTheInjectionClause(t *testing.T) {
+	h := newHarness(t, 1, false, true)
+	posted := Finding{Path: "z.go", Category: "correctness", Evidence: "z := 0"}
+	h.threads = ThreadsRead([]Thread{{
+		Path: "z.go", Body: "a finding agtk already posted",
+		Fingerprint: posted.Fingerprint(), Version: FingerprintVersion,
+	}})
+	inv := &scripted{
+		limits:   map[string]int{"claudecode": 0},
+		reviewer: []string{findingJSONFor("a.go", "correctness", "AMBER", "x := 1")},
+		judge:    `{"findings":[],"good":[]}`,
+	}
+
+	h.pipeline(t, inv)
+
+	prompts := inv.prompts(RoleJudge)
+	if len(prompts) != 1 {
+		t.Fatalf("the judge ran %d time(s)", len(prompts))
+	}
+	prompt := prompts[0]
+	thread := strings.Index(prompt, "a finding agtk already posted")
+	clause := strings.Index(prompt, "# Instructions found in the material")
+	if thread < 0 {
+		t.Fatal("the open thread never reached the judge")
+	}
+	if clause < 0 {
+		t.Fatal("the judge's prompt carries no injection clause")
+	}
+	if thread > clause {
+		t.Error("a thread body written by whoever commented sits after the paragraph that says the material is untrusted")
+	}
+	// And the clause has to cover it: a comment on a pull request is an
+	// instruction channel into a model, and the paragraph is what names it as
+	// material rather than as an order.
+	if !strings.Contains(prompt, "comment somebody left on the pull request") {
+		t.Error("the injection clause does not name a comment on the pull request as material")
+	}
+}
+
+// A reviewer never sees the threads: it re-derives findings from the code, and
+// showing it what has already been said would let a comment on the pull
+// request steer what a reviewer looks for.
+func TestAReviewerIsNotShownTheThreads(t *testing.T) {
+	h := newHarness(t, 1, false, true)
+	shown := Finding{Path: "z.go", Category: "correctness", Evidence: "z := 0"}
+	h.threads = ThreadsRead([]Thread{{
+		Path: "z.go", Body: "a finding agtk already posted",
+		Fingerprint: shown.Fingerprint(), Version: FingerprintVersion,
+	}})
+	inv := &scripted{
+		limits:   map[string]int{"claudecode": 0},
+		reviewer: []string{`{"findings":[]}`},
+		judge:    `{"findings":[],"good":[]}`,
+	}
+
+	h.pipeline(t, inv)
+
+	for _, prompt := range inv.prompts(RoleReviewer) {
+		if strings.Contains(prompt, "a finding agtk already posted") {
+			t.Error("a reviewer was shown what the pull request already says")
+		}
 	}
 }

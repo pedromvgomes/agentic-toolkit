@@ -28,10 +28,16 @@ var bannedTerms = map[string]string{
 }
 
 // glossaryScope are the packages CONTEXT.md's review vocabulary governs.
+//
+// internal/githubapp is one of them. It names GitHub's own shapes, but its
+// comments explain them in the review's vocabulary — what a comment thread is
+// for, what a review is bound to — and a synonym that slipped in there would
+// read as the canonical word everywhere it was copied from.
 var glossaryScope = []string{
 	"internal/reviewrun",
 	"internal/review",
 	"internal/reviewpost",
+	"internal/githubapp",
 }
 
 // CONTEXT.md's 35 terms each carry an `_Avoid_` list, and until this check

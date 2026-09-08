@@ -106,14 +106,49 @@ func resolvePullRequest(ctx context.Context, root string, number int, seam clien
 	}, nil
 }
 
+// priorThreads reads the comment threads the pull request already carries.
+//
+// A read that fails is reported rather than fatal, and it is reported as a read
+// that failed rather than as a pull request holding nothing. Both end in
+// "nothing was withheld", and only one of them means the pull request is clean
+// — so refusing the review outright would make one GraphQL outage the end of
+// reviewing, and treating the failure as an empty list would silently repost
+// every finding somebody has already answered.
+//
+// A failed reviews query folds in here. If it did not answer, this run does not
+// know what the pull request holds, and saying that once is the honest report.
+func priorThreads(ctx context.Context, t *pullRequestTarget, reviewsErr error) reviewrun.Threads {
+	if reviewsErr != nil {
+		return reviewrun.ThreadsUnreadable("%v", reviewsErr)
+	}
+	threads, err := t.client.ReadReviewThreads(ctx, t.pr.Number)
+	if err != nil {
+		return reviewrun.ThreadsUnreadable("%v", err)
+	}
+	return reviewpost.ReadThreads(threads)
+}
+
+// reportUnchangedHead says that this commit already carries a review, and that
+// re-deriving what the pull request already displays is what was avoided.
+func reportUnchangedHead(env *Env, t *pullRequestTarget, asJSON bool) error {
+	if asJSON {
+		return writeJSON(env, unchangedHeadJSON(t))
+	}
+	fmt.Fprintf(env.Stdout, "%s#%d already carries a review of %s.\n", t.slug, t.pr.Number, t.pr.HeadSHA)
+	fmt.Fprintln(env.Stdout, "No panel ran: nothing was spent and nothing was posted.")
+	fmt.Fprintln(env.Stdout, "Push a commit to review what changed, or pass --force to review this one again.")
+	return nil
+}
+
 // options builds the review options that point the pipeline at this pull
 // request.
 //
 // The context is the posting one, which is what makes the manifest, the
 // prompts and the convention documents come from the base ref rather than
 // from the branch under review — the closure ADR 0007 makes structural.
-func (t *pullRequestTarget) options(root string, target reviewTarget, flags runFlags) reviewrun.Options {
+func (t *pullRequestTarget) options(root string, target reviewTarget, flags runFlags, threads reviewrun.Threads) reviewrun.Options {
 	return reviewrun.Options{
+		Threads:     threads,
 		Dir:         root,
 		Base:        t.mergeBase,
 		BaseLabel:   t.pr.BaseRef,
@@ -131,14 +166,32 @@ func (t *pullRequestTarget) options(root string, target reviewTarget, flags runF
 // The comment list is named as pending rather than shown as empty: a preview
 // that printed an empty list would read as "this review would post nothing",
 // which is the one thing a review must never say by accident.
-func renderEnvelope(w io.Writer, t *pullRequestTarget) {
+func renderEnvelope(w io.Writer, t *pullRequestTarget, threads reviewrun.Threads) {
 	fmt.Fprintf(w, "\nWould post one review to %s#%d, and nothing else:\n", t.slug, t.pr.Number)
 	fmt.Fprintf(w, "  POST /repos/%s/pulls/%d/reviews\n", t.slug, t.pr.Number)
 	fmt.Fprintf(w, "  commit_id: %s\n", t.pr.HeadSHA)
 	fmt.Fprintf(w, "  event:     %s\n", githubapp.EventComment)
 	fmt.Fprintf(w, "  comments:  (one per surviving finding that lands on the diff, supplied once the panel has answered)\n")
 	fmt.Fprintf(w, "\n%d file(s) in this diff carry a line an inline comment could be attached to.\n", len(t.added))
+	renderThreadRead(w, threads)
 	fmt.Fprintln(w, "Nothing was spent and nothing was posted.")
+}
+
+// renderThreadRead says what the pull request already carries, for a preview
+// that has no review to say it through.
+//
+// A preview that omitted a failed read would show the request a run would make
+// while withholding the one thing that changes what is in it: with no threads
+// read, nothing is withheld, and the review repeats what the pull request
+// already carries.
+func renderThreadRead(w io.Writer, threads reviewrun.Threads) {
+	if threads.Available {
+		fmt.Fprintf(w, "%d comment thread(s) are already on this pull request, %d of them open. A finding one of them already carries is not posted again.\n",
+			threads.Count(), len(threads.Open()))
+		return
+	}
+	fmt.Fprintf(w, "The existing comment threads could not be read: %s\n", threads.Reason)
+	fmt.Fprintln(w, "A review run now would withhold nothing, so it may repeat what the pull request already carries.")
 }
 
 // renderPayload writes the exact request a post would make.
@@ -199,7 +252,16 @@ func runCodeReviewPR(cmd *cobra.Command, env *Env, target reviewTarget, flags ru
 	if err != nil {
 		return err
 	}
-	opts := t.options(root, target, flags)
+
+	// Read before a reviewer is started. A head that already carries a review
+	// costs one query to recognise and a whole panel to rediscover, and what
+	// the panel would rediscover is what the pull request is already
+	// displaying.
+	reviewed, reviewsErr := t.client.ReadReviewedCommits(cmd.Context(), t.pr.Number)
+	if !flags.dryRun && !flags.force && reviewsErr == nil && reviewed[t.pr.HeadSHA] {
+		return reportUnchangedHead(env, t, flags.json)
+	}
+	opts := t.options(root, target, flags, priorThreads(cmd.Context(), t, reviewsErr))
 
 	if flags.dryRun {
 		opts.Preview = true
@@ -209,10 +271,10 @@ func runCodeReviewPR(cmd *cobra.Command, env *Env, target reviewTarget, flags ru
 		}
 		defer func() { _ = reviewRoot.Close() }()
 		if flags.json {
-			return writeJSON(env, pullRequestPlanJSON(t, plan))
+			return writeJSON(env, pullRequestPlanJSON(t, plan, opts.Threads))
 		}
 		reviewrun.RenderPlan(env.Stdout, plan)
-		renderEnvelope(env.Stdout, t)
+		renderEnvelope(env.Stdout, t, opts.Threads)
 		return nil
 	}
 

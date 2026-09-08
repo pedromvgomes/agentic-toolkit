@@ -17,6 +17,7 @@ type runFlags struct {
 	maxParallel int
 	dryRun      bool
 	noPost      bool
+	force       bool
 	json        bool
 }
 
@@ -43,7 +44,12 @@ func newCodeReviewRunCmd(env *Env) *cobra.Command {
 			"\n" +
 			"--dry-run prints the assembled prompts and the runs that would be made, and\n" +
 			"spends nothing. --no-post runs the panel for real and prints the exact\n" +
-			"request it would have made instead of making it.",
+			"request it would have made instead of making it.\n" +
+			"\n" +
+			"A head that already carries a review of the same commit is a no-op that says\n" +
+			"so and spends nothing; --force reviews it again. Findings the pull request\n" +
+			"already carries are withheld either way, so re-running after a push posts\n" +
+			"what is new and nothing else.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCodeReviewRun(cmd, env, target, flags)
@@ -58,6 +64,8 @@ func newCodeReviewRunCmd(env *Env) *cobra.Command {
 		"print the assembled prompts and the runs that would be made, and spend nothing")
 	cmd.Flags().BoolVar(&flags.noPost, "no-post", false,
 		"run the panel and print the request that would post the review, without posting it")
+	cmd.Flags().BoolVar(&flags.force, "force", false,
+		"review a head that already carries a review, instead of stopping")
 	cmd.Flags().BoolVar(&flags.json, "json", false, "emit the review as JSON")
 	cmd.Flags().IntVar(&target.pr, "pr", 0,
 		"review this open pull request and post the result to it")
@@ -73,6 +81,12 @@ func runCodeReviewRun(cmd *cobra.Command, env *Env, target reviewTarget, flags r
 	// was honoured — which on this one means believing a review was withheld.
 	if flags.noPost {
 		return errors.New("--no-post withholds the review a --pr run would post; without --pr there is nothing to withhold")
+	}
+	// --force overrides the check that a head already carries a review, and
+	// only a pull request carries one. Silently ignoring it would read as a
+	// flag that was honoured.
+	if flags.force {
+		return errors.New("--force reviews a pull request head that already carries a review; without --pr there is no posted review to override")
 	}
 	root, base, mergeBase, err := resolveTarget(env, target)
 	if err != nil {

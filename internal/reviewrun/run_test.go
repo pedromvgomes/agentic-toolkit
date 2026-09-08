@@ -335,6 +335,14 @@ func TestRunReviewsARealRepoThroughTheSeam(t *testing.T) {
 // The review root is removed on every exit path, including the one where the
 // review could not reach a verdict.
 func TestRunRemovesTheReviewRootEvenWhenTheJudgeFails(t *testing.T) {
+	// The roots this test looks at are its own. BuildRoot places them under
+	// os.TempDir(), which every package's tests share, so a glob over the real
+	// one answers for whatever else is running: `go test ./...` runs
+	// internal/reviewrun/tests alongside this, and that package writes an a.go
+	// into a root of its own. Pointing TMPDIR at this test's directory makes
+	// the assertion about this review rather than about the machine.
+	t.Setenv("TMPDIR", t.TempDir())
+
 	r, base := reviewedRepo(t)
 	inv := &scripted{
 		limits:   map[string]int{"claudecode": 0},
@@ -352,8 +360,8 @@ func TestRunRemovesTheReviewRootEvenWhenTheJudgeFails(t *testing.T) {
 	if out.Available {
 		t.Fatal("a failed judge produced a verdict")
 	}
-	// Nothing under the system temporary directory should still carry this
-	// review's root: the defer runs on the unavailable path too.
+	// No root of this review's survives: the defer runs on the unavailable
+	// path too.
 	matches, _ := filepath.Glob(filepath.Join(os.TempDir(), "agtk-review-*"))
 	for _, m := range matches {
 		if _, err := os.Stat(filepath.Join(m, "root", "a.go")); err == nil {

@@ -288,6 +288,38 @@ a glossary that gave them one word would ban it for one of them and canonise it 
 other.
 _Avoid_: tag, sentinel, watermark, marker (bare)
 
+**Comment thread**:
+One conversation on a pull request's diff, rooted at the comment that opened it. State is read
+back off the pull request on every run and never cached: the pull request is what a person
+actually looked at, and it survives a fresh clone. Its state is what a re-review turns on — an
+**open** or a **resolved** thread carrying a **Finding**'s **Fingerprint** withholds that
+finding, and an **outdated** one does not, because GitHub collapses an outdated thread and the
+finding is invisible where the code now lives.
+
+Only a thread the App itself opened carries an identity. Anyone who can comment on a pull
+request can type the characters that open a **Fingerprint marker**, and one naming a finding's
+fingerprint would make a review silent about code somebody chose without touching the code.
+
+Read over GraphQL. REST reports neither resolution nor staleness — it answers `position: null`
+for a comment whose code has moved and says nothing at all about resolution — so two of the
+four states have no REST answer, and they oblige opposite things.
+_Avoid_: conversation, discussion, comment chain, review thread
+
+**Suppression**:
+A **Finding** withheld from a **Review** because a **Comment thread** already carries its
+**Fingerprint**. Deterministic and `agtk`'s: it happens before the **Judge**, so a withheld
+finding is never issued an id and the judge — which answers with ids `agtk` issued — cannot
+restore one. The judge narrows further and never widens.
+
+One-directional in the other sense too: a thread list that could not be read withholds nothing
+and says so. "Nothing was withheld" is what a clean pull request produces and what a failed
+read produces, and only one of them means the pull request is clean.
+
+A `security:prompt-injection` finding is never withheld. ADR 0008 carves it out of the judge's
+reach because a dropped one converts an injected instruction into a clean review, and a
+suppressor that removed it first would open that hole from the other side.
+_Avoid_: dedupe, skip, filter, squelch
+
 **Review manifest**:
 `.agents/code-review/manifest.yaml`: the single declaration of **Reviewer**s, **Panel**s and the
 prompt bodies they use. Read by both engines — the in-session skill and `agtk code-review` — so
@@ -308,7 +340,10 @@ named by a **Context**'s default and possibly raised by an **Escalation**. The p
 has no name because per-stack partitioning is not built.
 
 **"Review"** — the activity and the artifact. **Review** is the artifact posted to the PR; say
-"review run" for the activity, and **Approval** is never part of either.
+"review run" for the activity, and **Approval** is never part of either. A **Comment thread**
+is never a "review thread" for the same reason, even though that is GitHub's own field name —
+the wire type in `internal/githubapp` keeps GitHub's spelling because it is what GitHub
+answers with, and nothing else does.
 
 **"Judge" vs "Curator"** — both are single model runs holding final authority over what
 survives, and neither performs the act its judgment authorises. Deliberately parallel; they

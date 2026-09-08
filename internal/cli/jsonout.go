@@ -773,9 +773,13 @@ type reviewPRPlanJSON struct {
 	// Posted is false and the payload is absent: a plan spends nothing, so no
 	// finding exists to comment on yet.
 	Posted bool `json:"posted"`
+	// Threads is what the pull request already carries. A preview that omitted
+	// a read that failed would show the request a run would make while
+	// withholding the one thing that changes what is in it.
+	Threads threadsJSON `json:"threads"`
 }
 
-func pullRequestPlanJSON(t *pullRequestTarget, p *reviewrun.Plan) reviewPRPlanJSON {
+func pullRequestPlanJSON(t *pullRequestTarget, p *reviewrun.Plan, threads reviewrun.Threads) reviewPRPlanJSON {
 	out := reviewPRPlanJSON{
 		Version:     jsonVersion,
 		PullRequest: pullRequestRow(t),
@@ -783,6 +787,7 @@ func pullRequestPlanJSON(t *pullRequestTarget, p *reviewrun.Plan) reviewPRPlanJS
 		Range:       p.Range,
 		Panel:       p.Panel,
 		Runs:        []plannedRunJSON{},
+		Threads:     threadsRow(&reviewrun.Review{Threads: threads}),
 	}
 	for _, r := range p.Runs {
 		out.Runs = append(out.Runs, plannedRunJSON{
@@ -812,6 +817,82 @@ type reviewPostJSON struct {
 	Payload reviewPayloadJSON `json:"payload"`
 	// Placement is where each surviving finding ended up.
 	Placement placementJSON `json:"placement"`
+	// Threads is what the pull request already carried, and what that
+	// withheld.
+	Threads threadsJSON `json:"threads"`
+}
+
+// threadsJSON is what the pull request already carried when this review ran.
+//
+// Available travels with the counts for the reason Available travels with a
+// review's findings: an empty `suppressed` is what a pull request with nothing
+// to withhold produces, and it is also what a thread read that failed
+// produces. A consumer branching on the list alone cannot tell them apart, and
+// the second one means this review may be reposting what somebody already
+// answered.
+type threadsJSON struct {
+	Available bool   `json:"available"`
+	Reason    string `json:"reason,omitempty"`
+	// Read, Open and OtherVersion are never omitted, so a consumer does not
+	// have to tell absent from zero.
+	Read int `json:"read"`
+	Open int `json:"open"`
+	// Identified counts the threads carrying a fingerprint this run can match
+	// a finding against. Never omitted: `read` above zero with this at zero is
+	// a pull request nothing can be withheld against, which reads exactly like
+	// one that had nothing to withhold.
+	Identified int `json:"identified"`
+	// OtherVersion counts threads carrying a fingerprint from a scheme this
+	// build does not compute, each of which is a finding that will be posted
+	// again.
+	OtherVersion int              `json:"other_version"`
+	Suppressed   []suppressedJSON `json:"suppressed"`
+}
+
+type suppressedJSON struct {
+	Finding findingJSON `json:"finding"`
+	Reason  string      `json:"reason"`
+}
+
+// threadsRow renders what a review found already on the pull request.
+func threadsRow(r *reviewrun.Review) threadsJSON {
+	out := threadsJSON{
+		Available:    r.Threads.Available,
+		Reason:       r.Threads.Reason,
+		Read:         r.Threads.Count(),
+		Open:         len(r.Threads.Open()),
+		Identified:   len(r.Threads.Identified()),
+		OtherVersion: len(r.Threads.AtOtherVersion()),
+		Suppressed:   []suppressedJSON{},
+	}
+	for _, s := range r.Suppressed {
+		out.Suppressed = append(out.Suppressed, suppressedJSON{Finding: findingRow(s.Finding), Reason: s.Reason})
+	}
+	return out
+}
+
+// reviewUnchangedJSON is what a run against an already-reviewed head emits.
+//
+// It carries the same pull_request row and the same `posted` field as a real
+// post, so one consumer reads both: the difference between "this review posted
+// nothing" and "no review ran" is a field rather than a different document.
+type reviewUnchangedJSON struct {
+	Version     int             `json:"version"`
+	PullRequest pullRequestJSON `json:"pull_request"`
+	Posted      bool            `json:"posted"`
+	// Ran reports that no panel was started, which is why there is no review
+	// here to read.
+	Ran    bool   `json:"ran"`
+	Reason string `json:"reason"`
+}
+
+func unchangedHeadJSON(t *pullRequestTarget) reviewUnchangedJSON {
+	return reviewUnchangedJSON{
+		Version:     jsonVersion,
+		PullRequest: pullRequestRow(t),
+		Reason: fmt.Sprintf("%s#%d already carries a review of %s; pass --force to review it again",
+			t.slug, t.pr.Number, t.pr.HeadSHA),
+	}
 }
 
 type reviewPayloadJSON struct {
@@ -857,6 +938,7 @@ func pullRequestPostJSON(t *pullRequestTarget, r *reviewrun.Review, payload gith
 			OffDiff: len(place.Unpositioned),
 			Moved:   []findingJSON{},
 		},
+		Threads: threadsRow(r),
 	}
 	for _, c := range payload.Comments {
 		out.Payload.Comments = append(out.Payload.Comments, reviewCommentJSON{
