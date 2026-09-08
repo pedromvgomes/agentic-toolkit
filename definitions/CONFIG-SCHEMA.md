@@ -111,6 +111,7 @@ One configured model invocation. It says which CLI, which model and which prompt
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
+| `description` | `string` | no | What this panel is for, in one line. Shown when a panel is listed or chosen, because a name and a run count say what a panel spends and not what it is for. |
 | `reviewers` | `[]string` | **yes** | Names from the manifest's reviewers map. A panel that names one this manifest does not declare cannot staff itself, and is refused. |
 | `quorum` | `int` | no | How many independent instances of each reviewer to run. Agreement between them is the confidence signal. Defaults to 1. |
 | `validate` | `bool` | no | Whether findings are put to the validator. Unset leaves it to the context, and a context that posts validates regardless: a false finding on a PR is published and blocks approval. |
@@ -185,9 +186,16 @@ judge:     {provider: claudecode, model: opus,   prompt: builtin:judge}
 validator: {provider: claudecode, model: sonnet, prompt: builtin:validator}
 
 panels:
-  quick:    {reviewers: [unified]}
-  standard: {reviewers: [correctness, security]}
-  deep:     {reviewers: [correctness, security, performance], quorum: 2}
+  quick:
+    description: One reviewer over all three axes. The pre-push pass, for a change you already understand.
+    reviewers: [unified]
+  standard:
+    description: Correctness and security as separate reviewers, each with its own scope.
+    reviewers: [correctness, security]
+  deep:
+    description: Every axis, run twice, so agreement between independent instances is the confidence signal.
+    reviewers: [correctness, security, performance]
+    quorum: 2
 
 defaults:
   worktree: quick

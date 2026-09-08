@@ -15,9 +15,16 @@ judge:     {provider: claudecode, model: opus,   prompt: builtin:judge}
 validator: {provider: claudecode, model: sonnet, prompt: builtin:validator}
 
 panels:
-  quick:    {reviewers: [unified]}
-  standard: {reviewers: [correctness, security]}
-  deep:     {reviewers: [correctness, security, performance], quorum: 2}
+  quick:
+    description: One reviewer over all three axes. The pre-push pass, for a change you already understand.
+    reviewers: [unified]
+  standard:
+    description: Correctness and security as separate reviewers, each with its own scope.
+    reviewers: [correctness, security]
+  deep:
+    description: Every axis, run twice, so agreement between independent instances is the confidence signal.
+    reviewers: [correctness, security, performance]
+    quorum: 2
 
 defaults:
   worktree: quick
