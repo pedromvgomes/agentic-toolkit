@@ -11,7 +11,10 @@ import "encoding/json"
 // to be a number anyway before it can become an inline comment.
 //
 // severity and confidence are enums, so a reviewer cannot answer "high-ish"
-// and have it read as a severity nothing on the ladder matches.
+// and have it read as a severity nothing on the ladder matches. Confidence
+// carries a description because the judge re-severities on it: a field that
+// changes an outcome and is defined nowhere is a field every reviewer fills in
+// differently.
 
 // findingSchema is what a reviewer answers with.
 var findingSchema = json.RawMessage(`{
@@ -31,7 +34,7 @@ var findingSchema = json.RawMessage(`{
           "end_line":   {"type": ["integer", "null"], "description": "Last line of the region, or null."},
           "category":   {"type": "string", "description": "Kind of problem, e.g. correctness, security:prompt-injection, performance."},
           "severity":   {"type": "string", "enum": ["RED", "AMBER", "GREEN"]},
-          "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
+          "confidence": {"type": "string", "enum": ["high", "medium", "low"], "description": "How firm the diagnosis is, given the finding is worth filing at all: high when the failure follows from the code as written, medium when one step rests on an unconfirmed reading, low when the mechanism has a gap. Not a second severity."},
           "issue":      {"type": "string", "description": "The claim: what is wrong and what it causes."},
           "evidence":   {"type": "string", "description": "The offending line or lines, quoted verbatim from the file."},
           "suggestion": {"type": "string", "description": "What to do about it."}
@@ -57,7 +60,7 @@ var validatorSchema = json.RawMessage(`{
 // judgeSchema is what the judge answers with: ids, severities and prose.
 //
 // It carries no path, no line and no evidence. Those are re-attached by agtk
-// from the candidate that was issued the id, because a pass that may rewrite a
+// from the candidate finding that was issued the id, because a pass that may rewrite a
 // quote is a pass that may silently break a finding's identity across runs.
 // See ADR 0008.
 var judgeSchema = json.RawMessage(`{

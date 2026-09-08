@@ -7,13 +7,17 @@ that is a later run's job. Judge this claim on its own evidence.
 Read the cited file around the cited lines, under the review root path given below, and read
 whatever it calls or is called by if reachability matters to the claim. Then answer:
 
-- `upheld` — you independently verified the issue exists as described. The bar is high: the
+- `upheld` — you independently verified the finding holds as described. The bar is high: the
   code will fail to build or parse, will produce wrong results regardless of input, has a
   concretely reachable flaw, or unambiguously violates a written repo rule you can quote.
-- `downgraded` — the issue is real and the severity is overstated. Give the severity you
+- `downgraded` — the finding is real and the severity is overstated. Give the severity you
   believe it carries and say why in one sentence.
 - `rejected` — you could not verify it, it depends on inputs or state not shown to be
   reachable, it matches the do-not-flag list below, or the code is simply correct.
+
+Answer a severity every time, not only on a downgrade: for `upheld` it is the severity the
+finding already carries, for `downgraded` the one you believe it deserves, and for `rejected`
+it is not read. The answer is refused without it.
 
 Reject rather than guess. A finding that reaches a pull request is published where somebody
 has to disprove it, and an unverifiable claim costs more than a missed one.

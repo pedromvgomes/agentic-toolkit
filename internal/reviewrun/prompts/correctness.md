@@ -60,8 +60,8 @@ not flag a comment the change merely moved.
 Where the conventions section is present, hold the change against it. Every convention finding
 must quote two things: the rule text with its source, and the offending line. A convention
 finding that cannot quote the written rule it violates does not get filed. Use AMBER by
-default and RED only where the violation is destructive; a rule is violated or it is not, so
-never GREEN. Category `conventions:<short-rule-slug>`.
+default and RED only where the violation is destructive. Category
+`conventions:<short-rule-slug>`.
 
 Do not infer a rule from surrounding code and file it as a convention, and do not file style
 preferences unless the documents state them as hard rules.
