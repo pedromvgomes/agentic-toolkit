@@ -97,6 +97,7 @@ The location is fixed rather than configurable: the manifest is configuration, a
 | `escalate` | `[]Escalation` | no | Rules that raise the panel above a context's default. Every rule is evaluated and the highest target wins, so their order carries no meaning. |
 | `approval` | `Approval` | no | What approving a reviewed head requires of a finding's severity. Absent means the default floor, AMBER. |
 | `conventions` | `[]string` | no | Documents holding this repo's own written rules, as paths from the repo root, read at the base ref and injected raw into every reviewer's prompt. Replaces the default list rather than adding to it. Absent means the defaults: CLAUDE.md, AGENTS.md, .claude/CLAUDE.md, CONTEXT.md, CONTRIBUTING.md, docs/ARCHITECTURE.md, docs/CODE_STANDARDS.md. |
+| `exclude` | `[]string` | no | Paths this repo does not want reviewed, as globs (** spans path segments, * and ? stay within one). Added to the built-in exclusions — lockfiles, vendored trees and generated files are already excluded and need no entry. An excluded file is reported with its reason and reaches no reviewer. |
 
 ### `reviewers` entry, `judge`, `validator` (`Runner`)
 

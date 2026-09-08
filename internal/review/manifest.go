@@ -37,6 +37,23 @@ type Manifest struct {
 	// appending the defaults would hold it against documents it did not name.
 	Conventions []string `yaml:"conventions,omitempty" agtkdoc:"Documents holding this repo's own written rules, as paths from the repo root, read at the base ref and injected raw into every reviewer's prompt. Replaces the default list rather than adding to it. Absent means the defaults: CLAUDE.md, AGENTS.md, .claude/CLAUDE.md, CONTEXT.md, CONTRIBUTING.md, docs/ARCHITECTURE.md, docs/CODE_STANDARDS.md."`
 
+	// Exclude names paths this repo does not want reviewed, as globs.
+	//
+	// It says what only the repo can say. The built-in exclusions recognise
+	// work nobody authored — a lockfile, a vendored tree, a file its generator
+	// marked — and that vocabulary is closed for the reason every other one
+	// here is: recognising them is knowledge that has to be tested somewhere
+	// other than a consumer's YAML. A hand-written fixture no reviewer should
+	// spend its budget on looks like ordinary source to all of it, and only
+	// the repo knows otherwise.
+	//
+	// Read from the base ref in a posting context, like every other rule, so a
+	// branch cannot exclude itself from the review that judges it (ADR 0007).
+	// It shrinks a review, which is the opposite direction from an Escalation
+	// — so it is committed where anyone can read it, rather than typed where
+	// the pull request would carry no record of it.
+	Exclude []string `yaml:"exclude,omitempty" agtkdoc:"Paths this repo does not want reviewed, as globs (** spans path segments, * and ? stay within one). Added to the built-in exclusions — lockfiles, vendored trees and generated files are already excluded and need no entry. An excluded file is reported with its reason and reaches no reviewer."`
+
 	// Builtin records that this is the manifest that ships with agtk rather
 	// than one a repo wrote. Not a field a manifest may set: it is a fact
 	// about where the document came from.

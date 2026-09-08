@@ -41,9 +41,10 @@ skill states that it does not approve, and does not name the subcommand that doe
 
 ## Consequences
 
-- A path target and user-chosen exclusions are gone. `run` takes `--base` and `--head` and no
-  pathspec, and `internal/review/exclude.go` decides what is not worth reviewing. "Review
-  just this directory" has no engine equivalent.
+- A path target is gone. `run` takes `--base` and `--head` and no pathspec, so "review just
+  this directory" has no engine equivalent. Choosing what is *not* reviewed survives, as the
+  manifest's `exclude:` — declared rather than typed, because a review may only be shrunk by
+  something committed where everyone can read it.
 - The four language prompt sets are deleted rather than relocated. A Go repo reviewed by this
   toolkit gets no prompt that knows Go. That is the cost of the call `prompt.go` records, paid
   where it was always going to be paid.

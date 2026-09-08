@@ -109,9 +109,10 @@ func Prepare(opts Options) (*Plan, *review.Manifest, *review.Selection, *Root, e
 	}
 
 	profile, err := review.BuildProfile(review.ProfileOptions{
-		Dir:  opts.Dir,
-		Base: opts.Base,
-		Head: opts.Head,
+		Dir:     opts.Dir,
+		Base:    opts.Base,
+		Head:    opts.Head,
+		Exclude: m.Exclude,
 	})
 	if err != nil {
 		return nil, nil, nil, nil, err

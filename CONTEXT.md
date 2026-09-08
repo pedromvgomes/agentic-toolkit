@@ -183,6 +183,20 @@ detecting one is language knowledge that has to be tested somewhere other than a
 YAML. A repo names paths instead.
 _Avoid_: heuristic, marker, flag
 
+**Exclusion**:
+A changed file no **Reviewer** is shown, and which counts toward nothing a rule measures. Most
+are mechanical — the file changed, but nobody wrote the change: a lockfile, a vendored tree, a
+generated file, a binary, a pure rename, a symlink. That vocabulary is closed and ships with
+the binary, for the reason **Signal**'s is.
+
+A repo adds its own as globs, for the one thing detection cannot reach: source a person wrote
+that is not worth a review's budget. It only ever removes files, which is the opposite
+direction from an **Escalation**, so it is declared in the **Review manifest** rather than
+given on a command line — committed where anyone can read it, and read from the base ref so a
+branch cannot exclude itself. A repo's own reason is reported ahead of a mechanical one,
+because only it points at a line somebody can edit.
+_Avoid_: ignore, skip, filter, exemption
+
 **Finding**:
 One issue a **Reviewer** reports: a file, a line range, a severity, and a body. The unit
 **Judge**ment is applied to and the unit that becomes an inline comment.
@@ -392,6 +406,13 @@ _Avoid_: panels.json, roster file, review config
 ## Flagged ambiguities
 **"Marker"** — the bare noun is a **Signal** synonym to avoid; the HTML comment that carries a
 **Fingerprint** is a **Fingerprint marker**, always both words.
+
+**"Exclusion" vs "Suppression"** — both withhold, and they withhold different things at
+different ends of a run. An **Exclusion** is about a *file*, decided before any reviewer runs:
+the file is never shown, so no **Finding** about it exists. A **Suppression** is about a
+*finding* that was made, withheld from a **Review** because a **Comment thread** already
+carries its **Fingerprint**. An excluded file produces nothing to suppress, and a suppressed
+finding came from a file that was reviewed.
 
 **"False positive" vs "Suppression"** — both withhold something, and they are opposite acts.
 **Suppression** is `agtk`'s and mechanical: a **Finding** is not posted again because a thread

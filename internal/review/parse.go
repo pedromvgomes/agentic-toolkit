@@ -161,6 +161,29 @@ func (m *Manifest) validate(filePath string) error {
 		}
 	}
 
+	for i, pattern := range m.Exclude {
+		field := fmt.Sprintf("exclude[%d]", i)
+		switch {
+		case strings.TrimSpace(pattern) == "":
+			return fieldErr(filePath, field, ErrMissingRequired,
+				"an exclusion names a path glob; an empty one matches nothing and reads as a rule")
+		case strings.HasPrefix(pattern, "/"):
+			// git names paths from the repository root with no leading
+			// separator, so this pattern can never match. A rule that silently
+			// matches nothing is worse than no rule: the repo believes a path
+			// is excluded and every review reads it.
+			return fieldErr(filePath, field, ErrUnknownName,
+				"%q starts with %q and paths are named from the repository root without one, so it would match nothing; write %q",
+				pattern, "/", strings.TrimPrefix(pattern, "/"))
+		case pattern == "**" || pattern == "*":
+			// Excluding everything empties the review, and a review that found
+			// nothing reads exactly like a review of nothing — which is what
+			// unblocks approval.
+			return fieldErr(filePath, field, ErrUnknownName,
+				"%q excludes every file, which produces an empty review rather than a clean one; name the paths to skip", pattern)
+		}
+	}
+
 	// A floor is refused rather than defaulted when it is not a rung. A word
 	// off the ladder ranks below every severity, so an unchecked one would
 	// oblige nothing and grant approval over every finding on the pull

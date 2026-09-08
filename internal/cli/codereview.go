@@ -201,9 +201,10 @@ func runCodeReviewExplain(cmd *cobra.Command, env *Env, target reviewTarget, asJ
 	}
 
 	profile, err := review.BuildProfile(review.ProfileOptions{
-		Dir:  root,
-		Base: mergeBase,
-		Head: target.head,
+		Dir:     root,
+		Base:    mergeBase,
+		Head:    target.head,
+		Exclude: m.Exclude,
 	})
 	if err != nil {
 		return err
@@ -242,9 +243,10 @@ func explainPullRequest(cmd *cobra.Command, env *Env, target reviewTarget, asJSO
 	}
 
 	profile, err := review.BuildProfile(review.ProfileOptions{
-		Dir:  root,
-		Base: t.mergeBase,
-		Head: t.pr.HeadSHA,
+		Dir:     root,
+		Base:    t.mergeBase,
+		Head:    t.pr.HeadSHA,
+		Exclude: m.Exclude,
 	})
 	if err != nil {
 		return err
