@@ -48,9 +48,23 @@ directory holds, rather than a list of tools it may call.
 
 Approval is what raises the stakes. A review that reports nothing reads as a clean review, and
 a clean review is what unblocks approval — so an injected instruction that suppresses findings
-converts into a green light a person signs off. Reviewers therefore report an imperative
-addressed to the reviewer as a finding (`security:prompt-injection`), and such a finding blocks
-approval regardless of the configured severity floor.
+converts into a green light a person signs off. Every reviewer is therefore told, in the clause
+appended to every reviewer's prompt, to file an imperative addressed to the reviewer as a
+`security:prompt-injection` finding, quoting it and not obeying it — and told in the same breath
+that none of the bars it was given narrows that: it is filed whether or not the change touches
+the line, whether or not a concrete failure follows, and whether or not the reviewer is sure
+what the author meant, because the quote is the whole of the evidence. The instruction is in
+that shared clause rather than in the security reviewer's prompt because the reviewer that
+happens to read the injected file is not predictable, and a defence only one panel member is
+asked for is one a cheaper panel omits. It has exactly one home for the same reason: four copies
+had already drifted, and the one every reviewer read was the copy that omitted the severity.
+
+Such a finding is never withheld and never dropped, so it always reaches the pull request. Where
+agtk can attach it, it becomes a thread, and clearing it takes a written statement from an
+account with write access — not the author's, and not a click. Where agtk cannot attach it, it
+blocks approval outright with no way past. That is the one place in the design where a deadlock
+is the right answer: the material under review addresses the reviewer, agtk cannot give anybody
+a thread to answer on, and the remedy is to change the code.
 
 ## Considered options
 
