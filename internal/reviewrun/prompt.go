@@ -138,10 +138,10 @@ func readConventions(dir, baseRef string, names []string, nominated bool) ([]Con
 
 // Material is everything captured once and injected into every prompt.
 //
-// Captured once for the reason the plan gives: no reviewer re-derives the
-// diff, and every reviewer is held against exactly the same rules. Two
-// reviewers that each ran their own `git diff` would be reviewing two
-// different changes whenever the tree moved underneath them.
+// Captured once so that no reviewer re-derives the diff, and every reviewer is
+// held against exactly the same rules. Two reviewers that each ran their own
+// `git diff` would be reviewing two different changes whenever the tree moved
+// underneath them.
 type Material struct {
 	// ChangedFiles is the reviewable file list, as the profile reports it.
 	ChangedFiles []string

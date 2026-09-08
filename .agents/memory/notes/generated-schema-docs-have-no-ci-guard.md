@@ -4,13 +4,13 @@ kind: gotcha
 description: SCHEMA.md and CONFIG-SCHEMA.md are generated but nothing verifies them, so they drift silently.
 anchors:
   - path: tools/schemagen/main.go
-    blob: 2f9ab4c334c5
+    blob: 33d0e62defbd
   - path: .github/workflows/*.yml
     matches:
       - path: .github/workflows/ci-build.yml
         blob: 6c4ccc31ed9b
       - path: .github/workflows/ci-orchestration.yml
-        blob: aac1a99fde15
+        blob: dc1cb6c652e4
       - path: .github/workflows/ci-preflight.yml
         blob: f01800fcff31
       - path: .github/workflows/ci-test.yml
@@ -25,8 +25,10 @@ confidence: verified
 ---
 
 `definitions/SCHEMA.md` and `definitions/CONFIG-SCHEMA.md` are produced by
-`tools/schemagen` from the structs in `internal/{definitions,stack,lockfile}` via
-`go generate ./...` (the directive lives at `internal/stack/types.go:35`).
+`tools/schemagen` from the structs in `internal/{definitions,stack,lockfile,review}` via
+`go generate ./...` (the directives live at `internal/stack/types.go:35` and
+`internal/definitions/types.go:7`) — and only from the structs it was told about by name, see
+[[schemagen-documents-only-hand-named-types]].
 
 No workflow runs or checks it. Both files had already drifted before anyone noticed: the
 skill struct gained `argument_hint` and `disable_model_invocation` without a regeneration,
