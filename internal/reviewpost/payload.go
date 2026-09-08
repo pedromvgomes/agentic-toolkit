@@ -16,21 +16,18 @@ import (
 )
 
 // FingerprintMarkerPrefix opens the HTML comment a posted inline comment
-// carries its fingerprint in. Invisible in rendered markdown, so a later run
-// reads identity back off the pull request rather than re-deriving it.
-const FingerprintMarkerPrefix = "<!-- agtk:finding"
+// carries its fingerprint in.
+//
+// Named here and defined beside the reader of it. Writing the fingerprint
+// marker and reading it back are one format, and a second definition of where
+// the version sits would drift silently: a fingerprint marker that does not
+// parse suppresses nothing, which looks exactly like a pull request carrying
+// nothing to suppress.
+const FingerprintMarkerPrefix = reviewrun.FingerprintMarkerPrefix
 
-// FingerprintMarker renders the marker for one finding.
-//
-// Both words, always: CONTEXT.md lists the bare noun under Signal's `_Avoid_`,
-// and a property of a change that agtk detects and a comment that carries an
-// identity are unrelated things.
-//
-// The version is part of what is written. A change to what is hashed makes
-// every existing marker mismatch, and without a version in the marker that
-// reads as "every finding is new" rather than as "the scheme moved".
+// FingerprintMarker renders the fingerprint marker for one fingerprint.
 func FingerprintMarker(fingerprint string) string {
-	return fmt.Sprintf("%s %s %s -->", FingerprintMarkerPrefix, reviewrun.FingerprintVersion, fingerprint)
+	return reviewrun.FingerprintMarker(fingerprint)
 }
 
 // Placement is what became of each surviving finding when the review was laid

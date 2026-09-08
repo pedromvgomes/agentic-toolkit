@@ -150,6 +150,43 @@ func writeRuns(b *strings.Builder, r *reviewrun.Review) {
 		fmt.Fprintf(b, "Absent from the reviewed copy (%d): a symlink, a submodule or a file too large to read is not code this review looked at.\n\n",
 			len(r.Skipped))
 	}
+	writeThreads(b, r)
+}
+
+// writeThreads states what this pull request already carried and what that
+// withheld.
+//
+// In the body for the reason every other gap is: a review that suppressed
+// nothing and a review whose thread list never arrived post the same comments,
+// and a reader has to be able to tell "there was nothing already said" from
+// "this run could not look".
+func writeThreads(b *strings.Builder, r *reviewrun.Review) {
+	if !r.Threads.Available {
+		// A review of a working tree reads no threads and has none to report.
+		// Only an attempted read carries a reason.
+		if r.Threads.Reason == "" {
+			return
+		}
+		fmt.Fprintf(b, "**The existing comment threads could not be read:** %s\n\n"+
+			"Nothing was withheld on the strength of what this pull request already carries, so this "+
+			"review may repeat a finding that is already on it.\n\n", r.Threads.Reason)
+		return
+	}
+	if n := len(r.Suppressed); n > 0 {
+		fmt.Fprintf(b, "### Already on this pull request (%d)\n\n"+
+			"Not posted again. A finding is withheld only when the code it quotes is byte-identical to "+
+			"one an existing thread quotes, so a fix that changed the code is a new finding rather than "+
+			"a suppressed one.\n\n", n)
+		for _, s := range r.Suppressed {
+			fmt.Fprintf(b, "- `%s` — %s · %s\n", location(s.Finding), s.Finding.Category, s.Reason)
+		}
+		b.WriteString("\n")
+	}
+	if other := r.Threads.AtOtherVersion(); len(other) > 0 {
+		fmt.Fprintf(b, "%d existing thread(s) carry a fingerprint from another scheme version. "+
+			"The hash behind one was taken over different bytes, so it identifies nothing here and a "+
+			"finding matching it is posted again.\n\n", len(other))
+	}
 }
 
 // writeRecord closes with what ran and what it cost.

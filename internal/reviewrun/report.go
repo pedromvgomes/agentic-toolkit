@@ -96,6 +96,13 @@ type Review struct {
 	ReattachedIDs []string
 	// DroppedByValidator counts candidate findings a validator rejected.
 	DroppedByValidator int
+	// Threads is what the pull request already carried, or why that could not
+	// be read. A local review reads none, and says so the same way.
+	Threads Threads
+	// Suppressed are the findings an existing thread already carries, which
+	// are therefore not posted. Kept rather than counted, because a run that
+	// posts nothing has to be able to say what it withheld and why.
+	Suppressed []Suppression
 	// CostUSD is what the whole review spent, and is zero when no provider
 	// reported a cost.
 	CostUSD float64
@@ -191,6 +198,9 @@ func (r *Review) Record() string {
 	}
 	if r.DroppedByValidator > 0 {
 		fmt.Fprintf(&b, ", %d dropped by a validator", r.DroppedByValidator)
+	}
+	if n := len(r.Suppressed); n > 0 {
+		fmt.Fprintf(&b, ", %d already on the pull request", n)
 	}
 	if n := len(r.Conventions); n > 0 {
 		fmt.Fprintf(&b, ", %d convention docs read", n)

@@ -208,7 +208,7 @@ func TestTheEnvelopeNamesItsCommentsAsPendingRatherThanEmpty(t *testing.T) {
 		slug:  mustSlug("acme", "widgets"),
 		pr:    githubapp.PullRequest{Number: 7, HeadSHA: strings.Repeat("2", 40)},
 		added: reviewpost.AddedLines{"a.go": {4: true}},
-	})
+	}, reviewrun.ThreadsRead(nil))
 	out := b.String()
 	for _, want := range []string{"acme/widgets#7", strings.Repeat("2", 40), "COMMENT", "supplied once", "Nothing was spent"} {
 		if !strings.Contains(out, want) {
@@ -290,7 +290,7 @@ func TestAPullRequestReviewReadsItsRulesFromTheBaseRef(t *testing.T) {
 		pr:        githubapp.PullRequest{Number: 7, BaseRef: "main", HeadSHA: strings.Repeat("2", 40)},
 		mergeBase: strings.Repeat("1", 40),
 	}
-	opts := target.options("/repo", reviewTarget{pr: 7, panel: "deep"}, runFlags{})
+	opts := target.options("/repo", reviewTarget{pr: 7, panel: "deep"}, runFlags{}, reviewrun.Threads{})
 	if !opts.Context.Posts() {
 		t.Error("a pull request review does not run in a context that posts, so its manifest would come from the branch under review")
 	}
@@ -349,12 +349,41 @@ type countingDoer struct {
 }
 
 func (d *countingDoer) Do(req *http.Request) (*http.Response, error) {
-	// The installation-token mint is a POST that creates nothing on the
-	// repository; every other write is one a preview must not make.
-	if req.Method != http.MethodGet && !strings.HasSuffix(req.URL.Path, "/access_tokens") {
+	// A read is not always a GET. The installation-token mint creates nothing
+	// on the repository, and every GraphQL query is a POST — so the method
+	// alone would count reading the existing threads as changing something.
+	// A GraphQL mutation is still a write, and is recognised as one rather
+	// than exempted along with the queries.
+	switch {
+	case req.Method == http.MethodGet:
+	case strings.HasSuffix(req.URL.Path, "/access_tokens"):
+	case req.URL.Path == "/graphql" && !graphQLMutation(req):
+	default:
 		d.writes++
 	}
 	return d.inner.Do(req)
+}
+
+// graphQLMutation reports whether a GraphQL request asks to change something.
+//
+// The body is put back, because reading it here is an inspection and the
+// request still has to be sent.
+func graphQLMutation(req *http.Request) bool {
+	if req.Body == nil {
+		return false
+	}
+	raw, err := io.ReadAll(req.Body)
+	if err != nil {
+		return true
+	}
+	req.Body = io.NopCloser(bytes.NewReader(raw))
+	var payload struct {
+		Query string `json:"query"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return true
+	}
+	return strings.HasPrefix(strings.TrimSpace(payload.Query), "mutation")
 }
 
 // A review of a pull request always runs in the context that posts, which is

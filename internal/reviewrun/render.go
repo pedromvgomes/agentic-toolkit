@@ -104,6 +104,39 @@ func renderRuns(w io.Writer, r *Review) {
 		}
 		fmt.Fprintln(w)
 	}
+	renderThreads(w, r)
+}
+
+// renderThreads says what the pull request already carried and what that
+// withheld.
+//
+// A review that found nothing already said and a review whose thread list
+// never arrived print the same tables, and they mean opposite things: the
+// first checked, the second does not know. A thread read that failed is
+// therefore stated, because "nothing was suppressed" is the output of both.
+func renderThreads(w io.Writer, r *Review) {
+	if !r.Threads.Available {
+		// A review of a working tree reads no threads and has none to report:
+		// there is no pull request holding any. Only a read that was attempted
+		// and failed carries a reason.
+		if r.Threads.Reason == "" {
+			return
+		}
+		fmt.Fprintf(w, "Could not read the existing threads on this pull request: %s\n", r.Threads.Reason)
+		fmt.Fprintf(w, "Nothing was withheld, so this review may repeat what the pull request already carries.\n\n")
+		return
+	}
+	if n := len(r.Suppressed); n > 0 {
+		fmt.Fprintf(w, "Already on the pull request (%d), so not posted again:\n", n)
+		for _, s := range r.Suppressed {
+			fmt.Fprintf(w, "  - %s  %s — %s\n", location(s.Finding), s.Finding.Category, s.Reason)
+		}
+		fmt.Fprintln(w)
+	}
+	if other := r.Threads.AtOtherVersion(); len(other) > 0 {
+		fmt.Fprintf(w, "%d existing thread(s) carry a fingerprint from another scheme version, which identifies nothing this run computes; a finding matching one is posted again.\n\n",
+			len(other))
+	}
 }
 
 // findingsAt returns the findings carrying one severity, in report order.

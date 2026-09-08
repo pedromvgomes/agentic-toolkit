@@ -58,6 +58,10 @@ type Options struct {
 	MaxParallel int
 	// Binary pins the executable instead of resolving a provider on PATH.
 	Binary string
+	// Threads are the comment threads the pull request already carries, or
+	// why they could not be read. The zero value is a list that was never
+	// read, which suppresses nothing and says so.
+	Threads Threads
 	// Preview asks Prepare to classify the reviewed tree without writing it.
 	// Only a caller that will start no run may set it: the paths it reports
 	// are real, and nothing is behind them.
@@ -195,7 +199,7 @@ func Prepare(opts Options) (*Plan, *review.Manifest, *review.Selection, *Root, e
 		Role:     RoleJudge,
 		Provider: m.Judge.Provider,
 		Model:    m.Judge.Model,
-		Prompt:   material.composeWith(judgeBody, "\n---\n\n# The candidate findings\n\n(supplied once the reviewers have answered)\n", judgeInjectionClause),
+		Prompt:   material.composeWith(judgeBody, judgeTail("(supplied once the reviewers have answered)\n", opts.Threads.Open()), judgeInjectionClause),
 	})
 	return plan, m, sel, root, nil
 }
@@ -224,6 +228,11 @@ func Run(ctx context.Context, opts Options) (*Review, error) {
 		Skipped:            root.Skipped,
 		Conventions:        plan.Material.ConventionPaths(),
 		MissingConventions: plan.MissingConventions,
+		// What the pull request already carried is recorded whether or not a
+		// panel went on to answer. A read that failed is a gap in this review
+		// either way, and a review that reached no verdict is the last one
+		// that should also lose the sentence saying so.
+		Threads: opts.Threads,
 	}
 
 	candidates, reports := runReviewers(ctx, opts, inv, sched, m, plan)
@@ -241,9 +250,34 @@ func Run(ctx context.Context, opts Options) (*Review, error) {
 		return out, nil
 	}
 
+	decide(ctx, opts, inv, sched, m, sel, plan.Material, candidates, out)
+	return out, nil
+}
+
+// decide carries what the reviewers found through suppression, validation and
+// the judge, and records what became of each.
+//
+// Its own function rather than the rest of Run, so the stages between a
+// reviewer's answer and a verdict have one definition. Run adds the
+// repository, the manifest and the review root around it; a caller that
+// re-implemented the stages would be asserting against its own copy of the
+// pipeline rather than against the pipeline.
+func decide(ctx context.Context, opts Options, inv invoker, sched *scheduler,
+	m *review.Manifest, sel *review.Selection, material Material, candidates []Finding, out *Review) {
+
+	// Suppression runs before the validators, so a finding the pull request
+	// already carries costs neither a validator run nor a place in the judge's
+	// prompt. It is also what makes the judge unable to resurrect one: a
+	// withheld finding is never issued an id, and applyJudgement discards
+	// every id agtk did not issue. Suppression narrows, the judge narrows
+	// further, and nothing widens.
+	candidates, suppressed := opts.Threads.suppress(candidates)
+	out.Suppressed = suppressed
+	candidates = assignIDs(candidates)
+
 	if sel.Validates && m.Validator != nil {
 		var validatorReports []RunReport
-		candidates, validatorReports = runValidators(ctx, opts, inv, sched, *m.Validator, plan.Material, candidates)
+		candidates, validatorReports = runValidators(ctx, opts, inv, sched, *m.Validator, material, candidates)
 		out.Reports = append(out.Reports, validatorReports...)
 	}
 
@@ -260,15 +294,15 @@ func Run(ctx context.Context, opts Options) (*Review, error) {
 		// A manifest cannot omit the judge — the parser refuses one that does
 		// — so reaching here means the manifest was built in code and is
 		// inconsistent. Reported as no verdict rather than by presenting the
-		// candidate finding set as one: nothing reconciled it, and an unreconciled
-		// pile that looks like a verdict is the failure the judge exists to
-		// prevent.
+		// candidate finding set as one: nothing reconciled it, and an
+		// unreconciled pile that looks like a verdict is the failure the judge
+		// exists to prevent.
 		out.Reason = "this manifest declares no judge, so nothing decided which findings survive"
 		out.CostUSD = totalCost(out.Reports)
-		return out, nil
+		return
 	}
 
-	judged, good, discarded, reattached, judgeReport := runJudge(ctx, opts, inv, sched, *m.Judge, plan.Material, kept)
+	judged, good, discarded, reattached, judgeReport := runJudge(ctx, opts, inv, sched, *m.Judge, material, kept)
 	out.Reports = append(out.Reports, judgeReport)
 	out.DiscardedIDs = discarded
 	out.ReattachedIDs = reattached
@@ -277,17 +311,16 @@ func Run(ctx context.Context, opts Options) (*Review, error) {
 	if !judgeReport.Report.Available {
 		// A failing judge makes the whole review unavailable, where a failing
 		// reviewer only makes it partial. Nothing decided what survives, and
-		// printing the raw candidate finding set as though it had would present an
-		// unreconciled pile as a verdict.
+		// printing the raw candidate finding set as though it had would present
+		// an unreconciled pile as a verdict.
 		out.Reason = judgeReport.Report.Reason
-		return out, nil
+		return
 	}
 
 	out.Findings = judged
 	out.Good = good
 	sortFindings(out.Findings)
 	out.Available = true
-	return out, nil
 }
 
 // anyReviewerAnswered reports whether at least one reviewer produced findings
@@ -340,7 +373,7 @@ func runReviewers(ctx context.Context, opts Options, inv invoker, sched *schedul
 			instances = append(instances, findings)
 		}
 	}
-	return assignIDs(corroborate(instances)), reports
+	return corroborate(instances), reports
 }
 
 // reviewerJob makes one reviewer instance's run.
@@ -519,7 +552,7 @@ func runJudge(ctx context.Context, opts Options, inv invoker, sched *scheduler,
 	}
 
 	prompt := material.composeWith(body,
-		"\n---\n\n# The candidate findings\n\n"+renderCandidateFindings(candidates), judgeInjectionClause)
+		judgeTail(renderCandidateFindings(candidates), opts.Threads.Open()), judgeInjectionClause)
 	req, err := request(judge, prompt, judgeSchema, material.Root, timeoutOf(opts))
 	if err != nil {
 		out.Report = Unavailable("the judge run could not be prepared: %v", err)
