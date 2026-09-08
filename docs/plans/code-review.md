@@ -110,7 +110,10 @@ Every rule is evaluated and the highest target wins, so rule order carries no me
 `--panel deep` overrides both. `agtk code-review explain` prints the change's profile, the
 default, every rule that fired, and the panel that resulted — and spends nothing, so it is
 the answer to "why is this review deeper than I expected" available before paying for the
-review that would tell you.
+review that would tell you. `agtk code-review explain --json` carries the same decision
+structured, and `agtk code-review panels` lists every panel the governing manifest declares,
+with what each is for and what it spends — the names are the manifest's own, so a caller
+offering a choice of depth reads them there rather than knowing them.
 
 "Highest" is what a panel spends: its reviewer count times its quorum. Depth needs a total
 order over panels and panels carry only names, so the order is the thing "deeper" already
