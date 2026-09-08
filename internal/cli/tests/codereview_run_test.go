@@ -177,7 +177,7 @@ func TestCodeReviewRunIsListedOnTheCommandGroup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"run", "explain", "signals"} {
+	for _, want := range []string{"run", "explain", "panels", "signals"} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("the command group does not list %q:\n%s", want, stdout)
 		}

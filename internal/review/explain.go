@@ -29,7 +29,7 @@ func (s *Selection) Explain(m *Manifest, p *Profile) string {
 	}
 
 	fmt.Fprintf(&b, "context: %s\n", s.Context)
-	fmt.Fprintf(&b, "default: %s%s\n", s.Default, panelShape(m, s.Default))
+	fmt.Fprintf(&b, "default: %s%s\n", s.Default, PanelShape(m, s.Default))
 
 	if len(s.Fired) == 0 {
 		fmt.Fprintf(&b, "fired:   nothing\n")
@@ -52,9 +52,9 @@ func (s *Selection) Explain(m *Manifest, p *Profile) string {
 
 	if s.Overridden {
 		fmt.Fprintf(&b, "panel:   %s%s (named on the command line; the rules above did not decide)\n",
-			s.Panel, panelShape(m, s.Panel))
+			s.Panel, PanelShape(m, s.Panel))
 	} else {
-		fmt.Fprintf(&b, "panel:   %s%s\n", s.Panel, panelShape(m, s.Panel))
+		fmt.Fprintf(&b, "panel:   %s%s\n", s.Panel, PanelShape(m, s.Panel))
 	}
 	// The panel's own description, where its author wrote one. The shape above
 	// says what the panel spends; this is the only line that says what it is
@@ -64,11 +64,7 @@ func (s *Selection) Explain(m *Manifest, p *Profile) string {
 	}
 
 	if s.Validates {
-		why := "the panel asks for it"
-		if s.Context.Posts() {
-			why = "the " + string(s.Context) + " context posts, and a context that posts always validates"
-		}
-		fmt.Fprintf(&b, "validate: yes — %s\n", why)
+		fmt.Fprintf(&b, "validate: yes — %s\n", s.ValidationReason())
 	} else {
 		fmt.Fprintf(&b, "validate: no\n")
 	}
@@ -82,9 +78,24 @@ func (s *Selection) Explain(m *Manifest, p *Profile) string {
 	return b.String()
 }
 
-// panelShape renders what a panel costs, so the ordering escalations use is
-// visible rather than something a reader has to infer from the names.
-func panelShape(m *Manifest, name string) string {
+// ValidationReason says why findings go to the validator, or "" when they do
+// not. A context that posts forces validation whatever the panel says, and
+// the reason names which of the two asked.
+func (s *Selection) ValidationReason() string {
+	if !s.Validates {
+		return ""
+	}
+	if s.Context.Posts() {
+		return "the " + string(s.Context) + " context posts, and a context that posts always validates"
+	}
+	return "the panel asks for it"
+}
+
+// PanelShape renders what a panel costs, so the ordering escalations use is
+// visible rather than something a reader has to infer from the names. One
+// rendering serves every place a panel is listed, so a reader meets one shape
+// for one panel wherever they see it.
+func PanelShape(m *Manifest, name string) string {
 	panel, ok := m.Panels[name]
 	if !ok {
 		return ""
