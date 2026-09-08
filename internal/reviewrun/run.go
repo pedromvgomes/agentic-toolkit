@@ -109,9 +109,10 @@ func Prepare(opts Options) (*Plan, *review.Manifest, *review.Selection, *Root, e
 	}
 
 	profile, err := review.BuildProfile(review.ProfileOptions{
-		Dir:  opts.Dir,
-		Base: opts.Base,
-		Head: opts.Head,
+		Dir:     opts.Dir,
+		Base:    opts.Base,
+		Head:    opts.Head,
+		Exclude: m.Exclude,
 	})
 	if err != nil {
 		return nil, nil, nil, nil, err
@@ -165,7 +166,8 @@ func Prepare(opts Options) (*Plan, *review.Manifest, *review.Selection, *Root, e
 		MissingConventions: missing,
 	}
 	panel := m.Panels[sel.Panel]
-	judgeBody, err := runnerBody(opts.Dir, opts.Base, *m.Judge)
+	judge := m.EffectiveJudge(sel.Panel)
+	judgeBody, err := runnerBody(opts.Dir, opts.Base, *judge)
 	if err != nil {
 		_ = root.Close()
 		return nil, nil, nil, nil, err
@@ -197,8 +199,8 @@ func Prepare(opts Options) (*Plan, *review.Manifest, *review.Selection, *Root, e
 	plan.Runs = append(plan.Runs, PlannedRun{
 		Label:    "judge",
 		Role:     RoleJudge,
-		Provider: m.Judge.Provider,
-		Model:    m.Judge.Model,
+		Provider: judge.Provider,
+		Model:    judge.Model,
 		Prompt:   material.composeWith(judgeBody, judgeTail("(supplied once the reviewers have answered)\n", opts.Threads.Foldable()), judgeInjectionClause),
 	})
 	return plan, m, sel, root, nil
@@ -275,9 +277,9 @@ func decide(ctx context.Context, opts Options, inv invoker, sched *scheduler,
 	out.Suppressed = suppressed
 	candidates = assignIDs(candidates)
 
-	if sel.Validates && m.Validator != nil {
+	if validator := m.EffectiveValidator(sel.Panel); sel.Validates && validator != nil {
 		var validatorReports []RunReport
-		candidates, validatorReports = runValidators(ctx, opts, inv, sched, *m.Validator, material, candidates)
+		candidates, validatorReports = runValidators(ctx, opts, inv, sched, *validator, material, candidates)
 		out.Reports = append(out.Reports, validatorReports...)
 	}
 
@@ -290,7 +292,8 @@ func decide(ctx context.Context, opts Options, inv invoker, sched *scheduler,
 		}
 	}
 
-	if m.Judge == nil {
+	judge := m.EffectiveJudge(sel.Panel)
+	if judge == nil {
 		// A manifest cannot omit the judge — the parser refuses one that does
 		// — so reaching here means the manifest was built in code and is
 		// inconsistent. Reported as no verdict rather than by presenting the
@@ -302,7 +305,7 @@ func decide(ctx context.Context, opts Options, inv invoker, sched *scheduler,
 		return
 	}
 
-	judged, good, discarded, reattached, judgeReport := runJudge(ctx, opts, inv, sched, *m.Judge, material, kept)
+	judged, good, discarded, reattached, judgeReport := runJudge(ctx, opts, inv, sched, *judge, material, kept)
 	out.Reports = append(out.Reports, judgeReport)
 	out.DiscardedIDs = discarded
 	out.ReattachedIDs = reattached

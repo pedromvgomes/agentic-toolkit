@@ -3,8 +3,7 @@ skills:
   - agents-md-creator
   - challenge
   - continuation-session
-  - deep-code-review
-  - pr-code-review
+  - panel-code-review
   - pr-review-resolver
   - tdd-bugfix
   - wrap-session

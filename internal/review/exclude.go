@@ -8,14 +8,22 @@ import (
 // Exclusion is why a changed file is not reviewable. The empty value means it
 // is.
 //
-// Every exclusion here is mechanical: the file changed, but nobody wrote the
-// change. Sizing a review on bulk nobody authored produces a deep panel for a
+// All but one are mechanical: the file changed, but nobody wrote the change.
+// Sizing a review on bulk nobody authored produces a deep panel for a
 // dependency bump, and the panel then spends its budget reading a lockfile.
+//
+// ExcludedByManifest is the exception, and has its own value for exactly that
+// reason. A repo excluding a hand-written fixture is making a different claim
+// from "a generator wrote this", and a report that borrowed one of the
+// mechanical reasons would state something false about a file somebody wrote.
 type Exclusion string
 
 const (
 	// NotExcluded is a file that counts.
 	NotExcluded Exclusion = ""
+	// ExcludedByManifest is a path the repo's own manifest names. The only
+	// reason here that a person chose rather than a tool detected.
+	ExcludedByManifest Exclusion = "excluded by the manifest"
 	// ExcludedLockfile is a dependency lock: authored by a resolver.
 	ExcludedLockfile Exclusion = "lockfile"
 	// ExcludedGenerated is output of a generator, by content marker, by name,
@@ -95,12 +103,23 @@ var generatedSuffixes = []string{
 
 // Classify reports why a changed file is not reviewable, or NotExcluded.
 //
+// exclude are the globs the repo's manifest names. They are consulted first
+// because they are the repo saying so outright, and because the reason
+// reported has to be the one the reader can act on: a path the manifest names
+// and a generator also wrote is excluded either way, and only one of the two
+// reasons points at a line somebody can edit.
+//
 // attrGenerated names the paths the repo's own .gitattributes marks as
 // generated or as not-diffable. The repo is a better authority on its own
-// generated trees than any table here, so it is consulted first — but only as
+// generated trees than any table here, so it is consulted next — but only as
 // an addition, because the many repos that set no attributes at all would
 // otherwise get no exclusions whatsoever.
-func Classify(f DiffFile, attrGenerated map[string]bool) Exclusion {
+func Classify(f DiffFile, attrGenerated map[string]bool, exclude []string) Exclusion {
+	for _, pattern := range exclude {
+		if MatchGlob(pattern, f.Path) {
+			return ExcludedByManifest
+		}
+	}
 	if attrGenerated[f.Path] {
 		return ExcludedGenerated
 	}

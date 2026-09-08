@@ -150,6 +150,11 @@ type ProfileOptions struct {
 	// over. The count is a blast-radius estimate, and the widest few symbols
 	// carry it.
 	SymbolBudget int
+	// Exclude are the manifest's exclusion globs. Passed in rather than read
+	// here, because which manifest governs is a question about the context a
+	// review runs in, and a profile that answered it a second way would size
+	// the change against rules the review was not judged by.
+	Exclude []string
 }
 
 // Default budgets. Both bound work that grows with the size of a change, on a
@@ -209,7 +214,7 @@ func BuildProfile(opts ProfileOptions) (*Profile, error) {
 	// to read it.
 	var needHead []string
 	for _, d := range diff {
-		if Classify(d, attrGenerated) == NotExcluded {
+		if Classify(d, attrGenerated, opts.Exclude) == NotExcluded {
 			needHead = append(needHead, d.Path)
 		}
 	}
@@ -218,7 +223,7 @@ func BuildProfile(opts ProfileOptions) (*Profile, error) {
 	p := &Profile{}
 	for _, d := range diff {
 		f := ChangedFile{DiffFile: d, Language: LanguageOf(d.Path)}
-		f.Excluded = Classify(d, attrGenerated)
+		f.Excluded = Classify(d, attrGenerated, opts.Exclude)
 		if f.Excluded == NotExcluded && HasGeneratedMarker(heads[d.Path]) {
 			f.Excluded = ExcludedGenerated
 		}

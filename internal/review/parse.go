@@ -114,9 +114,19 @@ func (m *Manifest) validate(filePath string) error {
 			return fieldErr(filePath, field+".quorum", ErrInvalidPanel,
 				"a quorum of %d runs nothing; omit it for one instance of each reviewer", panel.Quorum)
 		}
-		if panel.Validate != nil && *panel.Validate && m.Validator == nil {
+		if panel.Judge != nil {
+			if err := panel.Judge.validate(filePath, field+".judge"); err != nil {
+				return err
+			}
+		}
+		if panel.Validator != nil {
+			if err := panel.Validator.validate(filePath, field+".validator"); err != nil {
+				return err
+			}
+		}
+		if panel.Validate != nil && *panel.Validate && m.EffectiveValidator(name) == nil {
 			return fieldErr(filePath, field+".validate", ErrMissingRequired,
-				"this panel validates, but the manifest declares no validator")
+				"this panel validates, but neither it nor the manifest declares a validator")
 		}
 	}
 
@@ -135,9 +145,52 @@ func (m *Manifest) validate(filePath string) error {
 		// A context that posts always validates, so it needs a validator
 		// whatever its panels say. A false finding on a PR is published and
 		// blocks approval, rather than merely cluttering a terminal.
-		if ctx.Posts() && m.Validator == nil {
-			return fieldErr(filePath, "validator", ErrMissingRequired,
-				"the %s context posts, and a context that posts always validates, so a validator is required", ctx)
+		//
+		// Every panel is checked, not the context's default alone: an
+		// escalation raises to another panel and --panel names any of them, so
+		// a panel that resolves no validator is a review that cannot post,
+		// discovered when the rule that raised to it fires rather than now.
+		if ctx.Posts() {
+			for _, panelName := range sortedMapKeys(m.Panels) {
+				if m.EffectiveValidator(panelName) == nil {
+					return fieldErr(filePath, "panels."+panelName+".validator", ErrMissingRequired,
+						"the %s context posts, and a context that posts always validates, so panel %q needs a validator: declare one on the panel or on the manifest",
+						ctx, panelName)
+				}
+			}
+		}
+	}
+
+	// An exclusion is checked for the two ways it goes silently wrong, which
+	// are opposites: a pattern that can never match leaves a tree reviewed
+	// that the repo believes is skipped, and one that matches everything
+	// empties the review. Both are invisible in the output — a review of
+	// nothing reports exactly what a clean review reports.
+	for i, pattern := range m.Exclude {
+		field := fmt.Sprintf("exclude[%d]", i)
+		switch {
+		case strings.TrimSpace(pattern) == "":
+			return fieldErr(filePath, field, ErrMissingRequired,
+				"an exclusion names a path glob; an empty one matches nothing and reads as a rule")
+		case strings.HasSuffix(pattern, "/"):
+			// The .gitignore habit. A trailing separator makes an empty final
+			// segment, which no path segment equals, so the pattern matches
+			// nothing at all — while reading exactly like the rule the author
+			// meant to write.
+			return fieldErr(filePath, field, ErrUnknownName,
+				"%q ends in %q, which matches nothing: a path is a directory's contents, not the directory. Write %q to exclude the tree",
+				pattern, "/", strings.TrimSuffix(pattern, "/")+"/**")
+		case hasEmptySegment(pattern):
+			// Covers a leading separator too: git names paths from the
+			// repository root without one, so the pattern could never match.
+			return fieldErr(filePath, field, ErrUnknownName,
+				"%q has an empty path segment, so it would match nothing; paths are named from the repository root, separated by single slashes", pattern)
+		case matchesEveryPath(pattern):
+			// Excluding everything empties the review, and a review that found
+			// nothing reads exactly like a review of nothing — which is what
+			// unblocks approval.
+			return fieldErr(filePath, field, ErrUnknownName,
+				"%q excludes every file, which produces an empty review rather than a clean one; name the paths to skip", pattern)
 		}
 	}
 

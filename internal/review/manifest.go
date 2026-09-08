@@ -37,6 +37,23 @@ type Manifest struct {
 	// appending the defaults would hold it against documents it did not name.
 	Conventions []string `yaml:"conventions,omitempty" agtkdoc:"Documents holding this repo's own written rules, as paths from the repo root, read at the base ref and injected raw into every reviewer's prompt. Replaces the default list rather than adding to it. Absent means the defaults: CLAUDE.md, AGENTS.md, .claude/CLAUDE.md, CONTEXT.md, CONTRIBUTING.md, docs/ARCHITECTURE.md, docs/CODE_STANDARDS.md."`
 
+	// Exclude names paths this repo does not want reviewed, as globs.
+	//
+	// It says what only the repo can say. The built-in exclusions recognise
+	// work nobody authored — a lockfile, a vendored tree, a file its generator
+	// marked — and that vocabulary is closed for the reason every other one
+	// here is: recognising them is knowledge that has to be tested somewhere
+	// other than a consumer's YAML. A hand-written fixture no reviewer should
+	// spend its budget on looks like ordinary source to all of it, and only
+	// the repo knows otherwise.
+	//
+	// Read from the base ref in a posting context, like every other rule, so a
+	// branch cannot exclude itself from the review that judges it (ADR 0007).
+	// It shrinks a review, which is the opposite direction from an Escalation
+	// — so it is committed where anyone can read it, rather than typed where
+	// the pull request would carry no record of it.
+	Exclude []string `yaml:"exclude,omitempty" agtkdoc:"Paths this repo does not want reviewed, as globs (** spans path segments, * and ? stay within one). Added to the built-in exclusions — lockfiles, vendored trees and generated files are already excluded and need no entry. An excluded file is reported with its reason and reaches no reviewer."`
+
 	// Builtin records that this is the manifest that ships with agtk rather
 	// than one a repo wrote. Not a field a manifest may set: it is a fact
 	// about where the document came from.
@@ -104,6 +121,47 @@ type Panel struct {
 	Reviewers   []string `yaml:"reviewers" agtkdoc:"required;Names from the manifest's reviewers map. A panel that names one this manifest does not declare cannot staff itself, and is refused."`
 	Quorum      int      `yaml:"quorum,omitempty" agtkdoc:"How many independent instances of each reviewer to run. Agreement between them is the confidence signal. Defaults to 1."`
 	Validate    *bool    `yaml:"validate,omitempty" agtkdoc:"Whether findings are put to the validator. Unset leaves it to the context, and a context that posts validates regardless: a false finding on a PR is published and blocks approval."`
+
+	// Judge and Validator override the manifest's own, for reviews this panel
+	// produces.
+	//
+	// A panel is how one context's reviewers are chosen, so it is also where
+	// the run that reconciles them belongs. Without this, a repo reviewing
+	// locally with one provider and its pull requests with another can say so
+	// for its reviewers and not for the judge, and the judge runs in every
+	// review — so the choice would be made once for both contexts by whichever
+	// one was written down.
+	//
+	// An override rather than a requirement: the manifest's own judge is what
+	// a panel that says nothing uses, so declaring these on every panel is
+	// never the price of declaring them on one.
+	Judge     *Runner `yaml:"judge,omitempty"     agtkdoc:"Judge for reviews this panel produces, instead of the manifest's. Unset uses the manifest's."`
+	Validator *Runner `yaml:"validator,omitempty" agtkdoc:"Validator for reviews this panel produces, instead of the manifest's. Unset uses the manifest's."`
+}
+
+// EffectiveJudge is the judge that reconciles a review the named panel
+// produced: the panel's own, or the manifest's.
+//
+// Resolution has one home because the fallback is a rule rather than a
+// convenience. Two callers reading `panel.Judge` and deciding for themselves
+// is two chances to read the manifest's judge where a panel had overridden it,
+// and a review judged by the wrong provider says nothing about it in its
+// output.
+func (m *Manifest) EffectiveJudge(panel string) *Runner {
+	if p, ok := m.Panels[panel]; ok && p.Judge != nil {
+		return p.Judge
+	}
+	return m.Judge
+}
+
+// EffectiveValidator is the validator a review the named panel produced puts
+// its candidate findings to: the panel's own, or the manifest's. Nil when
+// neither declares one.
+func (m *Manifest) EffectiveValidator(panel string) *Runner {
+	if p, ok := m.Panels[panel]; ok && p.Validator != nil {
+		return p.Validator
+	}
+	return m.Validator
 }
 
 // EffectiveQuorum is Quorum, or 1 when the panel does not set one.

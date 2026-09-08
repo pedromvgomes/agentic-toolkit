@@ -97,3 +97,31 @@ func MatchAnyGlob(patterns []string, name string) bool {
 	}
 	return false
 }
+
+// hasEmptySegment reports whether a pattern contains a segment no path segment
+// can equal. A leading, trailing or doubled separator produces one, and a
+// pattern holding one matches nothing while reading like a rule that does.
+func hasEmptySegment(pattern string) bool {
+	for _, seg := range strings.Split(pattern, "/") {
+		if seg == "" {
+			return true
+		}
+	}
+	return false
+}
+
+// matchesEveryPath reports whether a pattern selects by shape alone, matching
+// every path rather than naming any.
+//
+// Every segment being `*` or `**` is the test, rather than a list of the
+// literal patterns that do it: `**`, `**/*`, `*/**` and `**/**` all match every
+// path, and a check written against the spellings would keep admitting the next
+// one somebody writes.
+func matchesEveryPath(pattern string) bool {
+	for _, seg := range strings.Split(pattern, "/") {
+		if seg != "*" && seg != "**" {
+			return false
+		}
+	}
+	return true
+}

@@ -53,6 +53,24 @@ func CheckCapabilities(filePath string, m *Manifest) error {
 			return err
 		}
 	}
+	// A panel's own judge and validator are runs this manifest describes as
+	// much as the top-level ones are, and a capability they cannot express
+	// fails at spawn time — which reads as an outage rather than as a manifest
+	// to fix. Checking only the manifest's would leave exactly the panel that
+	// overrode them unchecked.
+	for _, name := range sortedMapKeys(m.Panels) {
+		panel := m.Panels[name]
+		if panel.Judge != nil {
+			if err := checkRunner(filePath, "panels."+name+".judge", *panel.Judge); err != nil {
+				return err
+			}
+		}
+		if panel.Validator != nil {
+			if err := checkRunner(filePath, "panels."+name+".validator", *panel.Validator); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
 

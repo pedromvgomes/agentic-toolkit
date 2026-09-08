@@ -147,6 +147,13 @@ _Avoid_: run, invocation, job
 A named set of **Reviewer**s, with how many instances of each to run and whether findings are
 validated. One panel runs per review. Which one is a **Context**'s default, possibly raised by
 an **Escalation**.
+
+It may also name the **Judge** and the **Validator** that answer for it, instead of the ones the
+**Review manifest** declares. A panel is how one context's reviewers are chosen, so it is where
+the runs that reconcile them belong: the judge runs in every review, and without this a repo
+reviewing locally with one **Provider** and its pull requests with another could say so for its
+reviewers and not for its judge. Both are overrides — a panel naming neither uses the
+manifest's, so declaring them on one panel is never the price of declaring them on all.
 _Avoid_: profile, preset, tier
 
 **Context**:
@@ -175,6 +182,20 @@ A property of a change that `agtk` detects itself — a touched concern like `au
 detecting one is language knowledge that has to be tested somewhere other than a consumer's
 YAML. A repo names paths instead.
 _Avoid_: heuristic, marker, flag
+
+**Exclusion**:
+A changed file no **Reviewer** is shown, and which counts toward nothing a rule measures. Most
+are mechanical — the file changed, but nobody wrote the change: a lockfile, a vendored tree, a
+generated file, a binary, a pure rename, a symlink. That vocabulary is closed and ships with
+the binary, for the reason **Signal**'s is.
+
+A repo adds its own as globs, for the one thing detection cannot reach: source a person wrote
+that is not worth a review's budget. It only ever removes files, which is the opposite
+direction from an **Escalation**, so it is declared in the **Review manifest** rather than
+given on a command line — committed where anyone can read it, and read from the base ref so a
+branch cannot exclude itself. A repo's own reason is reported ahead of a mechanical one,
+because only it points at a line somebody can edit.
+_Avoid_: ignore, skip, filter, exemption
 
 **Finding**:
 One issue a **Reviewer** reports: a file, a line range, a severity, and a body. The unit
@@ -378,13 +399,20 @@ _Avoid_: summary, header, footer, marker (bare)
 
 **Review manifest**:
 `.agents/code-review/manifest.yaml`: the single declaration of **Reviewer**s, **Panel**s and the
-prompt bodies they use. Read by both engines — the in-session skill and `agtk code-review` — so
-there is one roster and not two.
+prompt bodies they use. Read by `agtk code-review` and by nothing else. A roster a skill also
+carried would be a second one, and the two would disagree the first time either changed.
 _Avoid_: panels.json, roster file, review config
 
 ## Flagged ambiguities
 **"Marker"** — the bare noun is a **Signal** synonym to avoid; the HTML comment that carries a
 **Fingerprint** is a **Fingerprint marker**, always both words.
+
+**"Exclusion" vs "Suppression"** — both withhold, and they withhold different things at
+different ends of a run. An **Exclusion** is about a *file*, decided before any reviewer runs:
+the file is never shown, so no **Finding** about it exists. A **Suppression** is about a
+*finding* that was made, withheld from a **Review** because a **Comment thread** already
+carries its **Fingerprint**. An excluded file produces nothing to suppress, and a suppressed
+finding came from a file that was reviewed.
 
 **"False positive" vs "Suppression"** — both withhold something, and they are opposite acts.
 **Suppression** is `agtk`'s and mechanical: a **Finding** is not posted again because a thread
@@ -396,9 +424,9 @@ finding is posted, stays posted, and is declared not to be a defect. Suppression
 has not yet passed a **Validator**. The memory sense owns the bare noun; in review, say
 "candidate finding" and never "candidate" alone.
 
-**"Panel"** — `deep-code-review` used it for a per-stack group of reviewers *within* one run,
-so a polyglot change had several. A **Panel** here is the entire roster for a run — one runs,
-named by a **Context**'s default and possibly raised by an **Escalation**. The per-stack sense
+**"Panel"** — reads as a per-stack group of reviewers *within* one run, so that a polyglot
+change would have several. A **Panel** is the entire roster for a run, and exactly one runs:
+the one a **Context** defaults to, possibly raised by an **Escalation**. The per-stack sense
 has no name because per-stack partitioning is not built.
 
 **"Review"** — the activity and the artifact. **Review** is the artifact posted to the PR; say

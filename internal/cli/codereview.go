@@ -13,9 +13,15 @@ import (
 
 // `explain`, `panels` and `signals` are deliberately model-free: they read a
 // manifest, profile a change and decide which panel would run, and none of
-// them starts a process. That is what makes `explain` free to run on a hook,
-// and it is checkable — internal/review names the driver in one file, which
-// asserts capabilities and constructs nothing.
+// them starts a model. It is checkable — internal/review names the driver in
+// one file, which asserts capabilities and constructs nothing.
+//
+// Model-free is not the same as offline. `explain --pr` reads the pull request
+// and fetches its head, because base, head and context are what naming a pull
+// request decides, and none of the three is knowable without asking GitHub. So
+// bare `explain` is safe on the path of a hook and `explain --pr` is not: it
+// needs the App registration, and it fails without one before a panel has run
+// rather than after.
 //
 // `run` is the one subcommand that invokes a model, and it reaches one through
 // internal/reviewrun rather than by constructing a driver here.
@@ -150,6 +156,7 @@ func newCodeReviewExplainCmd(env *Env) *cobra.Command {
 	var (
 		target reviewTarget
 		asJSON bool
+		seam   clientSeam
 	)
 
 	cmd := &cobra.Command{
@@ -160,18 +167,32 @@ func newCodeReviewExplainCmd(env *Env) *cobra.Command {
 			"\n" +
 			"Nothing is spent: no model runs and nothing is posted. It is the answer to\n" +
 			"\"why is this review deeper than I expected\", available before paying for\n" +
-			"the review that would tell you.",
+			"the review that would tell you.\n" +
+			"\n" +
+			"--pr answers it for an open pull request, under the rules its base ref\n" +
+			"declares. That reads the pull request and fetches its head, so it needs the\n" +
+			"App registration `code-review initialize` writes; without --pr nothing is\n" +
+			"read but this repository.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runCodeReviewExplain(env, target, asJSON)
+			return runCodeReviewExplain(cmd, env, target, asJSON, seam)
 		},
 	}
 	targetFlags(cmd, &target)
 	cmd.Flags().BoolVar(&asJSON, "json", false, "emit the decision as JSON")
+	cmd.Flags().IntVar(&target.pr, "pr", 0,
+		"explain the review this open pull request would get")
 	return cmd
 }
 
-func runCodeReviewExplain(env *Env, target reviewTarget, asJSON bool) error {
+func runCodeReviewExplain(cmd *cobra.Command, env *Env, target reviewTarget, asJSON bool, seam clientSeam) error {
+	// Named rather than non-zero: `--pr 0` is a pull request nobody has, and
+	// routing it here by its value would explain the working tree instead —
+	// silently, and accepting the --base and --head that the pull-request path
+	// refuses.
+	if namedPullRequest(cmd, target) {
+		return explainPullRequest(cmd, env, target, asJSON, seam)
+	}
 	ctx := review.Context(target.context)
 	root, base, mergeBase, err := resolveTarget(env, target)
 	if err != nil {
@@ -184,9 +205,10 @@ func runCodeReviewExplain(env *Env, target reviewTarget, asJSON bool) error {
 	}
 
 	profile, err := review.BuildProfile(review.ProfileOptions{
-		Dir:  root,
-		Base: mergeBase,
-		Head: target.head,
+		Dir:     root,
+		Base:    mergeBase,
+		Head:    target.head,
+		Exclude: m.Exclude,
 	})
 	if err != nil {
 		return err
@@ -197,11 +219,59 @@ func runCodeReviewExplain(env *Env, target reviewTarget, asJSON bool) error {
 		return err
 	}
 
+	return writeExplain(env, asJSON, label, rangeLabel(base, target.head), m, profile, sel)
+}
+
+// explainPullRequest reports the panel an open pull request would get.
+//
+// It resolves the pull request exactly as `run --pr` does rather than deriving
+// the range from flags, because the point of the subcommand is to answer for
+// the review that would actually happen. A base and head worked out any other
+// way would explain a different change, and would do it convincingly.
+func explainPullRequest(cmd *cobra.Command, env *Env, target reviewTarget, asJSON bool, seam clientSeam) error {
+	if err := checkPullRequestFlags(target, cmd.Flags().Changed("context")); err != nil {
+		return err
+	}
+	root, err := review.RepoRoot(env.WorkDir)
+	if err != nil {
+		return fmt.Errorf("locate the repository: %w", err)
+	}
+	t, err := resolvePullRequest(cmd.Context(), root, target.pr, seam)
+	if err != nil {
+		return err
+	}
+
+	m, label, err := governingManifest(root, t.mergeBase, review.ContextPR)
+	if err != nil {
+		return err
+	}
+
+	profile, err := review.BuildProfile(review.ProfileOptions{
+		Dir:     root,
+		Base:    t.mergeBase,
+		Head:    t.pr.HeadSHA,
+		Exclude: m.Exclude,
+	})
+	if err != nil {
+		return err
+	}
+
+	sel, err := review.Select(m, review.ContextPR, profile, target.panel)
+	if err != nil {
+		return err
+	}
+
+	return writeExplain(env, asJSON, label, rangeLabel(t.pr.BaseRef, t.pr.HeadSHA), m, profile, sel)
+}
+
+// writeExplain reports a selection in whichever form the caller asked for, so
+// the two targets answer in one shape.
+func writeExplain(env *Env, asJSON bool, label, rng string, m *review.Manifest, profile *review.Profile, sel *review.Selection) error {
 	if asJSON {
-		return writeJSON(env, explainJSON(label, rangeLabel(base, target.head), m, profile, sel))
+		return writeJSON(env, explainJSON(label, rng, m, profile, sel))
 	}
 	fmt.Fprintf(env.Stdout, "manifest: %s\n", label)
-	fmt.Fprintf(env.Stdout, "range:    %s\n", rangeLabel(base, target.head))
+	fmt.Fprintf(env.Stdout, "range:    %s\n", rng)
 	fmt.Fprint(env.Stdout, sel.Explain(m, profile))
 	return nil
 }
@@ -346,4 +416,10 @@ func knownContext(c review.Context) bool {
 		}
 	}
 	return false
+}
+
+// namedPullRequest reports whether the caller pointed this command at a pull
+// request, by flag or by a target built in code.
+func namedPullRequest(cmd *cobra.Command, target reviewTarget) bool {
+	return target.pr != 0 || cmd.Flags().Changed("pr")
 }
