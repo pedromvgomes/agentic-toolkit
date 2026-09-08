@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"io"
@@ -368,5 +369,121 @@ func TestAPullRequestRefusesAContextThatContradictsIt(t *testing.T) {
 	}
 	if err := checkPullRequestFlags(reviewTarget{pr: 7, context: "pr"}, true); err != nil {
 		t.Errorf("--context pr contradicts nothing and was refused: %v", err)
+	}
+}
+
+// review builds a finished review for the reporting tests.
+func reviewFor(available bool, findings ...reviewrun.Finding) *reviewrun.Review {
+	return &reviewrun.Review{
+		Panel: "standard", Manifest: "builtin", Range: "main..HEAD",
+		Available: available, Reason: map[bool]string{true: "", false: "the judge could not be run"}[available],
+		Findings: findings,
+		Reports: []reviewrun.RunReport{{
+			Label: "correctness", Role: reviewrun.RoleReviewer, Provider: "claudecode",
+			Report: reviewrun.Answered(findings),
+		}},
+	}
+}
+
+// A review that reached no verdict has to fail the command whether or not the
+// caller asked for JSON. A --json branch that returned early is how the exit
+// status and the output format came apart.
+func TestAReviewWithNoVerdictFailsTheCommandUnderJSONToo(t *testing.T) {
+	for _, asJSON := range []bool{false, true} {
+		var out bytes.Buffer
+		env := &Env{Stdin: strings.NewReader(""), Stdout: &out, Stderr: io.Discard, WorkDir: t.TempDir()}
+		t2 := &pullRequestTarget{
+			slug: mustSlug("acme", "widgets"),
+			pr:   githubapp.PullRequest{Number: 7, HeadSHA: strings.Repeat("2", 40)},
+		}
+		result := reviewFor(false)
+		payload, place := reviewpost.Build(result, t2.pr, nil)
+
+		if err := reportReview(env, t2, result, payload, place, nil, asJSON); err != nil {
+			t.Fatalf("json=%v: report: %v", asJSON, err)
+		}
+		if err := unavailableError(result); err == nil {
+			t.Errorf("json=%v: a review that reached no verdict was reported as a success", asJSON)
+		}
+	}
+}
+
+// A --json consumer must be able to tell a review that reached no verdict from
+// one that found nothing: both produce an empty comment list.
+func TestThePostedJSONCarriesWhetherTheReviewReachedAVerdict(t *testing.T) {
+	target := &pullRequestTarget{
+		slug: mustSlug("acme", "widgets"),
+		pr:   githubapp.PullRequest{Number: 7, HeadSHA: strings.Repeat("2", 40)},
+	}
+	result := reviewFor(false)
+	payload, place := reviewpost.Build(result, target.pr, nil)
+
+	var out bytes.Buffer
+	env := &Env{Stdin: strings.NewReader(""), Stdout: &out, Stderr: io.Discard, WorkDir: t.TempDir()}
+	if err := reportReview(env, target, result, payload, place, nil, true); err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Available bool   `json:"available"`
+		Reason    string `json:"reason"`
+		Posted    bool   `json:"posted"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatalf("the output is not JSON: %v\n%s", err, out.String())
+	}
+	if got.Available {
+		t.Error("a review that reached no verdict reports itself as available")
+	}
+	if got.Reason == "" {
+		t.Error("the JSON does not say why the review reached no verdict")
+	}
+	if got.Posted {
+		t.Error("an unposted review reports itself as posted")
+	}
+}
+
+// A --json consumer parsing this stream must not be handed prose because the
+// post is what failed.
+func TestAFailedPostStillReportsAsJSONUnderJSON(t *testing.T) {
+	target := &pullRequestTarget{
+		slug: mustSlug("acme", "widgets"),
+		pr:   githubapp.PullRequest{Number: 7, HeadSHA: strings.Repeat("2", 40)},
+	}
+	result := reviewFor(true, reviewrun.Finding{
+		Path: "a.go", StartLine: line(4), EndLine: line(4),
+		Category: "correctness", Severity: reviewrun.SeverityRed,
+		Issue: "off by one", Evidence: "i <= len(x)", Reviewer: "correctness",
+	})
+	payload, place := reviewpost.Build(result, target.pr, reviewpost.AddedLines{"a.go": {4: true}})
+
+	var out bytes.Buffer
+	env := &Env{Stdin: strings.NewReader(""), Stdout: &out, Stderr: io.Discard, WorkDir: t.TempDir()}
+	if err := reportReview(env, target, result, payload, place, nil, true); err != nil {
+		t.Fatal(err)
+	}
+	if !json.Valid(out.Bytes()) {
+		t.Fatalf("a failed post under --json wrote something that is not JSON:\n%s", out.String())
+	}
+}
+
+// A comment is attached at the end of its region, so that is the line GitHub
+// validates and the line a finding is refused for. Naming the start would
+// report a line that is on the diff as the reason the finding is not.
+func TestPlacementNamesTheLineThatWasActuallyRefused(t *testing.T) {
+	f := reviewrun.Finding{Path: "a.go", StartLine: line(10), EndLine: line(20), Category: "correctness"}
+	added := reviewpost.AddedLines{"a.go": {10: true}}
+	_, place := reviewpost.Build(reviewFor(true, f), githubapp.PullRequest{HeadSHA: "x"}, added)
+	if len(place.Unpositioned) != 1 {
+		t.Fatalf("placed as %+v", place)
+	}
+
+	var b bytes.Buffer
+	renderPlacement(&b, place)
+	out := b.String()
+	if !strings.Contains(out, "a.go:20") {
+		t.Errorf("the refused line is not named:\n%s", out)
+	}
+	if strings.Contains(out, "a.go:10") {
+		t.Errorf("line 10 is on the diff and is named as the reason the finding is not:\n%s", out)
 	}
 }

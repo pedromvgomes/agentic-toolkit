@@ -1,6 +1,9 @@
 package tests
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -36,10 +39,20 @@ func TestARemoteURLYieldsTheOwnerAndRepositoryGitHubAddresses(t *testing.T) {
 
 // A host that nests repositories is not one a review can be addressed at, and
 // taking the last two segments would post to a repository nobody named.
+//
+// The slug is interpolated into the API path, so a name carrying `?`, `#` or
+// an encoded slash re-points the request at a resource the remote does not
+// name — `a?x=y/b` turns the rest of the path into a query and `owner/repo#x`
+// truncates it. Those are refused here rather than reshaping a request.
 func TestARemoteURLThatIsNotAnOwnerAndRepositoryIsRefused(t *testing.T) {
 	for _, url := range []string{
 		"https://gitlab.example.com/group/subgroup/project.git",
 		"/srv/git/bare-repo.git",
+		"git@github.com:a?x=y/b",
+		"git@github.com:acme/widgets#x",
+		"https://github.com/a%2Fb/c",
+		"https://github.com/acme/wid gets",
+		"https://github.com/-acme/widgets",
 		"",
 	} {
 		r := newRepo(t)
@@ -79,14 +92,92 @@ func TestAPullRequestNumberBelowOneIsRefused(t *testing.T) {
 
 // A commit the repository already holds is not fetched: a checkout that has
 // the base needs no network to review against it.
+//
+// Asserted on the git command line, through a shim on PATH, because there is
+// no outcome that separates the two cases. `git fetch origin <sha>` for an
+// object already present exits zero without contacting the remote and writes
+// FETCH_HEAD exactly as a real fetch does, so a test reading the error or the
+// filesystem passes whether or not the fetch happened — which is to say it
+// asserts nothing.
 func TestACommitAlreadyPresentIsNotFetched(t *testing.T) {
 	r := newRepo(t)
 	r.write("a.go", "package a\n")
 	sha := r.commit("one")
-	// No remote is configured, so a fetch would fail loudly rather than
-	// silently succeeding and proving nothing.
+	r.git("remote", "add", "origin", filepath.Join(t.TempDir(), "no-such-repository"))
+
+	log := spyOnGit(t)
 	if err := review.FetchCommit(r.dir, sha); err != nil {
-		t.Fatalf("a commit already in the repository was fetched anyway: %v", err)
+		t.Fatalf("a commit already in the repository could not be resolved: %v", err)
+	}
+	for _, line := range log() {
+		if strings.Contains(line, " fetch ") {
+			t.Errorf("a commit already in the repository was fetched anyway: git%s", line)
+		}
+	}
+}
+
+// The same fixture, inverted: a commit the repository does not hold is
+// fetched. It is what gives the test above its teeth — together they say the
+// fetch happens exactly when the commit is missing, which neither says alone.
+func TestACommitTheRepositoryLacksIsFetched(t *testing.T) {
+	r := newRepo(t)
+	r.write("a.go", "package a\n")
+	r.commit("one")
+	r.git("remote", "add", "origin", filepath.Join(t.TempDir(), "no-such-repository"))
+
+	absent := strings.Repeat("d", 40)
+	log := spyOnGit(t)
+	err := review.FetchCommit(r.dir, absent)
+	if err == nil {
+		t.Fatal("a commit the repository does not hold was reported as present")
+	}
+	if !strings.Contains(err.Error(), absent) {
+		t.Errorf("the failure does not name the commit it could not fetch: %v", err)
+	}
+	var fetched bool
+	for _, line := range log() {
+		fetched = fetched || strings.Contains(line, " fetch ")
+	}
+	if !fetched {
+		t.Error("a commit the repository does not hold was never fetched")
+	}
+}
+
+// spyOnGit puts a git on PATH that records every command line before handing
+// off to the real one, and returns a reader for what it recorded.
+//
+// A shim rather than a seam in the package under test: what is being asserted
+// is which git commands run, and a fake that answered them itself would assert
+// against this package's own idea of git rather than against git.
+func spyOnGit(t *testing.T) func() []string {
+	t.Helper()
+	real, err := exec.LookPath("git")
+	if err != nil {
+		t.Skipf("git is not on PATH: %v", err)
+	}
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "calls.log")
+	shim := "#!/bin/sh\nprintf '%s\\n' \" $*\" >> " + logPath + "\nexec " + real + " \"$@\"\n"
+	if err := os.WriteFile(filepath.Join(dir, "git"), []byte(shim), 0o700); err != nil { // #nosec G306 -- an executable shim in a temp dir
+		t.Fatalf("write the git shim: %v", err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	return func() []string {
+		body, err := os.ReadFile(logPath)
+		if err != nil {
+			t.Fatalf("read the git shim's log: %v", err)
+		}
+		var out []string
+		for _, line := range strings.Split(string(body), "\n") {
+			if strings.TrimSpace(line) != "" {
+				out = append(out, line)
+			}
+		}
+		if len(out) == 0 {
+			t.Fatal("the git shim recorded nothing, so it is not the git that ran")
+		}
+		return out
 	}
 }
 

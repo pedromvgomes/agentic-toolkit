@@ -70,15 +70,39 @@ func writeFindingList(b *strings.Builder, heading string, findings []reviewrun.F
 	fmt.Fprintf(b, "### %s\n\n%s\n\n", heading, why)
 	for _, f := range findings {
 		fmt.Fprintf(b, "**%s — %s** · `%s`\n\n%s\n",
-			f.Severity, f.Category, location(f), strings.TrimSpace(f.Issue))
-		if s := strings.TrimSpace(f.Suggestion); s != "" {
+			f.Severity, f.Category, location(f), prose(f.Issue))
+		if s := prose(f.Suggestion); s != "" {
 			fmt.Fprintf(b, "\n%s\n", s)
 		}
 		if e := strings.TrimSpace(f.Evidence); e != "" {
-			fmt.Fprintf(b, "\n```\n%s\n```\n", e)
+			fmt.Fprintf(b, "\n%s\n%s\n%s\n", fence(e), e, fence(e))
 		}
 		fmt.Fprintf(b, "\n%s\n\n", attribution(f))
 	}
+}
+
+// fence is a code fence long enough to hold body.
+//
+// Evidence is quoted code carried byte for byte from the reviewer that
+// produced it, and ADR 0008 is why it may not be edited on the way here. A
+// fixed three-backtick fence therefore ends wherever the quoted code happens
+// to contain three backticks — which quoted Markdown routinely does — and
+// everything after that renders as the review's own prose. Widening the fence
+// past the longest run inside it closes that without touching a byte of the
+// quote.
+func fence(body string) string {
+	longest, run := 0, 0
+	for _, r := range body {
+		if r == '`' {
+			run++
+			if run > longest {
+				longest = run
+			}
+			continue
+		}
+		run = 0
+	}
+	return strings.Repeat("`", max(3, longest+1))
 }
 
 // location renders where a finding is, for a body entry that has no inline

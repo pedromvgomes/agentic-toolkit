@@ -161,8 +161,12 @@ func renderPlacement(w io.Writer, place reviewpost.Placement) {
 	fmt.Fprintf(w, "\n%d finding(s): %d inline, %d with no line, %d outside this diff.\n",
 		place.Total(), len(place.Inline), len(place.CrossCutting), len(place.Unpositioned))
 	for _, f := range place.Unpositioned {
+		// The anchor rather than the start. A comment is attached at the end
+		// of its region, so that is the line GitHub validates and the line a
+		// finding is refused for — naming the start would report a line that
+		// is on the diff as the reason the finding is not on it.
 		fmt.Fprintf(w, "  moved to the body — %s:%d is not a line this pull request adds, and one comment GitHub refuses discards the whole review\n",
-			f.Path, *f.StartLine)
+			f.Path, reviewpost.AnchorLine(f))
 	}
 }
 
@@ -219,31 +223,53 @@ func runCodeReviewPR(cmd *cobra.Command, env *Env, target reviewTarget, flags ru
 	payload, place := reviewpost.Build(result, t.pr, t.added)
 
 	if flags.noPost {
-		if flags.json {
-			return writeJSON(env, pullRequestPostJSON(t, payload, place, nil))
+		if err := reportReview(env, t, result, payload, place, nil, flags.json); err != nil {
+			return err
 		}
-		reviewrun.Render(env.Stdout, result)
-		renderPayload(env.Stdout, t, payload, place)
 		return unavailableError(result)
 	}
 
 	posted, err := t.client.CreateReview(cmd.Context(), t.pr.Number, payload)
 	if err != nil {
-		// The review is not lost with the post. Rendering it costs nothing and
+		// The review is not lost with the post. Reporting it costs nothing and
 		// is the difference between a rate limit that wasted a panel and one
-		// that wasted a request.
-		reviewrun.Render(env.Stdout, result)
-		renderPayload(env.Stdout, t, payload, place)
+		// that wasted a request. It is reported in whichever form the caller
+		// asked for: a --json consumer parsing this stream must not be handed
+		// prose because the post is what failed.
+		if reportErr := reportReview(env, t, result, payload, place, nil, flags.json); reportErr != nil {
+			return reportErr
+		}
 		return fmt.Errorf("post the review to %s#%d: %w", t.slug, t.pr.Number, err)
 	}
 
-	if flags.json {
-		return writeJSON(env, pullRequestPostJSON(t, payload, place, &posted))
+	if err := reportReview(env, t, result, payload, place, &posted, flags.json); err != nil {
+		return err
+	}
+	return unavailableError(result)
+}
+
+// reportReview writes what the review says and what became of it, in whichever
+// form the caller asked for.
+//
+// One function rather than a branch at each of the three call sites, because
+// the three differ only in whether the review was posted — and a --json branch
+// that returned early is how the exit status and the output format came apart
+// from the rest of the command in the first place.
+func reportReview(env *Env, t *pullRequestTarget, result *reviewrun.Review,
+	payload githubapp.ReviewPayload, place reviewpost.Placement,
+	posted *githubapp.PostedReview, asJSON bool,
+) error {
+	if asJSON {
+		return writeJSON(env, pullRequestPostJSON(t, result, payload, place, posted))
 	}
 	reviewrun.Render(env.Stdout, result)
+	if posted == nil {
+		renderPayload(env.Stdout, t, payload, place)
+		return nil
+	}
 	fmt.Fprintf(env.Stdout, "\nPosted one review to %s#%d: %s\n", t.slug, t.pr.Number, posted.HTMLURL)
 	renderPlacement(env.Stdout, place)
-	return unavailableError(result)
+	return nil
 }
 
 // checkPullRequestFlags refuses a target that names a pull request and then

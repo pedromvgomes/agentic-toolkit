@@ -275,13 +275,18 @@ process — a **Reviewer** inherits the operator's environment, which is why the
 passed as an argument rather than placed in one.
 _Avoid_: secret, credential file, PAT
 
-**Marker**:
+**Fingerprint marker**:
 The HTML comment a posted inline comment carries its **Fingerprint** in, invisible in
 rendered markdown, so a later run reads identity off the PR rather than re-deriving it. It
 names the scheme's version, because a change to what is hashed makes every existing marker
 mismatch — and without a version that reads as "every finding is new" rather than as "the
 scheme moved".
-_Avoid_: tag, sentinel, watermark
+
+Two words, because the bare noun belongs to **Signal**, which lists it under `_Avoid_`. A
+comment carrying a fingerprint and a detected property of a change are unrelated things, and
+a glossary that gave them one word would ban it for one of them and canonise it for the
+other.
+_Avoid_: tag, sentinel, watermark, marker (bare)
 
 **Review manifest**:
 `.agents/code-review/manifest.yaml`: the single declaration of **Reviewer**s, **Panel**s and the
@@ -290,6 +295,9 @@ there is one roster and not two.
 _Avoid_: panels.json, roster file, review config
 
 ## Flagged ambiguities
+**"Marker"** — the bare noun is a **Signal** synonym to avoid; the HTML comment that carries a
+**Fingerprint** is a **Fingerprint marker**, always both words.
+
 **"Candidate"** — a staged memory finding awaiting a **Curator**, and also a **Finding** that
 has not yet passed a **Validator**. The memory sense owns the bare noun; in review, say
 "candidate finding" and never "candidate" alone.

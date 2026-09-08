@@ -31,13 +31,19 @@ const (
 	AppFile = "github-app.id"
 )
 
-// FileMode is what both files are written with, and the widest permission
-// either may carry when read back.
+// FileMode is what both files are written with, and the widest permission the
+// private key may carry when read back.
+//
+// The App id is written at the same mode for tidiness rather than for secrecy:
+// it identifies the App and is visible to anyone who can see a review the App
+// posted, so a wider mode on it is not a finding to refuse a run over.
 const FileMode fs.FileMode = 0o600
 
-// DirMode is what the config directory is created with. The private key inside
-// it is checked on its own, but a world-traversable directory is not what a
-// machine-local credential means.
+// DirMode is what the config directory is held at. The private key inside it
+// is checked on its own, but a world-traversable directory is not what a
+// machine-local credential means: a directory another account may write is one
+// where the key file can be replaced or made a symlink, which the key's own
+// 0600 does nothing about.
 const DirMode fs.FileMode = 0o700
 
 // Credential is the App registration this machine holds.
@@ -73,24 +79,57 @@ func Initialize(dir string, appID int64, pemBytes []byte) error {
 	if err := os.MkdirAll(dir, DirMode); err != nil {
 		return fmt.Errorf("create %s: %w", dir, err)
 	}
+	// MkdirAll applies its mode only to the directories it creates, so a
+	// config directory that already existed keeps whatever mode it had.
+	if err := os.Chmod(dir, DirMode); err != nil {
+		return fmt.Errorf("restrict %s to %s: %w", dir, DirMode, err)
+	}
 	if err := writePrivate(filepath.Join(dir, KeyFile), pemBytes); err != nil {
 		return err
 	}
 	return writePrivate(filepath.Join(dir, AppFile), []byte(strconv.FormatInt(appID, 10)+"\n"))
 }
 
-// writePrivate writes one file at FileMode, and holds it there even if the
-// file already existed at a wider mode.
+// writePrivate writes one file that is never readable by anyone but its owner,
+// including while it is being written.
 //
-// os.WriteFile applies its mode only when it creates the file, so re-running
-// initialize over a key somebody had chmod'd to 0644 would leave it readable
-// and report success.
+// The file is removed and recreated rather than truncated in place. Both
+// os.WriteFile and a plain O_TRUNC open apply their mode argument only when
+// they create the file, so writing over a key somebody had chmod'd to 0644
+// puts the new private key into a world-readable file and narrows it
+// afterwards — a window in which the key it is replacing was better protected
+// than the one replacing it. Unlinking first means the mode always belongs to
+// the bytes being written.
 func writePrivate(path string, body []byte) error {
-	if err := os.WriteFile(path, body, FileMode); err != nil {
+	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("replace %s: %w", path, err)
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, FileMode) // #nosec G304 -- agtk's own registration at its XDG path
+	if err != nil {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
-	if err := os.Chmod(path, FileMode); err != nil {
-		return fmt.Errorf("restrict %s to %s: %w", path, FileMode, err)
+	if _, err := f.Write(body); err != nil {
+		_ = f.Close()
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	return nil
+}
+
+// checkDir refuses a registration directory other accounts can reach into.
+func checkDir(dir string) error {
+	info, err := os.Stat(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read %s: %w", dir, err)
+	}
+	if mode := info.Mode().Perm(); mode&^DirMode != 0 {
+		return fmt.Errorf("%s is mode %04o, which lets accounts other than its owner reach this machine's GitHub App key; "+
+			"run `chmod %04o %s`", dir, mode, DirMode, dir)
 	}
 	return nil
 }
@@ -117,6 +156,13 @@ func Load(dir string) (*Credential, error) {
 		return nil, fmt.Errorf("%s does not hold a GitHub App id: %w", idPath, err)
 	}
 
+	// Checked only once a registration is known to exist. An XDG config
+	// directory a machine has never registered on is ordinarily 0755, and
+	// refusing that would answer "this machine holds no registration" with a
+	// permissions complaint about a directory holding nothing.
+	if err := checkDir(dir); err != nil {
+		return nil, err
+	}
 	if err := checkPrivate(keyPath); err != nil {
 		return nil, err
 	}

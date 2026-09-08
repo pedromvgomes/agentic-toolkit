@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -66,6 +67,12 @@ func newCodeReviewRunCmd(env *Env) *cobra.Command {
 func runCodeReviewRun(cmd *cobra.Command, env *Env, target reviewTarget, flags runFlags) error {
 	if target.pr != 0 {
 		return runCodeReviewPR(cmd, env, target, flags, clientSeam{})
+	}
+	// --no-post withholds the post a --pr review would make. Without --pr
+	// there is none, and a flag that is silently ignored reads as a flag that
+	// was honoured — which on this one means believing a review was withheld.
+	if flags.noPost {
+		return errors.New("--no-post withholds the review a --pr run would post; without --pr there is nothing to withhold")
 	}
 	root, base, mergeBase, err := resolveTarget(env, target)
 	if err != nil {

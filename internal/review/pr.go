@@ -28,7 +28,13 @@ func (s Slug) String() string { return s.Owner + "/" + s.Repo }
 // than two segments is refused instead of having its last two taken: a host
 // that nests repositories is not github.com, and guessing there would address
 // a review at a repository nobody named.
-var slugRE = regexp.MustCompile(`^(?:(?:https?|ssh|git)://)?(?:[^@/]+@)?[^/:]+(?::\d+)?[:/]([^/]+)/([^/]+?)(?:\.git)?/?$`)
+//
+// Both captures are held to the characters a GitHub account or repository name
+// may actually contain. Accepting anything up to the next `/` would accept `?`,
+// `#` and `%2F` — and the slug is interpolated into the API path, so any of the
+// three re-points the request at a resource the remote does not name: `a?x=y/b`
+// turns the rest of the path into a query, and `owner/repo#x` truncates it.
+var slugRE = regexp.MustCompile(`^(?:(?:https?|ssh|git)://)?(?:[^@/]+@)?[^/:]+(?::\d+)?[:/]([A-Za-z0-9][A-Za-z0-9._-]*)/([A-Za-z0-9._-]+?)(?:\.git)?/?$`)
 
 // RemoteSlug reads the owner and repository out of a remote's URL.
 //

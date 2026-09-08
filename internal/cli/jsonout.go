@@ -795,6 +795,16 @@ func pullRequestPlanJSON(t *pullRequestTarget, p *reviewrun.Plan) reviewPRPlanJS
 type reviewPostJSON struct {
 	Version     int             `json:"version"`
 	PullRequest pullRequestJSON `json:"pull_request"`
+	// Available reports whether the review reached a verdict, and Reason says
+	// why it did not. Both travel with the payload because a review that
+	// reached no verdict and one that found nothing produce the same empty
+	// comment list, and a consumer must not have to read the body prose to
+	// tell them apart.
+	Available bool   `json:"available"`
+	Reason    string `json:"reason,omitempty"`
+	// Partial reports that some run could not answer, so what it would have
+	// found is unknown rather than absent.
+	Partial bool `json:"partial"`
 	// Posted says whether the request was actually made. A consumer that reads
 	// the payload without it cannot tell a preview from a post.
 	Posted  bool              `json:"posted"`
@@ -828,10 +838,13 @@ type placementJSON struct {
 	Moved   []findingJSON `json:"moved_to_body"`
 }
 
-func pullRequestPostJSON(t *pullRequestTarget, payload githubapp.ReviewPayload, place reviewpost.Placement, posted *githubapp.PostedReview) reviewPostJSON {
+func pullRequestPostJSON(t *pullRequestTarget, r *reviewrun.Review, payload githubapp.ReviewPayload, place reviewpost.Placement, posted *githubapp.PostedReview) reviewPostJSON {
 	out := reviewPostJSON{
 		Version:     jsonVersion,
 		PullRequest: pullRequestRow(t),
+		Available:   r.Available,
+		Reason:      r.Reason,
+		Partial:     r.Partial(),
 		Payload: reviewPayloadJSON{
 			CommitID: payload.CommitID,
 			Event:    payload.Event,

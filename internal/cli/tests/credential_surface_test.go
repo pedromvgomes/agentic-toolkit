@@ -16,6 +16,11 @@ import (
 // minted from it live. Nothing else in the binary holds either.
 const credentialPackage = "github.com/pedromvgomes/agentic-toolkit/internal/githubapp"
 
+// credentialSurface are the packages a credential passes through: the one that
+// holds it, and the one that builds what it is spent on. Both are walked
+// whole, so a guard keeps covering a package as files are added to it.
+var credentialSurface = []string{"internal/githubapp", "internal/reviewpost"}
+
 // The App installation token reaches every repository the App is installed on,
 // and a review run is driven by a model reading a diff somebody else wrote.
 // Handing that process the credential widens a grant across an entire account.
@@ -53,7 +58,7 @@ func TestTheCredentialIsNeverPutIntoTheProcessEnvironment(t *testing.T) {
 	repo := repoRoot(t)
 	var offenders []string
 	fset := token.NewFileSet()
-	for _, dir := range []string{"internal/githubapp", "internal/reviewpost"} {
+	for _, dir := range credentialSurface {
 		err := filepath.Walk(filepath.Join(repo, dir), func(path string, info os.FileInfo, err error) error {
 			if err != nil || info.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 				return err
@@ -92,18 +97,52 @@ func TestTheCredentialIsNeverPutIntoTheProcessEnvironment(t *testing.T) {
 	}
 }
 
+// registrationWriter is the one file in the credential surface that writes to
+// disk. It persists the App registration, which is the point of `initialize`;
+// everything around it handles the minted token, which must never be written.
+const registrationWriter = "internal/githubapp/credential.go"
+
 // A token that reached disk would outlive the command that minted it, and the
 // whole point of minting per run is that nothing persists.
+//
+// The whole credential surface is walked rather than the one file that mints
+// tokens. A guard that reads a single file names a property of that file: a
+// write added in any sibling — the file that holds the API calls the token is
+// spent on, most obviously — satisfies it while making its claim false.
 func TestNoInstallationTokenIsWrittenAnywhere(t *testing.T) {
 	repo := repoRoot(t)
-	body, err := os.ReadFile(filepath.Join(repo, "internal/githubapp/client.go"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, banned := range []string{"os.WriteFile", "os.Create", "os.OpenFile"} {
-		if strings.Contains(string(body), banned) {
-			t.Errorf("internal/githubapp/client.go calls %s; an installation token that reached disk would outlive the run that minted it", banned)
+	banned := []string{"os.WriteFile", "os.Create", "os.OpenFile"}
+
+	var offenders []string
+	for _, dir := range credentialSurface {
+		err := filepath.Walk(filepath.Join(repo, dir), func(path string, info os.FileInfo, err error) error {
+			if err != nil || info.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+				return err
+			}
+			rel := filepath.ToSlash(mustRel(t, repo, path))
+			if rel == registrationWriter {
+				return nil
+			}
+			body, readErr := os.ReadFile(path) // #nosec G304 -- a .go file inside this repository
+			if readErr != nil {
+				return readErr
+			}
+			for lineNo, line := range strings.Split(string(body), "\n") {
+				for _, call := range banned {
+					if strings.Contains(line, call) {
+						offenders = append(offenders, rel+":"+strconv.Itoa(lineNo+1)+" calls "+call)
+					}
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("walk %s: %v", dir, err)
 		}
+	}
+	if len(offenders) > 0 {
+		t.Errorf("the credential surface writes to disk outside %s; an installation token that reached disk would outlive the run that minted it: %v",
+			registrationWriter, offenders)
 	}
 }
 

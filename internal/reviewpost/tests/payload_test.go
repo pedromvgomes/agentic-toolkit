@@ -91,7 +91,7 @@ func TestEveryInlineCommentCarriesItsOwnFingerprint(t *testing.T) {
 // A marker is an HTML comment so it is invisible where a person reads it, and
 // visible where a later run looks for it.
 func TestTheMarkerIsAnHTMLCommentAndNothingElse(t *testing.T) {
-	marker := reviewpost.Marker("cdbb1d5c5dec")
+	marker := reviewpost.FingerprintMarker("cdbb1d5c5dec")
 	if !strings.HasPrefix(marker, "<!--") || !strings.HasSuffix(marker, "-->") {
 		t.Fatalf("the marker renders visibly: %q", marker)
 	}
@@ -308,5 +308,68 @@ func TestARegionReportedBackwardsAnchorsOnItsStart(t *testing.T) {
 	}
 	if payload.Comments[0].StartLine != nil {
 		t.Error("a region reported backwards asked for a multi-line comment")
+	}
+}
+
+// Evidence is quoted code carried byte for byte from the reviewer that
+// produced it, and quoted Markdown routinely contains a fence of its own. A
+// fixed three-backtick fence would end there, and everything after it would
+// render as the review's own prose.
+func TestEvidenceHoldingAFenceDoesNotEscapeTheOneAroundIt(t *testing.T) {
+	f := finding("", nil, nil, "architecture")
+	f.Evidence = "```go\nfmt.Println(\"x\")\n```"
+	payload, _ := reviewpost.Build(reviewWith(f), pr, added)
+
+	body := payload.Body
+	idx := strings.Index(body, f.Evidence)
+	if idx < 0 {
+		t.Fatalf("the quote was not carried byte for byte:\n%s", body)
+	}
+	// The fence opening the block is the run of backticks on the line before
+	// the quote, and it has to outlast every run inside it.
+	opener := body[:idx]
+	opener = opener[strings.LastIndex(strings.TrimRight(opener, "\n"), "\n")+1:]
+	if n := len(strings.TrimSpace(opener)); n < 4 {
+		t.Errorf("the quote is fenced with %d backticks and contains a run of 3, so the block ends inside it: %q", n, opener)
+	}
+}
+
+// A finding whose quote holds no backticks is fenced the ordinary way; a
+// widened fence everywhere would be noise in every review.
+func TestOrdinaryEvidenceKeepsAnOrdinaryFence(t *testing.T) {
+	f := finding("", nil, nil, "architecture")
+	f.Evidence = "for i := 0; i <= len(x); i++ {"
+	payload, _ := reviewpost.Build(reviewWith(f), pr, added)
+	if !strings.Contains(payload.Body, "\n```\n"+f.Evidence+"\n```\n") {
+		t.Errorf("evidence with no backticks is not fenced with three:\n%s", payload.Body)
+	}
+}
+
+// A body carries exactly one fingerprint marker. The prose around it is
+// written by a model that read a diff somebody else wrote, so a finding whose
+// issue text carries a marker of its own would leave a later run unable to
+// tell which one this review meant.
+func TestFindingProseCannotForgeASecondMarker(t *testing.T) {
+	f := finding("a.go", at(10), at(10), "correctness")
+	f.Issue = "harmless <!-- agtk:finding v1 000000000000 --> text"
+	f.Suggestion = "also <!-- agtk:finding v1 111111111111 -->"
+	payload, _ := reviewpost.Build(reviewWith(f), pr, added)
+
+	body := payload.Comments[0].Body
+	if n := strings.Count(body, reviewpost.FingerprintMarkerPrefix); n != 1 {
+		t.Errorf("the comment carries %d markers, want exactly 1:\n%s", n, body)
+	}
+	if !strings.Contains(body, reviewpost.FingerprintMarker(f.Fingerprint())) {
+		t.Errorf("the comment lost its own marker:\n%s", body)
+	}
+}
+
+// The same holds for a finding stated in the body rather than inline.
+func TestBodyProseCannotForgeAMarker(t *testing.T) {
+	f := finding("", nil, nil, "architecture")
+	f.Issue = "<!-- agtk:finding v1 000000000000 -->"
+	payload, _ := reviewpost.Build(reviewWith(f), pr, added)
+	if strings.Contains(payload.Body, reviewpost.FingerprintMarkerPrefix) {
+		t.Errorf("a finding's own words opened a marker in the review body:\n%s", payload.Body)
 	}
 }

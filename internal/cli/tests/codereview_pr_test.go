@@ -234,3 +234,17 @@ func TestAReviewRefusesARemoteItCannotAddressAReviewTo(t *testing.T) {
 		t.Fatalf("a remote that names no repository was accepted: %v", err)
 	}
 }
+
+// A flag that is silently ignored reads as a flag that was honoured — which on
+// this one means believing a review was withheld from a pull request that was
+// never named.
+func TestNoPostIsRefusedWithoutAPullRequest(t *testing.T) {
+	work := gitProject(t, nil)
+	_, _, err := runCLI(t, work, "code-review", "run", "--no-post")
+	if err == nil {
+		t.Fatal("--no-post was accepted with no pull request to withhold a post from")
+	}
+	if !strings.Contains(err.Error(), "nothing to withhold") {
+		t.Errorf("the refusal does not say why: %v", err)
+	}
+}

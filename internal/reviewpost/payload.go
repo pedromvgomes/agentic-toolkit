@@ -15,18 +15,22 @@ import (
 	"github.com/pedromvgomes/agentic-toolkit/internal/reviewrun"
 )
 
-// MarkerPrefix opens the HTML comment a posted inline comment carries its
-// fingerprint in. Invisible in rendered markdown, so a later run reads
-// identity back off the pull request rather than re-deriving it.
-const MarkerPrefix = "<!-- agtk:finding"
+// FingerprintMarkerPrefix opens the HTML comment a posted inline comment
+// carries its fingerprint in. Invisible in rendered markdown, so a later run
+// reads identity back off the pull request rather than re-deriving it.
+const FingerprintMarkerPrefix = "<!-- agtk:finding"
 
-// Marker renders the fingerprint marker for one finding.
+// FingerprintMarker renders the marker for one finding.
+//
+// Both words, always: CONTEXT.md lists the bare noun under Signal's `_Avoid_`,
+// and a property of a change that agtk detects and a comment that carries an
+// identity are unrelated things.
 //
 // The version is part of what is written. A change to what is hashed makes
 // every existing marker mismatch, and without a version in the marker that
 // reads as "every finding is new" rather than as "the scheme moved".
-func Marker(fingerprint string) string {
-	return fmt.Sprintf("%s %s %s -->", MarkerPrefix, reviewrun.FingerprintVersion, fingerprint)
+func FingerprintMarker(fingerprint string) string {
+	return fmt.Sprintf("%s %s %s -->", FingerprintMarkerPrefix, reviewrun.FingerprintVersion, fingerprint)
 }
 
 // Placement is what became of each surviving finding when the review was laid
@@ -99,6 +103,15 @@ func positionable(f reviewrun.Finding, added AddedLines) bool {
 	return added.holds(f.Path, anchorLine(f))
 }
 
+// AnchorLine is the line an inline comment is attached to, and therefore the
+// line GitHub validates against the diff.
+//
+// Exported because a run that could not position a finding has to say which
+// line it could not position it on, and that is this one rather than the
+// finding's start: a region beginning on the diff and ending off it is refused
+// for its end.
+func AnchorLine(f reviewrun.Finding) int { return anchorLine(f) }
+
 // anchorLine is the line an inline comment is attached to.
 func anchorLine(f reviewrun.Finding) int {
 	if f.EndLine != nil && *f.EndLine >= *f.StartLine {
@@ -141,15 +154,29 @@ func spanIsAdded(path string, start, end int, added AddedLines) bool {
 // CommentBody renders one finding as the markdown of an inline comment.
 func CommentBody(f reviewrun.Finding) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "**%s — %s**\n\n%s\n", f.Severity, f.Category, strings.TrimSpace(f.Issue))
-	if s := strings.TrimSpace(f.Suggestion); s != "" {
+	fmt.Fprintf(&b, "**%s — %s**\n\n%s\n", f.Severity, f.Category, prose(f.Issue))
+	if s := prose(f.Suggestion); s != "" {
 		fmt.Fprintf(&b, "\n%s\n", s)
 	}
 	fmt.Fprintf(&b, "\n%s\n", attribution(f))
 	// Last, and on its own line: a marker inside a paragraph is still
 	// invisible, but a reader diffing raw bodies should find it in one place.
-	fmt.Fprintf(&b, "\n%s\n", Marker(f.Fingerprint()))
+	fmt.Fprintf(&b, "\n%s\n", FingerprintMarker(f.Fingerprint()))
 	return b.String()
+}
+
+// prose renders a finding's own words, with nothing in them able to open an
+// HTML comment.
+//
+// A body carries exactly one fingerprint marker, and a later run reads
+// identity back off the pull request from it. The words around it are written
+// by a model that read a diff somebody else wrote, so text arriving as an
+// issue or a suggestion can carry a marker of its own choosing — and a reader
+// that found two would have no way to tell which one this review meant.
+// Breaking the opening delimiter is enough: what is left renders as the four
+// characters a person sees, and matches nothing.
+func prose(s string) string {
+	return strings.ReplaceAll(strings.TrimSpace(s), "<!--", "&lt;!--")
 }
 
 // attribution says who reported a finding and what happened to it on the way

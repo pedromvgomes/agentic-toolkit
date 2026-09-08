@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/pedromvgomes/agentic-toolkit/internal/githubapp"
@@ -174,4 +175,102 @@ func TestAnAppIDBelowOneIsRefused(t *testing.T) {
 			t.Errorf("%d was accepted as a GitHub App id", id)
 		}
 	}
+}
+
+// A directory another account can write is one where the key file can be
+// replaced or turned into a symlink, which the key's own 0600 does nothing
+// about. Refusing it is what makes "the blast radius is one machine's one
+// user" true of the whole registration rather than of one file in it.
+func TestARegistrationDirectoryOtherAccountsCanReachIsRefused(t *testing.T) {
+	dir := register(t, 7, pkcs1PEM(t))
+	for _, mode := range []os.FileMode{0o750, 0o707, 0o777} {
+		if err := os.Chmod(dir, mode); err != nil {
+			t.Fatal(err)
+		}
+		_, err := githubapp.Load(dir)
+		if err == nil {
+			t.Fatalf("a registration directory at mode %04o was used", mode)
+		}
+		if !strings.Contains(err.Error(), "chmod") {
+			t.Errorf("the refusal at mode %04o does not say how to fix it: %v", mode, err)
+		}
+	}
+}
+
+// A machine that has never registered has an ordinary 0755 config directory,
+// and the answer to that is the command that registers one — not a complaint
+// about the permissions of a directory holding nothing.
+func TestAnUnregisteredMachineIsNotRefusedForItsDirectoryMode(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_, err := githubapp.Load(dir)
+	if !errors.Is(err, githubapp.ErrNotInitialized) {
+		t.Fatalf("an unregistered machine reports %v, want ErrNotInitialized", err)
+	}
+}
+
+// MkdirAll applies its mode only to directories it creates, so registering
+// into a config directory that already existed has to narrow it.
+func TestInitializeNarrowsAConfigDirectoryThatAlreadyExisted(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "config")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := githubapp.Initialize(dir, 7, pkcs1PEM(t)); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != githubapp.DirMode {
+		t.Errorf("the config directory is mode %04o after registering, want %04o", got, githubapp.DirMode)
+	}
+	if _, err := githubapp.Load(dir); err != nil {
+		t.Errorf("a registration written into a pre-existing directory does not load: %v", err)
+	}
+}
+
+// The key is never readable by another account, including while it is being
+// written. Truncating in place would put the new key into whatever mode the
+// old file carried and narrow it afterwards, so the file is replaced — which
+// shows up as a different inode.
+func TestReplacingAKeyNeverWritesItIntoAWiderFile(t *testing.T) {
+	dir := register(t, 7, pkcs1PEM(t))
+	key := filepath.Join(dir, githubapp.KeyFile)
+	if err := os.Chmod(key, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	before := inodeOf(t, key)
+
+	if err := githubapp.Initialize(dir, 7, pkcs8PEM(t)); err != nil {
+		t.Fatal(err)
+	}
+	if after := inodeOf(t, key); after == before {
+		t.Error("the key file was written in place, so the new key existed at the old file's mode before being narrowed")
+	}
+	info, err := os.Stat(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != githubapp.FileMode {
+		t.Errorf("the replaced key is mode %04o, want %04o", got, githubapp.FileMode)
+	}
+}
+
+// inodeOf identifies the file behind a path, so a test can tell a file that
+// was replaced from one that was rewritten.
+func inodeOf(t *testing.T, path string) uint64 {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		t.Skip("this platform does not report inodes")
+	}
+	return uint64(st.Ino)
 }
