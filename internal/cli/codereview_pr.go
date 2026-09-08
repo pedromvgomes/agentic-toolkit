@@ -210,17 +210,37 @@ func renderPayload(w io.Writer, t *pullRequestTarget, payload githubapp.ReviewPa
 
 // renderPlacement says what became of every finding, so a reader can tell an
 // empty comment list from a review that had nothing to say.
+//
+// Each group is named by what somebody can do about it rather than by why it
+// is not inline, because that is what decides whether the finding obliges an
+// answer before this head is approved.
 func renderPlacement(w io.Writer, place reviewpost.Placement) {
-	fmt.Fprintf(w, "\n%d finding(s): %d inline, %d with no line, %d outside this diff.\n",
-		place.Total(), len(place.Inline), len(place.CrossCutting), len(place.Unpositioned))
-	for _, f := range place.Unpositioned {
-		// The anchor rather than the start. A comment is attached at the end
-		// of its region, so that is the line GitHub validates and the line a
-		// finding is refused for — naming the start would report a line that
-		// is on the diff as the reason the finding is not on it.
-		fmt.Fprintf(w, "  moved to the body — %s:%d is not a line this pull request adds, and one comment GitHub refuses discards the whole review\n",
-			f.Path, reviewpost.AnchorLine(f))
+	fmt.Fprintf(w, "\n%d finding(s): %d inline, %d against a whole file, %d with nowhere to answer.\n",
+		place.Total(), len(place.Inline), len(place.FileLevel), len(place.Unattachable))
+	for _, f := range place.Unattachable {
+		fmt.Fprintf(w, "  stated in the body — %s carries no thread to answer on, so it blocks nothing\n",
+			findingLocation(f))
 	}
+	if deadlocked := place.Deadlocked(); len(deadlocked) > 0 {
+		fmt.Fprintf(w, "  %d of those quote an instruction addressed at the reviewer. Approval is closed until the code changes.\n",
+			len(deadlocked))
+	}
+}
+
+// findingLocation names where a finding points, for a line of terminal output.
+//
+// The anchor rather than the start. A comment is attached at the end of its
+// region, so that is the line GitHub validates and the line a finding is
+// refused for — naming the start would report a line that is on the diff as
+// the reason the finding is not on it.
+func findingLocation(f reviewrun.Finding) string {
+	if f.Path == "" {
+		return "a finding naming no file"
+	}
+	if !f.HasLine() {
+		return f.Path
+	}
+	return fmt.Sprintf("%s:%d", f.Path, reviewpost.AnchorLine(f))
 }
 
 // commentRange renders the lines an inline comment spans.
@@ -285,7 +305,7 @@ func runCodeReviewPR(cmd *cobra.Command, env *Env, target reviewTarget, flags ru
 	payload, place := reviewpost.Build(result, t.pr, t.added)
 
 	if flags.noPost {
-		if err := reportReview(env, t, result, payload, place, nil, flags.json); err != nil {
+		if err := reportReview(env, t, result, payload, place, nil, nil, flags.json); err != nil {
 			return err
 		}
 		return unavailableError(result)
@@ -298,16 +318,63 @@ func runCodeReviewPR(cmd *cobra.Command, env *Env, target reviewTarget, flags ru
 		// that wasted a request. It is reported in whichever form the caller
 		// asked for: a --json consumer parsing this stream must not be handed
 		// prose because the post is what failed.
-		if reportErr := reportReview(env, t, result, payload, place, nil, flags.json); reportErr != nil {
+		if reportErr := reportReview(env, t, result, payload, place, nil, nil, flags.json); reportErr != nil {
 			return reportErr
 		}
 		return fmt.Errorf("post the review to %s#%d: %w", t.slug, t.pr.Number, err)
 	}
 
-	if err := reportReview(env, t, result, payload, place, &posted, flags.json); err != nil {
+	// The file-level comments follow the review rather than riding inside it:
+	// subject_type is not a field on a review's draft comments. They are posted
+	// after the review has landed, so a failure here costs one thread and never
+	// the review.
+	failures := postFileComments(cmd.Context(), t, place)
+
+	if err := reportReview(env, t, result, payload, place, &posted, failures, flags.json); err != nil {
 		return err
 	}
+	reportFileComments(env, failures, flags.json)
 	return unavailableError(result)
+}
+
+// fileCommentFailure is one file-level comment GitHub would not take.
+type fileCommentFailure struct {
+	Path   string
+	Reason string
+}
+
+// postFileComments gives every finding that hangs off a whole file a thread to
+// be answered on, and reports the ones that got none.
+//
+// One request each, and one failure never stops the rest: they are independent
+// comments rather than a batch, so the finding a rate limit swallowed is the
+// only finding lost. Each is still stated in the review body, which is what
+// makes a failure reportable rather than silent.
+func postFileComments(ctx context.Context, t *pullRequestTarget, place reviewpost.Placement) []fileCommentFailure {
+	var failures []fileCommentFailure
+	for _, comment := range reviewpost.FileComments(t.pr, place) {
+		if _, err := t.client.CreateFileComment(ctx, t.pr.Number, comment); err != nil {
+			failures = append(failures, fileCommentFailure{Path: comment.Path, Reason: err.Error()})
+		}
+	}
+	return failures
+}
+
+// reportFileComments says which findings never got a thread.
+//
+// Worth a line of its own. A finding stated in the review body with no thread
+// beside it looks exactly like one agtk chose not to attach, and the two oblige
+// opposite things: the second blocks nothing, and this one has to be re-posted
+// before the head can be approved.
+func reportFileComments(env *Env, failures []fileCommentFailure, asJSON bool) {
+	if len(failures) == 0 || asJSON {
+		return
+	}
+	fmt.Fprintf(env.Stdout, "\n%d file-level comment(s) were refused, so those findings carry no thread:\n", len(failures))
+	for _, f := range failures {
+		fmt.Fprintf(env.Stdout, "  %s: %s\n", f.Path, f.Reason)
+	}
+	fmt.Fprintln(env.Stdout, "Each is still stated in the review body. Re-run with --force to post them again.")
 }
 
 // reportReview writes what the review says and what became of it, in whichever
@@ -319,10 +386,10 @@ func runCodeReviewPR(cmd *cobra.Command, env *Env, target reviewTarget, flags ru
 // from the rest of the command in the first place.
 func reportReview(env *Env, t *pullRequestTarget, result *reviewrun.Review,
 	payload githubapp.ReviewPayload, place reviewpost.Placement,
-	posted *githubapp.PostedReview, asJSON bool,
+	posted *githubapp.PostedReview, failures []fileCommentFailure, asJSON bool,
 ) error {
 	if asJSON {
-		return writeJSON(env, pullRequestPostJSON(t, result, payload, place, posted))
+		return writeJSON(env, pullRequestPostJSON(t, result, payload, place, posted, failures))
 	}
 	reviewrun.Render(env.Stdout, result)
 	if posted == nil {

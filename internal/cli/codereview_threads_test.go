@@ -227,7 +227,7 @@ func TestThePostedJSONSeparatesAFailedThreadReadFromAQuietPullRequest(t *testing
 
 	decode := func(r *reviewrun.Review) map[string]any {
 		t.Helper()
-		raw, err := json.Marshal(pullRequestPostJSON(target, r, githubapp.ReviewPayload{}, reviewpost.Placement{}, nil))
+		raw, err := json.Marshal(pullRequestPostJSON(target, r, githubapp.ReviewPayload{}, reviewpost.Placement{}, nil, nil))
 		if err != nil {
 			t.Fatal(err)
 		}

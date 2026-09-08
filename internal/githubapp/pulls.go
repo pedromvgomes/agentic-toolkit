@@ -124,3 +124,50 @@ func (c *Client) CreateReview(ctx context.Context, number int, payload ReviewPay
 	}
 	return posted, nil
 }
+
+// SubjectFile addresses a comment at a whole file rather than at a line in it.
+const SubjectFile = "file"
+
+// FileComment is one comment against a whole file in a pull request's diff.
+//
+// Its own request, and never part of a review. `subject_type` is not a field
+// on a review's draft comments — GitHub answers 422 "Field is not defined on
+// DraftPullRequestReviewComment" — so a finding that carries no line, or one
+// whose line the diff does not add, is posted after the review rather than
+// inside it. That is the cost of giving such a finding a thread somebody can
+// answer on, and it is why a review run's "exactly one API call" holds for the
+// review proper and not for these.
+type FileComment struct {
+	// CommitID binds the comment to the head it describes, the way a review
+	// is bound to the commit it was made against.
+	CommitID    string `json:"commit_id"`
+	Path        string `json:"path"`
+	SubjectType string `json:"subject_type"`
+	Body        string `json:"body"`
+}
+
+// PostedComment is what GitHub made of a posted comment.
+type PostedComment struct {
+	ID      int64  `json:"id"`
+	HTMLURL string `json:"html_url"`
+}
+
+// CreateFileComment posts one comment against a whole file.
+//
+// GitHub refuses a path the pull request's diff does not touch with a 422
+// naming pull_request_review_thread.path, which is why a finding on such a
+// path is recognised as unattachable before this is reached rather than being
+// discovered here. One that fails anyway leaves its finding stated in the
+// review body, which is reported: unlike a review's inline comments, these
+// fail one at a time and cost nothing but themselves.
+func (c *Client) CreateFileComment(ctx context.Context, number int, comment FileComment) (PostedComment, error) {
+	if comment.SubjectType == "" {
+		comment.SubjectType = SubjectFile
+	}
+	var posted PostedComment
+	path := fmt.Sprintf("/repos/%s/pulls/%d/comments", c.slug, number)
+	if err := c.call(ctx, http.MethodPost, path, comment, &posted); err != nil {
+		return PostedComment{}, err
+	}
+	return posted, nil
+}

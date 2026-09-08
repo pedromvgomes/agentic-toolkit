@@ -233,7 +233,7 @@ func TestThePayloadPreviewPrintsEveryCommentAndPostsNothing(t *testing.T) {
 	}
 	place := reviewpost.Placement{
 		Inline:       []reviewrun.Finding{{}, {}},
-		Unpositioned: []reviewrun.Finding{{Path: "c.go", StartLine: line(40)}},
+		Unattachable: []reviewrun.Finding{{Path: "c.go", StartLine: line(40)}},
 	}
 
 	var b bytes.Buffer
@@ -242,7 +242,7 @@ func TestThePayloadPreviewPrintsEveryCommentAndPostsNothing(t *testing.T) {
 	for _, want := range []string{
 		"POST /repos/acme/widgets/pulls/7/reviews",
 		"a.go:4", "b.go:7-9", "off by one", "a wide claim", "the summary",
-		"c.go:40 is not a line this pull request adds",
+		"c.go:40 carries no thread to answer on",
 		"Nothing was posted.",
 	} {
 		if !strings.Contains(out, want) {
@@ -251,19 +251,32 @@ func TestThePayloadPreviewPrintsEveryCommentAndPostsNothing(t *testing.T) {
 	}
 }
 
-// A finding that was moved to the body is reported as moved. Silently
-// relocating it would leave somebody looking for an inline comment that is
-// not there.
+// Where each finding ended up is reported rather than implied. A finding
+// stated in the body with no thread beside it looks exactly like one that got
+// a comment, and the two oblige opposite things before this head is approved.
 func TestPlacementIsReportedRatherThanImplied(t *testing.T) {
 	var b bytes.Buffer
 	renderPlacement(&b, reviewpost.Placement{
 		Inline:       []reviewrun.Finding{{}},
-		CrossCutting: []reviewrun.Finding{{}, {}},
-		Unpositioned: []reviewrun.Finding{{Path: "z.go", StartLine: line(12)}},
+		FileLevel:    []reviewrun.Finding{{}, {}},
+		Unattachable: []reviewrun.Finding{{Path: "z.go", StartLine: line(12)}},
 	})
 	out := b.String()
-	if !strings.Contains(out, "4 finding(s): 1 inline, 2 with no line, 1 outside this diff") {
+	if !strings.Contains(out, "4 finding(s): 1 inline, 2 against a whole file, 1 with nowhere to answer") {
 		t.Errorf("the placement is not reported:\n%s", out)
+	}
+}
+
+// A prompt-injection finding agtk could not attach closes approval outright,
+// with no reply that opens it. Somebody reading the run has to be told that
+// now rather than discovering it when approval refuses.
+func TestADeadlockedInjectionFindingIsReportedByTheRun(t *testing.T) {
+	var b bytes.Buffer
+	renderPlacement(&b, reviewpost.Placement{
+		Unattachable: []reviewrun.Finding{{Category: reviewrun.CategoryPromptInjection}},
+	})
+	if out := b.String(); !strings.Contains(out, "Approval is closed until the code changes") {
+		t.Errorf("an unattachable injection finding is not reported as closing approval:\n%s", out)
 	}
 }
 
@@ -428,7 +441,7 @@ func TestAReviewWithNoVerdictFailsTheCommandUnderJSONToo(t *testing.T) {
 		result := reviewFor(false)
 		payload, place := reviewpost.Build(result, t2.pr, nil)
 
-		if err := reportReview(env, t2, result, payload, place, nil, asJSON); err != nil {
+		if err := reportReview(env, t2, result, payload, place, nil, nil, asJSON); err != nil {
 			t.Fatalf("json=%v: report: %v", asJSON, err)
 		}
 		if err := unavailableError(result); err == nil {
@@ -449,7 +462,7 @@ func TestThePostedJSONCarriesWhetherTheReviewReachedAVerdict(t *testing.T) {
 
 	var out bytes.Buffer
 	env := &Env{Stdin: strings.NewReader(""), Stdout: &out, Stderr: io.Discard, WorkDir: t.TempDir()}
-	if err := reportReview(env, target, result, payload, place, nil, true); err != nil {
+	if err := reportReview(env, target, result, payload, place, nil, nil, true); err != nil {
 		t.Fatal(err)
 	}
 	var got struct {
@@ -487,7 +500,7 @@ func TestAFailedPostStillReportsAsJSONUnderJSON(t *testing.T) {
 
 	var out bytes.Buffer
 	env := &Env{Stdin: strings.NewReader(""), Stdout: &out, Stderr: io.Discard, WorkDir: t.TempDir()}
-	if err := reportReview(env, target, result, payload, place, nil, true); err != nil {
+	if err := reportReview(env, target, result, payload, place, nil, nil, true); err != nil {
 		t.Fatal(err)
 	}
 	if !json.Valid(out.Bytes()) {
@@ -499,20 +512,134 @@ func TestAFailedPostStillReportsAsJSONUnderJSON(t *testing.T) {
 // validates and the line a finding is refused for. Naming the start would
 // report a line that is on the diff as the reason the finding is not.
 func TestPlacementNamesTheLineThatWasActuallyRefused(t *testing.T) {
-	f := reviewrun.Finding{Path: "a.go", StartLine: line(10), EndLine: line(20), Category: "correctness"}
+	f := reviewrun.Finding{Path: "z.go", StartLine: line(10), EndLine: line(20), Category: "correctness"}
 	added := reviewpost.AddedLines{"a.go": {10: true}}
 	_, place := reviewpost.Build(reviewFor(true, f), githubapp.PullRequest{HeadSHA: "x"}, added)
-	if len(place.Unpositioned) != 1 {
+	if len(place.Unattachable) != 1 {
 		t.Fatalf("placed as %+v", place)
 	}
 
 	var b bytes.Buffer
 	renderPlacement(&b, place)
 	out := b.String()
-	if !strings.Contains(out, "a.go:20") {
+	if !strings.Contains(out, "z.go:20") {
 		t.Errorf("the refused line is not named:\n%s", out)
 	}
-	if strings.Contains(out, "a.go:10") {
-		t.Errorf("line 10 is on the diff and is named as the reason the finding is not:\n%s", out)
+	if strings.Contains(out, "z.go:10") {
+		t.Errorf("the region's start is named as the line the comment was refused for:\n%s", out)
+	}
+}
+
+// fileCommentDoer answers the file-comment endpoint, refusing the paths named.
+type fileCommentDoer struct {
+	rest   stubDoer
+	refuse map[string]bool
+	// paths is every path a comment was attempted for, in order.
+	paths []string
+}
+
+func (d *fileCommentDoer) Do(req *http.Request) (*http.Response, error) {
+	if req.Method != http.MethodPost || !strings.HasSuffix(req.URL.Path, "/pulls/7/comments") {
+		return d.rest.Do(req)
+	}
+	var sent struct {
+		Path        string `json:"path"`
+		SubjectType string `json:"subject_type"`
+	}
+	raw, err := io.ReadAll(req.Body)
+	if err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(raw, &sent); err != nil {
+		return nil, err
+	}
+	d.paths = append(d.paths, sent.Path+" "+sent.SubjectType)
+	if d.refuse[sent.Path] {
+		return &http.Response{StatusCode: 422, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(
+			`{"message": "Validation Failed", "errors": [{"message": "pull_request_review_thread.path could not be resolved"}]}`))}, nil
+	}
+	return &http.Response{StatusCode: 201, Header: http.Header{},
+		Body: io.NopCloser(strings.NewReader(`{"id": 5, "html_url": "https://github.test/c/5"}`))}, nil
+}
+
+// A finding that hangs off a whole file gets one request of its own, because
+// subject_type is not a field a review's draft comments carry.
+func TestEachFileLevelFindingGetsOneRequestOfItsOwn(t *testing.T) {
+	work, baseSHA, headSHA := prRepo(t)
+	doer := &fileCommentDoer{rest: stubDoer{
+		"/repos/acme/widgets/installation":    `{"id": 99}`,
+		"/app/installations/99/access_tokens": `{"token": "ghs_x", "expires_at": "2999-01-01T00:00:00Z"}`,
+		"/repos/acme/widgets/pulls/7": fmt.Sprintf(
+			`{"number": 7, "state": "open", "base": {"sha": %q, "ref": "main"}, "head": {"sha": %q, "ref": "feature/x"}}`,
+			baseSHA, headSHA),
+	}}
+	target, err := resolvePullRequest(context.Background(), work, 7,
+		clientSeam{dir: registration(t), doer: doer})
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+
+	place := reviewpost.Placement{FileLevel: []reviewrun.Finding{
+		{Path: "a.go", Category: "architecture", Severity: reviewrun.SeverityAmber, Issue: "two reasons to change"},
+		{Path: "b.go", Category: "correctness", Severity: reviewrun.SeverityRed, Issue: "off by one"},
+	}}
+	failures := postFileComments(context.Background(), target, place)
+
+	if len(failures) != 0 {
+		t.Errorf("comments GitHub accepted are reported as refused: %+v", failures)
+	}
+	want := []string{"a.go file", "b.go file"}
+	if len(doer.paths) != len(want) {
+		t.Fatalf("%d requests were made, want one per finding: %v", len(doer.paths), doer.paths)
+	}
+	for i, path := range want {
+		if doer.paths[i] != path {
+			t.Errorf("request %d was %q, want %q", i, doer.paths[i], path)
+		}
+	}
+}
+
+// These fail one at a time and cost nothing but themselves, so one refusal
+// never stops the rest — and the finding it lost has to be named, because a
+// finding stated in the body with no thread beside it looks exactly like one
+// agtk chose not to attach.
+func TestOneRefusedFileCommentNeitherStopsTheRestNorGoesUnreported(t *testing.T) {
+	work, baseSHA, headSHA := prRepo(t)
+	doer := &fileCommentDoer{
+		rest: stubDoer{
+			"/repos/acme/widgets/installation":    `{"id": 99}`,
+			"/app/installations/99/access_tokens": `{"token": "ghs_x", "expires_at": "2999-01-01T00:00:00Z"}`,
+			"/repos/acme/widgets/pulls/7": fmt.Sprintf(
+				`{"number": 7, "state": "open", "base": {"sha": %q, "ref": "main"}, "head": {"sha": %q, "ref": "feature/x"}}`,
+				baseSHA, headSHA),
+		},
+		refuse: map[string]bool{"a.go": true},
+	}
+	target, err := resolvePullRequest(context.Background(), work, 7,
+		clientSeam{dir: registration(t), doer: doer})
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+
+	place := reviewpost.Placement{FileLevel: []reviewrun.Finding{
+		{Path: "a.go", Category: "architecture", Severity: reviewrun.SeverityAmber},
+		{Path: "b.go", Category: "correctness", Severity: reviewrun.SeverityRed},
+	}}
+	failures := postFileComments(context.Background(), target, place)
+
+	if len(doer.paths) != 2 {
+		t.Errorf("a refused comment stopped the ones after it: %v", doer.paths)
+	}
+	if len(failures) != 1 || failures[0].Path != "a.go" {
+		t.Fatalf("the refusal was reported as %+v", failures)
+	}
+
+	var out bytes.Buffer
+	env := &Env{Stdin: strings.NewReader(""), Stdout: &out, Stderr: io.Discard, WorkDir: work}
+	reportFileComments(env, failures, false)
+	for _, want := range []string{"a.go", "carry no thread", "--force"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("the report does not carry %q:\n%s", want, out.String())
+		}
 	}
 }

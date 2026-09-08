@@ -35,10 +35,14 @@ func finding(path string, start, end *int, category string) reviewrun.Finding {
 	}
 }
 
+// reviewWith builds a review that reached a verdict over a pull request whose
+// comment threads were read and held nothing. Threads travel with it because a
+// thread list that could not be read is a review that found less than it would
+// have, which the posted marker has to record.
 func reviewWith(findings ...reviewrun.Finding) *reviewrun.Review {
 	return &reviewrun.Review{
 		Panel: "standard", Manifest: "builtin", Range: "main..HEAD",
-		Available: true, Findings: findings,
+		Available: true, Findings: findings, Threads: reviewrun.ThreadsRead(nil),
 		Reports: []reviewrun.RunReport{{
 			Label: "correctness", Role: reviewrun.RoleReviewer,
 			Provider: "claudecode", Report: reviewrun.Answered(findings),
@@ -100,17 +104,17 @@ func TestTheMarkerIsAnHTMLCommentAndNothingElse(t *testing.T) {
 	}
 }
 
-// GitHub requires a path and a line for an inline comment, so a claim about a
-// subsystem has nowhere to be one — and it must still reach the pull request.
-func TestAFindingWithNoLineIsStatedInTheBody(t *testing.T) {
+// A finding that names no file at all can be given no thread: there is nothing
+// for GitHub to hang a comment off. It must still reach the pull request.
+func TestAFindingWithNoPathIsStatedInTheBody(t *testing.T) {
 	f := finding("", nil, nil, "architecture")
 	f.Issue = "the two provider tables have drifted apart"
 	payload, place := reviewpost.Build(reviewWith(f), pr, added)
 
 	if len(payload.Comments) != 0 {
-		t.Fatalf("a finding with no line became an inline comment: %+v", payload.Comments)
+		t.Fatalf("a finding with no path became an inline comment: %+v", payload.Comments)
 	}
-	if len(place.CrossCutting) != 1 {
+	if len(place.Unattachable) != 1 {
 		t.Fatalf("the finding was placed as %+v", place)
 	}
 	if !strings.Contains(payload.Body, "the two provider tables have drifted apart") {
@@ -118,10 +122,39 @@ func TestAFindingWithNoLineIsStatedInTheBody(t *testing.T) {
 	}
 }
 
+// A claim about a whole file has no line to be an inline comment on, and the
+// change touches its path — so it gets a comment against the file, which is a
+// thread somebody can answer on.
+func TestAFindingWithNoLineOnATouchedPathBecomesAFileComment(t *testing.T) {
+	f := finding("a.go", nil, nil, "architecture")
+	f.Issue = "this file has two reasons to change"
+	payload, place := reviewpost.Build(reviewWith(f), pr, added)
+
+	if len(payload.Comments) != 0 {
+		t.Fatalf("a finding with no line became an inline comment: %+v", payload.Comments)
+	}
+	if len(place.FileLevel) != 1 || len(place.Unattachable) != 0 {
+		t.Fatalf("the finding was placed as %+v", place)
+	}
+	comments := reviewpost.FileComments(pr, place)
+	if len(comments) != 1 || comments[0].Path != "a.go" {
+		t.Fatalf("the file-level comments are %+v", comments)
+	}
+	if comments[0].CommitID != pr.HeadSHA {
+		t.Errorf("the comment is bound to %q, want the head it describes", comments[0].CommitID)
+	}
+	if !strings.Contains(comments[0].Body, "this file has two reasons to change") {
+		t.Errorf("the comment does not carry the finding:\n%s", comments[0].Body)
+	}
+	if !strings.Contains(comments[0].Body, reviewpost.FingerprintMarker(f.Fingerprint())) {
+		t.Errorf("a file-level comment carries no identity, so approval cannot find its thread:\n%s", comments[0].Body)
+	}
+}
+
 // One comment on a line outside the diff rejects the entire review, discarding
 // a panel that has already been paid for — including every comment that was
-// right.
-func TestAFindingOffTheDiffIsMovedToTheBodyRatherThanSent(t *testing.T) {
+// right. The finding still needs a thread, so it hangs off the whole file.
+func TestAFindingOffTheDiffBecomesAFileCommentRatherThanBeingSentInline(t *testing.T) {
 	off := finding("a.go", at(40), at(40), "correctness")
 	off.Issue = "this loop never terminates"
 	on := finding("b.go", at(3), at(3), "security")
@@ -131,21 +164,26 @@ func TestAFindingOffTheDiffIsMovedToTheBodyRatherThanSent(t *testing.T) {
 	if len(payload.Comments) != 1 || payload.Comments[0].Path != "b.go" {
 		t.Fatalf("the comment list is %+v; a line outside the diff was sent", payload.Comments)
 	}
-	if len(place.Unpositioned) != 1 {
+	if len(place.FileLevel) != 1 || len(place.Unattachable) != 0 {
 		t.Fatalf("the off-diff finding was placed as %+v", place)
 	}
-	if !strings.Contains(payload.Body, "this loop never terminates") {
-		t.Errorf("a finding that could not be positioned was lost:\n%s", payload.Body)
+	comments := reviewpost.FileComments(pr, place)
+	if len(comments) != 1 || !strings.Contains(comments[0].Body, "this loop never terminates") {
+		t.Errorf("a finding that could not be positioned got no thread: %+v", comments)
 	}
 }
 
-// A file the change does not touch at all offers no line, and a finding
-// pointing into one is exactly what mechanical exclusions make likely.
-func TestAFindingInAFileTheChangeDoesNotTouchIsNotSent(t *testing.T) {
+// GitHub refuses a comment on a path the change does not touch, so agtk can
+// offer nobody a thread to answer on — which is exactly what mechanical
+// exclusions make likely.
+func TestAFindingInAFileTheChangeDoesNotTouchGetsNoThread(t *testing.T) {
 	f := finding("vendor/z.go", at(3), at(3), "performance")
 	payload, place := reviewpost.Build(reviewWith(f), pr, added)
-	if len(payload.Comments) != 0 || len(place.Unpositioned) != 1 {
+	if len(payload.Comments) != 0 || len(place.Unattachable) != 1 {
 		t.Fatalf("%d comments, placed as %+v", len(payload.Comments), place)
+	}
+	if len(reviewpost.FileComments(pr, place)) != 0 {
+		t.Error("a comment was built for a path GitHub refuses")
 	}
 }
 
@@ -182,7 +220,7 @@ func TestAFindingEndingOffTheDiffIsNotSentEvenWhenItBeginsOnIt(t *testing.T) {
 	if len(payload.Comments) != 0 {
 		t.Fatalf("a region ending outside the diff was sent: %+v", payload.Comments)
 	}
-	if len(place.Unpositioned) != 1 {
+	if len(place.FileLevel) != 1 {
 		t.Errorf("placed as %+v", place)
 	}
 }
