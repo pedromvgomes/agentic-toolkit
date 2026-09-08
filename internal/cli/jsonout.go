@@ -9,6 +9,7 @@ import (
 	"github.com/pedromvgomes/agentic-toolkit/internal/lockfile"
 	"github.com/pedromvgomes/agentic-toolkit/internal/memory"
 	"github.com/pedromvgomes/agentic-toolkit/internal/resolver"
+	"github.com/pedromvgomes/agentic-toolkit/internal/review"
 	"github.com/pedromvgomes/agentic-toolkit/internal/reviewrun"
 )
 
@@ -542,6 +543,198 @@ func planRunJSON(p *reviewrun.Plan) reviewPlanJSON {
 		out.Runs = append(out.Runs, plannedRunJSON{
 			Label: r.Label, Role: r.Role, Provider: r.Provider, Model: r.Model, Prompt: r.Prompt,
 		})
+	}
+	return out
+}
+
+// ===== code review: panels and explain =====
+
+// panelJSON is one panel as a caller choosing a depth needs to see it: what
+// it is for and what it spends, under the name --panel accepts.
+type panelJSON struct {
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Reviewers   []string `json:"reviewers"`
+	Quorum      int      `json:"quorum"`
+	Runs        int      `json:"runs"`
+	// DefaultFor names the contexts that start from this panel.
+	DefaultFor []string `json:"default_for"`
+}
+
+type panelsOutJSON struct {
+	Version  int         `json:"version"`
+	Manifest string      `json:"manifest"`
+	Context  string      `json:"context"`
+	Panels   []panelJSON `json:"panels"`
+}
+
+// panelsJSON lists the panels a manifest declares, shallowest first.
+func panelsJSON(manifest string, ctx review.Context, m *review.Manifest) panelsOutJSON {
+	out := panelsOutJSON{
+		Version:  jsonVersion,
+		Manifest: manifest,
+		Context:  string(ctx),
+		Panels:   []panelJSON{},
+	}
+	for _, name := range panelsByDepth(m) {
+		out.Panels = append(out.Panels, panelToJSON(m, name))
+	}
+	return out
+}
+
+func panelToJSON(m *review.Manifest, name string) panelJSON {
+	panel := m.Panels[name]
+	reviewers := panel.Reviewers
+	if reviewers == nil {
+		reviewers = []string{}
+	}
+	return panelJSON{
+		Name:        name,
+		Description: panel.Description,
+		Reviewers:   reviewers,
+		Quorum:      panel.EffectiveQuorum(),
+		Runs:        panel.Cost(),
+		DefaultFor:  defaultFor(m, name),
+	}
+}
+
+// explainOutJSON is the panel decision, structured: everything the prose form
+// prints, in the same order it prints it.
+//
+// The default and the resulting panel are whole panels rather than names,
+// because a caller reading this is deciding whether to run something else,
+// and that choice is made on what a panel is for and what it spends.
+type explainOutJSON struct {
+	Version    int               `json:"version"`
+	Manifest   string            `json:"manifest"`
+	Range      string            `json:"range"`
+	Change     changeJSON        `json:"change"`
+	Context    string            `json:"context"`
+	Default    panelJSON         `json:"default"`
+	Fired      []firedRuleJSON   `json:"fired"`
+	Skipped    []skippedRuleJSON `json:"skipped"`
+	Panel      panelJSON         `json:"panel"`
+	Overridden bool              `json:"overridden"`
+	Validates  bool              `json:"validates"`
+	// ValidationReason says which of the context or the panel asked for
+	// validation, and is empty when nothing did.
+	ValidationReason string `json:"validation_reason,omitempty"`
+}
+
+// changeJSON is the change's profile: what selection was decided on.
+type changeJSON struct {
+	Files     int      `json:"files"`
+	Lines     int      `json:"lines"`
+	Languages []string `json:"languages"`
+	Symbols   []string `json:"symbols"`
+	Signals   []string `json:"signals"`
+	// Undetermined lists the signals the change could not be read for. A
+	// signal that could not be read is not a signal the change does not
+	// carry, and a consumer must be able to tell the two apart.
+	Undetermined     []undeterminedSignalJSON `json:"undetermined_signals"`
+	ReferencingFiles countJSON                `json:"referencing_files"`
+	Excluded         []excludedFileJSON       `json:"excluded"`
+}
+
+type undeterminedSignalJSON struct {
+	Signal string `json:"signal"`
+	Reason string `json:"reason"`
+}
+
+// countJSON is a number that may not exist. Value is null rather than zero
+// when it does not: unavailable is never low.
+type countJSON struct {
+	Value  *int   `json:"value"`
+	Reason string `json:"reason,omitempty"`
+}
+
+type excludedFileJSON struct {
+	Path   string `json:"path"`
+	Reason string `json:"reason"`
+}
+
+type firedRuleJSON struct {
+	Index      int             `json:"index"`
+	To         string          `json:"to"`
+	Combinator string          `json:"combinator"`
+	Conditions []conditionJSON `json:"conditions"`
+}
+
+type conditionJSON struct {
+	Condition string `json:"condition"`
+	Held      bool   `json:"held"`
+}
+
+type skippedRuleJSON struct {
+	Index  int    `json:"index"`
+	To     string `json:"to"`
+	Reason string `json:"reason"`
+}
+
+func explainJSON(manifest, rangeLabel string, m *review.Manifest, p *review.Profile, sel *review.Selection) explainOutJSON {
+	out := explainOutJSON{
+		Version:          jsonVersion,
+		Manifest:         manifest,
+		Range:            rangeLabel,
+		Change:           changeToJSON(p),
+		Context:          string(sel.Context),
+		Default:          panelToJSON(m, sel.Default),
+		Fired:            []firedRuleJSON{},
+		Skipped:          []skippedRuleJSON{},
+		Panel:            panelToJSON(m, sel.Panel),
+		Overridden:       sel.Overridden,
+		Validates:        sel.Validates,
+		ValidationReason: sel.ValidationReason(),
+	}
+	for _, rule := range sel.Fired {
+		row := firedRuleJSON{Index: rule.Index, To: rule.To, Combinator: "any", Conditions: []conditionJSON{}}
+		if rule.All {
+			row.Combinator = "all"
+		}
+		for _, c := range rule.Conditions {
+			row.Conditions = append(row.Conditions, conditionJSON{Condition: c.Condition.String(), Held: c.Held})
+		}
+		out.Fired = append(out.Fired, row)
+	}
+	for _, rule := range sel.Skipped {
+		out.Skipped = append(out.Skipped, skippedRuleJSON{Index: rule.Index, To: rule.To, Reason: rule.Reason})
+	}
+	return out
+}
+
+func changeToJSON(p *review.Profile) changeJSON {
+	out := changeJSON{
+		Files:        p.ChangedFiles,
+		Lines:        p.ChangedLines,
+		Languages:    []string{},
+		Symbols:      []string{},
+		Signals:      []string{},
+		Undetermined: []undeterminedSignalJSON{},
+		Excluded:     []excludedFileJSON{},
+	}
+	for _, lang := range p.Languages() {
+		out.Languages = append(out.Languages, string(lang))
+	}
+	out.Symbols = append(out.Symbols, p.Symbols...)
+	if p.Signals != nil {
+		for _, sig := range p.Signals.Present() {
+			out.Signals = append(out.Signals, string(sig))
+		}
+		for _, sig := range review.Signals {
+			if _, known := p.Signals.Has(sig); !known {
+				out.Undetermined = append(out.Undetermined, undeterminedSignalJSON{
+					Signal: string(sig), Reason: p.Signals.Undetermined(sig),
+				})
+			}
+		}
+	}
+	if n, ok := p.ReferencingFiles.Value(); ok {
+		out.ReferencingFiles.Value = &n
+	} else {
+		out.ReferencingFiles.Reason = p.ReferencingFiles.Reason
+	}
+	for _, f := range p.ExcludedFiles() {
+		out.Excluded = append(out.Excluded, excludedFileJSON{Path: f.Path, Reason: f.Excluded.Reason()})
 	}
 	return out
 }

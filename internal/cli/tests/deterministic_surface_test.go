@@ -227,8 +227,9 @@ func mustRel(t *testing.T, base, path string) string {
 	return rel
 }
 
-// `code-review explain` decides which panel a change would get, and it must do
-// that on a machine with no provider configured and no agent CLI installed.
+// `code-review explain` decides which panel a change would get, and `panels`
+// lists what it could have got instead. Both must do that on a machine with no
+// provider configured and no agent CLI installed.
 //
 // It is the property the whole deterministic surface exists for: the answer to
 // "why is this review deeper than I expected" has to be available before
@@ -271,6 +272,20 @@ func TestCodeReviewExplainRunsWithNoProviderInstalled(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "panel:") {
 		t.Errorf("explain produced no panel decision:\n%s", stdout)
+	}
+
+	// The structured form and the panel listing are read by a caller that
+	// is about to decide whether to spend, so they must be as free as the
+	// prose is.
+	for _, args := range [][]string{
+		{"code-review", "explain", "--base", "HEAD", "--json"},
+		{"code-review", "panels", "--base", "HEAD"},
+		{"code-review", "panels", "--base", "HEAD", "--json"},
+		{"code-review", "panels", "--base", "HEAD", "--context", "pr"},
+	} {
+		if _, stderr, err := runCLI(t, work, args...); err != nil {
+			t.Errorf("%s needs a provider it should not need: %v\n%s", strings.Join(args, " "), err, stderr)
+		}
 	}
 }
 

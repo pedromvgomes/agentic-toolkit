@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"text/tabwriter"
 
@@ -10,11 +11,11 @@ import (
 	"github.com/pedromvgomes/agentic-toolkit/internal/review"
 )
 
-// `explain` and `signals` are deliberately model-free: they read a manifest,
-// profile a change and decide which panel would run, and neither starts a
-// process. That is what makes `explain` free to run on a hook, and it is
-// checkable — internal/review names the driver in one file, which asserts
-// capabilities and constructs nothing.
+// `explain`, `panels` and `signals` are deliberately model-free: they read a
+// manifest, profile a change and decide which panel would run, and none of
+// them starts a process. That is what makes `explain` free to run on a hook,
+// and it is checkable — internal/review names the driver in one file, which
+// asserts capabilities and constructs nothing.
 //
 // `run` is the one subcommand that invokes a model, and it reaches one through
 // internal/reviewrun rather than by constructing a driver here.
@@ -40,6 +41,7 @@ func newCodeReviewCmd(env *Env) *cobra.Command {
 	cmd.AddCommand(
 		newCodeReviewRunCmd(env),
 		newCodeReviewExplainCmd(env),
+		newCodeReviewPanelsCmd(env),
 		newCodeReviewSignalsCmd(env),
 	)
 	return cmd
@@ -53,15 +55,22 @@ type reviewTarget struct {
 	panel   string
 }
 
-// targetFlags registers the flags that name a change, so `explain` and `run`
-// take the same words for the same things.
-func targetFlags(cmd *cobra.Command, target *reviewTarget) {
+// changeFlags registers the flags that name a change and the context it is
+// reviewed in, so every subcommand takes the same words for the same things.
+func changeFlags(cmd *cobra.Command, target *reviewTarget) {
 	cmd.Flags().StringVar(&target.base, "base", "",
 		"ref the change is measured against (default: the remote's default branch)")
 	cmd.Flags().StringVar(&target.head, "head", "",
 		"ref the change ends at (default: the working tree, uncommitted changes included)")
 	cmd.Flags().StringVar(&target.context, "context", string(review.ContextWorktree),
 		"what the review runs against: "+contextNames())
+}
+
+// targetFlags registers the change flags and the panel override, for the
+// subcommands that decide which panel runs. `panels` lists them all and takes
+// no override.
+func targetFlags(cmd *cobra.Command, target *reviewTarget) {
+	changeFlags(cmd, target)
 	cmd.Flags().StringVar(&target.panel, "panel", "",
 		"run this panel instead of the one the rules choose")
 }
@@ -93,8 +102,47 @@ func resolveTarget(env *Env, target reviewTarget) (root, base, mergeBase string,
 	return root, base, mergeBase, nil
 }
 
+// governingManifest reads the manifest a review in ctx is judged by, and
+// returns it with the label that says which one was read.
+//
+// A context that posts reads its rules from the base ref. Everything on the
+// branch under review is written by its author, so a manifest read from the
+// working tree would let a change name the reviewers that judge it — the
+// closure ADR 0007 makes structural rather than instructed. A local review of
+// the working tree is the author reviewing their own change, so it reads what
+// they have written.
+//
+// The label is returned alongside because a repo that believes it wrote a
+// manifest and is being reviewed by the built-in one needs to be told: the two
+// produce entirely different panels, and nothing else in any output would say
+// which was read.
+func governingManifest(root, mergeBase string, ctx review.Context) (*review.Manifest, string, error) {
+	var (
+		m       *review.Manifest
+		path    string
+		builtin bool
+		err     error
+	)
+	if ctx.Posts() {
+		m, path, builtin, err = review.LoadAtRef(root, mergeBase)
+	} else {
+		m, path, builtin, err = review.Load(root)
+	}
+	if err != nil {
+		return nil, "", err
+	}
+	label := manifestLabel(path, builtin)
+	if err := review.CheckCapabilities(label, m); err != nil {
+		return nil, "", err
+	}
+	return m, label, nil
+}
+
 func newCodeReviewExplainCmd(env *Env) *cobra.Command {
-	var target reviewTarget
+	var (
+		target reviewTarget
+		asJSON bool
+	)
 
 	cmd := &cobra.Command{
 		Use:   "explain",
@@ -107,38 +155,23 @@ func newCodeReviewExplainCmd(env *Env) *cobra.Command {
 			"the review that would tell you.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runCodeReviewExplain(env, target)
+			return runCodeReviewExplain(env, target, asJSON)
 		},
 	}
 	targetFlags(cmd, &target)
+	cmd.Flags().BoolVar(&asJSON, "json", false, "emit the decision as JSON")
 	return cmd
 }
 
-func runCodeReviewExplain(env *Env, target reviewTarget) error {
+func runCodeReviewExplain(env *Env, target reviewTarget, asJSON bool) error {
 	ctx := review.Context(target.context)
 	root, base, mergeBase, err := resolveTarget(env, target)
 	if err != nil {
 		return err
 	}
 
-	// A context that posts reads its rules from the base ref. Everything on
-	// the branch under review is written by its author, so a manifest read
-	// from the working tree would let a change name the reviewers that judge
-	// it — the closure ADR 0007 makes structural rather than instructed.
-	var (
-		m       *review.Manifest
-		path    string
-		builtin bool
-	)
-	if ctx.Posts() {
-		m, path, builtin, err = review.LoadAtRef(root, mergeBase)
-	} else {
-		m, path, builtin, err = review.Load(root)
-	}
+	m, label, err := governingManifest(root, mergeBase, ctx)
 	if err != nil {
-		return err
-	}
-	if err := review.CheckCapabilities(manifestLabel(path, builtin), m); err != nil {
 		return err
 	}
 
@@ -156,13 +189,102 @@ func runCodeReviewExplain(env *Env, target reviewTarget) error {
 		return err
 	}
 
-	// A repo that believes it wrote a manifest and is being reviewed by the
-	// built-in one needs to be told: the two produce entirely different
-	// panels, and nothing else in this output would say which was read.
-	fmt.Fprintf(env.Stdout, "manifest: %s\n", manifestLabel(path, builtin))
+	if asJSON {
+		return writeJSON(env, explainJSON(label, rangeLabel(base, target.head), m, profile, sel))
+	}
+	fmt.Fprintf(env.Stdout, "manifest: %s\n", label)
 	fmt.Fprintf(env.Stdout, "range:    %s\n", rangeLabel(base, target.head))
 	fmt.Fprint(env.Stdout, sel.Explain(m, profile))
 	return nil
+}
+
+func newCodeReviewPanelsCmd(env *Env) *cobra.Command {
+	var (
+		target reviewTarget
+		asJSON bool
+	)
+
+	cmd := &cobra.Command{
+		Use:   "panels",
+		Short: "List the panels the governing manifest declares",
+		Long: "Prints every panel the manifest declares, with what each is for and what it\n" +
+			"costs. The names are the ones --panel accepts.\n" +
+			"\n" +
+			"Panel names belong to the manifest: the built-in default declares quick,\n" +
+			"standard and deep, and a repo that wrote its own may call them anything. A\n" +
+			"caller offering a choice of depth reads the names here rather than knowing\n" +
+			"them.\n" +
+			"\n" +
+			"The manifest listed is the one a review in --context would be judged by, so\n" +
+			"a PR context lists the panels declared at the base ref.",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runCodeReviewPanels(env, target, asJSON)
+		},
+	}
+	changeFlags(cmd, &target)
+	cmd.Flags().BoolVar(&asJSON, "json", false, "emit the list as JSON")
+	return cmd
+}
+
+func runCodeReviewPanels(env *Env, target reviewTarget, asJSON bool) error {
+	ctx := review.Context(target.context)
+	root, _, mergeBase, err := resolveTarget(env, target)
+	if err != nil {
+		return err
+	}
+
+	m, label, err := governingManifest(root, mergeBase, ctx)
+	if err != nil {
+		return err
+	}
+
+	if asJSON {
+		return writeJSON(env, panelsJSON(label, ctx, m))
+	}
+	fmt.Fprintf(env.Stdout, "manifest: %s\n", label)
+	for _, name := range panelsByDepth(m) {
+		fmt.Fprintf(env.Stdout, "\n%s%s", name, review.PanelShape(m, name))
+		if contexts := defaultFor(m, name); len(contexts) > 0 {
+			fmt.Fprintf(env.Stdout, " — default for %s", strings.Join(contexts, ", "))
+		}
+		fmt.Fprintln(env.Stdout)
+		if desc := m.Panels[name].Description; desc != "" {
+			fmt.Fprintf(env.Stdout, "    %s\n", desc)
+		}
+	}
+	return nil
+}
+
+// panelsByDepth lists a manifest's panels shallowest first, by name among
+// equals. Cost is the order escalations already use, so a listing in that
+// order reads as the ladder a rule climbs; declaration order in a YAML map
+// carries no meaning.
+func panelsByDepth(m *review.Manifest) []string {
+	names := make([]string, 0, len(m.Panels))
+	for name := range m.Panels {
+		names = append(names, name)
+	}
+	sort.Slice(names, func(i, j int) bool {
+		ci, cj := m.Panels[names[i]].Cost(), m.Panels[names[j]].Cost()
+		if ci != cj {
+			return ci < cj
+		}
+		return names[i] < names[j]
+	})
+	return names
+}
+
+// defaultFor names the contexts that start from this panel, in the order help
+// lists them.
+func defaultFor(m *review.Manifest, name string) []string {
+	out := []string{}
+	for _, ctx := range review.Contexts {
+		if m.Defaults.Default(ctx) == name {
+			out = append(out, string(ctx))
+		}
+	}
+	return out
 }
 
 func newCodeReviewSignalsCmd(env *Env) *cobra.Command {
