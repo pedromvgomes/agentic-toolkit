@@ -617,8 +617,10 @@ type explainOutJSON struct {
 	Overridden bool              `json:"overridden"`
 	Validates  bool              `json:"validates"`
 	// ValidationReason says which of the context or the panel asked for
-	// validation, and is empty when nothing did.
-	ValidationReason string `json:"validation_reason,omitempty"`
+	// validation, and is empty when nothing did. Always present, like every
+	// other field here: a consumer reading it must not have to tell a missing
+	// key apart from a review that validates for no stated reason.
+	ValidationReason string `json:"validation_reason"`
 }
 
 // changeJSON is the change's profile: what selection was decided on.

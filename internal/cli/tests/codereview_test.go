@@ -659,4 +659,76 @@ func TestCodeReviewExplainJSONEmitsEmptyListsRatherThanNull(t *testing.T) {
 			t.Errorf("panel.%s is null rather than an empty list", key)
 		}
 	}
+	// A scalar nobody set is present and empty for the same reason: a
+	// consumer must not have to tell a missing key apart from a review that
+	// validates for no stated reason.
+	reason, present := decoded["validation_reason"]
+	if !present {
+		t.Error("validation_reason is absent rather than an empty string")
+	}
+	if reason != "" {
+		t.Errorf("a worktree review that does not validate gives a reason: %v", reason)
+	}
+}
+
+// A manifest that parses but names a provider no build can drive is refused
+// before anything is listed. Parsing is not the only way a manifest fails, and
+// a listing offered under one agtk cannot staff a review under another.
+func TestCodeReviewPanelsRefusesAManifestNoProviderCanStaff(t *testing.T) {
+	work := gitProject(t, map[string]string{
+		".agents/code-review/manifest.yaml": `version: 1
+reviewers:
+  correctness: {provider: gemini, prompt: builtin:correctness}
+judge:     {provider: gemini, prompt: builtin:judge}
+validator: {provider: gemini, prompt: builtin:validator}
+panels:
+  only: {reviewers: [correctness]}
+defaults: {worktree: only, pr: only}
+`,
+		"main.go": "package main\n",
+	})
+
+	stdout, _, err := runCLI(t, work, "code-review", "panels", "--base", "main")
+	if err == nil {
+		t.Fatalf("panels listed a manifest no provider can staff:\n%s", stdout)
+	}
+	for _, want := range []string{"reviewers.correctness.provider", "gemini"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not name %q: %v", want, err)
+		}
+	}
+}
+
+// A panel whose purpose has always been obvious needs no description, and is
+// listed by name and cost alone rather than under an empty line.
+func TestCodeReviewPanelsListsAPanelThatHasNoDescription(t *testing.T) {
+	work := gitProject(t, map[string]string{
+		".agents/code-review/manifest.yaml": namedPanels,
+		"main.go":                           "package main\n",
+	})
+
+	stdout, stderr, err := runCLI(t, work, "code-review", "panels", "--base", "main")
+	if err != nil {
+		t.Fatalf("panels: %v\n%s", err, stderr)
+	}
+
+	lines := strings.Split(stdout, "\n")
+	described, undescribed := "", ""
+	for i, line := range lines {
+		if strings.HasPrefix(line, "fast ") && i+1 < len(lines) {
+			described = lines[i+1]
+		}
+		if strings.HasPrefix(line, "careful ") && i+1 < len(lines) {
+			undescribed = lines[i+1]
+		}
+	}
+	if strings.TrimSpace(described) != "One reviewer, once." {
+		t.Errorf("a described panel does not carry its description: %q", described)
+	}
+	if strings.TrimSpace(undescribed) != "" {
+		t.Errorf("a panel with no description carries a line anyway: %q", undescribed)
+	}
+	if strings.Contains(stdout, "\n    \n") {
+		t.Errorf("an undescribed panel emits a blank indented line:\n%q", stdout)
+	}
 }

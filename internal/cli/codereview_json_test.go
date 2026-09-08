@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/pedromvgomes/agentic-toolkit/internal/review"
@@ -237,5 +238,73 @@ func TestPanelsJSONCarriesWhatAPanelIsForAndWhatItSpends(t *testing.T) {
 	quick := out.Panels[0]
 	if len(quick.DefaultFor) != 2 || quick.DefaultFor[0] != "worktree" || quick.DefaultFor[1] != "pr" {
 		t.Errorf("quick's defaults are misreported: %+v", quick.DefaultFor)
+	}
+}
+
+// Panels that spend the same are the same depth, so the listing falls back to
+// the name. Without the fallback, equal-cost panels come out in whatever order
+// the runtime walked the map, and a caller offering a choice of depth shows a
+// different order on every invocation.
+func TestPanelsJSONBreaksACostTieByName(t *testing.T) {
+	m, err := review.ParseBytes("manifest.yaml", []byte(`version: 1
+reviewers:
+  correctness: {provider: claudecode, prompt: builtin:correctness}
+  security:    {provider: claudecode, prompt: builtin:security}
+judge:     {provider: claudecode, prompt: builtin:judge}
+validator: {provider: claudecode, prompt: builtin:validator}
+panels:
+  zulu:  {reviewers: [correctness]}
+  alpha: {reviewers: [security]}
+  mike:  {reviewers: [correctness, security]}
+defaults: {worktree: alpha, pr: mike}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	out := panelsJSON("manifest.yaml", review.ContextWorktree, m)
+	got := make([]string, 0, len(out.Panels))
+	for _, p := range out.Panels {
+		got = append(got, p.Name)
+	}
+	want := []string{"alpha", "zulu", "mike"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("panels listed %v, want %v — equal cost orders by name, and mike is deeper", got, want)
+	}
+	if out.Panels[0].Runs != out.Panels[1].Runs {
+		t.Fatalf("the fixture no longer ties: %d and %d runs", out.Panels[0].Runs, out.Panels[1].Runs)
+	}
+}
+
+// A file the change did not really author is named with the reason it does not
+// count, so a reader asking why a panel is shallower than expected can see
+// what was left out.
+func TestExplainJSONNamesTheExcludedFilesAndWhy(t *testing.T) {
+	m, sel := explainFixture(t)
+	p := &review.Profile{
+		Signals:          review.NewSignalSet(),
+		ReferencingFiles: review.AvailableCount(0),
+		Files: []review.ChangedFile{
+			{DiffFile: review.DiffFile{Path: "internal/app/main.go", Added: 3}, Language: review.LangGo},
+			{DiffFile: review.DiffFile{Path: "go.sum", Added: 400}, Excluded: review.ExcludedLockfile},
+			{DiffFile: review.DiffFile{Path: "assets/logo.png"}, Excluded: review.ExcludedBinary},
+		},
+	}
+
+	out := explainJSON("manifest.yaml", "main...working tree", m, p, sel)
+	if len(out.Change.Excluded) != 2 {
+		t.Fatalf("want two excluded files, got %+v", out.Change.Excluded)
+	}
+	byPath := map[string]string{}
+	for _, f := range out.Change.Excluded {
+		byPath[f.Path] = f.Reason
+	}
+	if byPath["go.sum"] != "lockfile" || byPath["assets/logo.png"] != "binary" {
+		t.Errorf("the exclusions are misreported: %+v", out.Change.Excluded)
+	}
+	// The reviewable file is not among them: `excluded` says what was left
+	// out, not what the change contains.
+	if _, listed := byPath["internal/app/main.go"]; listed {
+		t.Errorf("a reviewable file is listed as excluded: %+v", out.Change.Excluded)
 	}
 }
