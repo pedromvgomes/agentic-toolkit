@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	agentic "github.com/pedromvgomes/agentic-driver"
 
@@ -146,8 +147,16 @@ func account(text string) string {
 	if text == "" {
 		return "it said nothing about why"
 	}
+	// Trimmed on a rune boundary. A byte slice through UTF-8 leaves an invalid
+	// sequence in the reason a person reads and in the --json output, and the
+	// text is a CLI's own error message, which is exactly where a non-ASCII
+	// path or a localised message turns up.
 	if len(text) > accountLimit {
-		return text[:accountLimit] + "…"
+		trimmed := text[:accountLimit]
+		for len(trimmed) > 0 && !utf8.ValidString(trimmed) {
+			trimmed = trimmed[:len(trimmed)-1]
+		}
+		return trimmed + "…"
 	}
 	return text
 }

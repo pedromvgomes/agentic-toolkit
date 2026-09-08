@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	agentic "github.com/pedromvgomes/agentic-driver"
 )
@@ -182,5 +183,19 @@ func TestTheJudgeSchemaCannotCarryEvidence(t *testing.T) {
 	}
 	if _, present := props["id"]; !present {
 		t.Error("the judge schema has no id to answer with")
+	}
+}
+
+// A CLI's own error message is exactly where a non-ASCII path or a localised
+// string turns up, and a byte-sliced truncation leaves invalid UTF-8 in the
+// reason a person reads and in the --json output.
+func TestAccountTrimsOnARuneBoundary(t *testing.T) {
+	long := strings.Repeat("é", accountLimit)
+	got := account(long)
+	if !utf8.ValidString(got) {
+		t.Errorf("account() produced invalid UTF-8: %q", got)
+	}
+	if !strings.HasSuffix(got, "…") {
+		t.Errorf("a trimmed account does not say it was trimmed: %q", got)
 	}
 }

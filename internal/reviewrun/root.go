@@ -73,6 +73,7 @@ const (
 	SkipSymlink         = "symlink: following it leaves the review root"
 	SkipGitlink         = "gitlink: a submodule is a second repository the copy does not hold"
 	SkipUnsafePath      = "unsafe path: it does not stay inside the review root"
+	SkipUnreadable      = "unreadable: the working tree would not give up its contents"
 )
 
 // parseLsTree reads `git ls-tree -r -z` output.
@@ -138,19 +139,33 @@ func safeRelPath(p string) bool {
 }
 
 // isInstruction reports whether a tree path is one the review root withholds.
+//
+// Matched case-insensitively, and with Windows-insignificant trailing dots and
+// spaces stripped. A byte-exact comparison is a filter the filesystem then
+// undoes: APFS and NTFS are case-insensitive by default, so an entry written
+// as `agents.md` is what a CLI opening `AGENTS.md` gets, and on Windows
+// `AGENTS.md.` resolves to the same file as `AGENTS.md`. The branch author
+// chooses the spelling.
 func isInstruction(p string) bool {
-	base := gitBase(p)
+	base := foldName(gitBase(p))
 	for _, name := range instructionNames {
-		if base == name {
+		if base == foldName(name) {
 			return true
 		}
 	}
-	for _, dir := range instructionDirs {
-		if p == dir || strings.HasPrefix(p, dir+"/") || strings.Contains(p, "/"+dir+"/") {
-			return true
+	for _, seg := range strings.Split(p, "/") {
+		for _, dir := range instructionDirs {
+			if foldName(seg) == foldName(dir) {
+				return true
+			}
 		}
 	}
 	return false
+}
+
+// foldName reduces a path component to what the filesystem will treat it as.
+func foldName(s string) string {
+	return strings.ToLower(strings.TrimRight(s, ". "))
 }
 
 // gitBase is filepath.Base for a git path, which uses forward slashes on

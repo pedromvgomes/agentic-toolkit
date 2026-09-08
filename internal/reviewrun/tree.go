@@ -77,6 +77,20 @@ func resolveTree(dir, head string) (string, error) {
 // review and `export-subst` lets it rewrite them. Writing the files ourselves
 // means our code is the only thing that decides what lands.
 func BuildRoot(dir, head string) (*Root, error) {
+	return buildRoot(dir, head, true)
+}
+
+// PlanRoot resolves the tree and classifies it without writing a single blob.
+//
+// A preview needs the root's paths and the list of what the copy would not
+// hold, both of which come from the tree listing. Writing the bytes as well
+// would put an entire source tree on disk for a run that starts no process and
+// reads none of it.
+func PlanRoot(dir, head string) (*Root, error) {
+	return buildRoot(dir, head, false)
+}
+
+func buildRoot(dir, head string, materialise bool) (*Root, error) {
 	tree, err := resolveTree(dir, head)
 	if err != nil {
 		return nil, err
@@ -107,9 +121,11 @@ func BuildRoot(dir, head string) (*Root, error) {
 	root.Skipped = skipped
 	root.Files = len(write)
 
-	if err := writeBlobs(dir, root.Code, write); err != nil {
-		_ = root.Close()
-		return nil, err
+	if materialise {
+		if err := writeBlobs(dir, root.Code, write); err != nil {
+			_ = root.Close()
+			return nil, err
+		}
 	}
 
 	// A working-tree review is not fully described by any tree object:
@@ -117,7 +133,7 @@ func BuildRoot(dir, head string) (*Root, error) {
 	// the change adds and has not staged is missing from it. Those are exactly
 	// the files a pre-push review most needs to look at.
 	if head == "" {
-		if err := copyUntracked(dir, root); err != nil {
+		if err := copyUntracked(dir, root, materialise); err != nil {
 			_ = root.Close()
 			return nil, err
 		}
@@ -131,7 +147,7 @@ func BuildRoot(dir, head string) (*Root, error) {
 // on and a file the reviewers can read are one list. Ignored files are not in
 // it, and neither is anything that is not a regular file — a symlink is
 // refused here for the reason it is refused in the tree.
-func copyUntracked(dir string, root *Root) error {
+func copyUntracked(dir string, root *Root, materialise bool) error {
 	paths, err := review.UntrackedFiles(dir)
 	if err != nil {
 		return err
@@ -148,6 +164,11 @@ func copyUntracked(dir string, root *Root) error {
 		src := filepath.Join(dir, filepath.FromSlash(p))
 		info, err := os.Lstat(src)
 		if err != nil {
+			// Named and not dropped, for the reason Skipped exists: a file the
+			// reviewers cannot see is a gap in coverage, and a review that
+			// quietly omits one reads exactly like a review that looked at
+			// everything.
+			root.Skipped = append(root.Skipped, Skipped{p, SkipUnreadable})
 			continue
 		}
 		if !info.Mode().IsRegular() {
@@ -156,14 +177,17 @@ func copyUntracked(dir string, root *Root) error {
 		}
 		body, err := os.ReadFile(src) // #nosec G304 -- a regular file git listed inside the repository
 		if err != nil {
+			root.Skipped = append(root.Skipped, Skipped{p, SkipUnreadable})
 			continue
 		}
 		mode := "100644"
 		if info.Mode().Perm()&0o100 != 0 {
 			mode = modeExec
 		}
-		if err := writeFile(root.Code, treeEntry{Mode: mode, Path: p}, body); err != nil {
-			return err
+		if materialise {
+			if err := writeFile(root.Code, treeEntry{Mode: mode, Path: p}, body); err != nil {
+				return err
+			}
 		}
 		root.Files++
 	}

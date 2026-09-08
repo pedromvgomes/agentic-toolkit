@@ -92,10 +92,32 @@ func TestIsInstructionCoversNamesAndDirectories(t *testing.T) {
 		}
 	}
 	for _, p := range []string{
-		"AGENTS.go", "docs/agents.md", "claude.go", "codexes/x.go", "my.claude/x",
+		"AGENTS.go", "claude.go", "codexes/x.go", "my.claude/x", "agents.md.go",
 	} {
 		if isInstruction(p) {
 			t.Errorf("%q is withheld and is ordinary source", p)
+		}
+	}
+}
+
+// The filter folds case and strips Windows-insignificant trailing dots and
+// spaces, because a byte-exact comparison is one the filesystem then undoes:
+// APFS and NTFS are case-insensitive by default, so an entry written
+// `agents.md` is what a CLI opening `AGENTS.md` receives.
+//
+// The cost is deliberate: a genuine `docs/agents.md` is withheld too. It is
+// named in the run's output rather than dropped silently, which makes the
+// false positive visible, and the denylist errs toward withholding because a
+// name that slips through is the failure ADR 0007 is arranged against.
+func TestTheInstructionFilterIsNotDefeatedBySpelling(t *testing.T) {
+	for _, p := range []string{
+		"agents.md", "Agents.MD", "AGENTS.md.", "AGENTS.md ",
+		"claude.md", "CLAUDE.MD", "team_guide.md",
+		".CODEX/config.toml", "sub/.Claude/settings.json",
+		"docs/agents.md",
+	} {
+		if !isInstruction(p) {
+			t.Errorf("%q evades the instruction filter", p)
 		}
 	}
 }
