@@ -83,3 +83,31 @@ func TestExplainPRRefusesANumberThatIsNotAPullRequest(t *testing.T) {
 		t.Fatal("explain accepted a negative pull request number")
 	}
 }
+
+// `--pr 0` is a pull request nobody has. Routing on the flag being named
+// rather than on its value is what makes it an error: routed by value it would
+// fall through to the working tree and explain a different change, accepting
+// the --base the pull-request path refuses and reporting nothing unusual.
+func TestExplainRefusesPRZeroRatherThanExplainingTheWorkingTree(t *testing.T) {
+	work, _, _ := prRepo(t)
+	var out bytes.Buffer
+	env := &Env{Stdin: strings.NewReader(""), Stdout: &out, Stderr: io.Discard, WorkDir: work}
+	cmd := NewRootCmd(env)
+	cmd.SetContext(context.Background())
+	// The flag is named with its zero value, as a command line would.
+	explain, _, err := cmd.Find([]string{"code-review", "explain"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := explain.Flags().Set("pr", "0"); err != nil {
+		t.Fatal(err)
+	}
+
+	err = runCodeReviewExplain(explain, env, reviewTarget{pr: 0, base: "main", context: "worktree"}, false, clientSeam{})
+	if err == nil {
+		t.Fatalf("explain --pr 0 explained something instead of refusing:\n%s", out.String())
+	}
+	if !strings.Contains(err.Error(), "not a pull request number") {
+		t.Errorf("error = %q, want it to reject the number", err)
+	}
+}

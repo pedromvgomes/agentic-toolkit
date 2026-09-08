@@ -186,7 +186,11 @@ func newCodeReviewExplainCmd(env *Env) *cobra.Command {
 }
 
 func runCodeReviewExplain(cmd *cobra.Command, env *Env, target reviewTarget, asJSON bool, seam clientSeam) error {
-	if target.pr != 0 {
+	// Named rather than non-zero: `--pr 0` is a pull request nobody has, and
+	// routing it here by its value would explain the working tree instead —
+	// silently, and accepting the --base and --head that the pull-request path
+	// refuses.
+	if namedPullRequest(cmd, target) {
 		return explainPullRequest(cmd, env, target, asJSON, seam)
 	}
 	ctx := review.Context(target.context)
@@ -412,4 +416,10 @@ func knownContext(c review.Context) bool {
 		}
 	}
 	return false
+}
+
+// namedPullRequest reports whether the caller pointed this command at a pull
+// request, by flag or by a target built in code.
+func namedPullRequest(cmd *cobra.Command, target reviewTarget) bool {
+	return target.pr != 0 || cmd.Flags().Changed("pr")
 }

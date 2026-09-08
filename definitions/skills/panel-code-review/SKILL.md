@@ -116,7 +116,7 @@ Render the result as `references/findings.md` prescribes. Read that file before 
 report. Map the JSON straight onto it: `severity`, `category`, `path` with `start_line`/
 `end_line`, `issue`, `evidence` as the quote, `suggestion` as the fix, and `reviewer` with
 `corroboration` and `verdict` on the `Found by:` line. Report `good` as **What's good**, and
-build **Record** from `panel`, `runs`, `dropped`, `conventions` and `cost_usd`.
+build **Record** from `panel`, `runs`, `dropped_by_validator`, `conventions` and `cost_usd`.
 
 Say what the engine says about itself, in every case: a reviewer that could not answer, a
 reviewer that ran and found nothing, and files absent from the reviewed copy. A run that

@@ -73,7 +73,7 @@ func newCodeReviewRunCmd(env *Env) *cobra.Command {
 }
 
 func runCodeReviewRun(cmd *cobra.Command, env *Env, target reviewTarget, flags runFlags) error {
-	if target.pr != 0 {
+	if namedPullRequest(cmd, target) {
 		return runCodeReviewPR(cmd, env, target, flags, clientSeam{})
 	}
 	// --no-post withholds the post a --pr review would make. Without --pr

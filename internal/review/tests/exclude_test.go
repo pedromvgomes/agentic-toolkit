@@ -67,27 +67,50 @@ func TestTheBuiltinExclusionsNeedNoManifestEntry(t *testing.T) {
 
 // A pattern that can never match is refused rather than kept: the repo
 // believes a path is excluded and every review reads it.
-func TestARootedExclusionPatternIsRefused(t *testing.T) {
-	err := refuse(t, withExclude("  - \"/src/gen.go\"\n"))
-
-	if !review.IsKind(err, review.ErrUnknownName) {
-		t.Fatalf("kind = %v, want unknown_name", err)
-	}
-	// The message carries the pattern that would work, because the fix is not
-	// obvious from the rule alone.
-	if !strings.Contains(err.Error(), `"src/gen.go"`) {
-		t.Errorf("error = %q, want it to suggest the unrooted pattern", err)
+func TestAPatternThatCanNeverMatchIsRefused(t *testing.T) {
+	for _, tc := range []struct{ pattern, wants string }{
+		// A path is named from the repository root without a leading
+		// separator, so an anchored pattern matches nothing.
+		{"/src/gen.go", "empty path segment"},
+		{"a//b.go", "empty path segment"},
+		// The .gitignore habit. A trailing separator makes an empty final
+		// segment that no path segment equals, so the pattern excludes
+		// nothing while reading exactly like the rule its author meant.
+		{"testdata/", `"testdata/**"`},
+		{"vendor/", `"vendor/**"`},
+	} {
+		err := refuse(t, withExclude("  - \""+tc.pattern+"\"\n"))
+		if !review.IsKind(err, review.ErrUnknownName) {
+			t.Errorf("%q: kind = %v, want unknown_name", tc.pattern, err)
+			continue
+		}
+		if !strings.Contains(err.Error(), tc.wants) {
+			t.Errorf("%q: error = %q, want it to mention %s", tc.pattern, err, tc.wants)
+		}
 	}
 }
 
 // Excluding everything empties the review, and an empty review reads exactly
 // like a clean one — which is what unblocks approval.
+//
+// Every spelling that selects by shape rather than naming a path, not just the
+// bare ones: a check written against the literal patterns keeps admitting the
+// next one somebody writes.
 func TestAnExclusionMatchingEveryFileIsRefused(t *testing.T) {
-	for _, pattern := range []string{"**", "*"} {
+	for _, pattern := range []string{"**", "*", "**/*", "*/**", "**/**", "*/*"} {
 		err := refuse(t, withExclude("  - \""+pattern+"\"\n"))
 		if !review.IsKind(err, review.ErrUnknownName) {
 			t.Errorf("%q: kind = %v, want unknown_name", pattern, err)
 		}
+	}
+}
+
+// A pattern naming a real tree is not mistaken for a catch-all.
+func TestARealPatternIsNotRefused(t *testing.T) {
+	m := mustParse(t, withExclude("  - \"**/testdata/**\"\n  - \"src/*.gen.go\"\n"))
+
+	if len(m.Exclude) != 2 {
+		t.Fatalf("exclude = %v, want both patterns kept", m.Exclude)
 	}
 }
 

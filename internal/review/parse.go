@@ -161,21 +161,31 @@ func (m *Manifest) validate(filePath string) error {
 		}
 	}
 
+	// An exclusion is checked for the two ways it goes silently wrong, which
+	// are opposites: a pattern that can never match leaves a tree reviewed
+	// that the repo believes is skipped, and one that matches everything
+	// empties the review. Both are invisible in the output — a review of
+	// nothing reports exactly what a clean review reports.
 	for i, pattern := range m.Exclude {
 		field := fmt.Sprintf("exclude[%d]", i)
 		switch {
 		case strings.TrimSpace(pattern) == "":
 			return fieldErr(filePath, field, ErrMissingRequired,
 				"an exclusion names a path glob; an empty one matches nothing and reads as a rule")
-		case strings.HasPrefix(pattern, "/"):
-			// git names paths from the repository root with no leading
-			// separator, so this pattern can never match. A rule that silently
-			// matches nothing is worse than no rule: the repo believes a path
-			// is excluded and every review reads it.
+		case strings.HasSuffix(pattern, "/"):
+			// The .gitignore habit. A trailing separator makes an empty final
+			// segment, which no path segment equals, so the pattern matches
+			// nothing at all — while reading exactly like the rule the author
+			// meant to write.
 			return fieldErr(filePath, field, ErrUnknownName,
-				"%q starts with %q and paths are named from the repository root without one, so it would match nothing; write %q",
-				pattern, "/", strings.TrimPrefix(pattern, "/"))
-		case pattern == "**" || pattern == "*":
+				"%q ends in %q, which matches nothing: a path is a directory's contents, not the directory. Write %q to exclude the tree",
+				pattern, "/", strings.TrimSuffix(pattern, "/")+"/**")
+		case hasEmptySegment(pattern):
+			// Covers a leading separator too: git names paths from the
+			// repository root without one, so the pattern could never match.
+			return fieldErr(filePath, field, ErrUnknownName,
+				"%q has an empty path segment, so it would match nothing; paths are named from the repository root, separated by single slashes", pattern)
+		case matchesEveryPath(pattern):
 			// Excluding everything empties the review, and a review that found
 			// nothing reads exactly like a review of nothing — which is what
 			// unblocks approval.

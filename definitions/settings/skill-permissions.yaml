@@ -15,9 +15,17 @@ value:
       # pre-approval, so the only cost of a miss is a prompt, never a block.
       - "Read(**/.agents/memory/INDEX.md)"
       - "Write(**/.agents/memory/candidates/**)"
-      # The code-review subcommands that spend nothing: they read a manifest,
-      # profile a change and say which panel would run. `run` is absent because
-      # it costs money, and `approve` because a person types that one.
+      # The code-review subcommands that start no model. `run` is absent
+      # because it costs money, and `approve` because a person types that one.
+      #
+      # A prefix rule cannot exclude one flag, so `explain*` grants
+      # `explain --pr` too — which reads the pull request over the API and
+      # fetches its head, under this machine's App registration. That is
+      # deliberate rather than overlooked: it is the command the skill runs on
+      # every pull-request review, it starts no model and spends nothing, and
+      # the expensive step it precedes is `run --pr`, which is not pre-approved
+      # and asks. A grant whose comment claimed these touch no network would be
+      # the real hazard.
       - "Bash(agtk code-review panels*)"
       - "Bash(agtk code-review explain*)"
       - "Bash(agtk code-review signals*)"
