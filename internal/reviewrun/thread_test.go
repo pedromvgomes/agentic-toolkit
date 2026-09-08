@@ -54,8 +54,8 @@ func TestACommentCarryingTwoFingerprintMarkersIdentifiesNothing(t *testing.T) {
 	}
 }
 
-// The table in the plan, whole. Each state obliges something different, and
-// the two that do not suppress are as load-bearing as the two that do.
+// Every thread state, whole. Each obliges something different, and the ones
+// that do not suppress are as load-bearing as the ones that do.
 func TestEachThreadStateDecidesWhetherAFindingIsPostedAgain(t *testing.T) {
 	f := findingAt("a.go", "correctness", "x := 1")
 	thread := func(resolved, outdated bool) Thread {
