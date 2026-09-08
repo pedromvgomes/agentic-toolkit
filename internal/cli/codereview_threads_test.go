@@ -25,7 +25,7 @@ type graphQLDoer struct {
 	reviews string
 	threads string
 	// asked records which queries were made, so a test can assert that a
-	// no-op did not go on to read what it no longer needed.
+	// no-op stopped at the one query that decided it.
 	asked []string
 }
 
