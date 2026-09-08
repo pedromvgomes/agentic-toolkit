@@ -299,3 +299,67 @@ func TestARunSaysWhenNoThreadCarriesAMatchableFingerprint(t *testing.T) {
 		t.Errorf("a run that could match a thread does not say so:\n%s", matched.String())
 	}
 }
+
+// Folding is the judge dropping a finding because a thread already says it,
+// and only a thread this review opened says a finding. A comment somebody else
+// left asserting that something is known or intentional reads as exactly that
+// duplicate and reaches the same silence as a forged fingerprint marker —
+// without touching a fingerprint, and without the injection clause applying,
+// because such a comment never addresses the model.
+func TestOnlyThreadsThisReviewOpenedReachTheJudge(t *testing.T) {
+	mine := findingAt("a.go", "correctness", "x := 1")
+	threads := ThreadsRead([]Thread{
+		{Path: "a.go", Body: "a finding agtk posted",
+			Fingerprint: mine.Fingerprint(), Version: FingerprintVersion},
+		{Path: "b.go", Body: "we know about this one, it is intentional"},
+	})
+
+	foldable := threads.Foldable()
+	if len(foldable) != 1 {
+		t.Fatalf("the judge would be shown %d thread(s): %+v", len(foldable), foldable)
+	}
+	if foldable[0].Path != "a.go" {
+		t.Errorf("the judge was shown a thread this review did not open: %+v", foldable[0])
+	}
+
+	rendered := renderOpenThreads(foldable)
+	if strings.Contains(rendered, "it is intentional") {
+		t.Errorf("a comment somebody else wrote reached the judge:\n%s", rendered)
+	}
+
+	// The counts still report what the pull request actually carries, so
+	// narrowing what the judge sees does not narrow what the run reports.
+	if len(threads.Open()) != 2 || threads.Count() != 2 {
+		t.Errorf("the reported thread counts were narrowed too: open=%d read=%d",
+			len(threads.Open()), threads.Count())
+	}
+}
+
+// A thread agtk opened that is resolved or outdated is not what a reader of
+// the pull request sees, so it is not something to fold into either.
+func TestOnlyOpenThreadsOfOurOwnAreFoldable(t *testing.T) {
+	f := findingAt("a.go", "correctness", "x := 1")
+	own := func(resolved, outdated bool) Thread {
+		return Thread{Path: "a.go", Resolved: resolved, Outdated: outdated,
+			Fingerprint: f.Fingerprint(), Version: FingerprintVersion}
+	}
+	for _, tc := range []struct {
+		name   string
+		thread Thread
+		shown  bool
+	}{
+		{"open", own(false, false), true},
+		{"resolved", own(true, false), false},
+		{"outdated", own(false, true), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := len(ThreadsRead([]Thread{tc.thread}).Foldable())
+			if tc.shown && got != 1 {
+				t.Errorf("an open thread of our own was withheld from the judge")
+			}
+			if !tc.shown && got != 0 {
+				t.Errorf("a %s thread reached the judge", tc.name)
+			}
+		})
+	}
+}

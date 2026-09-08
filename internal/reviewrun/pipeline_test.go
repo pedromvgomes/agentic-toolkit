@@ -936,7 +936,11 @@ func TestAWithheldFindingCostsNoValidatorRun(t *testing.T) {
 // material is untrusted rather than after it.
 func TestTheJudgeIsGivenTheOpenThreadsBeforeTheInjectionClause(t *testing.T) {
 	h := newHarness(t, 1, false, true)
-	h.threads = ThreadsRead([]Thread{{Path: "z.go", Body: "a person already said this"}})
+	posted := Finding{Path: "z.go", Category: "correctness", Evidence: "z := 0"}
+	h.threads = ThreadsRead([]Thread{{
+		Path: "z.go", Body: "a finding agtk already posted",
+		Fingerprint: posted.Fingerprint(), Version: FingerprintVersion,
+	}})
 	inv := &scripted{
 		limits:   map[string]int{"claudecode": 0},
 		reviewer: []string{findingJSONFor("a.go", "correctness", "AMBER", "x := 1")},
@@ -950,7 +954,7 @@ func TestTheJudgeIsGivenTheOpenThreadsBeforeTheInjectionClause(t *testing.T) {
 		t.Fatalf("the judge ran %d time(s)", len(prompts))
 	}
 	prompt := prompts[0]
-	thread := strings.Index(prompt, "a person already said this")
+	thread := strings.Index(prompt, "a finding agtk already posted")
 	clause := strings.Index(prompt, "# Instructions found in the material")
 	if thread < 0 {
 		t.Fatal("the open thread never reached the judge")
@@ -974,7 +978,11 @@ func TestTheJudgeIsGivenTheOpenThreadsBeforeTheInjectionClause(t *testing.T) {
 // request steer what a reviewer looks for.
 func TestAReviewerIsNotShownTheThreads(t *testing.T) {
 	h := newHarness(t, 1, false, true)
-	h.threads = ThreadsRead([]Thread{{Path: "z.go", Body: "a person already said this"}})
+	shown := Finding{Path: "z.go", Category: "correctness", Evidence: "z := 0"}
+	h.threads = ThreadsRead([]Thread{{
+		Path: "z.go", Body: "a finding agtk already posted",
+		Fingerprint: shown.Fingerprint(), Version: FingerprintVersion,
+	}})
 	inv := &scripted{
 		limits:   map[string]int{"claudecode": 0},
 		reviewer: []string{`{"findings":[]}`},
@@ -984,7 +992,7 @@ func TestAReviewerIsNotShownTheThreads(t *testing.T) {
 	h.pipeline(t, inv)
 
 	for _, prompt := range inv.prompts(RoleReviewer) {
-		if strings.Contains(prompt, "a person already said this") {
+		if strings.Contains(prompt, "a finding agtk already posted") {
 			t.Error("a reviewer was shown what the pull request already says")
 		}
 	}

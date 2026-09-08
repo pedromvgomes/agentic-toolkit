@@ -168,7 +168,7 @@ type Material struct {
 func judgeTail(candidateFindings string, threads []Thread) string {
 	tail := "\n---\n\n# The candidate findings\n\n" + candidateFindings
 	if len(threads) > 0 {
-		tail += "\n---\n\n# Threads already open on this pull request\n\n" + renderOpenThreads(threads)
+		tail += "\n---\n\n# Findings this pull request already carries\n\n" + renderOpenThreads(threads)
 	}
 	return tail
 }

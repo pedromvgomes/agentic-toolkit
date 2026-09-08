@@ -199,7 +199,7 @@ func Prepare(opts Options) (*Plan, *review.Manifest, *review.Selection, *Root, e
 		Role:     RoleJudge,
 		Provider: m.Judge.Provider,
 		Model:    m.Judge.Model,
-		Prompt:   material.composeWith(judgeBody, judgeTail("(supplied once the reviewers have answered)\n", opts.Threads.Open()), judgeInjectionClause),
+		Prompt:   material.composeWith(judgeBody, judgeTail("(supplied once the reviewers have answered)\n", opts.Threads.Foldable()), judgeInjectionClause),
 	})
 	return plan, m, sel, root, nil
 }
@@ -552,7 +552,7 @@ func runJudge(ctx context.Context, opts Options, inv invoker, sched *scheduler,
 	}
 
 	prompt := material.composeWith(body,
-		judgeTail(renderCandidateFindings(candidates), opts.Threads.Open()), judgeInjectionClause)
+		judgeTail(renderCandidateFindings(candidates), opts.Threads.Foldable()), judgeInjectionClause)
 	req, err := request(judge, prompt, judgeSchema, material.Root, timeoutOf(opts))
 	if err != nil {
 		out.Report = Unavailable("the judge run could not be prepared: %v", err)
