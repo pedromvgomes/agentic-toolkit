@@ -27,8 +27,8 @@ the one-file-one-process rule by construction.
 survives between jobs, which is the arrangement OpenAI actually recommends. Rejected on cost:
 this ships to hobby and open-source repositories, where standing up hosts to review pull
 requests is a bill that scales with the number of repos and buys nothing a laptop already has.
-It also serialises GPT reviewers, so quorum stops working for exactly the provider it was
-wanted for.
+It also serialises GPT reviewers — which the local shape does too, for the same
+one-file-one-process reason, so it buys nothing there either.
 
 **A Claude-only panel in CI, GPT locally.** Buildable, and briefly the plan. Rejected because it
 splits one feature across two execution models to rescue an automation nobody had asked for:

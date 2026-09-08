@@ -2,7 +2,7 @@
 
 Everything on the branch under review is written by its author, who may not be trusted, and
 that includes the files a coding-agent CLI reads as instructions before it ever sees a prompt.
-Three things close that, none of them prose:
+Four things close that, none of them prose:
 
 1. **`agtk` reads the review manifest, the reviewer prompts and the convention docs from the
    base ref.** It reads them itself and passes their bodies to the run, so a branch cannot

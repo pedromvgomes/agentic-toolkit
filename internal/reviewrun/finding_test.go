@@ -227,14 +227,14 @@ func TestInstanceLabelNumbersOnlyUnderAQuorum(t *testing.T) {
 	}
 }
 
-func TestRenderCandidateCarriesEvidenceAndCorroboration(t *testing.T) {
+func TestACandidateFindingCarriesItsEvidenceAndCorroboration(t *testing.T) {
 	f := Finding{
 		ID: "f1", Reviewer: "security", Path: "a.go", StartLine: ptr(3), EndLine: ptr(5),
 		Category: "security:injection", Severity: SeverityRed, Confidence: "high",
 		Issue: "unparameterised query", Evidence: "db.Query(\"select \" + name)",
 		Corroboration: 2, Verdict: &Verdict{Verdict: VerdictUpheld, Reason: "confirmed"},
 	}
-	got := renderCandidate(f, true)
+	got := renderCandidateFinding(f, true)
 	for _, want := range []string{"## f1", "a.go", "3-5", "security:injection", "RED",
 		"2 reviewer instance", "upheld", "db.Query"} {
 		if !strings.Contains(got, want) {
@@ -246,9 +246,9 @@ func TestRenderCandidateCarriesEvidenceAndCorroboration(t *testing.T) {
 // A validator is judging a claim, not answering about an identified one, so it
 // is not handed the id or the corroboration count — either would tell it how
 // many others already agreed, which is exactly the independence it supplies.
-func TestRenderCandidateWithholdsTheIDAndCorroborationFromAValidator(t *testing.T) {
+func TestAValidatorIsNotShownTheIDOrHowManyOthersAgreed(t *testing.T) {
 	f := Finding{ID: "f1", Path: "a.go", Evidence: "x", Corroboration: 3}
-	got := renderCandidate(f, false)
+	got := renderCandidateFinding(f, false)
 	if strings.Contains(got, "## f1") {
 		t.Errorf("a validator is shown the id:\n%s", got)
 	}

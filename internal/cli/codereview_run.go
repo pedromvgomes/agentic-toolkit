@@ -70,6 +70,7 @@ func runCodeReviewRun(cmd *cobra.Command, env *Env, target reviewTarget, flags r
 	}
 
 	if flags.dryRun {
+		opts.Preview = true
 		plan, _, _, reviewRoot, err := reviewrun.Prepare(opts)
 		if err != nil {
 			return err

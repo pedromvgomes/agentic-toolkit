@@ -3,7 +3,7 @@
 Every candidate finding that reaches the judge is given an id by `agtk` first — a short label
 that means nothing outside the run. The judge's answer is a list of those ids with a final
 severity and its own prose, and nothing else. `agtk` re-attaches `file`, `line` and `evidence`
-from the candidate it issued the id for.
+from the candidate finding it issued the id for.
 
 The judge is a merging and re-severitying pass, so the fields it would otherwise re-emit are
 fields it has no new information about. A judge that restates a path is a judge that can
@@ -24,6 +24,13 @@ that exists in the PR head's diff or GitHub rejects the entire review with a 422
 number costs every comment in the batch, including the ones that were right.
 
 An id the judge returns that `agtk` did not issue is discarded, and the run reports that it was.
+
+One category is not the judge's to drop. A `security:prompt-injection` candidate finding the
+judge does not return is re-attached at the severity it arrived with, and the run reports that
+too. Everywhere else the judge narrows freely, which is what it is for; here a dropped finding
+converts an injected instruction into a clean review, and a clean review is what unblocks
+approval — the conversion ADR 0007 exists to prevent. Leaving it to the prompt would make the
+guarantee a sentence the judge has to have read.
 The alternative readings are both worse: trusting it means posting a finding with no evidence
 behind it, and failing the run means one hallucinated label throws away a panel that has already
 been paid for.
@@ -39,7 +46,7 @@ judge purely a filter. Rejected because re-severitying is most of what the judge
 finding two reviewers reached independently and a validator upheld should outrank one that
 arrived alone, and that judgement has to come out somewhere.
 
-**Validate the judge's echoed fields against the candidates instead.** Keeps the obvious shape
+**Validate the judge's echoed fields against the candidate findings instead.** Keeps the obvious shape
 and catches drift by comparing. Rejected as strictly more machinery for a strictly worse
 outcome: it has to decide what to do about every mismatch, and the only defensible answer to
 "the judge changed the quote" is to use the original — which is this decision, reached after
@@ -47,8 +54,8 @@ paying for the echo.
 
 ## Consequences
 
-- The judge's schema is small: an id, a severity, a body, plus a free "what's good" list that is
-  attributed to nothing and therefore needs no identity.
+- The judge's schema is small: an id, a severity, a body, an optional rewritten fix, plus a
+  free "what's good" list that is attributed to nothing and therefore needs no identity.
 - A judge run cannot introduce a finding. It narrows the set it was handed and re-ranks what
   survives, which is the same separation ADR 0006 makes between deciding and transmitting, one
   layer further in.

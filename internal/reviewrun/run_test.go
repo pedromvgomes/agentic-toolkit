@@ -121,8 +121,13 @@ func TestPrepareAssemblesEveryLayerFromARealRepo(t *testing.T) {
 	if m.Judge == nil || m.Validator == nil {
 		t.Error("the repo's manifest was not read whole")
 	}
-	if len(plan.Runs) != 1 {
-		t.Fatalf("want one run, got %d", len(plan.Runs))
+	// One reviewer plus the judge: the judge runs once whenever the panel
+	// answers, so a plan that omitted it would understate every real review.
+	if len(plan.Runs) != 2 {
+		t.Fatalf("want a reviewer and a judge, got %d runs", len(plan.Runs))
+	}
+	if plan.Runs[0].Role != RoleReviewer || plan.Runs[1].Role != RoleJudge {
+		t.Fatalf("planned roles are %q then %q", plan.Runs[0].Role, plan.Runs[1].Role)
 	}
 
 	prompt := plan.Runs[0].Prompt
@@ -409,12 +414,29 @@ func TestReadConventionsSkipsWhatTheBaseRefDoesNotHold(t *testing.T) {
 	r.write("empty.md", "")
 	base := r.commit("base")
 
-	docs := readConventions(r.dir, base, []string{"CLAUDE.md", "absent.md", "empty.md"})
+	docs, missing := readConventions(r.dir, base, []string{"CLAUDE.md", "absent.md", "empty.md"}, false)
+	if len(missing) != 0 {
+		t.Errorf("a default that is absent was reported as missing: %v", missing)
+	}
 	if len(docs) != 1 || docs[0].Path != "CLAUDE.md" {
 		t.Fatalf("readConventions returned %+v", docs)
 	}
 	if docs[0].Body != "present\n" {
 		t.Errorf("the document was altered: %q", docs[0].Body)
+	}
+}
+
+// A repo that named its own rule documents has said where its rules live, so
+// one the base ref does not hold is a misconfiguration to report — not the
+// same thing as a default that happens not to exist.
+func TestADocumentTheManifestNamedAndTheBaseRefLacksIsReported(t *testing.T) {
+	r := newGitRepo(t)
+	r.write("CLAUDE.md", "present\n")
+	base := r.commit("base")
+
+	_, missing := readConventions(r.dir, base, []string{"CLAUDE.md", "docs/RULES.md"}, true)
+	if len(missing) != 1 || missing[0] != "docs/RULES.md" {
+		t.Fatalf("the nominated missing document was not reported: %v", missing)
 	}
 }
 
@@ -547,7 +569,7 @@ func TestAValidatorWhoseAnswerCannotBeDecodedLeavesTheFindingStanding(t *testing
 }
 
 // A validator whose prompt cannot be read validates nothing, and every
-// candidate goes forward unvalidated rather than being dropped by a run that
+// candidate finding goes forward unvalidated rather than being dropped by a run that
 // never happened.
 func TestAnUnreadableValidatorPromptLeavesEveryCandidateStanding(t *testing.T) {
 	h := newHarness(t, 1, true, true)
