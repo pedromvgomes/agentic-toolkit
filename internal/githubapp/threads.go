@@ -42,10 +42,10 @@ type ReviewThread struct {
 // comment that carries a fingerprint marker agtk wrote. Asking for replies
 // would fetch text no decision is made from, and enlarge a response that is
 // read under a size cap.
-const reviewThreadsQuery = `query($owner:String!,$repo:String!,$number:Int!,$cursor:String){
+var reviewThreadsQuery = fmt.Sprintf(`query($owner:String!,$repo:String!,$number:Int!,$cursor:String){
   repository(owner:$owner,name:$repo){
     pullRequest(number:$number){
-      reviewThreads(first:25,after:$cursor){
+      reviewThreads(first:%d,after:$cursor){
         pageInfo{hasNextPage endCursor}
         nodes{
           path
@@ -56,7 +56,7 @@ const reviewThreadsQuery = `query($owner:String!,$repo:String!,$number:Int!,$cur
       }
     }
   }
-}`
+}`, pageSize)
 
 // ReadReviewThreads reads every comment thread on a pull request.
 //
@@ -126,16 +126,16 @@ func (c *Client) ReadReviewThreads(ctx context.Context, number int) ([]ReviewThr
 }
 
 // reviewedCommitsQuery reads which commits this installation has reviewed.
-const reviewedCommitsQuery = `query($owner:String!,$repo:String!,$number:Int!,$cursor:String){
+var reviewedCommitsQuery = fmt.Sprintf(`query($owner:String!,$repo:String!,$number:Int!,$cursor:String){
   repository(owner:$owner,name:$repo){
     pullRequest(number:$number){
-      reviews(first:25,after:$cursor){
+      reviews(first:%d,after:$cursor){
         pageInfo{hasNextPage endCursor}
         nodes{commit{oid} viewerDidAuthor}
       }
     }
   }
-}`
+}`, pageSize)
 
 // ReadReviewedCommits reports which of a pull request's commits this
 // installation has already posted a review for.

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -231,4 +232,40 @@ func TestReadingThreadsRefusesANumberThatIsNotOne(t *testing.T) {
 	if _, err := c.ReadReviewedCommits(context.Background(), -1); err == nil {
 		t.Error("review -1 was accepted as a pull request number")
 	}
+}
+
+// The page size is one number. A constant that only reached the error messages
+// would let the reported page size drift from the size actually asked for.
+func TestTheQueriesAskForThePageSizeTheyReport(t *testing.T) {
+	c, net := client(t, append(auth(far()), query(threadsPage("", false, "")))...)
+	if _, err := c.ReadReviewThreads(context.Background(), 7); err != nil {
+		t.Fatal(err)
+	}
+	sent := net.bodies[len(net.bodies)-1]
+
+	// The size the query asks for, read out of what was actually sent.
+	asked := regexp.MustCompile(`reviewThreads\(first:(\d+)`).FindStringSubmatch(sent)
+	if asked == nil {
+		t.Fatalf("the query does not name a page size: %s", sent)
+	}
+	// And the size the refusal reports, from the same constant.
+	c2, net2 := client(t, buildEndlessThreadPages()...)
+	_, err := c2.ReadReviewThreads(context.Background(), 7)
+	_ = net2
+	if err == nil {
+		t.Fatal("an endless thread list was read as an answer")
+	}
+	if !strings.Contains(err.Error(), "pages of "+asked[1]) {
+		t.Errorf("the query asks for %s per page and the refusal reports a different size: %v", asked[1], err)
+	}
+}
+
+// buildEndlessThreadPages scripts a server that never stops paging.
+func buildEndlessThreadPages() []exchange {
+	exchanges := auth(far())
+	for i := 0; i <= 40; i++ {
+		exchanges = append(exchanges, query(threadsPage(
+			threadNode("a.go", false, false, true, "x"), true, "SAME")))
+	}
+	return exchanges
 }

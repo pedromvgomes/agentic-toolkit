@@ -88,7 +88,8 @@ type pageInfo struct {
 	EndCursor   string `json:"endCursor"`
 }
 
-// pageSize is how many nodes one page asks for.
+// pageSize is how many nodes one page asks for. Interpolated into both
+// queries, so it is the page size rather than a second number describing it.
 //
 // A quarter of GraphQL's own hundred, because a response is read up to maxBody
 // and a page of threads carries a whole comment body each. A page that overran
