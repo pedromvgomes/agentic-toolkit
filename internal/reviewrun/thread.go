@@ -150,6 +150,30 @@ func (t Threads) AtOtherVersion() []Thread {
 	return out
 }
 
+// Identified lists the threads carrying a fingerprint this run can match a
+// finding against.
+//
+// Reported, because a thread count on its own does not say whether any of it
+// can be matched. "Nothing was withheld" is what a pull request holding
+// nothing this review found again produces, and it is equally what a pull
+// request whose fingerprint markers agtk cannot read produces — a marker
+// somebody else wrote, one at a scheme this build does not compute, or one a
+// change to the format broke. A read that answered and identified nothing is
+// the quiet half of failing open.
+func (t Threads) Identified() []Thread {
+	threads, read := t.All()
+	if !read {
+		return nil
+	}
+	var out []Thread
+	for _, thread := range threads {
+		if thread.identifies() {
+			out = append(out, thread)
+		}
+	}
+	return out
+}
+
 // Suppression is one finding an existing thread already carries.
 type Suppression struct {
 	Finding Finding

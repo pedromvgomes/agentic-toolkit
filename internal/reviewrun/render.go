@@ -126,6 +126,14 @@ func renderThreads(w io.Writer, r *Review) {
 		fmt.Fprintf(w, "Nothing was withheld, so this review may repeat what the pull request already carries.\n\n")
 		return
 	}
+	if read := r.Threads.Count(); read > 0 {
+		identified := len(r.Threads.Identified())
+		if identified == 0 {
+			fmt.Fprintf(w, "%d existing thread(s) read, none carrying a fingerprint this run can match. Nothing could be withheld on identity.\n\n", read)
+		} else {
+			fmt.Fprintf(w, "%d existing thread(s) read, %d carrying a fingerprint this run can match.\n\n", read, identified)
+		}
+	}
 	if n := len(r.Suppressed); n > 0 {
 		fmt.Fprintf(w, "Already on the pull request (%d), so not posted again:\n", n)
 		for _, s := range r.Suppressed {

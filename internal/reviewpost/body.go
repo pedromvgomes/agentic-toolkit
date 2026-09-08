@@ -172,6 +172,10 @@ func writeThreads(b *strings.Builder, r *reviewrun.Review) {
 			"review may repeat a finding that is already on it.\n\n", r.Threads.Reason)
 		return
 	}
+	if read := r.Threads.Count(); read > 0 && len(r.Threads.Identified()) == 0 {
+		fmt.Fprintf(b, "%d existing comment thread(s) were read and none carries a fingerprint this run can match, "+
+			"so nothing could be withheld on identity. A finding this review already made is stated again.\n\n", read)
+	}
 	if n := len(r.Suppressed); n > 0 {
 		fmt.Fprintf(b, "### Already on this pull request (%d)\n\n"+
 			"Not posted again. A finding is withheld only when the code it quotes is byte-identical to "+

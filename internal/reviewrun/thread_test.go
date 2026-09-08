@@ -250,3 +250,52 @@ func TestTheThreadsShownToTheJudgeAreBounded(t *testing.T) {
 		t.Errorf("the threads that were not shown are not counted:\n%s", rendered[len(rendered)-400:])
 	}
 }
+
+// A thread count does not say whether any of it can be matched. A pull request
+// holding nothing this review found again and one whose fingerprint markers
+// agtk cannot read both withhold nothing, and only the first means the pull
+// request is clean.
+func TestThreadsSayHowManyCarryAFingerprintThisRunCanMatch(t *testing.T) {
+	f := findingAt("a.go", "correctness", "x := 1")
+	threads := ThreadsRead([]Thread{
+		{Path: "a.go", Fingerprint: f.Fingerprint(), Version: FingerprintVersion},
+		{Path: "b.go", Fingerprint: "cdbb1d5c5dec", Version: "v0"},
+		{Path: "c.go", Body: "a person's comment"},
+	})
+
+	if got := threads.Count(); got != 3 {
+		t.Errorf("read %d threads, want 3", got)
+	}
+	identified := threads.Identified()
+	if len(identified) != 1 || identified[0].Path != "a.go" {
+		t.Fatalf("want only the current-scheme fingerprint, got %+v", identified)
+	}
+	// A read that failed identifies nothing rather than reporting the threads
+	// it never saw.
+	if len(ThreadsUnreadable("refused").Identified()) != 0 {
+		t.Error("a failed read reported an identity")
+	}
+}
+
+// A run that read threads and could match none of them says so, because the
+// finding tables look identical either way.
+func TestARunSaysWhenNoThreadCarriesAMatchableFingerprint(t *testing.T) {
+	var out strings.Builder
+	Render(&out, &Review{
+		Panel: "standard", Available: true,
+		Threads: ThreadsRead([]Thread{{Path: "a.go", Body: "a person's comment"}}),
+	})
+	if !strings.Contains(out.String(), "none carrying a fingerprint this run can match") {
+		t.Errorf("a run that could match nothing does not say so:\n%s", out.String())
+	}
+
+	var matched strings.Builder
+	f := findingAt("a.go", "correctness", "x := 1")
+	Render(&matched, &Review{
+		Panel: "standard", Available: true,
+		Threads: ThreadsRead([]Thread{{Path: "a.go", Fingerprint: f.Fingerprint(), Version: FingerprintVersion}}),
+	})
+	if !strings.Contains(matched.String(), "1 carrying a fingerprint this run can match") {
+		t.Errorf("a run that could match a thread does not say so:\n%s", matched.String())
+	}
+}

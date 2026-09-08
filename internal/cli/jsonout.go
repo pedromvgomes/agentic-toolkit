@@ -837,6 +837,11 @@ type threadsJSON struct {
 	// have to tell absent from zero.
 	Read int `json:"read"`
 	Open int `json:"open"`
+	// Identified counts the threads carrying a fingerprint this run can match
+	// a finding against. Never omitted: `read` above zero with this at zero is
+	// a pull request nothing can be withheld against, which reads exactly like
+	// one that had nothing to withhold.
+	Identified int `json:"identified"`
 	// OtherVersion counts threads carrying a fingerprint from a scheme this
 	// build does not compute, each of which is a finding that will be posted
 	// again.
@@ -856,6 +861,7 @@ func threadsRow(r *reviewrun.Review) threadsJSON {
 		Reason:       r.Threads.Reason,
 		Read:         r.Threads.Count(),
 		Open:         len(r.Threads.Open()),
+		Identified:   len(r.Threads.Identified()),
 		OtherVersion: len(r.Threads.AtOtherVersion()),
 		Suppressed:   []suppressedJSON{},
 	}
