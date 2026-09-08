@@ -15,6 +15,7 @@ type runFlags struct {
 	timeout     time.Duration
 	maxParallel int
 	dryRun      bool
+	noPost      bool
 	json        bool
 }
 
@@ -31,11 +32,17 @@ func newCodeReviewRunCmd(env *Env) *cobra.Command {
 			"the code, runs the panel's reviewers in parallel, puts what they find to a\n" +
 			"validator and then to the judge, and prints what survives.\n" +
 			"\n" +
-			"Nothing is posted. The judge decides what the review says and agtk transmits\n" +
-			"it, and transmitting is a separate command.\n" +
+			"Without --pr nothing is posted at all. The judge decides what the review\n" +
+			"says and agtk transmits it, which is why no model in the run holds a GitHub\n" +
+			"credential.\n" +
+			"\n" +
+			"--pr reviews an open pull request and posts what survives to it as one\n" +
+			"review, with event COMMENT. Nothing else is ever posted: approval is a\n" +
+			"separate act with its own subcommand, and no code path from here reaches it.\n" +
 			"\n" +
 			"--dry-run prints the assembled prompts and the runs that would be made, and\n" +
-			"spends nothing.",
+			"spends nothing. --no-post runs the panel for real and prints the exact\n" +
+			"request it would have made instead of making it.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCodeReviewRun(cmd, env, target, flags)
@@ -48,11 +55,18 @@ func newCodeReviewRunCmd(env *Env) *cobra.Command {
 		"how many runs may be in flight at once; a provider that reports its own limit is held to the lower of the two")
 	cmd.Flags().BoolVar(&flags.dryRun, "dry-run", false,
 		"print the assembled prompts and the runs that would be made, and spend nothing")
+	cmd.Flags().BoolVar(&flags.noPost, "no-post", false,
+		"run the panel and print the request that would post the review, without posting it")
 	cmd.Flags().BoolVar(&flags.json, "json", false, "emit the review as JSON")
+	cmd.Flags().IntVar(&target.pr, "pr", 0,
+		"review this open pull request and post the result to it")
 	return cmd
 }
 
 func runCodeReviewRun(cmd *cobra.Command, env *Env, target reviewTarget, flags runFlags) error {
+	if target.pr != 0 {
+		return runCodeReviewPR(cmd, env, target, flags, clientSeam{})
+	}
 	root, base, mergeBase, err := resolveTarget(env, target)
 	if err != nil {
 		return err

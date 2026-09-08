@@ -261,6 +261,28 @@ runs describing one bug — so identity means "this code, this kind of problem".
 posted comment so a later run reads it rather than re-deriving it.
 _Avoid_: id, key, hash
 
+**App registration**:
+The GitHub App id and private key one machine holds, in agtk's own config directory. What a
+**Review** is posted as. Registered once per machine rather than once per repository, and
+never written into a repository — a fork, a clone or a leaked secret scan has nothing to
+find. The key is readable by its owner alone, and one any other account can read is refused
+rather than used: the blast radius of an App key is one machine, and a key a second account
+can read makes that untrue.
+
+The short-lived installation token minted from it is held in memory for one run and written
+nowhere. It reaches every repository the App is installed on, so it never enters a model's
+process — a **Reviewer** inherits the operator's environment, which is why the token is
+passed as an argument rather than placed in one.
+_Avoid_: secret, credential file, PAT
+
+**Marker**:
+The HTML comment a posted inline comment carries its **Fingerprint** in, invisible in
+rendered markdown, so a later run reads identity off the PR rather than re-deriving it. It
+names the scheme's version, because a change to what is hashed makes every existing marker
+mismatch — and without a version that reads as "every finding is new" rather than as "the
+scheme moved".
+_Avoid_: tag, sentinel, watermark
+
 **Review manifest**:
 `.agents/code-review/manifest.yaml`: the single declaration of **Reviewer**s, **Panel**s and the
 prompt bodies they use. Read by both engines — the in-session skill and `agtk code-review` — so

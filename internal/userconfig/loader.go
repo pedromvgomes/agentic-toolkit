@@ -18,14 +18,28 @@ const FileName = "config.yaml"
 // DirName is the agtk-owned subdirectory under the XDG config root.
 const DirName = "agentic-toolkit"
 
-// Path returns the absolute path to the user config file. It honours
-// XDG_CONFIG_HOME and falls back to ~/.config.
-func Path() (string, error) {
+// Dir returns the absolute path to the agtk-owned config directory. It
+// honours XDG_CONFIG_HOME and falls back to ~/.config.
+//
+// Exported because it is the one home agtk keeps machine-local state in. A
+// second caller that resolved XDG itself would be a second answer to "where
+// does agtk keep things", and the two would drift the first time either
+// changed.
+func Dir() (string, error) {
 	base, err := configBase()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(base, DirName, FileName), nil
+	return filepath.Join(base, DirName), nil
+}
+
+// Path returns the absolute path to the user config file.
+func Path() (string, error) {
+	dir, err := Dir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, FileName), nil
 }
 
 // Load reads and parses the user config from its canonical path. A

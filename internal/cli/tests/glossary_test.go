@@ -31,6 +31,7 @@ var bannedTerms = map[string]string{
 var glossaryScope = []string{
 	"internal/reviewrun",
 	"internal/review",
+	"internal/reviewpost",
 }
 
 // CONTEXT.md's 35 terms each carry an `_Avoid_` list, and until this check

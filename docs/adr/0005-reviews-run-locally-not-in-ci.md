@@ -3,7 +3,9 @@
 `agtk code-review` runs on a developer's own machine, against the CLIs that machine is already
 logged into, and posts the result to the PR through a GitHub App. There is no workflow file, no
 runner, and no model credential in any repository secret. The App's private key lives on the
-machine (`~/.config/agtk/`), so `initialize` is a once-per-machine registration and adding a
+machine, in agtk's own config directory (`$XDG_CONFIG_HOME/agentic-toolkit/`, and
+`~/.config/agentic-toolkit/` when that is unset — the one home agtk keeps machine-local
+state in), so `initialize` is a once-per-machine registration and adding a
 repo is one App installation rather than a per-repo secret ceremony.
 
 The shape follows from what the two coding-agent CLIs can actually be authenticated with when
