@@ -397,8 +397,10 @@ func TestCodeReviewPanelsListsShallowestFirst(t *testing.T) {
 	if careful.Description != "" || careful.DefaultFor == nil || careful.DefaultFor[0] != "pr" {
 		t.Errorf("careful is misreported: %+v", careful)
 	}
-	if len(thorough.DefaultFor) != 0 {
-		t.Errorf("thorough is nobody's default, yet: %+v", thorough.DefaultFor)
+	// Nobody's default is an empty list, never null: a consumer iterating
+	// it must not have to special-case the panel no context starts from.
+	if thorough.DefaultFor == nil || len(thorough.DefaultFor) != 0 {
+		t.Errorf("thorough is nobody's default, yet default_for is %#v", thorough.DefaultFor)
 	}
 }
 
