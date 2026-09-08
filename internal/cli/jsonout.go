@@ -6,10 +6,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pedromvgomes/agentic-toolkit/internal/githubapp"
 	"github.com/pedromvgomes/agentic-toolkit/internal/lockfile"
 	"github.com/pedromvgomes/agentic-toolkit/internal/memory"
 	"github.com/pedromvgomes/agentic-toolkit/internal/resolver"
 	"github.com/pedromvgomes/agentic-toolkit/internal/review"
+	"github.com/pedromvgomes/agentic-toolkit/internal/reviewpost"
 	"github.com/pedromvgomes/agentic-toolkit/internal/reviewrun"
 )
 
@@ -441,6 +443,22 @@ type findingJSON struct {
 	Verdict       string `json:"verdict,omitempty"`
 }
 
+// findingRow renders one finding. Shared by every command that emits findings,
+// so a consumer reads the same shape whether the review was printed or posted.
+func findingRow(f reviewrun.Finding) findingJSON {
+	row := findingJSON{
+		ID: f.ID, Fingerprint: f.Fingerprint(), Reviewer: f.Reviewer,
+		Path: f.Path, StartLine: f.StartLine, EndLine: f.EndLine,
+		Category: f.Category, Severity: string(f.Severity), Confidence: f.Confidence,
+		Issue: f.Issue, Evidence: f.Evidence, Suggestion: f.Suggestion,
+		Corroboration: f.Corroboration,
+	}
+	if f.Verdict != nil {
+		row.Verdict = f.Verdict.Verdict
+	}
+	return row
+}
+
 type runReportJSON struct {
 	Label     string  `json:"label"`
 	Role      string  `json:"role"`
@@ -482,17 +500,7 @@ func reviewJSON(r *reviewrun.Review) reviewOutJSON {
 		CostUSD:     r.CostUSD,
 	}
 	for _, f := range r.Findings {
-		row := findingJSON{
-			ID: f.ID, Fingerprint: f.Fingerprint(), Reviewer: f.Reviewer,
-			Path: f.Path, StartLine: f.StartLine, EndLine: f.EndLine,
-			Category: f.Category, Severity: string(f.Severity), Confidence: f.Confidence,
-			Issue: f.Issue, Evidence: f.Evidence, Suggestion: f.Suggestion,
-			Corroboration: f.Corroboration,
-		}
-		if f.Verdict != nil {
-			row.Verdict = f.Verdict.Verdict
-		}
-		out.Findings = append(out.Findings, row)
+		out.Findings = append(out.Findings, findingRow(f))
 	}
 	for _, run := range r.Reports {
 		out.Runs = append(out.Runs, runReportJSON{
@@ -739,4 +747,142 @@ func changeToJSON(p *review.Profile) changeJSON {
 		out.Excluded = append(out.Excluded, excludedFileJSON{Path: f.Path, Reason: f.Excluded.Reason()})
 	}
 	return out
+}
+
+// ===== code review, posted =====
+
+type pullRequestJSON struct {
+	Slug     string `json:"slug"`
+	Number   int    `json:"number"`
+	BaseRef  string `json:"base_ref"`
+	BaseSHA  string `json:"base_sha"`
+	HeadRef  string `json:"head_ref"`
+	HeadSHA  string `json:"head_sha"`
+	Draft    bool   `json:"draft"`
+	State    string `json:"state"`
+	Reviewed string `json:"reviewed_range"`
+}
+
+type reviewPRPlanJSON struct {
+	Version     int              `json:"version"`
+	PullRequest pullRequestJSON  `json:"pull_request"`
+	Manifest    string           `json:"manifest"`
+	Range       string           `json:"range"`
+	Panel       string           `json:"panel"`
+	Runs        []plannedRunJSON `json:"runs"`
+	// Posted is false and the payload is absent: a plan spends nothing, so no
+	// finding exists to comment on yet.
+	Posted bool `json:"posted"`
+}
+
+func pullRequestPlanJSON(t *pullRequestTarget, p *reviewrun.Plan) reviewPRPlanJSON {
+	out := reviewPRPlanJSON{
+		Version:     jsonVersion,
+		PullRequest: pullRequestRow(t),
+		Manifest:    p.Manifest,
+		Range:       p.Range,
+		Panel:       p.Panel,
+		Runs:        []plannedRunJSON{},
+	}
+	for _, r := range p.Runs {
+		out.Runs = append(out.Runs, plannedRunJSON{
+			Label: r.Label, Role: r.Role, Provider: r.Provider, Model: r.Model, Prompt: r.Prompt,
+		})
+	}
+	return out
+}
+
+type reviewPostJSON struct {
+	Version     int             `json:"version"`
+	PullRequest pullRequestJSON `json:"pull_request"`
+	// Available reports whether the review reached a verdict, and Reason says
+	// why it did not. Both travel with the payload because a review that
+	// reached no verdict and one that found nothing produce the same empty
+	// comment list, and a consumer must not have to read the body prose to
+	// tell them apart.
+	Available bool   `json:"available"`
+	Reason    string `json:"reason,omitempty"`
+	// Partial reports that some run could not answer, so what it would have
+	// found is unknown rather than absent.
+	Partial bool `json:"partial"`
+	// Posted says whether the request was actually made. A consumer that reads
+	// the payload without it cannot tell a preview from a post.
+	Posted  bool              `json:"posted"`
+	URL     string            `json:"url,omitempty"`
+	Payload reviewPayloadJSON `json:"payload"`
+	// Placement is where each surviving finding ended up.
+	Placement placementJSON `json:"placement"`
+}
+
+type reviewPayloadJSON struct {
+	CommitID string              `json:"commit_id"`
+	Event    string              `json:"event"`
+	Body     string              `json:"body"`
+	Comments []reviewCommentJSON `json:"comments"`
+}
+
+type reviewCommentJSON struct {
+	Path      string `json:"path"`
+	Line      int    `json:"line"`
+	StartLine *int   `json:"start_line,omitempty"`
+	Side      string `json:"side"`
+	Body      string `json:"body"`
+}
+
+type placementJSON struct {
+	Inline int `json:"inline"`
+	// NoLine and OffDiff are never omitted: a consumer branching on whether a
+	// finding reached the diff must not have to tell absent from zero.
+	NoLine  int           `json:"no_line"`
+	OffDiff int           `json:"off_diff"`
+	Moved   []findingJSON `json:"moved_to_body"`
+}
+
+func pullRequestPostJSON(t *pullRequestTarget, r *reviewrun.Review, payload githubapp.ReviewPayload, place reviewpost.Placement, posted *githubapp.PostedReview) reviewPostJSON {
+	out := reviewPostJSON{
+		Version:     jsonVersion,
+		PullRequest: pullRequestRow(t),
+		Available:   r.Available,
+		Reason:      r.Reason,
+		Partial:     r.Partial(),
+		Payload: reviewPayloadJSON{
+			CommitID: payload.CommitID,
+			Event:    payload.Event,
+			Body:     payload.Body,
+			Comments: []reviewCommentJSON{},
+		},
+		Placement: placementJSON{
+			Inline:  len(place.Inline),
+			NoLine:  len(place.CrossCutting),
+			OffDiff: len(place.Unpositioned),
+			Moved:   []findingJSON{},
+		},
+	}
+	for _, c := range payload.Comments {
+		out.Payload.Comments = append(out.Payload.Comments, reviewCommentJSON{
+			Path: c.Path, Line: c.Line, StartLine: c.StartLine, Side: c.Side, Body: c.Body,
+		})
+	}
+	for _, f := range append(append([]reviewrun.Finding{}, place.CrossCutting...), place.Unpositioned...) {
+		out.Placement.Moved = append(out.Placement.Moved, findingRow(f))
+	}
+	if posted != nil {
+		out.Posted = true
+		out.URL = posted.HTMLURL
+	}
+	return out
+}
+
+func pullRequestRow(t *pullRequestTarget) pullRequestJSON {
+	return pullRequestJSON{
+		Slug:     t.slug.String(),
+		Number:   t.pr.Number,
+		BaseRef:  t.pr.BaseRef,
+		BaseSHA:  t.pr.BaseSHA,
+		HeadRef:  t.pr.HeadRef,
+		HeadSHA:  t.pr.HeadSHA,
+		Draft:    t.pr.Draft,
+		State:    t.pr.State,
+		Reviewed: t.mergeBase + ".." + t.pr.HeadSHA,
+	}
 }

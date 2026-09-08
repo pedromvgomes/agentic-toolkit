@@ -261,6 +261,33 @@ runs describing one bug — so identity means "this code, this kind of problem".
 posted comment so a later run reads it rather than re-deriving it.
 _Avoid_: id, key, hash
 
+**App registration**:
+The GitHub App id and private key one machine holds, in agtk's own config directory. What a
+**Review** is posted as. Registered once per machine rather than once per repository, and
+never written into a repository — a fork, a clone or a leaked secret scan has nothing to
+find. The key is readable by its owner alone, and one any other account can read is refused
+rather than used: the blast radius of an App key is one machine, and a key a second account
+can read makes that untrue.
+
+The short-lived installation token minted from it is held in memory for one run and written
+nowhere. It reaches every repository the App is installed on, so it never enters a model's
+process — a **Reviewer** inherits the operator's environment, which is why the token is
+passed as an argument rather than placed in one.
+_Avoid_: secret, credential file, PAT
+
+**Fingerprint marker**:
+The HTML comment a posted inline comment carries its **Fingerprint** in, invisible in
+rendered markdown, so a later run reads identity off the PR rather than re-deriving it. It
+names the scheme's version, because a change to what is hashed makes every existing marker
+mismatch — and without a version that reads as "every finding is new" rather than as "the
+scheme moved".
+
+Two words, because the bare noun belongs to **Signal**, which lists it under `_Avoid_`. A
+comment carrying a fingerprint and a detected property of a change are unrelated things, and
+a glossary that gave them one word would ban it for one of them and canonise it for the
+other.
+_Avoid_: tag, sentinel, watermark, marker (bare)
+
 **Review manifest**:
 `.agents/code-review/manifest.yaml`: the single declaration of **Reviewer**s, **Panel**s and the
 prompt bodies they use. Read by both engines — the in-session skill and `agtk code-review` — so
@@ -268,6 +295,9 @@ there is one roster and not two.
 _Avoid_: panels.json, roster file, review config
 
 ## Flagged ambiguities
+**"Marker"** — the bare noun is a **Signal** synonym to avoid; the HTML comment that carries a
+**Fingerprint** is a **Fingerprint marker**, always both words.
+
 **"Candidate"** — a staged memory finding awaiting a **Curator**, and also a **Finding** that
 has not yet passed a **Validator**. The memory sense owns the bare noun; in review, say
 "candidate finding" and never "candidate" alone.

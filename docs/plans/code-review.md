@@ -1,11 +1,12 @@
 # Plan — bot code review on GitHub PRs
 
-Status: the deterministic surface and the model-invoking pipeline are both built — the
-manifest, the change profile, signals, `referencing_files`, panel selection and `agtk
-code-review explain`, then the review root, the built-in prompts, reviewers at quorum,
-validators, the judge and `agtk code-review run`. Findings carry a fingerprint. What is not
-built is everything that talks to GitHub: posting a **Review**, reading back existing threads
-to deduplicate against, and **Approval**.
+Status: the deterministic surface, the model-invoking pipeline and the GitHub transport are
+built — the manifest, the change profile, signals, `referencing_files`, panel selection and
+`agtk code-review explain`; then the review root, the built-in prompts, reviewers at quorum,
+validators, the judge and `agtk code-review run`; then `agtk code-review initialize`, `run
+--pr N`, and one posted **Review** whose inline comments carry their **Fingerprint**. What
+is not built is reading existing threads back to deduplicate against (`## 7`) and
+**Approval**.
 Created: 2026-09-07. Challenged: 2026-09-07.
 
 The decisions that are hard to reverse live in `docs/adr/0005-reviews-run-locally-not-in-ci.md`,

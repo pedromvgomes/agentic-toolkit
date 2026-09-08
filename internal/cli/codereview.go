@@ -40,6 +40,7 @@ func newCodeReviewCmd(env *Env) *cobra.Command {
 	}
 	cmd.AddCommand(
 		newCodeReviewRunCmd(env),
+		newCodeReviewInitializeCmd(env),
 		newCodeReviewExplainCmd(env),
 		newCodeReviewPanelsCmd(env),
 		newCodeReviewSignalsCmd(env),
@@ -53,6 +54,12 @@ type reviewTarget struct {
 	head    string
 	context string
 	panel   string
+	// pr names an open pull request, and is zero when the target is local.
+	//
+	// It stands apart from base, head and context rather than beside them:
+	// naming a pull request decides all three, because the change is the one
+	// GitHub is holding and the context is the one that posts.
+	pr int
 }
 
 // changeFlags registers the flags that name a change and the context it is
