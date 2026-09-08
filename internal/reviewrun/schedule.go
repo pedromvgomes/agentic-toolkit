@@ -66,9 +66,17 @@ func (s *scheduler) gate(r review.Runner) (chan struct{}, error) {
 
 // acquire blocks until this run may proceed, and returns the release.
 //
-// The two semaphores are always taken in the same order — global, then
-// provider — so two runs on different providers cannot each hold half of what
-// the other needs.
+// The provider's own gate is taken first, then the global one, and they are
+// released in the mirror order. Taking global first lets a provider that
+// serialises pin the operator's whole parallelism budget: with --max-parallel
+// 4 and several codex runs queued behind a limit of one, three of them sit
+// holding global slots nothing else can use, and reviewers on a provider with
+// no limit of its own serialise behind a limit that is not theirs. Queuing on
+// the provider gate first costs a run nothing it was going to get anyway.
+//
+// Both semaphores are still taken in one consistent order, which is what makes
+// deadlock impossible — that property comes from the order being the same for
+// everyone, not from which of the two is first.
 func (s *scheduler) acquire(ctx context.Context, r review.Runner) (release func(), err error) {
 	// Checked before the selects rather than only inside them. A select whose
 	// send and whose <-ctx.Done() are both ready picks between them at random,
@@ -83,31 +91,38 @@ func (s *scheduler) acquire(ctx context.Context, r review.Runner) (release func(
 		return nil, err
 	}
 
+	if gate != nil {
+		select {
+		case gate <- struct{}{}:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+
 	select {
 	case s.global <- struct{}{}:
 	case <-ctx.Done():
+		if gate != nil {
+			<-gate
+		}
 		return nil, ctx.Err()
 	}
 
-	if gate == nil {
-		return func() { <-s.global }, nil
-	}
-
-	select {
-	case gate <- struct{}{}:
-		return func() { <-gate; <-s.global }, nil
-	case <-ctx.Done():
+	return func() {
 		<-s.global
-		return nil, ctx.Err()
-	}
+		if gate != nil {
+			<-gate
+		}
+	}, nil
 }
 
-// job is one scheduled model invocation.
+// scheduled is one Runner waiting for its turn, bound to the report it will
+// produce.
 //
 // proto carries what is known before the run is made — its label, its role and
-// what would run it — so a job that never starts still reports as itself
-// rather than as a zero value.
-type job struct {
+// what would run it — so one that never starts still reports as itself rather
+// than as a zero value.
+type scheduled struct {
 	runner review.Runner
 	proto  RunReport
 	fn     func(context.Context) RunReport
@@ -123,7 +138,7 @@ type job struct {
 // why. It must not come back as a zero value: an empty report is a run that
 // found nothing, and "the review was cancelled" and "the code is clean" are
 // the two readings this package exists to keep apart.
-func (s *scheduler) runAll(ctx context.Context, jobs []job) []RunReport {
+func (s *scheduler) runAll(ctx context.Context, jobs []scheduled) []RunReport {
 	out := make([]RunReport, len(jobs))
 	var wg sync.WaitGroup
 	for i := range jobs {

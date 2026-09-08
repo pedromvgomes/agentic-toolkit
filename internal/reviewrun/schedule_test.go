@@ -43,12 +43,12 @@ func (tr *tracker) peak(provider string) int {
 	return tr.highest[provider]
 }
 
-// jobsFor builds n jobs on one provider, each recording its own overlap.
-func jobsFor(tr *tracker, provider string, n int) []job {
-	jobs := make([]job, 0, n)
+// runsFor builds n scheduled runs on one provider, each recording its own overlap.
+func runsFor(tr *tracker, provider string, n int) []scheduled {
+	runs := make([]scheduled, 0, n)
 	for i := 0; i < n; i++ {
 		runner := review.Runner{Provider: provider}
-		jobs = append(jobs, job{
+		runs = append(runs, scheduled{
 			runner: runner,
 			proto:  RunReport{Label: provider, Provider: provider},
 			fn: func(context.Context) RunReport {
@@ -61,7 +61,7 @@ func jobsFor(tr *tracker, provider string, n int) []job {
 			},
 		})
 	}
-	return jobs
+	return runs
 }
 
 // A provider whose credential cannot be shared must never have two runs in
@@ -76,7 +76,7 @@ func TestAProviderThatReportsALimitNeverHasTwoRunsInFlight(t *testing.T) {
 		return 0, nil
 	})
 
-	reports := sched.runAll(context.Background(), jobsFor(tr, "serialised", 6))
+	reports := sched.runAll(context.Background(), runsFor(tr, "serialised", 6))
 
 	if got := tr.peak("serialised"); got != 1 {
 		t.Errorf("%d runs were in flight at once on a provider limited to 1", got)
@@ -94,7 +94,7 @@ func TestAnUnconstrainedProviderRunsInParallelUpToTheGlobalBound(t *testing.T) {
 	tr := newTracker()
 	sched := newScheduler(3, func(review.Runner) (int, error) { return 0, nil })
 
-	sched.runAll(context.Background(), jobsFor(tr, "free", 12))
+	sched.runAll(context.Background(), runsFor(tr, "free", 12))
 
 	peak := tr.peak("free")
 	if peak > 3 {
@@ -114,7 +114,7 @@ func TestTheProviderLimitIsAskedOncePerProvider(t *testing.T) {
 		atomic.AddInt32(&asked, 1)
 		return 0, nil
 	})
-	sched.runAll(context.Background(), jobsFor(newTracker(), "free", 5))
+	sched.runAll(context.Background(), runsFor(newTracker(), "free", 5))
 
 	if n := atomic.LoadInt32(&asked); n != 1 {
 		t.Errorf("the provider was asked its limit %d times, want 1", n)
@@ -123,23 +123,31 @@ func TestTheProviderLimitIsAskedOncePerProvider(t *testing.T) {
 
 // Two providers are bounded independently: a serialised one must not stall a
 // free one, and the free one must not lend its parallelism to the other.
+//
+// The global bound is deliberately lower than the run count, so it is a real
+// constraint. A bound wide enough to admit every run at once cannot tell a
+// scheduler that queues correctly from one that lets a serialised provider pin
+// the whole budget, because nothing ever waits.
 func TestProvidersAreBoundedIndependently(t *testing.T) {
 	tr := newTracker()
-	sched := newScheduler(8, func(r review.Runner) (int, error) {
+	sched := newScheduler(4, func(r review.Runner) (int, error) {
 		if r.Provider == "serialised" {
 			return 1, nil
 		}
 		return 0, nil
 	})
 
-	jobs := append(jobsFor(tr, "serialised", 4), jobsFor(tr, "free", 4)...)
+	jobs := append(runsFor(tr, "serialised", 12), runsFor(tr, "free", 4)...)
 	sched.runAll(context.Background(), jobs)
 
 	if got := tr.peak("serialised"); got != 1 {
 		t.Errorf("the serialised provider peaked at %d", got)
 	}
-	if got := tr.peak("free"); got < 2 {
-		t.Errorf("the free provider peaked at %d; it was held to the other's limit", got)
+	// The global bound is 4 and one slot is held by whichever serialised run
+	// is in flight, so an unconstrained provider must reach the remaining 3. A
+	// run waiting on another provider's limit must not be holding a slot.
+	if got := tr.peak("free"); got < 3 {
+		t.Errorf("the free provider peaked at %d of an available 3; runs queued on the serialised provider's limit are pinning global slots", got)
 	}
 }
 
@@ -151,11 +159,11 @@ func TestACancelledRunReportsItselfRatherThanComingBackEmpty(t *testing.T) {
 	cancel()
 
 	sched := newScheduler(1, func(review.Runner) (int, error) { return 0, nil })
-	reports := sched.runAll(ctx, []job{{
+	reports := sched.runAll(ctx, []scheduled{{
 		runner: review.Runner{Provider: "free"},
 		proto:  RunReport{Label: "security", Role: RoleReviewer, Provider: "free"},
 		fn: func(context.Context) RunReport {
-			t.Error("a job ran under a cancelled context")
+			t.Error("a run started under a cancelled context")
 			return RunReport{}
 		},
 	}})
@@ -181,11 +189,11 @@ func TestARunnerWhoseLimitCannotBeReadIsNotRun(t *testing.T) {
 	sched := newScheduler(2, func(review.Runner) (int, error) {
 		return 0, errors.New("the CLI is not installed")
 	})
-	reports := sched.runAll(context.Background(), []job{{
+	reports := sched.runAll(context.Background(), []scheduled{{
 		runner: review.Runner{Provider: "broken"},
 		proto:  RunReport{Label: "security", Provider: "broken"},
 		fn: func(context.Context) RunReport {
-			t.Error("a job ran though its provider limit could not be read")
+			t.Error("a run started though its provider limit could not be read")
 			return RunReport{}
 		},
 	}})
@@ -205,7 +213,7 @@ func TestAnAbsentGlobalBoundBecomesTheDefault(t *testing.T) {
 	}
 }
 
-func TestRunningNoJobsIsHarmless(t *testing.T) {
+func TestSchedulingNothingIsHarmless(t *testing.T) {
 	sched := newScheduler(4, func(review.Runner) (int, error) { return 0, nil })
 	if got := sched.runAll(context.Background(), nil); len(got) != 0 {
 		t.Errorf("runAll(nil) = %+v", got)
