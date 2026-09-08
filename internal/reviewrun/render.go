@@ -89,6 +89,10 @@ func renderRuns(w io.Writer, r *Review) {
 		}
 		fmt.Fprintf(w, "Ran and reported nothing: %s\n\n", strings.Join(names, ", "))
 	}
+	if len(r.ReattachedIDs) > 0 {
+		fmt.Fprintf(w, "The judge dropped %d prompt-injection finding(s); they were put back, because that category is not the judge's to drop: %s\n\n",
+			len(r.ReattachedIDs), strings.Join(r.ReattachedIDs, ", "))
+	}
 	if len(r.DiscardedIDs) > 0 {
 		fmt.Fprintf(w, "The judge returned %d id(s) this review did not issue, and they were discarded: %s\n\n",
 			len(r.DiscardedIDs), strings.Join(r.DiscardedIDs, ", "))
@@ -149,7 +153,12 @@ func RenderPlan(w io.Writer, p *Plan) {
 	} else {
 		fmt.Fprintf(w, "rules:    none found at the base ref\n")
 	}
-	fmt.Fprintf(w, "\n%d run(s) would be made, and nothing was spent:\n\n", len(p.Runs))
+	if len(p.MissingConventions) > 0 {
+		fmt.Fprintf(w, "missing: %s (named by the manifest, absent at the base ref)\n",
+			strings.Join(p.MissingConventions, ", "))
+	}
+	fmt.Fprintf(w, "\n%d run(s) would be made, and nothing was spent:\n", len(p.Runs))
+	fmt.Fprintf(w, "One validator run is added per distinct candidate finding, which is not known until the reviewers answer.\n\n")
 	for _, run := range p.Runs {
 		model := run.Model
 		if model == "" {

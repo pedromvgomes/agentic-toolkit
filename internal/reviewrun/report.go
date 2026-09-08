@@ -83,8 +83,17 @@ type Review struct {
 	Skipped []Skipped
 	// Conventions names the convention documents that were read.
 	Conventions []string
+	// MissingConventions names documents the manifest asked for that the base
+	// ref does not hold. A repo that believes it is being held to its own
+	// rules and is not needs to be told.
+	MissingConventions []string
 	// DiscardedIDs are ids the judge returned that agtk did not issue.
 	DiscardedIDs []string
+	// ReattachedIDs are prompt-injection findings the judge dropped and agtk
+	// put back. The judge narrows freely everywhere else; this is the one
+	// category it may not decide, so a run that exercised the carve-out says
+	// so rather than presenting the set as the judge's own.
+	ReattachedIDs []string
 	// DroppedByValidator counts candidate findings a validator rejected.
 	DroppedByValidator int
 	// CostUSD is what the whole review spent, and is zero when no provider
@@ -98,7 +107,7 @@ type Review struct {
 	Reason string
 }
 
-// RunReport is one model invocation's outcome, for the review record.
+// RunReport is one Runner's outcome, for the review record.
 type RunReport struct {
 	// Label names the run: the reviewer's manifest name, plus an instance
 	// number when the panel's quorum is above one.
@@ -169,7 +178,7 @@ func (r *Review) Counts() map[Severity]int {
 	return counts
 }
 
-// runsMade is how many model invocations the review made.
+// runsMade is how many runs the review made.
 func (r *Review) runsMade() int { return len(r.Reports) }
 
 // Record renders the review record: what ran, what did not answer, and what it

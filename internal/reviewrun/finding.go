@@ -82,6 +82,32 @@ type Finding struct {
 	Verdict *Verdict `json:"verdict,omitempty"`
 }
 
+// CategoryPromptInjection marks a finding that quotes text in the reviewed
+// material addressed at the reviewer rather than at the program.
+//
+// It is the one category the pipeline treats structurally rather than leaving
+// to a model's judgement. ADR 0006 and ADR 0007 both make it block approval
+// regardless of the configured severity floor, and a defence that converts an
+// injected instruction into a blocked approval is worth nothing if the stages
+// between the reviewer and the report can drop it — which, absent a carve-out,
+// is exactly what they are told to do: a validator asked to reject what it
+// cannot independently verify, and a judge told that dropping is the common
+// case.
+//
+// The quote is the whole of the verification. There is no code defect to
+// confirm, so the ordinary bars do not apply to it.
+const CategoryPromptInjection = "security:prompt-injection"
+
+// Injected reports whether this finding is one the pipeline may not drop.
+//
+// Matched on the category's prefix so a reviewer that qualifies it — the
+// prompts ask for a category and a model may write
+// `security:prompt-injection:suppression` — is still covered.
+func (f Finding) Injected() bool {
+	return f.Category == CategoryPromptInjection ||
+		strings.HasPrefix(f.Category, CategoryPromptInjection+":")
+}
+
 // Verdict is one validator's answer about one finding.
 type Verdict struct {
 	Verdict  string   `json:"verdict"`

@@ -418,6 +418,7 @@ type reviewOutJSON struct {
 	Skipped     []skippedJSON   `json:"skipped,omitempty"`
 	Conventions []string        `json:"conventions,omitempty"`
 	Discarded   []string        `json:"discarded_judge_ids,omitempty"`
+	Reattached  []string        `json:"reattached_injection_ids,omitempty"`
 	Dropped     int             `json:"dropped_by_validator"`
 	CostUSD     float64         `json:"cost_usd"`
 }
@@ -475,6 +476,7 @@ func reviewJSON(r *reviewrun.Review) reviewOutJSON {
 		Good:        r.Good,
 		Conventions: r.Conventions,
 		Discarded:   r.DiscardedIDs,
+		Reattached:  r.ReattachedIDs,
 		Dropped:     r.DroppedByValidator,
 		CostUSD:     r.CostUSD,
 	}
