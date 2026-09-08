@@ -62,9 +62,18 @@ type Runner struct {
 
 // Panel is a named set of reviewers and how hard they are run.
 type Panel struct {
-	Reviewers []string `yaml:"reviewers" agtkdoc:"required;Names from the manifest's reviewers map. A panel that names one this manifest does not declare cannot staff itself, and is refused."`
-	Quorum    int      `yaml:"quorum,omitempty" agtkdoc:"How many independent instances of each reviewer to run. Agreement between them is the confidence signal. Defaults to 1."`
-	Validate  *bool    `yaml:"validate,omitempty" agtkdoc:"Whether findings are put to the validator. Unset leaves it to the context, and a context that posts validates regardless: a false finding on a PR is published and blocks approval."`
+	// Description says what this panel is for, in the manifest author's own
+	// words.
+	//
+	// A panel's cost is derivable — reviewers times quorum — and says what it
+	// spends, never what it is for. A person choosing between `standard` and
+	// `deep` is choosing on the second, and a name plus a run count does not
+	// carry it. Optional: a manifest that omits it is listed by name and cost,
+	// which is what a panel that has always been obvious needs.
+	Description string   `yaml:"description,omitempty" agtkdoc:"What this panel is for, in one line. Shown when a panel is listed or chosen, because a name and a run count say what a panel spends and not what it is for."`
+	Reviewers   []string `yaml:"reviewers" agtkdoc:"required;Names from the manifest's reviewers map. A panel that names one this manifest does not declare cannot staff itself, and is refused."`
+	Quorum      int      `yaml:"quorum,omitempty" agtkdoc:"How many independent instances of each reviewer to run. Agreement between them is the confidence signal. Defaults to 1."`
+	Validate    *bool    `yaml:"validate,omitempty" agtkdoc:"Whether findings are put to the validator. Unset leaves it to the context, and a context that posts validates regardless: a false finding on a PR is published and blocks approval."`
 }
 
 // EffectiveQuorum is Quorum, or 1 when the panel does not set one.

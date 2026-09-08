@@ -382,3 +382,72 @@ escalate:
 		t.Errorf("panel = %q, want heavy — the second condition holds", sel.Panel)
 	}
 }
+
+// A panel's shape says what it spends; its description is the only thing that
+// says what it is for, which is what a reader deciding whether to override it
+// needs.
+func TestExplainCarriesThePanelsDescription(t *testing.T) {
+	src := `version: 1
+reviewers:
+  correctness: {provider: claudecode, model: sonnet, prompt: "builtin:correctness"}
+judge:     {provider: claudecode, model: opus,   prompt: "builtin:judge"}
+validator: {provider: claudecode, model: sonnet, prompt: "builtin:validator"}
+panels:
+  quick:
+    description: the pre-push pass, for a change you already understand
+    reviewers: [correctness]
+defaults:
+  worktree: quick
+  pr:       quick
+`
+	m := mustParse(t, src)
+	p := profile(1, 10, review.AvailableCount(0))
+	sel := selectPanel(t, m, review.ContextWorktree, p, "")
+
+	out := sel.Explain(m, p)
+	if !strings.Contains(out, "the pre-push pass, for a change you already understand") {
+		t.Errorf("explain drops the panel's description:\n%s", out)
+	}
+}
+
+// A manifest that describes none of its panels is listed by name and cost, and
+// gains no blank line where a description would have been.
+func TestExplainOmitsAnAbsentPanelDescription(t *testing.T) {
+	src := `version: 1
+reviewers:
+  correctness: {provider: claudecode, model: sonnet, prompt: "builtin:correctness"}
+judge:     {provider: claudecode, model: opus,   prompt: "builtin:judge"}
+validator: {provider: claudecode, model: sonnet, prompt: "builtin:validator"}
+panels:
+  quick: {reviewers: [correctness]}
+defaults:
+  worktree: quick
+  pr:       quick
+`
+	m := mustParse(t, src)
+	p := profile(1, 10, review.AvailableCount(0))
+	sel := selectPanel(t, m, review.ContextWorktree, p, "")
+
+	out := sel.Explain(m, p)
+	if strings.Contains(out, "panel:   quick (1 run)\n         \n") {
+		t.Errorf("an absent description left a blank line:\n%q", out)
+	}
+}
+
+// The manifest that ships with agtk describes every panel it declares: it is
+// the one a repo with no manifest is reviewed by, and the example every
+// consumer copies from.
+func TestTheBuiltInPanelsAreAllDescribed(t *testing.T) {
+	m, err := review.DefaultManifest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m.Panels) == 0 {
+		t.Fatal("the built-in manifest declares no panels")
+	}
+	for name, panel := range m.Panels {
+		if strings.TrimSpace(panel.Description) == "" {
+			t.Errorf("the built-in panel %q has no description", name)
+		}
+	}
+}

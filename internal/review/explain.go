@@ -56,6 +56,12 @@ func (s *Selection) Explain(m *Manifest, p *Profile) string {
 	} else {
 		fmt.Fprintf(&b, "panel:   %s%s\n", s.Panel, panelShape(m, s.Panel))
 	}
+	// The panel's own description, where its author wrote one. The shape above
+	// says what the panel spends; this is the only line that says what it is
+	// for, which is what a reader deciding whether to override it needs.
+	if desc := m.Panels[s.Panel].Description; desc != "" {
+		fmt.Fprintf(&b, "         %s\n", desc)
+	}
 
 	if s.Validates {
 		why := "the panel asks for it"
