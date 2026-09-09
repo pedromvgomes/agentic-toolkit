@@ -12,7 +12,12 @@ extensions:
     # is what stops it: an implementer that cannot spawn cannot start a second
     # one, and "one task at a time" stays a fact about the tool set rather than
     # a sentence this file asks it to honour.
-    disallowed_tools: [Agent]
+    #
+    # Both spellings, because agtk validates neither list against a tool
+    # vocabulary. A name the platform does not recognise is ignored rather than
+    # rejected, so naming only one leaves the guard silently inert wherever the
+    # other is live.
+    disallowed_tools: [Agent, Task]
 ---
 
 # Task implementer

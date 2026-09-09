@@ -33,13 +33,32 @@ RED and AMBER. `CONTEXT.md` defines both as defects differing in the strength of
 rather than in what they oblige, so the loop treats them alike. GREEN is a remark and never
 keeps the loop running — a branch whose only findings are GREEN is done.
 
+## What each pass looks at
+
+**Pass 1 reviews the whole change** — everything on the branch, against the base it will merge
+into. This is the pass that has to see every line, because nothing else in the flow gives the
+branch an independent reading: the coordinator read each task's diff as it landed, and that is
+the same model that accepted it.
+
+**Every later pass reviews only what changed since the pass before it.** Record the head commit
+after each pass's fixes are applied, and make it the next pass's base:
+
+```bash
+git rev-parse HEAD          # after pass N's fixes — this is pass N+1's base
+```
+
+The rest of the branch was read one pass ago and found clean. Reviewing it again costs the same
+as the first pass and asks a question that has been answered, which is how a loop that converges
+still ends up costing five times its first pass.
+
 ## The loop
 
 Each pass:
 
-1. Invoke `panel-code-review` with the **local target** and `--auto-fix`. Say "my branch" so the
-   target resolves without a question; an open PR must not turn this into a PR review, because
-   a PR review posts, and this loop is a thing that happens before anything is published.
+1. Invoke `panel-code-review` with the **local target** and `--auto-fix`, over the range above:
+   the whole branch on pass 1, and the previous pass's head as the base after that. Say "my
+   branch" so the target resolves without a question; an open PR must not turn this into a PR
+   review, because a PR review posts, and this loop happens before anything is published.
 2. Read three things off what it reports: whether the run reached a verdict, the surviving
    RED and AMBER count, and their fingerprints.
 3. Decide whether to run again.

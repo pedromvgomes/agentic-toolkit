@@ -5,7 +5,7 @@ description: Reviews changes from a working session and updates AGENTS.md (creat
 model: sonnet
 requires:
   - skills/agents-md-creator
-tools: [Read, Write, Edit, MultiEdit, Bash, Grep, Glob, Task]
+tools: [Read, Write, Edit, MultiEdit, Bash, Grep, Glob, Task, Agent]
 color: green
 ---
 

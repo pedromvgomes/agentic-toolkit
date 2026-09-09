@@ -607,3 +607,85 @@ func TestPlanFeatureStopsAtTheHandoff(t *testing.T) {
 		t.Error("plan-feature may start implementing on opus")
 	}
 }
+
+// A git exclude has no effect on an already-tracked file, so being excluded is
+// not evidence of anything. A branch that commits handoff/x.md would otherwise
+// drive every session started or cleared on that checkout — choosing its tasks,
+// its file boundaries and the command it runs, through subagents holding Write
+// and Bash.
+func TestACommittedHandoffIsNeverAdvertisedOrActedOn(t *testing.T) {
+	apply := renderFeatureFlowStack(t)
+
+	settings, err := os.ReadFile(filepath.Join(apply, ".claude/settings.json"))
+	if err != nil {
+		t.Fatalf("settings did not reach the consumer: %v", err)
+	}
+	if !strings.Contains(string(settings), "ls-files --error-unmatch") {
+		t.Errorf("the hook advertises handoffs without checking whether git tracks them:\n%s", settings)
+	}
+
+	// The hook is not the only way in: implement-handoff is invocable directly,
+	// so the same check has to hold there.
+	body, err := os.ReadFile(filepath.Join(apply, ".claude/skills/implement-handoff/SKILL.md"))
+	if err != nil {
+		t.Fatalf("implement-handoff did not reach the consumer: %v", err)
+	}
+	skill := string(body)
+	if !strings.Contains(skill, "ls-files --error-unmatch") {
+		t.Errorf("implement-handoff acts on a handoff without checking whether git tracks it:\n%s", skill)
+	}
+	if !strings.Contains(skill, "Refuse a handoff that git tracks") {
+		t.Error("implement-handoff does not refuse a committed handoff")
+	}
+	if !strings.Contains(skill, "untrusted content") {
+		t.Error("implement-handoff does not say what a committed handoff is")
+	}
+}
+
+// agtk validates neither tools nor disallowed_tools against a tool vocabulary,
+// so a name the platform does not recognise is ignored rather than rejected.
+// Naming one spelling leaves the grant or the guard silently inert wherever
+// the other is live.
+func TestSubagentToolNamesCoverBothSpellings(t *testing.T) {
+	apply := renderFeatureFlowStack(t)
+
+	cmd, err := os.ReadFile(filepath.Join(apply, ".claude/commands/plan-feature.md"))
+	if err != nil {
+		t.Fatalf("plan-feature did not reach the consumer: %v", err)
+	}
+	head := strings.SplitN(string(cmd), "---", 3)[1]
+	for _, name := range []string{"Agent", "Task"} {
+		if !strings.Contains(head, name) {
+			t.Errorf("plan-feature's allowlist omits %q, so it cannot delegate where that name is live", name)
+		}
+	}
+
+	agent, err := os.ReadFile(filepath.Join(apply, ".claude/agents/task-implementer/AGENT.md"))
+	if err != nil {
+		t.Fatalf("task-implementer did not reach the consumer: %v", err)
+	}
+	for _, name := range []string{"Agent", "Task"} {
+		if !strings.Contains(string(agent), name) {
+			t.Errorf("task-implementer's denylist omits %q, so one implementer can start another where that name is live", name)
+		}
+	}
+}
+
+// Pass 1 is the only independent reading the branch gets: the coordinator that
+// accepted each task's diff is the same model that wrote the acceptance. Every
+// later pass has already had the rest of the branch read one pass ago.
+func TestTheLoopReadsEveryLineOnceAndNoLineTwiceForTheSameReason(t *testing.T) {
+	apply := renderFeatureFlowStack(t)
+
+	body, err := os.ReadFile(filepath.Join(apply, ".claude/skills/review-implementation/SKILL.md"))
+	if err != nil {
+		t.Fatalf("review-implementation did not reach the consumer: %v", err)
+	}
+	skill := string(body)
+	if !strings.Contains(skill, "Pass 1 reviews the whole change") {
+		t.Errorf("the first pass does not cover the branch, so tasks before the last go unreviewed:\n%s", skill)
+	}
+	if !strings.Contains(skill, "only what changed since the pass before it") {
+		t.Error("every pass re-reads the whole branch, so a converging loop costs its first pass five times")
+	}
+}

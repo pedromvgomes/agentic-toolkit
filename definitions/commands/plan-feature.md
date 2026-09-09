@@ -2,7 +2,7 @@
 description: Plan a feature on opus without reading the codebase — delegate every question, challenge the open decisions, have the draft reviewed, then write the handoff the implementing session picks up.
 model: opus
 argument_hint: "<what to build, or an issue reference>"
-tools: [Agent, Skill, Bash, TodoWrite, AskUserQuestion, ExitPlanMode]
+tools: [Agent, Task, Skill, Bash, TodoWrite, AskUserQuestion, ExitPlanMode]
 requires:
   - agents/plan-reviewer
   # The two explorers section 1 routes to. Without either, every question it

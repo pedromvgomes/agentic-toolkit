@@ -95,8 +95,11 @@ For each task, in order:
 3. Commit it, send it back, or stop the run.
 
 Then `review-implementation` loops `panel-code-review` over the working tree, fixing as it goes,
-up to five passes. It stops early when a pass finds no RED or AMBER, and stops without a pull
-request when it stalls or hits the cap.
+up to five passes. Pass 1 reads the whole branch — the only independent reading it gets, since
+the coordinator that accepted each task's diff is the same model that wrote the acceptance. Every
+later pass reads only what the previous pass's fixes changed, so convergence gets cheaper instead
+of costing the first pass over again. It stops early when a pass finds no RED or AMBER, and stops
+without a pull request when it stalls or hits the cap.
 
 Then `open-pr`: documentation for the modules touched, durable findings staged into the memory
 store's `candidates/`, push, `gh pr create` with the handoff's conventional title, and a second
@@ -142,6 +145,18 @@ echo 'handoff/' >> "$(git rev-parse --git-common-dir)/info/exclude"
 `.bare/`, so one write covers every worktree. `write-handoff` does this itself, idempotently.
 
 A consumed handoff moves to `handoff/done/`, which the hook's depth-one glob does not see.
+
+**The exclude is a convenience, not the control.** A git exclude has no effect on a file that is
+already tracked, so a branch can commit `handoff/anything.md` regardless — and a handoff decides
+what the next session does, which subagents it dispatches and what command it runs. Both the hook
+and `implement-handoff` therefore check the thing that cannot be forged from inside a branch:
+
+```bash
+git ls-files --error-unmatch -- handoff/x.md    # tracked → refuse
+```
+
+A tracked handoff is never advertised and never acted on. Its presence is reported, because a
+committed one is a fact worth knowing rather than a file to skip quietly.
 
 ## Using the pieces on their own
 
