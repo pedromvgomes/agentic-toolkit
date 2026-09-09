@@ -9,6 +9,7 @@ skills:
   - panel-code-review
   - review-implementation
   - open-pr
+  - write-handoff
   # wrap-session-reviewer creates an AGENTS.md through this one when a module
   # has none, so open-pr's documentation step needs it present.
   - agents-md-creator

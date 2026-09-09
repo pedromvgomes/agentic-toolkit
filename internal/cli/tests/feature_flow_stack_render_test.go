@@ -228,3 +228,102 @@ func TestTheReviewSkillsFixPathRendersAlongsideIt(t *testing.T) {
 		t.Errorf("panel-code-review routes fixes to pr-review-resolver, which never rendered: %v", err)
 	}
 }
+
+// The plan-shaped half of the format is optional. A handoff written by hand
+// halfway through something carries no task list, no slices and no PR title,
+// and a format demanding them serves planning only — which abandons the case
+// that needs a handoff most.
+func TestWriteHandoffServesAHandoffWithNoPlan(t *testing.T) {
+	apply := renderFeatureFlowStack(t)
+
+	body, err := os.ReadFile(filepath.Join(apply, ".claude/skills/write-handoff/SKILL.md"))
+	if err != nil {
+		t.Fatalf("write-handoff did not reach the consumer: %v", err)
+	}
+	skill := string(body)
+	if !strings.Contains(skill, "optional") {
+		t.Fatalf("write-handoff makes no part of the format optional:\n%s", skill)
+	}
+	if !strings.Contains(skill, "and is still a handoff") {
+		t.Error("write-handoff does not say a plan-free handoff is valid, so the ad-hoc case has no writer")
+	}
+	if _, err := os.Stat(filepath.Join(apply, ".claude/skills/write-handoff/references/handoff-template.md")); err != nil {
+		t.Errorf("write-handoff prescribes a template that never rendered: %v", err)
+	}
+}
+
+// A handoff pointing at work that exists only in the context about to be
+// discarded is worse than no handoff: the next session resumes on top of it
+// and cannot tell what is missing.
+func TestWriteHandoffRefusesToPointAtUnsavedWork(t *testing.T) {
+	apply := renderFeatureFlowStack(t)
+
+	body, err := os.ReadFile(filepath.Join(apply, ".claude/skills/write-handoff/SKILL.md"))
+	if err != nil {
+		t.Fatalf("write-handoff did not reach the consumer: %v", err)
+	}
+	skill := string(body)
+	if !strings.Contains(skill, "No uncommitted or unstaged changes") {
+		t.Errorf("write-handoff writes over a dirty worktree:\n%s", skill)
+	}
+	if !strings.Contains(skill, "are pushed") {
+		t.Error("write-handoff does not require the branch to be pushed")
+	}
+}
+
+// The worktree is a constant; what varies is whether the next session may
+// start at all. A handoff written with a pull request open waits for it.
+func TestWriteHandoffRecordsAPredecessorRatherThanAWorktree(t *testing.T) {
+	apply := renderFeatureFlowStack(t)
+
+	body, err := os.ReadFile(filepath.Join(apply, ".claude/skills/write-handoff/SKILL.md"))
+	if err != nil {
+		t.Fatalf("write-handoff did not reach the consumer: %v", err)
+	}
+	skill := string(body)
+	if !strings.Contains(skill, "predecessor") {
+		t.Fatalf("write-handoff records no predecessor, so a gated slice can start early:\n%s", skill)
+	}
+	if !strings.Contains(skill, "continues in **this** worktree") {
+		t.Error("write-handoff leaves the resume location open, which it no longer is")
+	}
+}
+
+// handoff/ is a fact about how somebody works, not about the project. The
+// common dir is what makes one write cover every worktree of a bare repo.
+func TestWriteHandoffExcludesItsFolderWithoutTouchingGitignore(t *testing.T) {
+	apply := renderFeatureFlowStack(t)
+
+	body, err := os.ReadFile(filepath.Join(apply, ".claude/skills/write-handoff/SKILL.md"))
+	if err != nil {
+		t.Fatalf("write-handoff did not reach the consumer: %v", err)
+	}
+	skill := string(body)
+	if !strings.Contains(skill, "--git-common-dir") {
+		t.Errorf("write-handoff excludes per worktree, so a bare repo needs the line in each:\n%s", skill)
+	}
+	if !strings.Contains(skill, "info/exclude") {
+		t.Error("write-handoff does not use the checkout-local exclude file")
+	}
+	if !strings.Contains(skill, "never edit the consumer's `.gitignore`") {
+		t.Error("write-handoff may write into a consumer's committed ignore rules")
+	}
+}
+
+// The hook finds the handoff and says what to invoke. A continuation prompt
+// to paste as well would be a second way in, and the two would drift.
+func TestWriteHandoffHandsOffThroughTheHookAlone(t *testing.T) {
+	apply := renderFeatureFlowStack(t)
+
+	body, err := os.ReadFile(filepath.Join(apply, ".claude/skills/write-handoff/SKILL.md"))
+	if err != nil {
+		t.Fatalf("write-handoff did not reach the consumer: %v", err)
+	}
+	skill := string(body)
+	if !strings.Contains(skill, "/clear") {
+		t.Errorf("write-handoff does not name the step the user performs by hand:\n%s", skill)
+	}
+	if !strings.Contains(skill, "Do not paste a continuation prompt") {
+		t.Error("write-handoff offers a second way in alongside the hook")
+	}
+}
