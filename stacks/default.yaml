@@ -2,7 +2,6 @@ description: Default toolkit stack — workflow-agnostic skills, the plan-approv
 skills:
   - agents-md-creator
   - challenge
-  - continuation-session
   - panel-code-review
   - pr-review-resolver
   - tdd-bugfix
