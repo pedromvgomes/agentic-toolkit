@@ -64,9 +64,10 @@ defaults:
 # each rule an `all:` — which is why one criterion gets one rule rather than
 # several being grouped.
 #
-# The two rules raising to `standard-codex` cannot fire while that is also the
-# pull-request default. They are kept so both rosters read the same, and so
-# lowering the default does not silently drop a criterion.
+# The two rules raising to `standard-codex` cannot raise the panel while that is
+# also the pull-request default. They still fire, and `explain` lists them. They
+# are kept so both rosters read the same, and so lowering the default does not
+# silently drop a criterion.
 escalate:
   # Mistakes here are exploitable, or land on somebody who is not in the room,
   # or are indistinguishable from correct until production.

@@ -226,7 +226,6 @@ func sortedKeys(found []string) string {
 	return strings.Join(quoted, ", ")
 }
 
-
 // knownContext reports whether c is one of the contexts a review runs in.
 func knownContext(c Context) bool {
 	for _, known := range Contexts {

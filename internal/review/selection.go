@@ -129,7 +129,7 @@ func Select(m *Manifest, ctx Context, p *Profile, override string) (*Selection, 
 		// have been read is then beside the point — a rule guarded to the
 		// other context is the ordinary case.
 		unreadable := ""
-		anyHeld, anyRefused := false, false
+		anyHeld, anyRefused, contextRefused := false, false, false
 		for _, cond := range conds {
 			held, err := Evaluate(cond, p, ctx)
 			if err != nil {
@@ -143,6 +143,9 @@ func Select(m *Manifest, ctx Context, p *Profile, override string) (*Selection, 
 				anyHeld = true
 			} else {
 				anyRefused = true
+				if cond.Key == KeyContext {
+					contextRefused = true
+				}
 			}
 		}
 
@@ -154,11 +157,15 @@ func Select(m *Manifest, ctx Context, p *Profile, override string) (*Selection, 
 			fired = !anyRefused && unreadable == "" && len(results) == len(conds)
 		}
 
-		// Undecided means the unreadable clause is what stopped the rule,
-		// rather than the change simply not meeting it. An `all:` rule is
-		// settled by any readable `no`; an `any:` rule is settled by a
-		// readable `yes`, which is already `fired`.
-		undecided := unreadable != "" && !fired && !(all && anyRefused)
+		// Undecided means the unreadable clause is what stopped the rule.
+		//
+		// Only a context guard settles it, not any readable `no`. A rule this
+		// context does not run in is not addressed to this review at all,
+		// while a rule whose other clause merely did not match is still a
+		// protection the repo asked for — and one that cannot be evaluated has
+		// to say so on the first review rather than on whichever later one
+		// happens to touch the right paths.
+		undecided := unreadable != "" && !fired && !(all && contextRefused)
 		if undecided && !m.Builtin {
 			// The remedy belongs here and not in Evaluate: it is advice only a
 			// repo that wrote the rule can take.
