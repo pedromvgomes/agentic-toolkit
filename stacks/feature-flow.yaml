@@ -8,3 +8,12 @@ skills:
   # other renders a review that has nothing to run.
   - panel-code-review
   - review-implementation
+  - open-pr
+  # wrap-session-reviewer creates an AGENTS.md through this one when a module
+  # has none, so open-pr's documentation step needs it present.
+  - agents-md-creator
+  - pr-review-resolver
+agents:
+  - wrap-session-reviewer
+instructions:
+  - git

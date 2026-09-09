@@ -124,3 +124,107 @@ func TestReviewImplementationPinsTheLocalTarget(t *testing.T) {
 		t.Error("the loop does not rule out reviewing a pull request")
 	}
 }
+
+// Everything that changes the branch has to happen before the pull request
+// exists. Documentation written after `gh pr create` lands outside the change
+// it describes, and the reviewer that writes it is dispatched, not inlined.
+func TestOpenPRDocumentsTheBranchBeforeItOpensAnything(t *testing.T) {
+	apply := renderFeatureFlowStack(t)
+
+	body, err := os.ReadFile(filepath.Join(apply, ".claude/skills/open-pr/SKILL.md"))
+	if err != nil {
+		t.Fatalf("open-pr did not reach the consumer: %v", err)
+	}
+	skill := string(body)
+	if !strings.Contains(skill, "wrap-session-reviewer") {
+		t.Fatalf("open-pr documents nothing:\n%s", skill)
+	}
+	if !strings.Contains(skill, "before the pull request exists") {
+		t.Error("open-pr does not pin the ordering, so documentation can land outside the change")
+	}
+	if _, err := os.Stat(filepath.Join(apply, ".claude/agents/wrap-session-reviewer/AGENT.md")); err != nil {
+		t.Errorf("open-pr dispatches wrap-session-reviewer, which never rendered: %v", err)
+	}
+}
+
+// The memory store's notes/ has exactly one writer (ADR 0003), and a note
+// needs an anchor — so a finding with no file to point at cannot become one
+// however useful it is, and staging it only buys a rejection later.
+func TestOpenPRStagesOnlyAnchorableFindingsAndAuthorsNoNote(t *testing.T) {
+	apply := renderFeatureFlowStack(t)
+
+	body, err := os.ReadFile(filepath.Join(apply, ".claude/skills/open-pr/SKILL.md"))
+	if err != nil {
+		t.Fatalf("open-pr did not reach the consumer: %v", err)
+	}
+	skill := string(body)
+	if !strings.Contains(skill, "candidates/") {
+		t.Fatalf("open-pr stages nothing into the store:\n%s", skill)
+	}
+	if !strings.Contains(skill, "can name a file") {
+		t.Error("open-pr does not require a finding to name a file, so it stages notes lint will reject")
+	}
+	if !strings.Contains(skill, "agtk memory stats") {
+		t.Error("open-pr stages without locating the store first, so a repo without one gets an invented path")
+	}
+	if !strings.Contains(skill, "Never write, edit, stamp or delete a note") {
+		t.Error("open-pr does not hold to the single-writer rule")
+	}
+}
+
+// A pull request title becomes a subject on the default branch under squash
+// merge, and no commit message underneath it can correct that.
+func TestOpenPRTitlesThePullRequestConventionally(t *testing.T) {
+	apply := renderFeatureFlowStack(t)
+
+	body, err := os.ReadFile(filepath.Join(apply, ".claude/skills/open-pr/SKILL.md"))
+	if err != nil {
+		t.Fatalf("open-pr did not reach the consumer: %v", err)
+	}
+	skill := string(body)
+	if !strings.Contains(skill, "conventional-commit subject") {
+		t.Errorf("open-pr does not constrain the title:\n%s", skill)
+	}
+	if _, err := os.Stat(filepath.Join(apply, "CLAUDE.md")); err != nil {
+		t.Errorf("open-pr runs under the repo's git rules, which never rendered: %v", err)
+	}
+}
+
+// A review run cannot reach approval, and the skill that opens a pull request
+// is the last place that boundary should be soft.
+func TestOpenPRNeitherApprovesNorMerges(t *testing.T) {
+	apply := renderFeatureFlowStack(t)
+
+	body, err := os.ReadFile(filepath.Join(apply, ".claude/skills/open-pr/SKILL.md"))
+	if err != nil {
+		t.Fatalf("open-pr did not reach the consumer: %v", err)
+	}
+	if !strings.Contains(string(body), "never approves and never merges") {
+		t.Error("open-pr does not rule out approving or merging what it just opened")
+	}
+}
+
+// open-pr runs on branches that never had a handoff, so the bookkeeping for
+// one belongs to whatever read it. A skill that consumed the handoff itself
+// would strand a caller that stopped before the review converged.
+func TestOpenPRLeavesHandoffBookkeepingToItsCaller(t *testing.T) {
+	apply := renderFeatureFlowStack(t)
+
+	body, err := os.ReadFile(filepath.Join(apply, ".claude/skills/open-pr/SKILL.md"))
+	if err != nil {
+		t.Fatalf("open-pr did not reach the consumer: %v", err)
+	}
+	if !strings.Contains(string(body), "never marks a handoff consumed") {
+		t.Error("open-pr claims handoff bookkeeping that belongs to its caller")
+	}
+}
+
+// panel-code-review routes a pull request's fixes to pr-review-resolver. A
+// stack carrying one without the other offers a fix path that does not exist.
+func TestTheReviewSkillsFixPathRendersAlongsideIt(t *testing.T) {
+	apply := renderFeatureFlowStack(t)
+
+	if _, err := os.Stat(filepath.Join(apply, ".claude/skills/pr-review-resolver/SKILL.md")); err != nil {
+		t.Errorf("panel-code-review routes fixes to pr-review-resolver, which never rendered: %v", err)
+	}
+}
