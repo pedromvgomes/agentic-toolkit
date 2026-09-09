@@ -1,0 +1,32 @@
+name: handoff-claude-session-start
+description: Point a fresh session at an unconsumed handoff, so work planned before a context reset is picked up rather than waiting to be remembered.
+platforms: [claude]
+requires:
+  - skills/implement-handoff
+event: SessionStart
+# startup and clear are the two ways a session begins with no memory of the one
+# that wrote the handoff. resume and compact carry their context forward and
+# would be told something they already know.
+matcher: "startup|clear"
+handler:
+  type: command
+  command: |
+    # The worktree root, not the working directory: handoff/ sits beside the
+    # project, and a session started from a subdirectory would otherwise miss it.
+    root="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+    [ -n "$root" ] || exit 0
+
+    # Depth one. A consumed handoff moves to handoff/done/, which this does not
+    # match, so "unconsumed" is a fact about where the file is and needs no
+    # parsing and no state field.
+    set -- "$root"/handoff/*.md
+    [ -e "$1" ] || exit 0
+
+    if [ "$#" -eq 1 ]; then
+      printf 'A handoff is waiting at %s. Invoke the `implement-handoff` skill to continue that work before starting anything else.\n' "$1"
+    else
+      printf '%d handoffs are waiting:\n' "$#"
+      for f; do printf '  %s\n' "$f"; done
+      printf 'Invoke the `implement-handoff` skill and ask which one to run. Do not choose one yourself — the oldest is not reliably the next.\n'
+    fi
+timeout: 5

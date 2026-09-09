@@ -327,3 +327,155 @@ func TestWriteHandoffHandsOffThroughTheHookAlone(t *testing.T) {
 		t.Error("write-handoff offers a second way in alongside the hook")
 	}
 }
+
+// The hook is the only thing that reaches a session started after /clear, so
+// it has to arrive under an event and a matcher Claude Code actually fires.
+// Under any other matcher the injection is not rejected, it simply never runs.
+func TestTheHandoffHookFiresOnAFreshSessionAndNamesTheSkill(t *testing.T) {
+	apply := renderFeatureFlowStack(t)
+
+	body, err := os.ReadFile(filepath.Join(apply, ".claude/settings.json"))
+	if err != nil {
+		t.Fatalf("settings did not reach the consumer: %v", err)
+	}
+	settings := string(body)
+	if !strings.Contains(settings, "SessionStart") {
+		t.Fatalf("settings.json carries no SessionStart hook:\n%s", settings)
+	}
+	if !strings.Contains(settings, "startup|clear") {
+		t.Error("the handoff hook does not match the two ways a session starts with no memory of the one that wrote the handoff")
+	}
+	if !strings.Contains(settings, "implement-handoff") {
+		t.Error("the hook injects no instruction naming the skill that consumes a handoff")
+	}
+	if _, err := os.Stat(filepath.Join(apply, ".claude/skills/implement-handoff/SKILL.md")); err != nil {
+		t.Errorf("the hook names implement-handoff, which never rendered: %v", err)
+	}
+}
+
+// A consumed handoff moves to handoff/done/. The hook globs depth one, so a
+// hook that recursed would keep pointing every fresh session at work that has
+// already shipped.
+func TestTheHandoffHookIgnoresConsumedHandoffs(t *testing.T) {
+	apply := renderFeatureFlowStack(t)
+
+	body, err := os.ReadFile(filepath.Join(apply, ".claude/settings.json"))
+	if err != nil {
+		t.Fatalf("settings did not reach the consumer: %v", err)
+	}
+	if !strings.Contains(string(body), "handoff/*.md") {
+		t.Errorf("the hook does not glob at depth one, so handoff/done/ is not consumed:\n%s", body)
+	}
+}
+
+// Work gated behind a pull request must not start before it merges, and the
+// step that moves the branch changes where the user is standing.
+func TestImplementHandoffHonoursThePredecessorBeforeItStarts(t *testing.T) {
+	apply := renderFeatureFlowStack(t)
+
+	body, err := os.ReadFile(filepath.Join(apply, ".claude/skills/implement-handoff/SKILL.md"))
+	if err != nil {
+		t.Fatalf("implement-handoff did not reach the consumer: %v", err)
+	}
+	skill := string(body)
+	if !strings.Contains(skill, "merged into the base branch") {
+		t.Fatalf("implement-handoff starts gated work without checking the gate:\n%s", skill)
+	}
+	if !strings.Contains(skill, "wait\nfor a yes") && !strings.Contains(skill, "wait for a yes") {
+		t.Error("implement-handoff moves the branch without asking")
+	}
+}
+
+// Two implementers write into one working tree, and the second reads a tree
+// the first is still changing — after which neither diff can be reviewed on
+// its own, which is the property that makes each reviewable at all.
+func TestImplementHandoffRunsOneImplementerAtATime(t *testing.T) {
+	apply := renderFeatureFlowStack(t)
+
+	body, err := os.ReadFile(filepath.Join(apply, ".claude/skills/implement-handoff/SKILL.md"))
+	if err != nil {
+		t.Fatalf("implement-handoff did not reach the consumer: %v", err)
+	}
+	skill := string(body)
+	if !strings.Contains(skill, "Never two at once") {
+		t.Errorf("implement-handoff does not rule out concurrent implementers:\n%s", skill)
+	}
+	if _, err := os.Stat(filepath.Join(apply, ".claude/agents/task-implementer/AGENT.md")); err != nil {
+		t.Errorf("implement-handoff dispatches task-implementer, which never rendered: %v", err)
+	}
+}
+
+// The implementer's transcript never reaches the coordinator, so the report is
+// a claim and the diff is the evidence. A coordinator acting on the claim has
+// nothing the arrangement was built to give it.
+func TestImplementHandoffVerifiesTheDiffRatherThanTheReport(t *testing.T) {
+	apply := renderFeatureFlowStack(t)
+
+	body, err := os.ReadFile(filepath.Join(apply, ".claude/skills/implement-handoff/SKILL.md"))
+	if err != nil {
+		t.Fatalf("implement-handoff did not reach the consumer: %v", err)
+	}
+	skill := string(body)
+	if !strings.Contains(skill, "git diff") {
+		t.Errorf("implement-handoff commits on a report it never checked:\n%s", skill)
+	}
+	if !strings.Contains(skill, "run the verification command yourself") {
+		t.Error("implement-handoff trusts the implementer's claim that verification passed")
+	}
+}
+
+// A handoff marked consumed on a run that never opened a pull request strands
+// the work: nothing points at it, and the next session starts from scratch.
+func TestImplementHandoffKeepsTheHandoffUntilTheWorkLands(t *testing.T) {
+	apply := renderFeatureFlowStack(t)
+
+	body, err := os.ReadFile(filepath.Join(apply, ".claude/skills/implement-handoff/SKILL.md"))
+	if err != nil {
+		t.Fatalf("implement-handoff did not reach the consumer: %v", err)
+	}
+	skill := string(body)
+	if !strings.Contains(skill, "handoff/done/") {
+		t.Fatalf("implement-handoff never consumes a handoff, so the hook points at it forever:\n%s", skill)
+	}
+	if !strings.Contains(skill, "never marks a handoff consumed on a run that did not reach a pull request") {
+		t.Error("implement-handoff may consume a handoff whose work never landed")
+	}
+}
+
+// Nesting is allowed three layers deep, so nothing about the platform stops an
+// implementer spawning another. Denying it the tool is what does.
+func TestTheImplementerCannotSpawnAnother(t *testing.T) {
+	apply := renderFeatureFlowStack(t)
+
+	body, err := os.ReadFile(filepath.Join(apply, ".claude/agents/task-implementer/AGENT.md"))
+	if err != nil {
+		t.Fatalf("task-implementer did not reach the consumer: %v", err)
+	}
+	agent := string(body)
+	if !strings.Contains(agent, "disallowed-tools:") {
+		t.Fatalf("task-implementer's denied tools did not render under the key Claude Code reads:\n%s", agent)
+	}
+	if !strings.Contains(agent, "Agent") {
+		t.Error("task-implementer is not denied the Agent tool, so one implementer can start another")
+	}
+	if strings.Contains(agent, "\ntools: [Read, Write, Edit, MultiEdit, Bash, Grep, Glob, Agent") {
+		t.Error("task-implementer's allowlist grants back the tool its denylist removes")
+	}
+}
+
+// A task that commits itself removes the review it exists to be given.
+func TestTheImplementerDoesNotCommitItsOwnWork(t *testing.T) {
+	apply := renderFeatureFlowStack(t)
+
+	body, err := os.ReadFile(filepath.Join(apply, ".claude/agents/task-implementer/AGENT.md"))
+	if err != nil {
+		t.Fatalf("task-implementer did not reach the consumer: %v", err)
+	}
+	agent := string(body)
+	if !strings.Contains(agent, "Do not commit") {
+		t.Errorf("task-implementer commits its own work, so the coordinator reviews nothing:\n%s", agent)
+	}
+	if !strings.Contains(agent, "STATUS:") {
+		t.Error("task-implementer returns no structured report, so the coordinator parses prose")
+	}
+}
