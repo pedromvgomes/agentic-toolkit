@@ -10,6 +10,7 @@ import (
 
 	"github.com/pedromvgomes/agentic-toolkit/internal/githubapp"
 	"github.com/pedromvgomes/agentic-toolkit/internal/review"
+	"github.com/pedromvgomes/agentic-toolkit/internal/reviewapprove"
 	"github.com/pedromvgomes/agentic-toolkit/internal/reviewpost"
 	"github.com/pedromvgomes/agentic-toolkit/internal/reviewrun"
 )
@@ -128,8 +129,7 @@ func priorThreads(ctx context.Context, t *pullRequestTarget, reviewsErr error) r
 	return reviewpost.ReadThreads(threads)
 }
 
-// carriesAVerdictFor reports whether one of these reviews looked at this head
-// and reached a verdict.
+// carriesAVerdictFor reports whether this head's review reached a verdict.
 //
 // A review suppresses the next one only when its marker says verdict=complete.
 // A run where nobody answered — every reviewer dead on an unmet schema, a judge
@@ -139,25 +139,20 @@ func priorThreads(ctx context.Context, t *pullRequestTarget, reviewsErr error) r
 // found nothing. Here it is worse, because the marker that records the failure
 // is what would prevent anyone fixing it.
 //
-// Only a review this installation authored counts. Anyone who can review a
-// pull request can type the characters that open a marker, so a marker is
-// believed from one account and read as prose from every other.
+// Which review is read is reviewapprove.LastReview's to decide, and is not
+// re-implemented here. It is the newest this installation authored whose
+// commit and marker head both name this one, and every clause carries: an
+// older complete review must not speak for a newer forced run that failed, or
+// suppression would refuse the re-review while approval refuses the head.
 //
-// A review this installation authored whose body carries no parseable marker
-// counts as no verdict. It is the safer reading of the two: a marker agtk
-// cannot read is a review agtk cannot vouch for, and the cost of being wrong
-// is one panel re-run rather than a pull request that displays a review nobody
-// performed.
+// A review carrying no marker agtk can parse counts as no verdict, which
+// LastReview delivers by finding none. It is the safer reading of the two: a
+// marker agtk cannot read is a review agtk cannot vouch for, and the cost of
+// being wrong is one panel re-run rather than a pull request that displays a
+// review nobody performed.
 func carriesAVerdictFor(reviews []githubapp.SubmittedReview, head string) bool {
-	for _, r := range reviews {
-		if !r.ByViewer || r.CommitSHA != head {
-			continue
-		}
-		if marker, ok := reviewrun.ParseReviewMarker(r.Body); ok && marker.Complete {
-			return true
-		}
-	}
-	return false
+	marker, found := reviewapprove.LastReview(reviews, head)
+	return found && marker.Complete
 }
 
 // reportUnchangedHead says that this commit already carries a review, and that
