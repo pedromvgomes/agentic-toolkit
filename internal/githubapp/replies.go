@@ -223,7 +223,7 @@ type SubmittedReview struct {
 // ReadSubmittedReviews reads every review on a pull request, in the order they
 // were submitted.
 //
-// Separate from ReadReviewedCommits, which asks the same connection for the
+// Separate from ReadPriorReviews, which asks the same connection for the
 // commit alone. A review run reads that one before spending a panel and does
 // not need a byte of any body; approval needs the body and is one command a
 // person typed.

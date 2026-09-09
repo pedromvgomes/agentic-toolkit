@@ -125,26 +125,42 @@ func (c *Client) ReadReviewThreads(ctx context.Context, number int) ([]ReviewThr
 	}
 }
 
-// reviewedCommitsQuery reads which commits this installation has reviewed.
-var reviewedCommitsQuery = fmt.Sprintf(`query($owner:String!,$repo:String!,$number:Int!,$cursor:String){
+// postedReviewsQuery reads the reviews this installation has posted.
+//
+// The body comes back with the commit because the body is where the review
+// records whether it reached a verdict. Reading the oid alone cannot tell a
+// review that found nothing from one where nothing looked.
+var postedReviewsQuery = fmt.Sprintf(`query($owner:String!,$repo:String!,$number:Int!,$cursor:String){
   repository(owner:$owner,name:$repo){
     pullRequest(number:$number){
       reviews(first:%d,after:$cursor){
         pageInfo{hasNextPage endCursor}
-        nodes{commit{oid} viewerDidAuthor}
+        nodes{commit{oid} body viewerDidAuthor}
       }
     }
   }
 }`, pageSize)
 
-// ReadReviewedCommits reports which of a pull request's commits this
-// installation has already posted a review for.
+// PriorReview is one review this installation has already posted.
+type PriorReview struct {
+	// Head is the commit the review is bound to.
+	Head string
+	// Body is the review's own text, which carries its marker.
+	Body string
+}
+
+// ReadPriorReviews returns the reviews this installation has posted to a pull
+// request, each with the commit it is bound to and its own body.
 //
 // The commit rather than the pull request, because a review is bound to a head
 // — that binding is what makes "this commit was reviewed" a fact — and it is
 // what decides whether re-running would re-derive what the pull request
 // already displays.
-func (c *Client) ReadReviewedCommits(ctx context.Context, number int) (map[string]bool, error) {
+//
+// The bodies come back unread. What a marker means is the caller's to decide:
+// this package knows the transport and not the review format, and a client that
+// parsed the marker would have to be changed every time the format moved.
+func (c *Client) ReadPriorReviews(ctx context.Context, number int) ([]PriorReview, error) {
 	if number < 1 {
 		return nil, fmt.Errorf("%d is not a pull request number", number)
 	}
@@ -153,7 +169,7 @@ func (c *Client) ReadReviewedCommits(ctx context.Context, number int) (map[strin
 		return nil, err
 	}
 
-	reviewed := map[string]bool{}
+	var out []PriorReview
 	cursor := ""
 	for page := 0; ; page++ {
 		if page >= maxPages {
@@ -169,7 +185,8 @@ func (c *Client) ReadReviewedCommits(ctx context.Context, number int) (map[strin
 							Commit *struct {
 								OID string `json:"oid"`
 							} `json:"commit"`
-							ViewerDidAuthor bool `json:"viewerDidAuthor"`
+							Body            string `json:"body"`
+							ViewerDidAuthor bool   `json:"viewerDidAuthor"`
 						} `json:"nodes"`
 					} `json:"reviews"`
 				} `json:"pullRequest"`
@@ -179,7 +196,7 @@ func (c *Client) ReadReviewedCommits(ctx context.Context, number int) (map[strin
 		if cursor != "" {
 			vars["cursor"] = cursor
 		}
-		if err := c.graphql(ctx, "posted reviews", reviewedCommitsQuery, vars, &answer); err != nil {
+		if err := c.graphql(ctx, "posted reviews", postedReviewsQuery, vars, &answer); err != nil {
 			return nil, err
 		}
 		if answer.Repository == nil || answer.Repository.PullRequest == nil {
@@ -188,11 +205,11 @@ func (c *Client) ReadReviewedCommits(ctx context.Context, number int) (map[strin
 		reviews := answer.Repository.PullRequest.Reviews
 		for _, node := range reviews.Nodes {
 			if node.ViewerDidAuthor && node.Commit != nil && node.Commit.OID != "" {
-				reviewed[node.Commit.OID] = true
+				out = append(out, PriorReview{Head: node.Commit.OID, Body: node.Body})
 			}
 		}
 		if !reviews.PageInfo.HasNextPage || reviews.PageInfo.EndCursor == "" {
-			return reviewed, nil
+			return out, nil
 		}
 		cursor = reviews.PageInfo.EndCursor
 	}

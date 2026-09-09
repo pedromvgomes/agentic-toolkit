@@ -202,23 +202,39 @@ func TestAThreadListThatNeverEndsIsRefusedRatherThanLoopedOn(t *testing.T) {
 func TestOnlyTheAppsOwnReviewsCountAsHavingReviewedAHead(t *testing.T) {
 	c, net := client(t, append(auth(far()), query(
 		`{"data":{"repository":{"pullRequest":{"reviews":{"pageInfo":{"hasNextPage":false,"endCursor":""},"nodes":[`+
-			`{"commit":{"oid":"aaa"},"viewerDidAuthor":true},`+
-			`{"commit":{"oid":"bbb"},"viewerDidAuthor":false},`+
-			`{"commit":null,"viewerDidAuthor":true}]}}}}}`))...)
+			`{"commit":{"oid":"aaa"},"body":"mine","viewerDidAuthor":true},`+
+			`{"commit":{"oid":"bbb"},"body":"theirs","viewerDidAuthor":false},`+
+			`{"commit":null,"body":"detached","viewerDidAuthor":true}]}}}}}`))...)
 
-	reviewed, err := c.ReadReviewedCommits(context.Background(), 7)
+	reviews, err := c.ReadPriorReviews(context.Background(), 7)
 	if err != nil {
 		t.Fatalf("read the reviews: %v", err)
 	}
 	net.done()
-	if !reviewed["aaa"] {
-		t.Error("the App's own review of aaa was not counted")
+	if len(reviews) != 1 {
+		t.Fatalf("read %d prior reviews: %v", len(reviews), reviews)
 	}
-	if reviewed["bbb"] {
-		t.Error("somebody else's review of bbb was counted as the App's")
+	if reviews[0].Head != "aaa" {
+		t.Errorf("the App's own review of aaa was not the one read: %v", reviews[0])
 	}
-	if len(reviewed) != 1 {
-		t.Errorf("read %d reviewed commits: %v", len(reviewed), reviewed)
+}
+
+// The body is what a review says about itself, and the caller decides what it
+// means. A read that dropped it would leave every review indistinguishable
+// from every other, which is what makes a run that found nothing look like a
+// run where nothing looked.
+func TestReadingPriorReviewsKeepsEachBody(t *testing.T) {
+	c, net := client(t, append(auth(far()), query(
+		`{"data":{"repository":{"pullRequest":{"reviews":{"pageInfo":{"hasNextPage":false,"endCursor":""},"nodes":[`+
+			`{"commit":{"oid":"aaa"},"body":"verdict=complete","viewerDidAuthor":true}]}}}}}`))...)
+
+	reviews, err := c.ReadPriorReviews(context.Background(), 7)
+	if err != nil {
+		t.Fatalf("read the reviews: %v", err)
+	}
+	net.done()
+	if len(reviews) != 1 || reviews[0].Body != "verdict=complete" {
+		t.Errorf("the body did not come back with the review: %v", reviews)
 	}
 }
 
@@ -229,7 +245,7 @@ func TestReadingThreadsRefusesANumberThatIsNotOne(t *testing.T) {
 	if _, err := c.ReadReviewThreads(context.Background(), 0); err == nil {
 		t.Error("thread 0 was accepted as a pull request number")
 	}
-	if _, err := c.ReadReviewedCommits(context.Background(), -1); err == nil {
+	if _, err := c.ReadPriorReviews(context.Background(), -1); err == nil {
 		t.Error("review -1 was accepted as a pull request number")
 	}
 }

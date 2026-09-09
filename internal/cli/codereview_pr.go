@@ -128,13 +128,41 @@ func priorThreads(ctx context.Context, t *pullRequestTarget, reviewsErr error) r
 	return reviewpost.ReadThreads(threads)
 }
 
+// carriesAVerdictFor reports whether one of these reviews looked at this head
+// and reached a verdict.
+//
+// A review suppresses the next one only when its marker says verdict=complete.
+// A run where nobody answered — every reviewer dead on an unmet schema, a judge
+// that never ran — posts a review saying so, and that review is a record that
+// nothing looked at the change. Reading it as "this head is reviewed" is the
+// same mistake the pipeline refuses everywhere else: could not look is not
+// found nothing. Here it is worse, because the marker that records the failure
+// is what would prevent anyone fixing it.
+//
+// A review this installation authored whose body carries no parseable marker
+// counts as no verdict. It is the safer reading of the two: a marker agtk
+// cannot read is a review agtk cannot vouch for, and the cost of being wrong
+// is one panel re-run rather than a pull request that displays a review nobody
+// performed.
+func carriesAVerdictFor(reviews []githubapp.PriorReview, head string) bool {
+	for _, r := range reviews {
+		if r.Head != head {
+			continue
+		}
+		if marker, ok := reviewrun.ParseReviewMarker(r.Body); ok && marker.Complete {
+			return true
+		}
+	}
+	return false
+}
+
 // reportUnchangedHead says that this commit already carries a review, and that
 // re-deriving what the pull request already displays is what was avoided.
 func reportUnchangedHead(env *Env, t *pullRequestTarget, asJSON bool) error {
 	if asJSON {
 		return writeJSON(env, unchangedHeadJSON(t))
 	}
-	fmt.Fprintf(env.Stdout, "%s#%d already carries a review of %s.\n", t.slug, t.pr.Number, t.pr.HeadSHA)
+	fmt.Fprintf(env.Stdout, "%s#%d already carries a completed review of %s.\n", t.slug, t.pr.Number, t.pr.HeadSHA)
 	fmt.Fprintln(env.Stdout, "No panel ran: nothing was spent and nothing was posted.")
 	fmt.Fprintln(env.Stdout, "Push a commit to review what changed, or pass --force to review this one again.")
 	return nil
@@ -274,11 +302,12 @@ func runCodeReviewPR(cmd *cobra.Command, env *Env, target reviewTarget, flags ru
 	}
 
 	// Read before a reviewer is started. A head that already carries a review
-	// costs one query to recognise and a whole panel to rediscover, and what
-	// the panel would rediscover is what the pull request is already
-	// displaying.
-	reviewed, reviewsErr := t.client.ReadReviewedCommits(cmd.Context(), t.pr.Number)
-	if !flags.dryRun && !flags.force && reviewsErr == nil && reviewed[t.pr.HeadSHA] {
+	// that reached a verdict costs one query to recognise and a whole panel to
+	// rediscover, and what the panel would rediscover is what the pull request
+	// is already displaying. A review that reached no verdict displays nothing
+	// to rediscover, so it suppresses nothing.
+	reviews, reviewsErr := t.client.ReadPriorReviews(cmd.Context(), t.pr.Number)
+	if !flags.dryRun && !flags.force && reviewsErr == nil && carriesAVerdictFor(reviews, t.pr.HeadSHA) {
 		return reportUnchangedHead(env, t, flags.json)
 	}
 	opts := t.options(root, target, flags, priorThreads(cmd.Context(), t, reviewsErr))
