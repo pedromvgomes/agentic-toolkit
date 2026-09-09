@@ -78,12 +78,18 @@ func (s *Store) auditNote(n *Note) []Drift {
 		// and because Stamp refuses that anchor, its recorded blob stays empty
 		// and audit would re-read the outside file on every run rather than
 		// once.
-		// Only a path that is actually there can be judged for containment:
+		// Only a path that actually resolves can be judged for containment:
 		// EvalSymlinks cannot resolve one that is absent, and reading that as
 		// "outside the project" would report every deleted anchor as invalid.
 		// Missing is the kind an agent may act on by dropping the anchor, so
 		// the two must not collapse.
-		if _, statErr := os.Lstat(s.abs(a.Path)); statErr == nil && !s.contained(s.abs(a.Path)) {
+		//
+		// Stat and not Lstat, so the test follows the link: a symlink whose
+		// target is gone is a missing anchor, and Lstat would call it an escape
+		// for the same reason EvalSymlinks fails on it. Following here only
+		// establishes that something is there; contained() still decides
+		// whether it may be read.
+		if _, statErr := os.Stat(s.abs(a.Path)); statErr == nil && !s.contained(s.abs(a.Path)) {
 			drifts = append(drifts, Drift{
 				Kind: DriftInvalid, Path: a.Path, Was: a.Blob,
 				Detail: "resolves outside the project",

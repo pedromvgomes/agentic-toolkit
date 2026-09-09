@@ -370,6 +370,26 @@ func TestADeletedAnchorIsMissingRatherThanOutsideTheProject(t *testing.T) {
 	}
 }
 
+// A symlink whose target is gone is a missing anchor, not an escape. Lstat
+// succeeds on it and EvalSymlinks does not, so the two failures look alike
+// from the wrong side of the link.
+func TestADanglingSymlinkedAnchorIsMissingRatherThanOutsideTheProject(t *testing.T) {
+	gone := filepath.Join(t.TempDir(), "gone.go")
+	s := project(t, map[string]string{"internal/a/a.go": "package a\n"})
+	if err := os.Symlink(gone, filepath.Join(s.ProjectRoot, "internal/a/dangling.go")); err != nil {
+		t.Fatal(err)
+	}
+	writeNote(t, s, "dangling", note("dangling", "  - path: internal/a/dangling.go\n    blob: 0123456789ab\n"))
+
+	drifts := s.AuditNote(loadOne(t, s, "dangling")).Drifts
+	if len(drifts) != 1 {
+		t.Fatalf("drifts = %+v, want one", drifts)
+	}
+	if drifts[0].Kind != memory.DriftMissing {
+		t.Errorf("a dangling symlink reported as %q, want missing: %+v", drifts[0].Kind, drifts[0])
+	}
+}
+
 // TestStampMarksMissingAnchors: the kept hash must be distinguishable from
 // a freshly computed one, or a report of a deleted file reads as a success.
 func TestStampMarksMissingAnchors(t *testing.T) {
