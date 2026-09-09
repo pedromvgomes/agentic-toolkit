@@ -58,10 +58,52 @@ func (d *graphQLDoer) Do(req *http.Request) (*http.Response, error) {
 	}, nil
 }
 
-// reviewedBy renders the reviews query's answer for one commit.
-func reviewedBy(oid string, byViewer bool) string {
+// reviewOf renders the reviews query's answer: one review of a commit,
+// carrying a chosen body.
+func reviewOf(oid string, byViewer bool, body string) string {
+	node, err := json.Marshal(map[string]any{
+		"commit": map[string]any{"oid": oid}, "body": body, "viewerDidAuthor": byViewer,
+	})
+	if err != nil {
+		panic(err)
+	}
 	return fmt.Sprintf(`{"data":{"repository":{"pullRequest":{"reviews":{"pageInfo":{"hasNextPage":false,"endCursor":""},`+
-		`"nodes":[{"commit":{"oid":%q},"viewerDidAuthor":%v}]}}}}}`, oid, byViewer)
+		`"nodes":[%s]}}}}}`, node)
+}
+
+// reviewsOf renders the reviews query's answer for several reviews, in the
+// order GitHub submitted them.
+func reviewsOf(nodes ...map[string]any) string {
+	raw := make([]string, 0, len(nodes))
+	for _, n := range nodes {
+		b, err := json.Marshal(n)
+		if err != nil {
+			panic(err)
+		}
+		raw = append(raw, string(b))
+	}
+	return fmt.Sprintf(`{"data":{"repository":{"pullRequest":{"reviews":{"pageInfo":{"hasNextPage":false,"endCursor":""},`+
+		`"nodes":[%s]}}}}}`, strings.Join(raw, ","))
+}
+
+// reviewNode is one review as the reviews query returns it.
+func reviewNode(oid string, byViewer bool, body string) map[string]any {
+	return map[string]any{
+		"commit": map[string]any{"oid": oid}, "body": body, "viewerDidAuthor": byViewer,
+	}
+}
+
+// markerFor renders the marker a run of the given outcome leaves in its body.
+// Rendered rather than spelled out, so a test cannot assert a format the code
+// no longer writes.
+func markerFor(oid string, complete bool) string {
+	return "## Review by `agtk`\n\n" + reviewrun.ReviewMarker{Head: oid, Complete: complete}.Render()
+}
+
+// reviewedBy renders the reviews query's answer for one commit whose review
+// reached a verdict.
+func reviewedBy(oid string, byViewer bool) string {
+	return reviewOf(oid, byViewer, markerFor(oid, true))
 }
 
 // noThreads is a pull request carrying no comment threads.
@@ -110,7 +152,7 @@ func TestAHeadThatAlreadyCarriesAReviewIsANoOpThatNamesTheCommit(t *testing.T) {
 	if !strings.Contains(body, headSHA) {
 		t.Errorf("the no-op does not name the commit:\n%s", body)
 	}
-	for _, want := range []string{"already carries a review", "nothing was spent", "--force"} {
+	for _, want := range []string{"already carries a completed review", "nothing was spent", "--force"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the no-op does not say %q:\n%s", want, body)
 		}
@@ -122,6 +164,82 @@ func TestAHeadThatAlreadyCarriesAReviewIsANoOpThatNamesTheCommit(t *testing.T) {
 	}
 }
 
+// A review that reached no verdict is a record that nothing looked at the
+// change. Letting it suppress the next run leaves the pull request displaying
+// a review nobody performed, with the marker that says so being the very thing
+// that prevents anyone fixing it.
+func TestAReviewThatReachedNoVerdictDoesNotStopTheRun(t *testing.T) {
+	work, baseSHA, headSHA := prRepo(t)
+	doer := prDoer(baseSHA, headSHA, reviewOf(headSHA, true, markerFor(headSHA, false)), noThreads)
+
+	body, _ := runPR(t, work, runFlags{}, doer)
+	if strings.Contains(body, "already carries a") {
+		t.Errorf("a review that reached no verdict stopped the run:\n%s", body)
+	}
+}
+
+// A body this App authored that carries no marker agtk can read is a review
+// agtk cannot vouch for. Being wrong costs one re-run; the other reading costs
+// a pull request that displays a review nobody performed.
+func TestAnAuthoredReviewWithNoParseableMarkerDoesNotStopTheRun(t *testing.T) {
+	work, baseSHA, headSHA := prRepo(t)
+	doer := prDoer(baseSHA, headSHA, reviewOf(headSHA, true, "looks good to me"), noThreads)
+
+	body, _ := runPR(t, work, runFlags{}, doer)
+	if strings.Contains(body, "already carries a") {
+		t.Errorf("a review with no readable marker stopped the run:\n%s", body)
+	}
+}
+
+// A head re-reviewed with --force carries two reviews, and the later one is
+// what the pull request now says. An older complete review speaking for a
+// newer run that failed would refuse the re-review while approval refuses the
+// head, leaving the only way forward a --force nothing told anyone to type.
+func TestAnOlderCompleteReviewDoesNotSpeakForANewerFailedOne(t *testing.T) {
+	work, baseSHA, headSHA := prRepo(t)
+	doer := prDoer(baseSHA, headSHA, reviewsOf(
+		reviewNode(headSHA, true, markerFor(headSHA, true)),
+		reviewNode(headSHA, true, markerFor(headSHA, false)),
+	), noThreads)
+
+	body, _ := runPR(t, work, runFlags{}, doer)
+	if strings.Contains(body, "already carries a") {
+		t.Errorf("an older complete review suppressed the re-run:\n%s", body)
+	}
+}
+
+// The reverse ordering: a head whose newest review reached a verdict is
+// reviewed, whatever an earlier failed run left behind.
+func TestTheNewestReviewIsTheOneThatCounts(t *testing.T) {
+	work, baseSHA, headSHA := prRepo(t)
+	doer := prDoer(baseSHA, headSHA, reviewsOf(
+		reviewNode(headSHA, true, markerFor(headSHA, false)),
+		reviewNode(headSHA, true, markerFor(headSHA, true)),
+	), noThreads)
+
+	body, err := runPR(t, work, runFlags{}, doer)
+	if err != nil {
+		t.Fatalf("the no-op failed: %v", err)
+	}
+	if !strings.Contains(body, "already carries a completed review") {
+		t.Errorf("a completed newest review did not suppress the re-run:\n%s", body)
+	}
+}
+
+// A body can be edited after it is posted. A marker naming another commit is
+// not a review of this one, whatever the review is attached to — the same
+// reading approval takes.
+func TestAMarkerNamingAnotherCommitIsNotAReviewOfThisOne(t *testing.T) {
+	work, baseSHA, headSHA := prRepo(t)
+	doer := prDoer(baseSHA, headSHA,
+		reviewOf(headSHA, true, markerFor("0000000000000000000000000000000000000000", true)), noThreads)
+
+	body, _ := runPR(t, work, runFlags{}, doer)
+	if strings.Contains(body, "already carries a") {
+		t.Errorf("a marker naming another commit suppressed the run:\n%s", body)
+	}
+}
+
 // A review somebody else posted says nothing about whether this App has
 // reviewed the head, and stopping on one would make the command refuse to run
 // on any pull request a person has reviewed.
@@ -130,7 +248,7 @@ func TestSomebodyElsesReviewOfTheHeadIsNotThisAppsReview(t *testing.T) {
 	doer := prDoer(baseSHA, headSHA, reviewedBy(headSHA, false), noThreads)
 
 	body, _ := runPR(t, work, runFlags{}, doer)
-	if strings.Contains(body, "already carries a review") {
+	if strings.Contains(body, "already carries a") {
 		t.Errorf("somebody else's review stopped the run:\n%s", body)
 	}
 }
@@ -142,7 +260,7 @@ func TestAReviewOfAnEarlierCommitDoesNotStopTheRun(t *testing.T) {
 	doer := prDoer(baseSHA, headSHA, reviewedBy(baseSHA, true), noThreads)
 
 	body, _ := runPR(t, work, runFlags{}, doer)
-	if strings.Contains(body, "already carries a review") {
+	if strings.Contains(body, "already carries a") {
 		t.Errorf("a review of an earlier commit stopped the run:\n%s", body)
 	}
 }
@@ -153,7 +271,7 @@ func TestForceReviewsAHeadThatAlreadyCarriesAReview(t *testing.T) {
 	doer := prDoer(baseSHA, headSHA, reviewedBy(headSHA, true), noThreads)
 
 	body, _ := runPR(t, work, runFlags{force: true}, doer)
-	if strings.Contains(body, "already carries a review") {
+	if strings.Contains(body, "already carries a") {
 		t.Errorf("--force stopped at the head it was passed to review:\n%s", body)
 	}
 	// And it went on to read what the pull request carries, because --force
@@ -173,7 +291,7 @@ func TestAPreviewIsNotStoppedByAHeadThatCarriesAReview(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the preview failed: %v", err)
 	}
-	if strings.Contains(body, "already carries a review") {
+	if strings.Contains(body, "already carries a") {
 		t.Errorf("a preview was stopped by a review it was not going to duplicate:\n%s", body)
 	}
 	if !strings.Contains(body, "would be made, and nothing was spent") {
