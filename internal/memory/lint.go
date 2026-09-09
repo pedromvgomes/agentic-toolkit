@@ -211,10 +211,15 @@ func (s *Store) unstampedHint(note, path string, glob bool) string {
 		}
 		return "unstamped — run `agtk memory anchor " + note + "`"
 	}
-	info, err := os.Stat(s.abs(path))
+	// Lstat, matching what stamping does: a symlink is not anchorable, and
+	// reporting it as merely unstamped would send the reader to a command
+	// that then skips it.
+	info, err := os.Lstat(s.abs(path))
 	switch {
 	case os.IsNotExist(err):
 		return "anchored file no longer exists — fix the path or drop the anchor"
+	case err == nil && info.Mode()&os.ModeSymlink != 0:
+		return "is a symlink, which resolves outside what the anchor names — anchor the file it points at"
 	case err == nil && info.IsDir():
 		// `anchor` skips directories, so prescribing it here would send the
 		// reader round a loop that can never go green.

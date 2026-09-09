@@ -115,8 +115,15 @@ func (s *Store) Stamp(n *Note) (StampResult, error) {
 // hashRegularFile returns the blob id of a regular file, or "" when the
 // path is absent or is not a regular file. Only a genuine read failure is
 // an error.
+//
+// Lstat, so a symlink is not a regular file here. ValidateAnchorPath confines
+// the anchor lexically — it reads the pattern, not the filesystem — so a link
+// inside the project is the one way a path that spells out as contained can
+// resolve anywhere at all. Following it would hash a file from outside the
+// repository into a note that is then committed. Refused rather than followed,
+// as ADR 0007 has it.
 func hashRegularFile(abs string) (string, error) {
-	info, err := os.Stat(abs)
+	info, err := os.Lstat(abs)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return "", nil
@@ -147,7 +154,10 @@ func (s *Store) globFiles(pattern string) ([]string, error) {
 	}
 	var files []string
 	for _, hit := range hits {
-		info, err := os.Stat(hit)
+		// Lstat: a symlink is skipped rather than resolved, for the reason
+		// hashRegularFile gives. A glob is the easier way in of the two,
+		// because it never names the link.
+		info, err := os.Lstat(hit)
 		if err != nil || !info.Mode().IsRegular() {
 			continue
 		}

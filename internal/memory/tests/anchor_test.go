@@ -3,6 +3,7 @@ package tests
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/pedromvgomes/agentic-toolkit/internal/memory"
@@ -228,6 +229,55 @@ func TestStampRejectsEscapingAnchor(t *testing.T) {
 				t.Errorf("stamped an anchor that escapes the project root: %s", path)
 			}
 		})
+	}
+}
+
+// TestStampRefusesASymlinkedAnchor is the escape the lexical check cannot
+// see. ValidateAnchorPath reads the pattern and not the filesystem, so a path
+// that spells out as project-relative still resolves wherever a link inside
+// the project points — and following it records a hash of a file outside the
+// repository into a note that is then committed.
+func TestStampRefusesASymlinkedAnchor(t *testing.T) {
+	outside := filepath.Join(t.TempDir(), "outside.txt")
+	write(t, outside, "secrets\n")
+
+	s := project(t, map[string]string{"internal/a/a.go": "package a\n"})
+	if err := os.Symlink(outside, filepath.Join(s.ProjectRoot, "internal/a/linked.go")); err != nil {
+		t.Fatal(err)
+	}
+	writeNote(t, s, "linked", note("linked", "  - path: internal/a/linked.go\n"))
+
+	res, err := s.Stamp(loadOne(t, s, "linked"))
+	if err != nil {
+		t.Fatalf("stamp: %v", err)
+	}
+	if len(res.Missing) != 1 || res.Missing[0] != "internal/a/linked.go" {
+		t.Errorf("Missing = %+v, want the symlinked anchor refused", res.Missing)
+	}
+	if blob := loadOne(t, s, "linked").Anchors[0].Blob; blob != "" {
+		t.Errorf("a symlinked anchor recorded the blob %q of a file outside the project", blob)
+	}
+}
+
+// A glob never names the link, so it is the easier way in of the two: the
+// pattern matches whatever the directory holds.
+func TestGlobAnchorsSkipSymlinkedMatches(t *testing.T) {
+	outside := filepath.Join(t.TempDir(), "outside.txt")
+	write(t, outside, "secrets\n")
+
+	s := project(t, map[string]string{"internal/a/real.go": "package a\n"})
+	if err := os.Symlink(outside, filepath.Join(s.ProjectRoot, "internal/a/linked.go")); err != nil {
+		t.Fatal(err)
+	}
+	writeNote(t, s, "globbed", note("globbed", "  - path: internal/a/*.go\n"))
+
+	if _, err := s.Stamp(loadOne(t, s, "globbed")); err != nil {
+		t.Fatalf("stamp: %v", err)
+	}
+	for _, m := range loadOne(t, s, "globbed").Anchors[0].Matches {
+		if strings.HasSuffix(m.Path, "linked.go") {
+			t.Errorf("a glob followed a symlink out of the project: %+v", m)
+		}
 	}
 }
 
