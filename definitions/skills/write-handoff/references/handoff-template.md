@@ -35,6 +35,16 @@ Landing order. One implementer takes one task.
 
 A hand-written handoff may carry one task with no rating; it is read as `routine`.
 
+## Next steps
+
+What the next session does first, in order. Concrete enough to act on without reading this
+whole document again.
+
+Required when **Tasks** is omitted, and it is what a task-free handoff is read as: one
+`routine` task whose file boundary is what this section names. Name the files it may touch. A
+handoff that leaves both this and **Tasks** out gives the next session a goal and no way to
+start on it.
+
 ## Verification
 
 ```bash

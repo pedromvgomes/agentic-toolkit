@@ -238,6 +238,26 @@ func TestWriteHandoffServesAHandoffWithNoPlan(t *testing.T) {
 	}
 }
 
+// A task-free handoff is valid and is read as one routine task whose boundary
+// is what its next steps describe. The template is the shape a writer follows,
+// so a template with no next steps sends the implementing session a goal and
+// no way to start on it.
+func TestTheHandoffTemplateCarriesTheSectionATaskFreeHandoffIsBuiltFrom(t *testing.T) {
+	apply := renderFeatureFlowStack(t)
+
+	body, err := os.ReadFile(filepath.Join(apply, ".claude/skills/write-handoff/references/handoff-template.md"))
+	if err != nil {
+		t.Fatalf("the handoff template did not reach the consumer: %v", err)
+	}
+	template := string(body)
+	if !strings.Contains(template, "## Next steps") {
+		t.Fatalf("the template has no next steps, so a handoff written without tasks carries no task:\n%s", template)
+	}
+	if !strings.Contains(template, "Required when **Tasks** is omitted") {
+		t.Error("the template does not say next steps are what a task-free handoff supplies instead")
+	}
+}
+
 // A handoff pointing at work that exists only in the context about to be
 // discarded is worse than no handoff: the next session resumes on top of it
 // and cannot tell what is missing.
