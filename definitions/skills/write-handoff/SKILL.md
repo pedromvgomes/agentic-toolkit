@@ -42,6 +42,10 @@ blocking it**. Do not write a handoff that points at a dirty worktree.
 
 ## 3 — Decide the predecessor
 
+A handoff that names a predecessor must also name the branch to create and the base to create it
+from. The next session makes that branch once the pull request merges, and the handoff is the
+only thing it has to read either name off.
+
 The next session continues in **this** worktree. That is not a choice the handoff makes, and
 there is no "start a new worktree" option: the worktree is where the work is.
 

@@ -258,6 +258,22 @@ func TestTheHandoffTemplateCarriesTheSectionATaskFreeHandoffIsBuiltFrom(t *testi
 	}
 }
 
+// A gated handoff sends the next session to make a branch once the predecessor
+// merges, and the handoff is the only place it can read that name from. A
+// template that gates the work without naming the branch reads as complete
+// while leaving the session unable to start.
+func TestAGatedHandoffMustNameTheBranchToResumeOn(t *testing.T) {
+	apply := renderFeatureFlowStack(t)
+
+	body, err := os.ReadFile(filepath.Join(apply, ".claude/skills/write-handoff/references/handoff-template.md"))
+	if err != nil {
+		t.Fatalf("the handoff template did not reach the consumer: %v", err)
+	}
+	if !strings.Contains(string(body), "the branch to create and the base to create it from are **required**") {
+		t.Errorf("the template lets a gated handoff omit the branch the next session must create:\n%s", body)
+	}
+}
+
 // A handoff pointing at work that exists only in the context about to be
 // discarded is worse than no handoff: the next session resumes on top of it
 // and cannot tell what is missing.

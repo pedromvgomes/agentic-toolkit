@@ -7,9 +7,15 @@ The concrete outcome. What is true when this is done that is not true now.
 ## Predecessor
 
 `PR #91` — this work may not start until that pull request is merged into the base branch.
+Branch: `feat/the-next-slice`, from `main`.
 
 Omit this section entirely when the handoff was written with no pull request open. Its absence
 means the next session resumes on the current branch immediately.
+
+Where it is present, the branch to create and the base to create it from are **required**. The
+next session starts a fresh branch once the predecessor merges, and it has nowhere to get either
+name from: the handoff is all it has, and a document that gates the work without saying what to
+resume on reads as complete while leaving the session unable to begin.
 
 ## Slice
 
