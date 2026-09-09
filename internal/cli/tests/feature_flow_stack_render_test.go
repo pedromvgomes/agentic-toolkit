@@ -479,3 +479,131 @@ func TestTheImplementerDoesNotCommitItsOwnWork(t *testing.T) {
 		t.Error("task-implementer returns no structured report, so the coordinator parses prose")
 	}
 }
+
+// The command's model applies while it runs and no longer, so the split
+// between planning and implementing rests on the session default being sonnet
+// and this command raising itself to opus for its own duration.
+func TestPlanFeatureRaisesItselfToOpusOverASonnetDefault(t *testing.T) {
+	apply := renderFeatureFlowStack(t)
+
+	body, err := os.ReadFile(filepath.Join(apply, ".claude/commands/plan-feature.md"))
+	if err != nil {
+		t.Fatalf("plan-feature did not reach the consumer: %v", err)
+	}
+	if !strings.Contains(string(body), "model: opus") {
+		t.Errorf("plan-feature does not raise itself to opus:\n%s", body)
+	}
+
+	settings, err := os.ReadFile(filepath.Join(apply, ".claude/settings.json"))
+	if err != nil {
+		t.Fatalf("settings did not reach the consumer: %v", err)
+	}
+	if !strings.Contains(string(settings), `"model": "sonnet"`) {
+		t.Errorf("the session default is not sonnet, so the implementing half runs on whatever the consumer had:\n%s", settings)
+	}
+}
+
+// Reading the codebase is the cost this command exists to avoid, and both
+// routes out of it have to render or the questions have nowhere to go.
+func TestPlanFeatureDelegatesEveryQuestionAboutTheCode(t *testing.T) {
+	apply := renderFeatureFlowStack(t)
+
+	body, err := os.ReadFile(filepath.Join(apply, ".claude/commands/plan-feature.md"))
+	if err != nil {
+		t.Fatalf("plan-feature did not reach the consumer: %v", err)
+	}
+	cmd := string(body)
+	if !strings.Contains(cmd, "memory-explorer") {
+		t.Fatalf("plan-feature routes understanding questions nowhere:\n%s", cmd)
+	}
+	if !strings.Contains(cmd, "model: haiku") {
+		t.Error("plan-feature does not pin Explore to haiku, so surveys run on whatever its default is")
+	}
+	if !strings.Contains(cmd, "needs synthesis is an understanding question") {
+		t.Error("plan-feature does not route a synthesising survey to the explorer, so it lands on a listing agent")
+	}
+	if _, err := os.Stat(filepath.Join(apply, ".claude/agents/memory-explorer/AGENT.md")); err != nil {
+		t.Errorf("plan-feature routes to memory-explorer, which never rendered: %v", err)
+	}
+}
+
+// A command's tool allowlist is read from `allowed-tools`. Under any other key
+// the restriction is ignored rather than rejected, and the command runs with
+// the session's whole tool set — including the file readers it must not use.
+func TestPlanFeaturesToolAllowlistArrivesUnderTheKeyClaudeReads(t *testing.T) {
+	apply := renderFeatureFlowStack(t)
+
+	body, err := os.ReadFile(filepath.Join(apply, ".claude/commands/plan-feature.md"))
+	if err != nil {
+		t.Fatalf("plan-feature did not reach the consumer: %v", err)
+	}
+	cmd := string(body)
+	if !strings.Contains(cmd, "allowed-tools:") {
+		t.Errorf("the tool allowlist did not render under `allowed-tools`:\n%s", cmd)
+	}
+	for _, denied := range []string{"Read", "Grep", "Glob"} {
+		if strings.Contains(strings.SplitN(cmd, "---", 3)[1], denied) {
+			t.Errorf("plan-feature's allowlist grants %s, which is how it reads the codebase on opus", denied)
+		}
+	}
+}
+
+// The plan is challenged before anyone sees it and reviewed by something that
+// did not write it — and the reviewer cannot edit, so what comes back is
+// findings rather than a plan that arrives already approved.
+func TestPlanFeatureChallengesAndThenHasItsDraftReviewed(t *testing.T) {
+	apply := renderFeatureFlowStack(t)
+
+	body, err := os.ReadFile(filepath.Join(apply, ".claude/commands/plan-feature.md"))
+	if err != nil {
+		t.Fatalf("plan-feature did not reach the consumer: %v", err)
+	}
+	cmd := string(body)
+	if !strings.Contains(cmd, "challenge") {
+		t.Error("plan-feature drafts without challenging the open decisions")
+	}
+	if !strings.Contains(cmd, "plan-reviewer") {
+		t.Fatalf("plan-feature presents a plan nothing reviewed:\n%s", cmd)
+	}
+	for _, dep := range []string{".claude/skills/challenge/SKILL.md", ".claude/agents/plan-reviewer/AGENT.md"} {
+		if _, err := os.Stat(filepath.Join(apply, dep)); err != nil {
+			t.Errorf("plan-feature depends on %s, which never rendered: %v", dep, err)
+		}
+	}
+
+	agent, err := os.ReadFile(filepath.Join(apply, ".claude/agents/plan-reviewer/AGENT.md"))
+	if err != nil {
+		t.Fatalf("plan-reviewer did not reach the consumer: %v", err)
+	}
+	reviewer := string(agent)
+	if !strings.Contains(reviewer, "model: fable") {
+		t.Error("plan-reviewer does not run on a different model from the one that wrote the plan")
+	}
+	if !strings.Contains(reviewer, "disallowed-tools:") {
+		t.Errorf("plan-reviewer can edit, so it returns a rewritten plan rather than findings:\n%s", reviewer)
+	}
+	if !strings.Contains(reviewer, "You return **findings**") {
+		t.Error("plan-reviewer does not say it returns findings rather than a plan")
+	}
+}
+
+// Planning ends at the handoff. A planning session that starts implementing
+// spends opus on the work the whole split exists to move onto sonnet.
+func TestPlanFeatureStopsAtTheHandoff(t *testing.T) {
+	apply := renderFeatureFlowStack(t)
+
+	body, err := os.ReadFile(filepath.Join(apply, ".claude/commands/plan-feature.md"))
+	if err != nil {
+		t.Fatalf("plan-feature did not reach the consumer: %v", err)
+	}
+	cmd := string(body)
+	if !strings.Contains(cmd, "write-handoff") {
+		t.Fatalf("plan-feature writes no handoff, so nothing carries the plan across /clear:\n%s", cmd)
+	}
+	if !strings.Contains(cmd, "/clear") {
+		t.Error("plan-feature does not name the step the user performs by hand")
+	}
+	if !strings.Contains(cmd, "Do not start implementing") {
+		t.Error("plan-feature may start implementing on opus")
+	}
+}

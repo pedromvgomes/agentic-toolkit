@@ -1,0 +1,14 @@
+name: feature-flow-model
+description: Default the session to sonnet, so the implementing half of the feature flow lands on it and only /plan-feature's own frontmatter raises a session to opus.
+platforms: [claude]
+value:
+  # A command's model applies while it runs and no longer, so /plan-feature
+  # raises a session to opus for its own duration and the session returns here
+  # afterwards — which is what makes "plan on opus, implement on sonnet" hold
+  # across the /clear the user performs between the two.
+  #
+  # Settings merge shallow and last-wins with no override diagnostic, so a
+  # consumer that sets `model` in its own settings definition silently takes
+  # this key instead. That is the intended escape hatch: this ships in an
+  # opt-in stack precisely so nobody gets it without asking.
+  model: sonnet

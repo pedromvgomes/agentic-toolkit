@@ -15,10 +15,19 @@ skills:
   # has none, so open-pr's documentation step needs it present.
   - agents-md-creator
   - pr-review-resolver
+  # /plan-feature runs this before it drafts, and routes every understanding
+  # question to the explorer rather than reading the codebase on opus.
+  - challenge
 agents:
   - wrap-session-reviewer
+  - memory-explorer
   - task-implementer
+  - plan-reviewer
 instructions:
   - git
 hooks:
   - handoff-claude-session-start
+commands:
+  - plan-feature
+settings:
+  - feature-flow-model
