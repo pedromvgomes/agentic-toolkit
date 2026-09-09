@@ -34,7 +34,7 @@ So the flow is two sessions with a `/clear` between them, and a document that su
 
 | Where | Model | Set by |
 |---|---|---|
-| Session default | sonnet | `settings/feature-flow-model` |
+| Session default | sonnet | `settings/feature-flow-model`, in `stacks/default.yaml` |
 | `/plan-feature` | opus | the command's own `model:` frontmatter |
 | `plan-reviewer` | fable | the agent definition |
 | A `routine` task | sonnet | `task-implementer`'s definition |
@@ -158,6 +158,36 @@ git ls-files --error-unmatch -- handoff/x.md    # tracked → refuse
 A tracked handoff is never advertised and never acted on. Its presence is reported, because a
 committed one is a fact worth knowing rather than a file to skip quietly.
 
+## Where it ships, and the model it sets
+
+The flow is in `stacks/default.yaml`. Extending that stack is all that is needed:
+
+```yaml
+extends:
+  - github.com/pedromvgomes/agentic-toolkit.git/stacks/default.yaml@main
+```
+
+**That stack sets the session's default model to sonnet.** It is what makes the split hold across
+the `/clear`: `/plan-feature` raises its own session to opus for its duration, and the session
+that comes back lands on this default rather than on whatever it was before.
+
+The setting reaches every session in the repo, not only the ones running this flow, and settings
+merge shallow last-wins with no diagnostic saying a key was taken — so a consumer whose default
+was opus will find it is now sonnet, silently, on their next `agtk sync`.
+
+To keep your own default, set `model` in a settings definition of your own. Your entry-point
+stack's entries always win last:
+
+```yaml
+# .agentic-toolkit.yaml
+settings:
+  - ./my-settings/model
+```
+
+The flow does not depend on the setting. `/plan-feature` raises itself to opus from any default,
+and the implementing half runs correctly on whatever the session default is — it simply costs
+more when that default is dearer than sonnet. The setting is an optimisation, not a requirement.
+
 ## Using the pieces on their own
 
 None of them requires the others:
@@ -171,18 +201,3 @@ None of them requires the others:
 `wrap-session` also keeps its own entry point. `open-pr` dispatches the same
 `wrap-session-reviewer` agent with the branch's commits as the scope; `wrap-session` asks you
 which scope, because a session being wrapped is not always a branch being shipped.
-
-## Opting in
-
-The flow ships as its own stack, not in `default.yaml`, because the sonnet default it sets is
-load-bearing and settings merge shallow last-wins with no override diagnostic — in the default
-stack it would change the model of every session in every repo that consumes it.
-
-```yaml
-extends:
-  - github.com/pedromvgomes/agentic-toolkit.git/stacks/feature-flow.yaml@main
-```
-
-Then `agtk sync`. To keep your own default model, set `model` in a settings definition of your
-own: within one stack the later name alphabetically wins, and your entry-point stack's entries
-always win last.

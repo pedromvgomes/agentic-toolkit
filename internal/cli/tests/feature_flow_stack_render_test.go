@@ -7,27 +7,13 @@ import (
 	"testing"
 )
 
-// The feature flow is prose that no other test reads, and it is opt-in — so it
-// is rendered from its own stack rather than the default one, and a consumer
-// extending only this stack has to get a working flow out of it.
+// The feature flow is prose that no other test reads, and it ships in the
+// stack consumers actually get — so it is asserted against the same render as
+// everything else there, and a definition that stops reaching a consumer fails
+// here rather than in somebody's repo.
 func renderFeatureFlowStack(t *testing.T) string {
 	t.Helper()
-
-	repo := repoRoot(t)
-	source := t.TempDir()
-	for _, dir := range []string{"definitions", "stacks"} {
-		if err := copyTree(filepath.Join(repo, dir), filepath.Join(source, dir)); err != nil {
-			t.Fatalf("copy %s: %v", dir, err)
-		}
-	}
-
-	apply := t.TempDir()
-	cache := t.TempDir()
-	_, stderr, err := runCLI(t, apply, "--source", source, "--stack", "feature-flow", "sync", "--cache", cache)
-	if err != nil {
-		t.Fatalf("sync --source: %v\nstderr:\n%s", err, stderr)
-	}
-	return apply
+	return renderDefaultStack(t)
 }
 
 // The loop drives panel-code-review rather than repeating it. A rendered copy

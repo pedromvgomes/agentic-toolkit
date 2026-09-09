@@ -37,10 +37,10 @@ go install github.com/pedromvgomes/agentic-toolkit/cmd/agtk@latest
 ## What you get
 
 - **Definition catalog** under `definitions/` covering eight typed categories: `skill`, `agent`, `command`, `rule`, `instruction`, `hook`, `mcp`, `setting`. See [`definitions/SCHEMA.md`](definitions/SCHEMA.md) for shapes.
-- **Shareable stacks** under `stacks/` that bundle catalog definitions for consumers to extend: `default.yaml` (workflow-agnostic skills, the memory-first and plan-approval instructions), `feature-flow.yaml` (the two-stage plan-then-implement flow), and one stack per integration — `serena.yaml`, `rtk.yaml`, `plannotator.yaml`.
+- **Shareable stacks** under `stacks/` that bundle catalog definitions for consumers to extend: `default.yaml` (the feature flow, the workflow-agnostic skills, the memory-first and plan-approval instructions), and one stack per integration — `serena.yaml`, `rtk.yaml`, `plannotator.yaml`.
 - **`agtk` CLI** with `init`, `lock`, `fetch`, `plan`, `render`, `sync`, `status`, `memory`, `update`. Run any subcommand with `--help` for flags.
 - **Lockfile-driven workflow.** `agtk lock` resolves the entry-point stack's `extends:` graph to commit SHAs; `agtk fetch` hydrates the cache deterministically; `agtk render` writes Claude Code's expected layout under `.claude/`. `agtk sync` collapses all three into one command for the common case.
-- **Two-stage feature flow.** `/plan-feature` plans on opus without reading the codebase, has its draft reviewed by a second model, and writes a handoff; you run `/clear`; a session-start hook points the fresh sonnet session at the work, which lands one task per subagent, reviews in a capped loop and opens the PR. Opt-in via `stacks/feature-flow.yaml`. See [docs/FEATURE-FLOW.md](docs/FEATURE-FLOW.md).
+- **Two-stage feature flow.** `/plan-feature` plans on opus without reading the codebase, has its draft reviewed by a second model, and writes a handoff; you run `/clear`; a session-start hook points the fresh sonnet session at the work, which lands one task per subagent, reviews in a capped loop and opens the PR. In `stacks/default.yaml`, which also sets the session's default model to sonnet. See [docs/FEATURE-FLOW.md](docs/FEATURE-FLOW.md).
 - **Repo-resident memory.** `agtk memory` manages a committed store of durable notes about the consumer's own codebase — invariants, rationale, gotchas, dead ends — each anchored to the content it was derived from, so a note that has gone stale says so. Deterministic and model-free, hence safe in hooks and CI. See the memory section of [docs/CONSUMER-GUIDE.md](docs/CONSUMER-GUIDE.md).
 - **Auto-update** that checks GitHub releases in the background and self-replaces from the verified archive when you run `agtk update`.
 
@@ -57,7 +57,7 @@ agentic-toolkit/
     ...
   stacks/               # shareable stack manifests for consumers to extend
     default.yaml
-    feature-flow.yaml
+    serena.yaml
     ...
   install.sh            # platform-detecting installer (curl | sh entry point)
   .goreleaser.yaml      # release-time build matrix (darwin/linux × amd64/arm64)

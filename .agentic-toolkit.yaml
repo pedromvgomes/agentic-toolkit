@@ -9,7 +9,6 @@ extends:
   - ./stacks/plannotator.yaml
   - ./stacks/serena.yaml
   - ./stacks/rtk.yaml
-  - ./stacks/feature-flow.yaml
 
 # The store is already here and committed, and every deterministic memory
 # command finds it from the default `memory.root`. Only the provider needs
