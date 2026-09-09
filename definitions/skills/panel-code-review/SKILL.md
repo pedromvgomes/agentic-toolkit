@@ -41,7 +41,8 @@ Read from the invocation, in any order:
 - a **PR number** (`123`), a **PR URL**, or nothing
 - `--auto-fix` — do not ask whether to fix; go straight to fixing
 - `--no-fix` — do not fix and do not offer to; report and stop
-- a **panel name** the user asked for by name ("review this deeply")
+- a **panel name**, bare (`quick`, `deep-codex`) or asked for in words ("review this deeply").
+  `agtk code-review panels` lists the ones this repo declares; pass it through as `--panel`.
 
 `--auto-fix` and `--no-fix` contradict each other. If both appear, say so and ask which.
 
@@ -88,6 +89,12 @@ not asked to approve it.
 `explain --pr` reads GitHub and needs the App registration. If it fails for want of one, say
 that `agtk code-review register` registers this machine, and stop — it would have failed the
 same way after a panel had run.
+
+**A named panel silences the rules.** `--panel` wins outright, so an escalation that fired does
+not raise past it. When the output shows a rule fired and the panel is the one the user named,
+say so in that line — "auth escalates this to deep; you asked for quick, so it runs with one
+reviewer." Do not refuse it and do not ask again: the person overrode the rules on purpose, and
+they are entitled to. They are not entitled to do it without being told.
 
 ## 4 — Run
 
