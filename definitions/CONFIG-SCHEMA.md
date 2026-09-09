@@ -180,87 +180,104 @@ The `signals` vocabulary is closed and ships with the binary; `agtk code-review 
 # bodies stay shareable through `builtin:` references rather than through a
 # merge algorithm, so there is one roster per repo and never half of two.
 #
-# It assumes Claude Code with codex available, and the cross-model check is the
-# whole point of how it is arranged: the local pass is Claude and the pull
-# request is codex, so by the time a change is proposed it has been read by two
-# models trained differently, which miss different things. A panel mixing both
-# would spend twice for one opinion of each; two stages spend once each and
-# disagree across the boundary that matters.
-#
-# Every model is named. A reviewer left on the CLI's own default is a model
-# nobody chose, which changes under the operator rather than in a diff.
+# Two rosters, one per provider, and the same panels and rules for each. The
+# local pass is Claude and the pull request is codex, so a change is read by two
+# models trained differently before anyone else sees it. Every model is named:
+# a reviewer left on the CLI's default is a model nobody chose.
 version: 1
 
 reviewers:
-  # The local pass. One reviewer over every axis, because what a pre-push
-  # review is worth is being fast enough to run before every push.
-  unified: {provider: claudecode, model: sonnet, prompt: builtin:unified}
+  unified:     {provider: claudecode, model: sonnet, prompt: builtin:unified}
+  correctness: {provider: claudecode, model: sonnet, prompt: builtin:correctness}
+  security:    {provider: claudecode, model: opus,   prompt: builtin:security}
+  performance: {provider: claudecode, model: sonnet, prompt: builtin:performance}
 
-  # The pull request, and everything the rules escalate to. Codex, so these
-  # never re-run the model that already read the change locally.
-  #
-  # Families are OpenAI's own; the driver refuses to call one the counterpart
-  # of an Anthropic model, and so does this file. `astra` sits on security for
-  # the same reason `opus` would: it is the newest family the driver names, and
-  # security is the axis where being second-best is most expensive.
-  correctness: {provider: codex, model: sol,   prompt: builtin:correctness}
-  security:    {provider: codex, model: astra, prompt: builtin:security}
-  performance: {provider: codex, model: sol,   prompt: builtin:performance}
+  unified-codex:     {provider: codex, model: sol,   prompt: builtin:unified}
+  correctness-codex: {provider: codex, model: sol,   prompt: builtin:correctness}
+  security-codex:    {provider: codex, model: astra, prompt: builtin:security}
+  performance-codex: {provider: codex, model: sol,   prompt: builtin:performance}
 
-# The local pass reconciles on Claude, which is the model that formed its
-# findings. The codex panels override both below, so a pull request is read,
-# validated and judged without Claude — the local review is the other half of
-# the pair, and a shared judge would put one model on both sides of it.
 judge:     {provider: claudecode, model: opus,   prompt: builtin:judge}
 validator: {provider: claudecode, model: sonnet, prompt: builtin:validator}
 
+# The codex panels judge and validate on codex, so a pull request is read and
+# reconciled without the model that already reviewed it locally.
 panels:
   quick:
     description: One Claude reviewer over all three axes. The pre-push pass, where being fast is what it is worth.
     reviewers: [unified]
-
   standard:
-    description: Correctness and security on codex, each with its own scope. The second model's first look at the change.
+    description: Correctness and security on Claude, each with its own scope.
     reviewers: [correctness, security]
+  deep:
+    description: Every axis on Claude, run twice, so agreement between independent instances is the confidence signal.
+    reviewers: [correctness, security, performance]
+    quorum: 2
+
+  quick-codex:
+    description: One codex reviewer over all three axes.
+    reviewers: [unified-codex]
     judge:     {provider: codex, model: astra, prompt: builtin:judge}
     validator: {provider: codex, model: sol,   prompt: builtin:validator}
-
-  deep:
+  standard-codex:
+    description: Correctness and security on codex, each with its own scope. The second model's first look at the change.
+    reviewers: [correctness-codex, security-codex]
+    judge:     {provider: codex, model: astra, prompt: builtin:judge}
+    validator: {provider: codex, model: sol,   prompt: builtin:validator}
+  deep-codex:
     description: Every axis on codex, run twice, so agreement between independent instances is the confidence signal.
-    reviewers: [correctness, security, performance]
+    reviewers: [correctness-codex, security-codex, performance-codex]
     quorum: 2
     judge:     {provider: codex, model: astra, prompt: builtin:judge}
     validator: {provider: codex, model: sol,   prompt: builtin:validator}
 
 defaults:
   worktree: quick
-  pr:       standard
+  pr:       standard-codex
 
-# An escalation names one panel, and a rule cannot name a different one per
-# context — so `deep` is reached from a local review as well as from a pull
-# request, and it is codex either way. That is the intended reading rather than
-# a compromise: routine local work is Claude's, and a change these rules call
-# risky earns the second model immediately instead of waiting for the pull
-# request.
+# Every rule is written twice, once per roster, and `context` is what keeps each
+# copy on its own side. A rule carries one combinator, so the context guard makes
+# each rule an `all:` — which is why one criterion gets one rule rather than
+# several being grouped.
+#
+# The two rules raising to `standard-codex` cannot fire while that is also the
+# pull-request default. They are kept so both rosters read the same, and so
+# lowering the default does not silently drop a criterion.
 escalate:
-  # Code that decides who may do what, and code that rewrites data in place.
-  # Both are changes whose damage is discovered by someone other than the
-  # author.
+  # Mistakes here are exploitable, or land on somebody who is not in the room,
+  # or are indistinguishable from correct until production.
   - to: deep
     all:
-      - touches: {matches: ["**/auth/**", "**/authz/**", "**/migrations/**"]}
+      - signals: {in: [auth, crypto, concurrency, sensitive-data, fix-revert]}
+      - context: {in: [worktree]}
+  - to: deep-codex
+    all:
+      - signals: {in: [auth, crypto, concurrency, sensitive-data, fix-revert]}
+      - context: {in: [pr]}
 
-  # Concerns where being nearly right is indistinguishable from being right
-  # until production, and where a review is the last place it is cheap to fix.
-  - to: deep
-    any:
-      - signals: {in: [concurrency, crypto, fix-revert]}
-
-  # Widely used code: the count is what separates a one-line change nobody
-  # depends on from a one-line change everybody does.
+  # Widely used code: the count separates a one-line change nobody depends on
+  # from a one-line change everybody does.
   - to: deep
     all:
       - referencing_files: {gte: 20}
+      - context: {in: [worktree]}
+  - to: deep-codex
+    all:
+      - referencing_files: {gte: 20}
+      - context: {in: [pr]}
+
+  # Irreversible or wide, but the risk is not in the diff: a migration's cost is
+  # the table it locks, and a pipeline's is what it can reach. The security
+  # reviewer is the one with something to say, so this buys that rather than
+  # every axis twice.
+  - to: standard
+    all:
+      - signals: {in: [migrations, ci-cd, iac]}
+      - context: {in: [worktree]}
+  - to: standard-codex
+    all:
+      - signals: {in: [migrations, ci-cd, iac]}
+      - context: {in: [pr]}
 
   # Size alone. It raises to standard rather than deep, because bulk is a
   # reason to look at more of a change, not a reason to look harder at each
@@ -268,6 +285,11 @@ escalate:
   - to: standard
     all:
       - changed_files: {gte: 20}
+      - context: {in: [worktree]}
+  - to: standard-codex
+    all:
+      - changed_files: {gte: 20}
+      - context: {in: [pr]}
 ```
 
 ## Lockfile
