@@ -69,9 +69,13 @@ standing, and it is cheap to confirm and expensive to surprise.
 ```bash
 git status --porcelain     # must be empty
 git fetch origin
-git checkout <base> && git merge --ff-only origin/<base>
-git checkout -b <branch named in the handoff>
+git checkout -b <branch named in the handoff> origin/<base>
 ```
+
+The new branch comes from the remote ref directly. Checking out `<base>` first would fail
+outright wherever it already has a worktree of its own — the layout this repository itself
+uses — and it buys nothing: `origin/<base>` is the updated base, and it is what the branch has
+to start from.
 
 A dirty worktree refuses the whole sequence. Say what is uncommitted and stop.
 
