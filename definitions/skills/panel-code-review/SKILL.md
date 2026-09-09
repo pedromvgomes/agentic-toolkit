@@ -86,7 +86,7 @@ that fired — then continue without asking. The user is being told what they ar
 not asked to approve it.
 
 `explain --pr` reads GitHub and needs the App registration. If it fails for want of one, say
-that `agtk code-review initialize` registers this machine, and stop — it would have failed the
+that `agtk code-review register` registers this machine, and stop — it would have failed the
 same way after a panel had run.
 
 ## 4 — Run

@@ -178,7 +178,7 @@ func TestAReviewOfAPullRequestSaysHowToRegisterTheApp(t *testing.T) {
 	if err == nil {
 		t.Fatal("a review was posted from a machine holding no registration")
 	}
-	if !strings.Contains(err.Error(), "code-review initialize") {
+	if !strings.Contains(err.Error(), "code-review register") {
 		t.Errorf("the refusal does not name the command that fixes it: %v", err)
 	}
 }

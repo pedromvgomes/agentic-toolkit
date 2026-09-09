@@ -117,7 +117,7 @@ func TestAMachineWithNoRegistrationSaysHowToMakeOne(t *testing.T) {
 	if !errors.Is(err, githubapp.ErrNotInitialized) {
 		t.Fatalf("an unregistered machine reports %v, want ErrNotInitialized", err)
 	}
-	if !strings.Contains(err.Error(), "code-review initialize") {
+	if !strings.Contains(err.Error(), "code-review register") {
 		t.Errorf("the refusal does not name the command that fixes it: %v", err)
 	}
 }
