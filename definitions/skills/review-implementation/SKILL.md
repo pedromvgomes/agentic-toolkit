@@ -78,10 +78,18 @@ the second is how a review silently stops being one.
 **Clean.** No RED and no AMBER survive. Stop and report the pass number. This is the outcome
 the loop is for.
 
-**Stalled.** A pass's surviving fingerprints are the same set as the previous pass's. The
-fixes are not landing, and the remaining passes will spend money to learn that again. Stop,
-report the surviving findings, and say the loop stalled rather than that it was capped — the
-two call for different things from whoever reads it.
+**Stalled.** A pass's surviving fingerprints are the same set as the previous pass's **and**
+that pass changed nothing — the head is where the previous pass left it and the worktree is
+clean. The fixes are not landing, and the remaining passes will spend money to learn that
+again. Stop, report the surviving findings, and say the loop stalled rather than that it was
+capped — the two call for different things from whoever reads it.
+
+Repeated fingerprints alone are not a stall. `--auto-fix` reports what it found and then fixes
+it, so the set a pass reports describes the code as it was *before* that pass's own fixes
+landed. An identical set can mean the fixes worked and nothing has read the result yet, and
+stopping there reports a branch as failed on the strength of code no reviewer ever saw. Both
+measures are needed because a fix may be left uncommitted, where the head alone would read as
+nothing having happened.
 
 **Capped.** The ceiling is reached with defects still standing. Stop and report them.
 
