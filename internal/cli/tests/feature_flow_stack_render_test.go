@@ -339,18 +339,42 @@ func TestTheHandoffHookFiresOnAFreshSessionAndNamesTheSkill(t *testing.T) {
 	}
 }
 
-// A consumed handoff moves to handoff/done/. The hook globs depth one, so a
-// hook that recursed would keep pointing every fresh session at work that has
-// already shipped.
-func TestTheHandoffHookIgnoresConsumedHandoffs(t *testing.T) {
+// Which handoffs may be acted on is one decision, made in internal/handoff and
+// exercised by its own tests. What the rendered hook has to get right is that
+// it asks, rather than deciding again in shell — a second implementation is a
+// second answer, and this one gates what a session is told to run.
+func TestTheHandoffHookDefersToAgtk(t *testing.T) {
 	apply := renderFeatureFlowStack(t)
 
 	body, err := os.ReadFile(filepath.Join(apply, ".claude/settings.json"))
 	if err != nil {
 		t.Fatalf("settings did not reach the consumer: %v", err)
 	}
-	if !strings.Contains(string(body), "handoff/*.md") {
-		t.Errorf("the hook does not glob at depth one, so handoff/done/ is not consumed:\n%s", body)
+	settings := string(body)
+	if !strings.Contains(settings, "agtk handoff list") {
+		t.Errorf("the hook does not ask agtk which handoffs may be acted on:\n%s", settings)
+	}
+	if strings.Contains(settings, "ls-files --error-unmatch") {
+		t.Errorf("the hook still decides tracked-ness itself, so there are two answers:\n%s", settings)
+	}
+}
+
+// A check that did not run is not a check that passed. An agtk the consumer
+// does not have must withhold the handoff and say so, because the alternative
+// is a session acting on a document nothing vetted.
+func TestTheHandoffHookFailsClosedWhenTheCheckCannotRun(t *testing.T) {
+	apply := renderFeatureFlowStack(t)
+
+	body, err := os.ReadFile(filepath.Join(apply, ".claude/settings.json"))
+	if err != nil {
+		t.Fatalf("settings did not reach the consumer: %v", err)
+	}
+	settings := string(body)
+	if !strings.Contains(settings, "could not be checked") {
+		t.Errorf("the hook does not say when the check could not run:\n%s", settings)
+	}
+	if !strings.Contains(settings, "withheld rather than offered unchecked") {
+		t.Errorf("the hook does not withhold a handoff it could not check:\n%s", settings)
 	}
 }
 
@@ -606,8 +630,8 @@ func TestACommittedHandoffIsNeverAdvertisedOrActedOn(t *testing.T) {
 	if err != nil {
 		t.Fatalf("settings did not reach the consumer: %v", err)
 	}
-	if !strings.Contains(string(settings), "ls-files --error-unmatch") {
-		t.Errorf("the hook advertises handoffs without checking whether git tracks them:\n%s", settings)
+	if !strings.Contains(string(settings), "agtk handoff list") {
+		t.Errorf("the hook advertises handoffs without asking what may be acted on:\n%s", settings)
 	}
 
 	// The hook is not the only way in: implement-handoff is invocable directly,
@@ -617,14 +641,14 @@ func TestACommittedHandoffIsNeverAdvertisedOrActedOn(t *testing.T) {
 		t.Fatalf("implement-handoff did not reach the consumer: %v", err)
 	}
 	skill := string(body)
-	if !strings.Contains(skill, "ls-files --error-unmatch") {
-		t.Errorf("implement-handoff acts on a handoff without checking whether git tracks it:\n%s", skill)
+	if !strings.Contains(skill, "agtk handoff list") {
+		t.Errorf("implement-handoff acts on a handoff without asking what may be acted on:\n%s", skill)
 	}
-	if !strings.Contains(skill, "Refuse a handoff that git tracks") {
-		t.Error("implement-handoff does not refuse a committed handoff")
+	if !strings.Contains(skill, "Never decide it here") {
+		t.Error("implement-handoff decides trust itself, so there are two answers")
 	}
 	if !strings.Contains(skill, "untrusted content") {
-		t.Error("implement-handoff does not say what a committed handoff is")
+		t.Error("implement-handoff does not say what a refused handoff is")
 	}
 }
 
