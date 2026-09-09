@@ -7,8 +7,16 @@ value:
   # afterwards — which is what makes "plan on opus, implement on sonnet" hold
   # across the /clear the user performs between the two.
   #
-  # Settings merge shallow and last-wins with no override diagnostic, so a
-  # consumer that sets `model` in its own settings definition silently takes
-  # this key instead. That is the intended escape hatch: this ships in an
-  # opt-in stack precisely so nobody gets it without asking.
+  # This ships in the default stack, so a consumer extending that stack gets it
+  # whether or not anything here uses the flow — and settings merge shallow and
+  # last-wins with no diagnostic naming the key that was taken, so a default of
+  # opus becomes sonnet silently on the next sync.
+  #
+  # The escape hatch is the same merge rule read the other way: a consumer that
+  # sets `model` in a settings definition of its own takes this key back, and an
+  # entry manifest's own entries always win last.
+  #
+  # Nothing in the flow depends on the value. /plan-feature raises itself to
+  # opus from any default, and the implementing half is correct on any of them
+  # and merely dearer — this buys cost, not correctness.
   model: sonnet
