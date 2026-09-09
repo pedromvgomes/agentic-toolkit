@@ -220,6 +220,8 @@ func (s *Store) unstampedHint(note, path string, glob bool) string {
 		return "anchored file no longer exists — fix the path or drop the anchor"
 	case err == nil && info.Mode()&os.ModeSymlink != 0:
 		return "is a symlink, which resolves outside what the anchor names — anchor the file it points at"
+	case err == nil && info.Mode().IsRegular() && !s.contained(s.abs(path)):
+		return "resolves outside the project through a linked directory — anchor a path inside the repository"
 	case err == nil && info.IsDir():
 		// `anchor` skips directories, so prescribing it here would send the
 		// reader round a loop that can never go green.

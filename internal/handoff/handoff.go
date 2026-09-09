@@ -48,7 +48,7 @@ const (
 	RefusedSymlink      = "symlink: following it leaves the handoff directory"
 	RefusedIrregular    = "not a regular file"
 	RefusedSymlinkedDir = "the handoff directory is a symlink: everything under it resolves somewhere this worktree does not control"
-	RefusedOutside      = "it does not stay inside the handoff directory"
+	RefusedNestedRepo   = "the handoff directory is its own git repository: this worktree's index says nothing about what is inside it"
 )
 
 // List reports the handoffs waiting in root, and what it refused.
@@ -78,9 +78,22 @@ func List(root string) ([]Document, []Refused, error) {
 		return nil, []Refused{{Path: dir, Reason: RefusedIrregular}}, nil
 	}
 
-	// The real directory is what containment is measured against, so a link
-	// anywhere above handoff/ cannot make a path look contained that is not.
-	realDir, err := filepath.EvalSymlinks(dir)
+	// A gitlink is refused for the reason a review root refuses one: it is a
+	// second repository this one does not contain. A committed submodule at
+	// handoff/ holds real regular files in a real directory, while the outer
+	// index carries only the gitlink — so ls-files reports every path inside
+	// it as untracked, and every branch-authored document in it reads as
+	// locally written.
+	if _, err := os.Lstat(filepath.Join(dir, ".git")); err == nil {
+		return nil, []Refused{{Path: dir, Reason: RefusedNestedRepo}}, nil
+	}
+
+	// Entries are read from the real directory, so a link anywhere above
+	// handoff/ is resolved once here rather than being trusted per entry.
+	// Containment then needs no separate test: os.ReadDir yields base names,
+	// which carry no separator, and a name that is itself a link is refused
+	// below rather than resolved.
+	dir, err = filepath.EvalSymlinks(dir)
 	if err != nil {
 		return nil, nil, fmt.Errorf("resolve %s: %w", dir, err)
 	}
@@ -114,10 +127,6 @@ func List(root string) ([]Document, []Refused, error) {
 		}
 		if !fi.Mode().IsRegular() {
 			refused = append(refused, Refused{Path: path, Reason: RefusedIrregular})
-			continue
-		}
-		if filepath.Dir(filepath.Join(realDir, name)) != realDir {
-			refused = append(refused, Refused{Path: path, Reason: RefusedOutside})
 			continue
 		}
 		if tracked(root, path) {

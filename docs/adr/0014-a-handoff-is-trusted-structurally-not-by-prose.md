@@ -53,6 +53,11 @@ at render when the question can be asked.
 - **The rendered definitions no longer describe the mechanism**, only that they defer to it and
   what to do when it cannot run. The render tests changed accordingly: they assert delegation and
   the fail-closed path, and which handoffs may be acted on is proved in `internal/handoff`.
-- **`internal/memory`'s anchor confinement had the same defect** — lexical, never `Lstat`ing —
+- **`internal/memory`'s anchor confinement had the same defect** — lexical, never resolving —
   and is fixed alongside. Two instances of one class, and the second was already recorded as a
   memory note; leaving it would have made that note the only thing standing between a repeat.
+- **Confinement resolves the whole path, not its last component.** `Lstat` on the leaf refuses a
+  symlinked file and says nothing about the directories above it, which the kernel resolves
+  anyway: `internal/x -> ~/.ssh` with the anchor `internal/x/id_rsa` names a real regular file.
+  A check that reads as containment while testing one segment is worse than none, because the
+  next reader stops looking.

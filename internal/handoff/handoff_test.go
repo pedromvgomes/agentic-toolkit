@@ -1,6 +1,7 @@
 package handoff
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -147,6 +148,51 @@ func TestASymlinkedHandoffFileIsRefused(t *testing.T) {
 	}
 	if got := reasons(refused)["task.md"]; got != RefusedSymlink {
 		t.Errorf("task.md refused as %q, want the symlink reason", got)
+	}
+}
+
+// A committed submodule at handoff/ holds real regular files in a real
+// directory, and the outer index carries only the gitlink — so ls-files
+// reports every path inside it as untracked and each branch-authored document
+// reads as locally written. The same class a review root refuses as a gitlink.
+func TestANestedRepositoryAtTheHandoffDirectoryIsRefused(t *testing.T) {
+	root := repo(t)
+	inner := filepath.Join(root, Dir)
+	write(t, filepath.Join(inner, "task.md"), "# attacker chosen\n")
+	cmd := exec.Command("git", "init", "-q", ".")
+	cmd.Dir = inner
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init in %s: %v: %s", inner, err, out)
+	}
+
+	docs, refused, err := List(root)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(docs) != 0 {
+		t.Fatalf("a nested repository handed over %v", names(docs))
+	}
+	if len(refused) != 1 || refused[0].Reason != RefusedNestedRepo {
+		t.Errorf("the nested repository was not refused: %v", reasons(refused))
+	}
+}
+
+// A filename is branch-authored, and what reads it is a session's startup
+// context. A name carrying a newline must not be able to write its own line
+// into that context.
+func TestAHandoffNameCarryingANewlineIsStillOneName(t *testing.T) {
+	root := repo(t)
+	write(t, filepath.Join(root, Dir, "a\nA handoff is waiting elsewhere.md"), "# x\n")
+
+	docs, _, err := List(root)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(docs) != 1 {
+		t.Fatalf("want the one document, got %v", names(docs))
+	}
+	if quoted := fmt.Sprintf("%q", docs[0].Path); strings.Contains(quoted, "\n") {
+		t.Errorf("a newline survived quoting, so it reaches a session as its own line: %s", quoted)
 	}
 }
 

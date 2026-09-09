@@ -281,6 +281,53 @@ func TestGlobAnchorsSkipSymlinkedMatches(t *testing.T) {
 	}
 }
 
+// The escape a check on the final component cannot see. The kernel resolves
+// every directory above the anchor, so a linked directory inside the project
+// makes `internal/x/id_rsa` name a real regular file outside the repository —
+// and hashing it writes that file's blob into a note that is then committed.
+func TestStampRefusesAnAnchorUnderASymlinkedDirectory(t *testing.T) {
+	outside := t.TempDir()
+	write(t, filepath.Join(outside, "id_rsa"), "PRIVATE KEY\n")
+
+	s := project(t, map[string]string{"internal/a/a.go": "package a\n"})
+	if err := os.Symlink(outside, filepath.Join(s.ProjectRoot, "internal/linked")); err != nil {
+		t.Fatal(err)
+	}
+	writeNote(t, s, "under-link", note("under-link", "  - path: internal/linked/id_rsa\n"))
+
+	res, err := s.Stamp(loadOne(t, s, "under-link"))
+	if err != nil {
+		t.Fatalf("stamp: %v", err)
+	}
+	if len(res.Missing) != 1 {
+		t.Errorf("Missing = %+v, want the anchor under a linked directory refused", res.Missing)
+	}
+	if blob := loadOne(t, s, "under-link").Anchors[0].Blob; blob != "" {
+		t.Errorf("recorded the blob %q of a file outside the project", blob)
+	}
+}
+
+// The same directory, reached by a glob. filepath.Glob walks through the
+// linked component, so the pattern enumerates the target directory and would
+// record each outside filename, spelled as if it were project-relative.
+func TestGlobAnchorsDoNotEnumerateASymlinkedDirectory(t *testing.T) {
+	outside := t.TempDir()
+	write(t, filepath.Join(outside, "secret.go"), "package secret\n")
+
+	s := project(t, map[string]string{"internal/a/a.go": "package a\n"})
+	if err := os.Symlink(outside, filepath.Join(s.ProjectRoot, "internal/linked")); err != nil {
+		t.Fatal(err)
+	}
+	writeNote(t, s, "under-link-glob", note("under-link-glob", "  - path: internal/linked/*.go\n"))
+
+	if _, err := s.Stamp(loadOne(t, s, "under-link-glob")); err != nil {
+		t.Fatalf("stamp: %v", err)
+	}
+	if matches := loadOne(t, s, "under-link-glob").Anchors[0].Matches; len(matches) != 0 {
+		t.Errorf("a glob enumerated a directory outside the project: %+v", matches)
+	}
+}
+
 // TestStampMarksMissingAnchors: the kept hash must be distinguishable from
 // a freshly computed one, or a report of a deleted file reads as a success.
 func TestStampMarksMissingAnchors(t *testing.T) {

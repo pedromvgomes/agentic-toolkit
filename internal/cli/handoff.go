@@ -76,11 +76,16 @@ func runHandoffList(env *Env, jsonOut bool) error {
 		return writeJSON(env, out)
 	}
 
+	// %q, not %s. A refusal is by construction about a branch-authored path,
+	// the session-start hook pipes this output into a fresh session's context,
+	// and that session dispatches subagents holding Write, Edit and Bash. A
+	// filename carrying newlines would otherwise write its own lines into that
+	// context. Quoting is what reviewrun does with a path it refuses to write.
 	for _, d := range docs {
-		fmt.Fprintln(env.Stdout, d.Path)
+		fmt.Fprintf(env.Stdout, "%q\n", d.Path)
 	}
 	for _, r := range refused {
-		fmt.Fprintf(env.Stderr, "refused %s — %s\n", r.Path, r.Reason)
+		fmt.Fprintf(env.Stderr, "refused %q — %s\n", r.Path, r.Reason)
 	}
 	return nil
 }
