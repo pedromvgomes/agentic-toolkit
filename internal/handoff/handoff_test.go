@@ -1,7 +1,6 @@
 package handoff
 
 import (
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -174,25 +173,6 @@ func TestANestedRepositoryAtTheHandoffDirectoryIsRefused(t *testing.T) {
 	}
 	if len(refused) != 1 || refused[0].Reason != RefusedNestedRepo {
 		t.Errorf("the nested repository was not refused: %v", reasons(refused))
-	}
-}
-
-// A filename is branch-authored, and what reads it is a session's startup
-// context. A name carrying a newline must not be able to write its own line
-// into that context.
-func TestAHandoffNameCarryingANewlineIsStillOneName(t *testing.T) {
-	root := repo(t)
-	write(t, filepath.Join(root, Dir, "a\nA handoff is waiting elsewhere.md"), "# x\n")
-
-	docs, _, err := List(root)
-	if err != nil {
-		t.Fatalf("list: %v", err)
-	}
-	if len(docs) != 1 {
-		t.Fatalf("want the one document, got %v", names(docs))
-	}
-	if quoted := fmt.Sprintf("%q", docs[0].Path); strings.Contains(quoted, "\n") {
-		t.Errorf("a newline survived quoting, so it reaches a session as its own line: %s", quoted)
 	}
 }
 

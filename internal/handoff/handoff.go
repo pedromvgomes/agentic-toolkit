@@ -93,10 +93,11 @@ func List(root string) ([]Document, []Refused, error) {
 	// Containment then needs no separate test: os.ReadDir yields base names,
 	// which carry no separator, and a name that is itself a link is refused
 	// below rather than resolved.
-	dir, err = filepath.EvalSymlinks(dir)
+	realDir, err := filepath.EvalSymlinks(dir)
 	if err != nil {
 		return nil, nil, fmt.Errorf("resolve %s: %w", dir, err)
 	}
+	dir = realDir
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {

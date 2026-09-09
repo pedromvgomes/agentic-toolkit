@@ -328,6 +328,48 @@ func TestGlobAnchorsDoNotEnumerateASymlinkedDirectory(t *testing.T) {
 	}
 }
 
+// Audit reads with HashFile, which is an os.ReadFile and resolves every path
+// component. Stamp refusing the anchor leaves its recorded blob empty, so an
+// audit that did not check containment would read the outside file on every
+// run rather than once.
+func TestAuditRefusesAnAnchorUnderASymlinkedDirectory(t *testing.T) {
+	outside := t.TempDir()
+	write(t, filepath.Join(outside, "id_rsa"), "PRIVATE KEY\n")
+
+	s := project(t, map[string]string{"internal/a/a.go": "package a\n"})
+	if err := os.Symlink(outside, filepath.Join(s.ProjectRoot, "internal/linked")); err != nil {
+		t.Fatal(err)
+	}
+	writeNote(t, s, "audited", note("audited", "  - path: internal/linked/id_rsa\n"))
+
+	drifts := s.AuditNote(loadOne(t, s, "audited")).Drifts
+	if len(drifts) != 1 {
+		t.Fatalf("drifts = %+v, want one refusal", drifts)
+	}
+	if drifts[0].Kind != memory.DriftInvalid {
+		t.Errorf("drift kind = %q, want invalid", drifts[0].Kind)
+	}
+	if drifts[0].Now != "" {
+		t.Errorf("audit reported the blob %q of a file outside the project", drifts[0].Now)
+	}
+}
+
+// A deleted anchor is missing, not invalid. The distinction carries: missing
+// is the one an agent may act on by dropping the anchor, and a containment
+// check that cannot resolve an absent path would call every deletion an
+// escape.
+func TestADeletedAnchorIsMissingRatherThanOutsideTheProject(t *testing.T) {
+	s := stampedStore(t)
+	if err := os.Remove(filepath.Join(s.ProjectRoot, "internal/resolver/graph.go")); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	for _, d := range s.AuditNote(loadOne(t, s, "pins-shas")).Drifts {
+		if d.Path == "internal/resolver/graph.go" && d.Kind != memory.DriftMissing {
+			t.Errorf("a deleted anchor reported as %q: %+v", d.Kind, d)
+		}
+	}
+}
+
 // TestStampMarksMissingAnchors: the kept hash must be distinguishable from
 // a freshly computed one, or a report of a deleted file reads as a success.
 func TestStampMarksMissingAnchors(t *testing.T) {

@@ -72,6 +72,24 @@ func (s *Store) auditNote(n *Note) []Drift {
 			drifts = append(drifts, s.auditGlob(a)...)
 			continue
 		}
+		// Containment before the read. HashFile is an os.ReadFile, which
+		// resolves every path component, so an anchor under a linked directory
+		// would be read from outside the repository and its blob reported —
+		// and because Stamp refuses that anchor, its recorded blob stays empty
+		// and audit would re-read the outside file on every run rather than
+		// once.
+		// Only a path that is actually there can be judged for containment:
+		// EvalSymlinks cannot resolve one that is absent, and reading that as
+		// "outside the project" would report every deleted anchor as invalid.
+		// Missing is the kind an agent may act on by dropping the anchor, so
+		// the two must not collapse.
+		if _, statErr := os.Lstat(s.abs(a.Path)); statErr == nil && !s.contained(s.abs(a.Path)) {
+			drifts = append(drifts, Drift{
+				Kind: DriftInvalid, Path: a.Path, Was: a.Blob,
+				Detail: "resolves outside the project",
+			})
+			continue
+		}
 		now, err := HashFile(s.abs(a.Path))
 		switch {
 		case os.IsNotExist(err):

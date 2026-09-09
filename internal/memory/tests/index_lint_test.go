@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -158,6 +159,29 @@ func TestLintReportsParseErrors(t *testing.T) {
 	}
 	if !containsMessage(s.Lint(notes, parseErrs), "frontmatter") {
 		t.Error("parse error not surfaced by lint")
+	}
+}
+
+// The table above writes files and cannot make a link, so the one lint hint
+// about a path that resolves out of the project needs its own test. Without
+// it the branch is reachable only through Stamp's tests, and nothing fails if
+// the condition stops matching.
+func TestLintReportsAnAnchorUnderASymlinkedDirectory(t *testing.T) {
+	outside := t.TempDir()
+	write(t, filepath.Join(outside, "id_rsa"), "PRIVATE KEY\n")
+
+	s := project(t, map[string]string{"internal/a/a.go": "package a\n"})
+	if err := os.Symlink(outside, filepath.Join(s.ProjectRoot, "internal/linked")); err != nil {
+		t.Fatal(err)
+	}
+	writeNote(t, s, "subject", note("subject", "  - path: internal/linked/id_rsa\n"))
+
+	notes, parseErrs := s.LoadNotes()
+	if _, err := s.WriteIndex(notes); err != nil {
+		t.Fatalf("write index: %v", err)
+	}
+	if !containsMessage(s.Lint(notes, parseErrs), "resolves outside the project") {
+		t.Errorf("lint did not report an anchor resolving out of the project: %+v", s.Lint(notes, parseErrs))
 	}
 }
 
