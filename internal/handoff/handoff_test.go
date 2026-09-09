@@ -176,6 +176,31 @@ func TestANestedRepositoryAtTheHandoffDirectoryIsRefused(t *testing.T) {
 	}
 }
 
+// On a case-insensitive filesystem — macOS by default, which is where this is
+// developed — a committed `Handoff/` answers to the path `handoff/`, while
+// git's index is case-sensitive and holds `Handoff/task.md`. Asking about
+// `handoff/task.md` finds no entry, so the document would read as untracked.
+func TestACaseAliasedHandoffDirectoryIsRefused(t *testing.T) {
+	root := repo(t)
+	write(t, filepath.Join(root, "Handoff", "task.md"), "# attacker chosen\n")
+	commit(t, root, "commit a capitalised handoff directory")
+
+	if _, err := os.Lstat(filepath.Join(root, Dir)); err != nil {
+		t.Skip("this filesystem is case-sensitive, so the alias cannot arise")
+	}
+
+	docs, refused, err := List(root)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(docs) != 0 {
+		t.Fatalf("a case-aliased handoff directory handed over %v", names(docs))
+	}
+	if len(refused) != 1 || refused[0].Reason != RefusedCaseAlias {
+		t.Errorf("the case alias was not refused: %v", reasons(refused))
+	}
+}
+
 // Consumed work is not a candidate, and the walk is depth one, so a directory
 // under handoff/ is never descended into.
 func TestConsumedHandoffsAreNotCandidates(t *testing.T) {

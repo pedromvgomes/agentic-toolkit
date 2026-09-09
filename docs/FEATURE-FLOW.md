@@ -128,8 +128,7 @@ your yes before running it, because that is the one step that changes where you 
 ```bash
 git status --porcelain          # must be empty
 git fetch origin
-git checkout main && git merge --ff-only origin/main
-git checkout -b <the branch the handoff names>
+git checkout -b <the branch the handoff names> origin/main
 ```
 
 ## `handoff/` is never committed

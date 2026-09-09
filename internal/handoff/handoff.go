@@ -49,6 +49,7 @@ const (
 	RefusedIrregular    = "not a regular file"
 	RefusedSymlinkedDir = "the handoff directory is a symlink: everything under it resolves somewhere this worktree does not control"
 	RefusedNestedRepo   = "the handoff directory is its own git repository: this worktree's index says nothing about what is inside it"
+	RefusedCaseAlias    = "no directory is named `handoff` exactly: a name reachable only by case-folding is one git's index spells differently"
 )
 
 // List reports the handoffs waiting in root, and what it refused.
@@ -61,6 +62,21 @@ func List(root string) ([]Document, []Refused, error) {
 		return nil, nil, fmt.Errorf("no worktree root given")
 	}
 	dir := filepath.Join(root, Dir)
+
+	// The directory has to be named `handoff` exactly, as the filesystem
+	// spells it, and that is established by reading the parent rather than by
+	// joining a constant. On a case-insensitive filesystem — macOS by default,
+	// which is where this is developed — a committed `Handoff/` answers to the
+	// path `handoff/`, while git's index is case-sensitive and holds
+	// `Handoff/task.md`. Asking about `handoff/task.md` then finds no entry
+	// and the document reads as untracked: a branch-authored handoff, advertised
+	// as local work.
+	if !hasExactly(root, Dir) {
+		if _, err := os.Lstat(dir); err == nil {
+			return nil, []Refused{{Path: dir, Reason: RefusedCaseAlias}}, nil
+		}
+		return nil, nil, nil
+	}
 
 	// Lstat, not Stat: Stat follows the link and reports the target, which is
 	// the question this is asking about.
@@ -165,4 +181,23 @@ func tracked(root, path string) bool {
 		return false
 	}
 	return true
+}
+
+// hasExactly reports whether dir holds an entry named exactly name.
+//
+// os.Lstat answers a case-insensitive filesystem's question, not this one:
+// it resolves `handoff` to a directory called `Handoff` and reports success.
+// Reading the parent is the only way to learn how the name is actually
+// spelled, and the spelling is what git's index is keyed by.
+func hasExactly(dir, name string) bool {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		if e.Name() == name {
+			return true
+		}
+	}
+	return false
 }

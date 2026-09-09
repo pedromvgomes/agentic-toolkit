@@ -89,7 +89,20 @@ func (s *Store) auditNote(n *Note) []Drift {
 		// for the same reason EvalSymlinks fails on it. Following here only
 		// establishes that something is there; contained() still decides
 		// whether it may be read.
-		if _, statErr := os.Stat(s.abs(a.Path)); statErr == nil && !s.contained(s.abs(a.Path)) {
+		// A leaf symlink is refused here as it is when stamping. Replacing an
+		// anchored file with an in-project link to identical content would
+		// otherwise audit as fresh while `anchor` refuses to stamp it, so the
+		// note reads as holding against a file the store will not record.
+		fi, lstatErr := os.Lstat(s.abs(a.Path))
+		_, targetErr := os.Stat(s.abs(a.Path))
+		if lstatErr == nil && targetErr == nil && fi.Mode()&os.ModeSymlink != 0 {
+			drifts = append(drifts, Drift{
+				Kind: DriftInvalid, Path: a.Path, Was: a.Blob,
+				Detail: "is a symlink, which is not anchorable",
+			})
+			continue
+		}
+		if targetErr == nil && !s.contained(s.abs(a.Path)) {
 			drifts = append(drifts, Drift{
 				Kind: DriftInvalid, Path: a.Path, Was: a.Blob,
 				Detail: "resolves outside the project",

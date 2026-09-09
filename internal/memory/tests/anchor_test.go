@@ -390,6 +390,37 @@ func TestADanglingSymlinkedAnchorIsMissingRatherThanOutsideTheProject(t *testing
 	}
 }
 
+// Replacing an anchored file with an in-project symlink to identical content
+// must not audit as fresh: `anchor` refuses to stamp such a path, so a note
+// reading as held against it would be held against a file the store will not
+// record.
+func TestAuditRefusesAnAnchorReplacedByASymlink(t *testing.T) {
+	s := stampedStore(t)
+	target := filepath.Join(s.ProjectRoot, "internal/resolver/graph.go")
+	body, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	copyPath := filepath.Join(s.ProjectRoot, "internal/resolver/graph_copy.go")
+	write(t, copyPath, string(body))
+	if err := os.Remove(target); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(copyPath, target); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, d := range s.AuditNote(loadOne(t, s, "pins-shas")).Drifts {
+		if d.Path == "internal/resolver/graph.go" {
+			if d.Kind != memory.DriftInvalid {
+				t.Errorf("a symlinked anchor audited as %q, want invalid: %+v", d.Kind, d)
+			}
+			return
+		}
+	}
+	t.Error("replacing the anchored file with a symlink audited as fresh")
+}
+
 // TestStampMarksMissingAnchors: the kept hash must be distinguishable from
 // a freshly computed one, or a report of a deleted file reads as a success.
 func TestStampMarksMissingAnchors(t *testing.T) {
