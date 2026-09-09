@@ -139,14 +139,18 @@ func priorThreads(ctx context.Context, t *pullRequestTarget, reviewsErr error) r
 // found nothing. Here it is worse, because the marker that records the failure
 // is what would prevent anyone fixing it.
 //
+// Only a review this installation authored counts. Anyone who can review a
+// pull request can type the characters that open a marker, so a marker is
+// believed from one account and read as prose from every other.
+//
 // A review this installation authored whose body carries no parseable marker
 // counts as no verdict. It is the safer reading of the two: a marker agtk
 // cannot read is a review agtk cannot vouch for, and the cost of being wrong
 // is one panel re-run rather than a pull request that displays a review nobody
 // performed.
-func carriesAVerdictFor(reviews []githubapp.PriorReview, head string) bool {
+func carriesAVerdictFor(reviews []githubapp.SubmittedReview, head string) bool {
 	for _, r := range reviews {
-		if r.Head != head {
+		if !r.ByViewer || r.CommitSHA != head {
 			continue
 		}
 		if marker, ok := reviewrun.ParseReviewMarker(r.Body); ok && marker.Complete {
@@ -306,7 +310,7 @@ func runCodeReviewPR(cmd *cobra.Command, env *Env, target reviewTarget, flags ru
 	// rediscover, and what the panel would rediscover is what the pull request
 	// is already displaying. A review that reached no verdict displays nothing
 	// to rediscover, so it suppresses nothing.
-	reviews, reviewsErr := t.client.ReadPriorReviews(cmd.Context(), t.pr.Number)
+	reviews, reviewsErr := t.client.ReadSubmittedReviews(cmd.Context(), t.pr.Number)
 	if !flags.dryRun && !flags.force && reviewsErr == nil && carriesAVerdictFor(reviews, t.pr.HeadSHA) {
 		return reportUnchangedHead(env, t, flags.json)
 	}

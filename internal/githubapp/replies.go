@@ -223,10 +223,11 @@ type SubmittedReview struct {
 // ReadSubmittedReviews reads every review on a pull request, in the order they
 // were submitted.
 //
-// Separate from ReadPriorReviews, which asks the same connection for the
-// commit alone. A review run reads that one before spending a panel and does
-// not need a byte of any body; approval needs the body and is one command a
-// person typed.
+// Both readers of a posted review come through here: approval, which asks what
+// the pull request carries, and a review run deciding whether this head has
+// already been reviewed. Both need the body — the marker lives in it — so a
+// second query returning the commit alone would be the same request asked
+// twice, and the cheaper one could not answer either question.
 func (c *Client) ReadSubmittedReviews(ctx context.Context, number int) ([]SubmittedReview, error) {
 	if number < 1 {
 		return nil, fmt.Errorf("%d is not a pull request number", number)
