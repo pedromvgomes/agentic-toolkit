@@ -33,6 +33,14 @@ const (
 	// KeyReferencingFiles counts the files referencing the exported symbols
 	// the change modifies.
 	KeyReferencingFiles ConditionKey = "referencing_files"
+	// KeyContext tests which context the review runs in.
+	//
+	// The one key that is not a property of the change. It is here because a
+	// rule names a single panel, so without it a manifest cannot say "this
+	// criterion, but reviewed by the other roster on a pull request" — every
+	// rule would fire in both contexts and the cheaper ladder would be
+	// unreachable.
+	KeyContext ConditionKey = "context"
 )
 
 // Operator is how a condition's value is compared against its key.
@@ -60,6 +68,7 @@ const (
 	operandGlobs operandKind = iota
 	operandSignals
 	operandInt
+	operandContexts
 )
 
 // keySpec is everything the grammar knows about one condition key: what its
@@ -96,6 +105,11 @@ var conditionKeys = map[ConditionKey]keySpec{
 		Operators:   []Operator{OpGT, OpGTE, OpLT, OpLTE, OpEq},
 		Description: "Reviewable files, counted after mechanical exclusions.",
 	},
+	KeyContext: {
+		Operand:     operandContexts,
+		Operators:   []Operator{OpIn, OpNotIn},
+		Description: "Contexts the rule applies in: worktree, pr. The only key that tests the run rather than the change, so a criterion can raise to one roster locally and another on a pull request.",
+	},
 	KeyReferencingFiles: {
 		Operand:     operandInt,
 		Operators:   []Operator{OpGT, OpGTE, OpLT, OpLTE, OpEq},
@@ -111,6 +125,7 @@ var ConditionKeys = []ConditionKey{
 	KeyChangedLines,
 	KeyChangedFiles,
 	KeyReferencingFiles,
+	KeyContext,
 }
 
 // Operators returns the operators valid for k, in the order diagnostics list
@@ -158,6 +173,8 @@ type Condition struct {
 	Signals []Signal
 	// Number is the operand for the counting keys.
 	Number int
+	// Contexts is the operand for KeyContext.
+	Contexts []Context
 }
 
 // String renders the clause the way it was written.
@@ -207,4 +224,23 @@ func sortedKeys(found []string) string {
 		quoted = append(quoted, fmt.Sprintf("%q", k))
 	}
 	return strings.Join(quoted, ", ")
+}
+
+// knownContext reports whether c is one of the contexts a review runs in.
+func knownContext(c Context) bool {
+	for _, known := range Contexts {
+		if known == c {
+			return true
+		}
+	}
+	return false
+}
+
+// errUnknownContext names what a context condition may test.
+func errUnknownContext(name string) error {
+	names := make([]string, 0, len(Contexts))
+	for _, c := range Contexts {
+		names = append(names, string(c))
+	}
+	return fmt.Errorf("%q is not a context; use one of %s", name, strings.Join(names, ", "))
 }

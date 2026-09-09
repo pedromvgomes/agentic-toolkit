@@ -342,8 +342,10 @@ func TestAnUndeterminedSignalDoesNotMaskOneThatIsPresent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Select: %v", err)
 	}
-	if sel.Panel != "deep" {
-		t.Errorf("panel = %q, want deep — concurrency is present and the rule is any/in", sel.Panel)
+	// deep-codex rather than deep: the pull-request context escalates on the
+	// codex roster, and which roster is not what this test is about.
+	if sel.Panel != "deep-codex" {
+		t.Errorf("panel = %q, want deep-codex — concurrency is present and the rule is any/in", sel.Panel)
 	}
 	if len(sel.Skipped) != 0 {
 		t.Errorf("skipped = %v, want the rule evaluated rather than abandoned", sel.Skipped)

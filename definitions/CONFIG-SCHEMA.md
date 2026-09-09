@@ -152,6 +152,7 @@ Operators are words. `>=` opens a YAML folded block scalar, so a rule written wi
 | `changed_lines` | `gt`, `gte`, `lt`, `lte`, `eq` | Lines added plus removed, counted after mechanical exclusions. A pure rename contributes nothing; a rename with edits contributes its edits. |
 | `changed_files` | `gt`, `gte`, `lt`, `lte`, `eq` | Reviewable files, counted after mechanical exclusions. |
 | `referencing_files` | `gt`, `gte`, `lt`, `lte`, `eq` | Files referencing the exported symbols the change *declares* — a change confined to the body of an existing function declares none, and counts zero. Unavailable when no extractor knows the change's languages, and a rule reading an unavailable count is refused rather than read as low. |
+| `context` | `in`, `not_in` | Contexts the rule applies in: worktree, pr. The only key that tests the run rather than the change, so a criterion can raise to one roster locally and another on a pull request. |
 
 The `signals` vocabulary is closed and ships with the binary; `agtk code-review signals` lists it. Detecting a signal is language knowledge, which has to be tested somewhere other than a consumer's YAML — a repo that wrote its own patterns gets nothing the day it adds a second language. A repo's own escape hatch is `touches`, which is honest about being path-only.
 
@@ -178,6 +179,11 @@ The `signals` vocabulary is closed and ships with the binary; `agtk code-review 
 # A consumer that writes its own manifest replaces this one whole: prompt
 # bodies stay shareable through `builtin:` references rather than through a
 # merge algorithm, so there is one roster per repo and never half of two.
+#
+# Two rosters, one per provider, and the same panels and rules for each. The
+# local pass is Claude and the pull request is codex, so a change is read by two
+# models trained differently before anyone else sees it. Every model is named:
+# a reviewer left on the CLI's default is a model nobody chose.
 version: 1
 
 reviewers:
@@ -186,44 +192,93 @@ reviewers:
   security:    {provider: claudecode, model: opus,   prompt: builtin:security}
   performance: {provider: claudecode, model: sonnet, prompt: builtin:performance}
 
+  unified-codex:     {provider: codex, model: sol,   prompt: builtin:unified}
+  correctness-codex: {provider: codex, model: sol,   prompt: builtin:correctness}
+  security-codex:    {provider: codex, model: astra, prompt: builtin:security}
+  performance-codex: {provider: codex, model: sol,   prompt: builtin:performance}
+
 judge:     {provider: claudecode, model: opus,   prompt: builtin:judge}
 validator: {provider: claudecode, model: sonnet, prompt: builtin:validator}
 
+# The codex panels judge and validate on codex, so a pull request is read and
+# reconciled without the model that already reviewed it locally.
 panels:
   quick:
-    description: One reviewer over all three axes. The pre-push pass, for a change you already understand.
+    description: One Claude reviewer over all three axes. The pre-push pass, where being fast is what it is worth.
     reviewers: [unified]
   standard:
-    description: Correctness and security as separate reviewers, each with its own scope.
+    description: Correctness and security on Claude, each with its own scope.
     reviewers: [correctness, security]
   deep:
-    description: Every axis, run twice, so agreement between independent instances is the confidence signal.
+    description: Every axis on Claude, run twice, so agreement between independent instances is the confidence signal.
     reviewers: [correctness, security, performance]
     quorum: 2
 
+  quick-codex:
+    description: One codex reviewer over all three axes.
+    reviewers: [unified-codex]
+    judge:     {provider: codex, model: astra, prompt: builtin:judge}
+    validator: {provider: codex, model: sol,   prompt: builtin:validator}
+  standard-codex:
+    description: Correctness and security on codex, each with its own scope. The second model's first look at the change.
+    reviewers: [correctness-codex, security-codex]
+    judge:     {provider: codex, model: astra, prompt: builtin:judge}
+    validator: {provider: codex, model: sol,   prompt: builtin:validator}
+  deep-codex:
+    description: Every axis on codex, run twice, so agreement between independent instances is the confidence signal.
+    reviewers: [correctness-codex, security-codex, performance-codex]
+    quorum: 2
+    judge:     {provider: codex, model: astra, prompt: builtin:judge}
+    validator: {provider: codex, model: sol,   prompt: builtin:validator}
+
 defaults:
   worktree: quick
-  pr:       standard
+  pr:       standard-codex
 
+# Every rule is written twice, once per roster, and `context` is what keeps each
+# copy on its own side. A rule carries one combinator, so the context guard makes
+# each rule an `all:` — which is why one criterion gets one rule rather than
+# several being grouped.
+#
+# The two rules raising to `standard-codex` cannot raise the panel while that is
+# also the pull-request default. They still fire, and `explain` lists them. They
+# are kept so both rosters read the same, and so lowering the default does not
+# silently drop a criterion.
 escalate:
-  # Code that decides who may do what, and code that rewrites data in place.
-  # Both are changes whose damage is discovered by someone other than the
-  # author.
+  # Mistakes here are exploitable, or land on somebody who is not in the room,
+  # or are indistinguishable from correct until production.
   - to: deep
     all:
-      - touches: {matches: ["**/auth/**", "**/authz/**", "**/migrations/**"]}
+      - signals: {in: [auth, crypto, concurrency, sensitive-data, fix-revert]}
+      - context: {in: [worktree]}
+  - to: deep-codex
+    all:
+      - signals: {in: [auth, crypto, concurrency, sensitive-data, fix-revert]}
+      - context: {in: [pr]}
 
-  # Concerns where being nearly right is indistinguishable from being right
-  # until production, and where a review is the last place it is cheap to fix.
-  - to: deep
-    any:
-      - signals: {in: [concurrency, crypto, fix-revert]}
-
-  # Widely used code: the count is what separates a one-line change nobody
-  # depends on from a one-line change everybody does.
+  # Widely used code: the count separates a one-line change nobody depends on
+  # from a one-line change everybody does.
   - to: deep
     all:
       - referencing_files: {gte: 20}
+      - context: {in: [worktree]}
+  - to: deep-codex
+    all:
+      - referencing_files: {gte: 20}
+      - context: {in: [pr]}
+
+  # Irreversible or wide, but the risk is not in the diff: a migration's cost is
+  # the table it locks, and a pipeline's is what it can reach. The security
+  # reviewer is the one with something to say, so this buys that rather than
+  # every axis twice.
+  - to: standard
+    all:
+      - signals: {in: [migrations, ci-cd, iac]}
+      - context: {in: [worktree]}
+  - to: standard-codex
+    all:
+      - signals: {in: [migrations, ci-cd, iac]}
+      - context: {in: [pr]}
 
   # Size alone. It raises to standard rather than deep, because bulk is a
   # reason to look at more of a change, not a reason to look harder at each
@@ -231,6 +286,11 @@ escalate:
   - to: standard
     all:
       - changed_files: {gte: 20}
+      - context: {in: [worktree]}
+  - to: standard-codex
+    all:
+      - changed_files: {gte: 20}
+      - context: {in: [pr]}
 ```
 
 ## Lockfile

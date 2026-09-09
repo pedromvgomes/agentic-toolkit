@@ -48,6 +48,7 @@ func newCodeReviewCmd(env *Env) *cobra.Command {
 		newCodeReviewRunCmd(env),
 		newCodeReviewApproveCmd(env),
 		newCodeReviewInitializeCmd(env),
+		newCodeReviewInitCmd(env),
 		newCodeReviewExplainCmd(env),
 		newCodeReviewPanelsCmd(env),
 		newCodeReviewSignalsCmd(env),
@@ -171,7 +172,7 @@ func newCodeReviewExplainCmd(env *Env) *cobra.Command {
 			"\n" +
 			"--pr answers it for an open pull request, under the rules its base ref\n" +
 			"declares. That reads the pull request and fetches its head, so it needs the\n" +
-			"App registration `code-review initialize` writes; without --pr nothing is\n" +
+			"App registration `code-review register` writes; without --pr nothing is\n" +
 			"read but this repository.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {

@@ -24,8 +24,19 @@ func newCodeReviewInitializeCmd(env *Env) *cobra.Command {
 	var flags initializeFlags
 
 	cmd := &cobra.Command{
-		Use:   "initialize",
-		Short: "Register this machine's GitHub App, so reviews can be posted",
+		Use: "register",
+		// `initialize` is what this was called, and scripts hold that name.
+		// It is an alias rather than a second command so there is one
+		// implementation, and it is not listed in help so the vocabulary a
+		// reader learns is the current one.
+		//
+		// Renamed because `init` writes a repo's review manifest, and `init`
+		// beside `initialize` is two near-identical words for unrelated jobs —
+		// one of which stores a private key — with the shorter a strict prefix
+		// of the longer, so a typo runs the other. `register` is what this
+		// command's own summary always called it.
+		Aliases: []string{"initialize"},
+		Short:   "Register this machine's GitHub App, so reviews can be posted",
 		Long: "Stores the GitHub App's id and private key under agtk's config directory, so\n" +
 			"`code-review run --pr` can post as the App.\n" +
 			"\n" +
@@ -38,6 +49,9 @@ func newCodeReviewInitializeCmd(env *Env) *cobra.Command {
 			"other account can read is refused rather than used.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if cmd.CalledAs() == "initialize" {
+				fmt.Fprintln(env.Stderr, "note: this command is `code-review register`; `initialize` still works and names the same thing.")
+			}
 			return runCodeReviewInitialize(cmd, env, flags)
 		},
 	}

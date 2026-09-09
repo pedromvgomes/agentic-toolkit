@@ -372,6 +372,20 @@ func (c *Condition) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		}
 		c.Raw = fmt.Sprintf("%s: {%s: [%s]}", key, op, strings.Join(names, ", "))
 
+	case operandContexts:
+		names, err := decodeStrings(value)
+		if err != nil {
+			return fmt.Errorf("%s: %s takes context names: %w", key, op, err)
+		}
+		for _, n := range names {
+			ctx := Context(n)
+			if !knownContext(ctx) {
+				return errUnknownContext(n)
+			}
+			c.Contexts = append(c.Contexts, ctx)
+		}
+		c.Raw = fmt.Sprintf("%s: {%s: [%s]}", key, op, strings.Join(names, ", "))
+
 	case operandInt:
 		n, err := decodeInt(value)
 		if err != nil {

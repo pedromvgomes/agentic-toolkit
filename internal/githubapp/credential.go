@@ -62,7 +62,7 @@ func Dir() (string, error) { return userconfig.Dir() }
 
 // ErrNotInitialized is what Load reports when this machine holds no
 // registration. Separate from a read failure because the two have different
-// answers: one is `agtk code-review initialize`, the other is a broken file.
+// answers: one is `agtk code-review register`, the other is a broken file.
 var ErrNotInitialized = errors.New("this machine holds no GitHub App registration")
 
 // Initialize writes a registration, replacing any this machine already holds.
@@ -146,7 +146,7 @@ func Load(dir string) (*Credential, error) {
 
 	raw, err := os.ReadFile(idPath) // #nosec G304 -- agtk's own registration at its XDG path
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil, fmt.Errorf("%w: run `agtk code-review initialize` to register one", ErrNotInitialized)
+		return nil, fmt.Errorf("%w: run `agtk code-review register` to register one", ErrNotInitialized)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", idPath, err)
@@ -168,7 +168,7 @@ func Load(dir string) (*Credential, error) {
 	}
 	pemBytes, err := os.ReadFile(keyPath) // #nosec G304 -- agtk's own registration at its XDG path
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil, fmt.Errorf("%w: %s holds an App id but no private key; run `agtk code-review initialize` again",
+		return nil, fmt.Errorf("%w: %s holds an App id but no private key; run `agtk code-review register` again",
 			ErrNotInitialized, dir)
 	}
 	if err != nil {
