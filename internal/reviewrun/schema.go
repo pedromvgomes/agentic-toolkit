@@ -15,6 +15,14 @@ import "encoding/json"
 // carries a description because the judge re-severities on it: a field that
 // changes an outcome and is defined nowhere is a field every reviewer fills in
 // differently.
+//
+// Every key in a `properties` is also in that object's `required`. OpenAI's
+// strict structured-output mode refuses a schema where one is not, and refuses
+// it at the provider rather than at the model, so the run dies having looked at
+// nothing: "Invalid schema for response_format". A field that is genuinely
+// optional says so in its type — `["string", "null"]`, the way start_line does
+// — and stays in `required`. Claude accepts either spelling, so a schema that
+// breaks this is green on one provider and fatal on the other.
 
 // findingSchema is what a reviewer answers with.
 var findingSchema = json.RawMessage(`{
@@ -27,7 +35,7 @@ var findingSchema = json.RawMessage(`{
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["path", "start_line", "end_line", "category", "severity", "confidence", "issue", "evidence"],
+        "required": ["path", "start_line", "end_line", "category", "severity", "confidence", "issue", "evidence", "suggestion"],
         "properties": {
           "path":       {"type": "string", "description": "File the finding is in, relative to the repository root."},
           "start_line": {"type": ["integer", "null"], "description": "First line of the region, or null for a claim with no line."},
@@ -37,7 +45,7 @@ var findingSchema = json.RawMessage(`{
           "confidence": {"type": "string", "enum": ["high", "medium", "low"], "description": "How firm the diagnosis is, given the finding is worth filing at all: high when the failure follows from the code as written, medium when one step rests on an unconfirmed reading, low when the mechanism has a gap. Not a second severity."},
           "issue":      {"type": "string", "description": "The claim: what is wrong and what it causes."},
           "evidence":   {"type": "string", "description": "The offending line or lines, quoted verbatim from the file."},
-          "suggestion": {"type": "string", "description": "What to do about it."}
+          "suggestion": {"type": ["string", "null"], "description": "What to do about it, or null when there is nothing to suggest."}
         }
       }
     }
@@ -73,12 +81,12 @@ var judgeSchema = json.RawMessage(`{
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "severity", "issue"],
+        "required": ["id", "severity", "issue", "suggestion"],
         "properties": {
           "id":         {"type": "string", "description": "The id this finding was given in the input set. Never invent one."},
           "severity":   {"type": "string", "enum": ["RED", "AMBER", "GREEN"]},
           "issue":      {"type": "string", "description": "The final wording of the claim."},
-          "suggestion": {"type": "string", "description": "What to do about it."}
+          "suggestion": {"type": ["string", "null"], "description": "What to do about it, or null when there is nothing to suggest."}
         }
       }
     },
