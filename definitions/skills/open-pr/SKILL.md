@@ -77,6 +77,20 @@ One file per finding, at `<root>/candidates/<YYYYMMDD>-<short-slug>.md`, carryin
 and a body with a pointer for every claim. No `targets` or `verdict`: these are new findings,
 not re-checks.
 
+Then look at what is **already** in `candidates/`. A finding staged before this branch was
+written was staged against code that has since moved, and a branch that renames or deletes what
+one names leaves a finding that still reads as true. The curator is fed the candidates and the
+matching slice of the index and **not the code**, so it has nothing to catch that with: a
+candidate naming a symbol you just deleted reads to it exactly like one naming a symbol that is
+still there. Promotion writes it into `notes/`, where a wrong claim is most expensive.
+
+You are the last reader who can tell. Rewrite such a candidate to what now holds, or delete it
+when the branch removed its subject outright, and say which you did and why. Leaving it is not
+the neutral option — it is the choice that lets the false claim through.
+
+This is not an exception to the rule below. `candidates/` is the staging area every producer
+writes to, and it is not `notes/`.
+
 **Never write, edit, stamp or delete a note**, and never run `agtk memory anchor` or
 `agtk memory index`. `notes/` has exactly one writer and it runs from `/memory-curate`
 (ADR 0003). Say in your output that candidates are waiting.
