@@ -201,28 +201,65 @@ func TestACaseAliasedHandoffDirectoryIsRefused(t *testing.T) {
 	}
 }
 
-// git's index is case-sensitive and a filesystem need not be, so the on-disk
-// spelling and the indexed one can differ in either direction. A checkout of
-// `handoff/Task.md` where `task.md` already exists writes the existing file
-// and leaves the on-disk name lowercase; the reverse happens just as easily.
-// Either way, asking git about the on-disk spelling finds no entry and the
-// branch's content reads as locally written.
-func TestATrackedNameIsRefusedWhateverCaseItIsOnDisk(t *testing.T) {
-	for name, tc := range map[string]struct{ onDisk, indexed string }{
-		"lowercase on disk, capitalised in the index": {onDisk: "task.md", indexed: Dir + "/Task.md"},
-		"capitalised on disk, lowercase in the index": {onDisk: "Task.md", indexed: Dir + "/task.md"},
-		// The directory carries the alias just as easily, and a pathspec is
-		// matched case-sensitively too — so restricting the query to
-		// `-- handoff` would miss this entirely.
-		"the directory is what differs": {onDisk: "task.md", indexed: "Handoff/task.md"},
-		// Case is not the only fold. A filesystem may store a name decomposed
-		// while the index holds it composed; the two are one file, and a
-		// comparison that comes out unequal hands the branch's content over.
+// folds reports whether this filesystem treats the two spellings as one file.
+//
+// Where it does not, `Task.md` and `task.md` are two separate files and the
+// untracked one is genuinely local, so offering it is correct and there is no
+// alias to close. The rows below describe a folding filesystem and are skipped
+// elsewhere rather than asserting a platform's behaviour on another.
+func folds(t *testing.T, written, probed string) bool {
+	t.Helper()
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, written), "x\n")
+	_, err := os.Lstat(filepath.Join(dir, probed))
+	return err == nil
+}
+
+// git's index is case-sensitive and a filesystem need not be, so on a folding
+// filesystem the on-disk spelling and the indexed one can differ while naming
+// one file. A checkout of `handoff/Task.md` where `task.md` already exists
+// writes the existing file and leaves the on-disk name lowercase; the
+// directory carries the same alias, and case is not the only fold — a name may
+// be stored decomposed while the index holds it composed.
+//
+// Each is a branch-authored document that must not read as locally written.
+func TestATrackedNameIsRefusedWhateverSpellingItWearsOnDisk(t *testing.T) {
+	// Written as escapes, not as literal characters: an editor that normalises
+	// this file would otherwise make the two equal and the row vacuous, which
+	// is the failure it exists to catch.
+	const (
+		composed   = "caf\u00e9.md"  // é as a single rune
+		decomposed = "cafe\u0301.md" // e followed by a combining acute
+	)
+	// Each row says which pair of spellings has to fold for the alias to exist
+	// at all. Deriving it from the names would get the directory row wrong:
+	// its two filenames are identical and it is the directory that differs.
+	for name, tc := range map[string]struct{ onDisk, indexed, wrote, probed string }{
+		"lowercase on disk, capitalised in the index": {
+			onDisk: "task.md", indexed: Dir + "/Task.md",
+			wrote: "task.md", probed: "Task.md",
+		},
+		"capitalised on disk, lowercase in the index": {
+			onDisk: "Task.md", indexed: Dir + "/task.md",
+			wrote: "Task.md", probed: "task.md",
+		},
+		// A pathspec is matched case-sensitively too, so restricting the index
+		// query to `-- handoff` would miss this entirely.
+		"the directory is what differs": {
+			onDisk: "task.md", indexed: "Handoff/task.md",
+			wrote: Dir, probed: "Handoff",
+		},
 		"composed in the index, decomposed on disk": {
-			onDisk: "café.md", indexed: Dir + "/café.md",
+			onDisk: decomposed, indexed: Dir + "/" + composed,
+			wrote: decomposed, probed: composed,
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
+			if !folds(t, tc.wrote, tc.probed) {
+				t.Skipf("this filesystem keeps %q and %q apart, so they are different files and there is no alias",
+					tc.wrote, tc.probed)
+			}
+
 			root := repo(t)
 			write(t, filepath.Join(root, "README.md"), "x\n")
 			commit(t, root, "init")
@@ -237,10 +274,10 @@ func TestATrackedNameIsRefusedWhateverCaseItIsOnDisk(t *testing.T) {
 				t.Fatalf("list: %v", err)
 			}
 			if len(docs) != 0 {
-				t.Fatalf("a case-variant of a tracked name was handed over: %v", names(docs))
+				t.Fatalf("a variant spelling of a tracked name was handed over: %v", names(docs))
 			}
-			if got := reasons(refused)[tc.onDisk]; got != RefusedTracked {
-				t.Errorf("%s refused as %q, want the tracked reason", tc.onDisk, got)
+			if len(refused) != 1 || refused[0].Reason != RefusedTracked {
+				t.Errorf("%q refused as %v, want the tracked reason", tc.onDisk, reasons(refused))
 			}
 		})
 	}

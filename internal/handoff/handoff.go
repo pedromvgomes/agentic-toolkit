@@ -186,7 +186,12 @@ func List(root string) ([]Document, []Refused, error) {
 // being wrong is a handoff somebody re-creates, against a branch choosing what
 // a session runs.
 func untrackedNames(root string) (map[string]bool, bool) {
-	cmd := exec.Command("git", "ls-files", "-z", "-o") // #nosec G204 -- fixed argv, no variable arguments and no shell
+	// The pathspec confines the walk. Without one this enumerates every
+	// untracked path in the repository, ignored trees included, on every
+	// session start. It is matched against worktree paths, which are spelled
+	// as the directory listing spells them, so it does not reintroduce the
+	// index-side folding this delegates to git.
+	cmd := exec.Command("git", "ls-files", "-z", "-o", "--", Dir) // #nosec G204 -- fixed argv; Dir is this package's own constant and no shell is involved
 	cmd.Dir = root
 	out, err := cmd.Output()
 	if err != nil {
