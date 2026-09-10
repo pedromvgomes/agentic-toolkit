@@ -68,13 +68,29 @@ func Check(in Inputs) []Refusal {
 	if !marker.Complete {
 		refusals = append(refusals, Refusal{
 			Missing: "that review did not reach a verdict, so what it did not find is unknown rather than absent",
-			Remedy:  fmt.Sprintf("agtk code-review run --pr %d --force", in.Number),
+			Remedy:  rerunRemedy(in.Number, marker.Complete),
 		})
 	}
 	refusals = append(refusals, deadlocks(marker)...)
 	refusals = append(refusals, unanswered(in, marker)...)
 	refusals = append(refusals, unresolved(in.Threads)...)
 	return refusals
+}
+
+// rerunRemedy is the command that reviews this head again.
+//
+// --force only where it is actually needed. A review run suppresses a re-run
+// on a head whose newest review reached a verdict and on no other, so a
+// complete review is the one case a plain run declines to pass. Naming the
+// flag anywhere else sends someone reaching for an override nothing is
+// stopping them without — and telling a person to force their way past a
+// review that examined nothing is the advice this whole distinction exists to
+// stop giving.
+func rerunRemedy(number int, complete bool) string {
+	if complete {
+		return fmt.Sprintf("agtk code-review run --pr %d --force", number)
+	}
+	return fmt.Sprintf("agtk code-review run --pr %d", number)
 }
 
 // LastReview finds the newest review this installation posted against head,
@@ -159,7 +175,7 @@ func unanswered(in Inputs, marker reviewrun.ReviewMarker) []Refusal {
 			refusals = append(refusals, Refusal{
 				Missing: fmt.Sprintf("%s %s carries no thread on this pull request, so there is nothing to answer on",
 					f.Severity, f.Fingerprint),
-				Remedy: fmt.Sprintf("agtk code-review run --pr %d --force", in.Number),
+				Remedy: rerunRemedy(in.Number, marker.Complete),
 			})
 			continue
 		}
