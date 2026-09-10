@@ -4,9 +4,9 @@ kind: gotcha
 description: userconfig.Load's only caller discards the error, so a misspelled key silently disables auto-update — the outcome the package doc promises is impossible.
 anchors:
   - path: internal/cli/root.go
-    blob: 87870af8e371
+    blob: 9b775bf0b883
   - path: internal/userconfig/loader.go
-    blob: 5ef0097a3a85
+    blob: f0d8d9e6cc1b
   - path: internal/userconfig/types.go
     blob: f33029382876
 confidence: verified
@@ -29,7 +29,7 @@ indistinguishable from auto-update being switched off on purpose. Nothing is pri
 stdout or stderr on the way past.
 
 The parse side is strict: `LoadFrom` decodes with `yaml.Strict()`
-(`internal/userconfig/loader.go:56`), so an unknown or misspelled key is a hard error, pinned
+(`internal/userconfig/loader.go:70`), so an unknown or misspelled key is a hard error, pinned
 by `TestLoadFrom_RejectsUnknownKeys` (`internal/userconfig/tests/loader_test.go:43-53`).
 
 Put together, the package doc at `internal/userconfig/types.go:11-13` — "Unknown keys are
@@ -38,7 +38,7 @@ wrong about the outcome it cares about most. The rejection happens; the surfacin
 user who writes `auto_updates:` gets no error, no warning, and no update checks.
 
 Scope: this is the error path only. The empty-file case is handled — `LoadFrom` returns
-`Default(), nil` on `io.EOF` (`internal/userconfig/loader.go:64-65`), so a `touch`ed or
+`Default(), nil` on `io.EOF` (`internal/userconfig/loader.go:78-79`), so a `touch`ed or
 comment-only `config.yaml` yields the defaults and never reaches the swallow. A fix lands
 either in `root.go` (report before skipping) or in `types.go` (correct the doc).
 

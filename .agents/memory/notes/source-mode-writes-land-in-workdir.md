@@ -6,7 +6,7 @@ anchors:
   - path: internal/cli/paths.go
     blob: d30919b87867
   - path: internal/cli/memory.go
-    blob: 36f459299379
+    blob: 7ab84a4dc55e
 confidence: verified
 ---
 
@@ -14,7 +14,7 @@ confidence: verified
 that tree usually belongs to someone else and must stay untouched. So the read root and
 the write root diverge: `stackDir` returns `SourceDir` (`internal/cli/paths.go:42`) while
 `lockfilePath` returns `WorkDir` (`paths.go:71`), and the memory store follows the same
-split through `memoryProjectRoot` (`internal/cli/memory.go:75-81`).
+split through `memoryProjectRoot` (`internal/cli/memory.go:75-80`).
 
 Any new command that writes has to make this choice explicitly — there is no default that
 is right for both modes, and getting it wrong writes into a shared source tree without

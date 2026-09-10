@@ -4,7 +4,7 @@ kind: invariant
 description: A command that prints its own report and exits non-zero must return a sentinel error registered in Execute.
 anchors:
   - path: internal/cli/root.go
-    blob: dc7b2079a7ab
+    blob: 9b775bf0b883
   - path: internal/cli/status.go
     blob: 9c0513063466
   - path: internal/cli/memory.go
