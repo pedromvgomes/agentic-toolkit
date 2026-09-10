@@ -1,0 +1,10 @@
+description: Guard shell commands.
+event: PreToolUse
+matcher: Bash
+handler:
+  type: command
+  command: ./scripts/guard.sh
+timeout: 30
+extensions:
+  codex:
+    async: true

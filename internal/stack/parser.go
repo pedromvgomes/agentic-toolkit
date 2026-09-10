@@ -82,6 +82,13 @@ func ParseBytes(filePath string, raw []byte) (*Stack, error) {
 		}
 	}
 
+	for _, p := range s.Platforms {
+		if !definitions.IsKnownPlatform(p) {
+			return nil, newErr(filePath, ErrUnknownPlatform,
+				"unknown platform %q in platforms (known: %v)", p, definitions.AllPlatforms)
+		}
+	}
+
 	return &s, nil
 }
 
@@ -369,7 +376,7 @@ func detectLegacyConfig(filePath string, raw []byte) error {
 	return nil
 }
 
-var legacyTopLevelKeys = []string{"source", "presets", "externals", "definitions", "platforms"}
+var legacyTopLevelKeys = []string{"source", "presets", "externals", "definitions"}
 
 // topLevelKeyRE returns a regex matching `<key>:` at column zero of any
 // line, ignoring lines inside YAML block scalars is not perfect — but the

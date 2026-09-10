@@ -6,6 +6,7 @@ require (
 	github.com/goccy/go-yaml v1.19.2
 	github.com/minio/selfupdate v0.6.0
 	github.com/pedromvgomes/agentic-driver v0.6.0
+	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/term v0.45.0
 )

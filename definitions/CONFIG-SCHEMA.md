@@ -30,6 +30,7 @@ The same shape is used everywhere: the consumer's entry-point file is just a sta
 | `hooks` | `[]EntryRef` | no |  |
 | `mcp` | `[]EntryRef` | no |  |
 | `settings` | `[]EntryRef` | no |  |
+| `platforms` | `[]Platform` | no | Rendering targets. Omit to render Claude Code only — today's behavior, unchanged. List additional platforms (e.g. codex) to also render their on-disk layout from the same definitions; each named platform must have a render adapter. |
 | `memory` | `MemoryConfig` | no | Repo-resident memory store settings. Honoured only in the entry manifest — the store's location is a fact about the consumer repo, not about a shareable stack, so a stack reached through extends: that sets it gets a diagnostic instead of silently relocating the consumer's committed notes. |
 
 ### `memory`

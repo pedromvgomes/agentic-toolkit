@@ -305,9 +305,12 @@ func TestRender_MCP_UserScopeNoop(t *testing.T) {
 	}
 }
 
-// TestRender_CLAUDEmd_SeedsFromAGENTSmd: when CLAUDE.md does not exist
-// and AGENTS.md does, the seeded CLAUDE.md begins with @AGENTS.md.
-func TestRender_CLAUDEmd_SeedsFromAGENTSmd(t *testing.T) {
+// TestRender_CLAUDEmd_IgnoresExistingAGENTSmd: CLAUDE.md's managed region
+// is always built directly from instructions:, never seeded from or
+// linked to an AGENTS.md — even one that already exists alongside it.
+// AGENTS.md is a wholly separate, independently-generated file (the
+// codex adapter's, when a stack renders for that platform too).
+func TestRender_CLAUDEmd_IgnoresExistingAGENTSmd(t *testing.T) {
 	tmp := t.TempDir()
 	scopeRoot := filepath.Join(tmp, ".claude")
 	if err := os.WriteFile(filepath.Join(tmp, "AGENTS.md"), []byte("# Project agents\n"), 0o644); err != nil {
@@ -326,80 +329,20 @@ func TestRender_CLAUDEmd_SeedsFromAGENTSmd(t *testing.T) {
 	}
 
 	got := mustRead(t, filepath.Join(tmp, "CLAUDE.md"))
-	if !strings.HasPrefix(got, "@AGENTS.md\n\n") {
-		t.Errorf("CLAUDE.md must start with @AGENTS.md import, got %q", got)
+	if strings.Contains(got, "@AGENTS.md") || strings.Contains(got, "AGENTS.md") {
+		t.Errorf("CLAUDE.md must not reference AGENTS.md, got %q", got)
+	}
+	if !strings.HasPrefix(got, "<!-- BEGIN AGTK MANAGED -->") {
+		t.Errorf("CLAUDE.md must start with the managed block directly, got %q", got)
 	}
 	if !strings.Contains(got, "approve body") {
 		t.Errorf("CLAUDE.md missing instruction body: %q", got)
 	}
-}
-
-// TestRender_CLAUDEmd_SeedsFromAGENTSmd_AtStackDir: bare-repo + worktree
-// case. CLAUDE.md is rendered at ProjectRoot (the apply dir), AGENTS.md
-// lives next to the manifest at StackDir (a subdir of ProjectRoot). The
-// seeded import must be the relative path so the agent can resolve it
-// at runtime.
-func TestRender_CLAUDEmd_SeedsFromAGENTSmd_AtStackDir(t *testing.T) {
-	tmp := t.TempDir()
-	stackDir := filepath.Join(tmp, "main")
-	if err := os.MkdirAll(stackDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(stackDir, "AGENTS.md"), []byte("# Worktree agents\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	scopeRoot := filepath.Join(tmp, ".claude")
-	plan := makePlan([]resolver.PlannedDefinition{
-		pdInstruction("plan-approval", "approve", "approve body", "default"),
-	}, "default")
-
-	if err := claude.Render(plan, claude.Options{
-		Scope:       claude.ScopeProject,
-		ScopeRoot:   scopeRoot,
-		ProjectRoot: tmp,
-		StackDir:    stackDir,
-	}); err != nil {
-		t.Fatalf("Render: %v", err)
-	}
-
-	got := mustRead(t, filepath.Join(tmp, "CLAUDE.md"))
-	if !strings.HasPrefix(got, "@main/AGENTS.md\n\n") {
-		t.Errorf("CLAUDE.md must start with @main/AGENTS.md import, got %q", got)
-	}
-}
-
-// TestRender_CLAUDEmd_StackDirAGENTSmdWinsOverProjectRoot: when AGENTS.md
-// exists at both StackDir and ProjectRoot, StackDir wins (the manifest
-// is the project definition).
-func TestRender_CLAUDEmd_StackDirAGENTSmdWinsOverProjectRoot(t *testing.T) {
-	tmp := t.TempDir()
-	stackDir := filepath.Join(tmp, "main")
-	if err := os.MkdirAll(stackDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(tmp, "AGENTS.md"), []byte("# root\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(stackDir, "AGENTS.md"), []byte("# stack\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	scopeRoot := filepath.Join(tmp, ".claude")
-	plan := makePlan([]resolver.PlannedDefinition{
-		pdInstruction("plan-approval", "approve", "approve body", "default"),
-	}, "default")
-
-	if err := claude.Render(plan, claude.Options{
-		Scope:       claude.ScopeProject,
-		ScopeRoot:   scopeRoot,
-		ProjectRoot: tmp,
-		StackDir:    stackDir,
-	}); err != nil {
-		t.Fatalf("Render: %v", err)
-	}
-
-	got := mustRead(t, filepath.Join(tmp, "CLAUDE.md"))
-	if !strings.HasPrefix(got, "@main/AGENTS.md\n\n") {
-		t.Errorf("StackDir AGENTS.md should win, got %q", got)
+	// AGENTS.md itself must be left untouched — the Claude adapter never
+	// writes it.
+	agents := mustRead(t, filepath.Join(tmp, "AGENTS.md"))
+	if agents != "# Project agents\n" {
+		t.Errorf("AGENTS.md must be untouched by the claude adapter, got %q", agents)
 	}
 }
 
@@ -594,16 +537,10 @@ func TestRender_StaleCleanup(t *testing.T) {
 	}
 }
 
-// TestRender_UserScope writes under ScopeRoot directly with no
-// AGENTS.md fallback.
+// TestRender_UserScope writes under ScopeRoot directly.
 func TestRender_UserScope(t *testing.T) {
 	tmp := t.TempDir()
 	scopeRoot := filepath.Join(tmp, "user-claude")
-	// AGENTS.md exists at the equivalent project location, but user
-	// scope must not consult it.
-	if err := os.WriteFile(filepath.Join(tmp, "AGENTS.md"), []byte("# unused\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
 
 	plan := makePlan([]resolver.PlannedDefinition{
 		pdInstruction("only-instruction", "i", "i body", "default"),
@@ -615,9 +552,6 @@ func TestRender_UserScope(t *testing.T) {
 		t.Fatalf("Render user: %v", err)
 	}
 	got := mustRead(t, filepath.Join(scopeRoot, "CLAUDE.md"))
-	if strings.Contains(got, "@AGENTS.md") {
-		t.Errorf("user scope should not seed @AGENTS.md, got %q", got)
-	}
 	if !strings.Contains(got, "i body") {
 		t.Errorf("instruction body missing: %q", got)
 	}

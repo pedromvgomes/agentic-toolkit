@@ -1,0 +1,11 @@
+description: Context7 docs server.
+transport: stdio
+command: npx
+args:
+  - "-y"
+  - "@upstash/context7-mcp"
+extensions:
+  codex:
+    startup_timeout_sec: 15
+    enabled_tools:
+      - query-docs

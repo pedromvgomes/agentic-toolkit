@@ -78,6 +78,7 @@ const (
 	PlatformCopilot  Platform = "copilot"
 	PlatformOpenCode Platform = "opencode"
 	PlatformAgents   Platform = "agents"
+	PlatformCodex    Platform = "codex"
 )
 
 // AllPlatforms is the canonical list of supported platforms.
@@ -87,6 +88,7 @@ var AllPlatforms = []Platform{
 	PlatformCopilot,
 	PlatformOpenCode,
 	PlatformAgents,
+	PlatformCodex,
 }
 
 // IsKnownPlatform reports whether p is in AllPlatforms.
@@ -208,6 +210,7 @@ type AgentExtensions struct {
 	Claude   *ClaudeAgentExt   `yaml:"claude,omitempty"`
 	Cursor   *CursorAgentExt   `yaml:"cursor,omitempty"`
 	OpenCode *OpenCodeAgentExt `yaml:"opencode,omitempty"`
+	Codex    *CodexAgentExt    `yaml:"codex,omitempty"`
 }
 
 type ClaudeAgentExt struct {
@@ -232,6 +235,17 @@ type OpenCodeAgentExt struct {
 	TopP        float64 `yaml:"top_p,omitempty"       agtkdoc:"Top-p nucleus sampling."`
 	Hidden      bool    `yaml:"hidden,omitempty"      agtkdoc:"Hide the agent from the picker (subagents only)."`
 	Steps       int     `yaml:"steps,omitempty"       agtkdoc:"Maximum iterations."`
+}
+
+// CodexAgentExt carries the Codex-specific subagent config that has no
+// canonical equivalent. Canonical Name/Description/Body/Model map
+// directly onto Codex's required name/description/developer_instructions
+// and optional model keys; everything Codex-only lives here.
+type CodexAgentExt struct {
+	ModelReasoningEffort string         `yaml:"model_reasoning_effort,omitempty" agtkdoc:"Codex reasoning-effort override for this subagent."`
+	SandboxMode          string         `yaml:"sandbox_mode,omitempty"           agtkdoc:"Codex sandbox mode override for this subagent."`
+	MCPServers           []string       `yaml:"mcp_servers,omitempty"            agtkdoc:"Names of mcp definitions this subagent is granted, by (category, name)."`
+	SkillsConfig         map[string]any `yaml:"skills_config,omitempty"          agtkdoc:"Codex skills.config fragment scoped to this subagent."`
 }
 
 func (a *Agent) GetCommon() *Common { return &a.Common }
@@ -278,7 +292,7 @@ type Hook struct {
 }
 
 type HookHandler struct {
-	Type    HandlerType `yaml:"type"              agtkdoc:"required;Handler kind: command or prompt."`
+	Type    HandlerType `yaml:"type"              agtkdoc:"required;Handler kind: command or prompt. Codex runs command handlers only \u2014 it parses a prompt handler but never executes it, so one is reported and skipped when rendering for that platform."`
 	Command string      `yaml:"command,omitempty" agtkdoc:"Shell command (handler type=command)."`
 	Prompt  string      `yaml:"prompt,omitempty"  agtkdoc:"Prompt template (handler type=prompt)."`
 	Model   string      `yaml:"model,omitempty"   agtkdoc:"Model override for prompt-type handlers."`
@@ -297,6 +311,7 @@ var AllHandlerTypes = []HandlerType{HandlerCommand, HandlerPrompt}
 type HookExtensions struct {
 	Claude *ClaudeHookExt `yaml:"claude,omitempty"`
 	Cursor *CursorHookExt `yaml:"cursor,omitempty"`
+	Codex  *CodexHookExt  `yaml:"codex,omitempty"`
 }
 
 type ClaudeHookExt struct {
@@ -328,6 +343,15 @@ type CursorHookExt struct {
 	LoopLimit int `yaml:"loop_limit,omitempty" agtkdoc:"Cursor-specific loop guard for hooks that re-trigger themselves."`
 }
 
+// CodexHookExt carries the one Codex-specific hook option with no
+// canonical equivalent. Canonical Event/Matcher/Handler/Timeout/FailClosed
+// already match Codex's own hook shape closely enough to reuse directly;
+// only command and mcp_tool Handler.Type values run on Codex today —
+// prompt and agent are parsed but never execute.
+type CodexHookExt struct {
+	Async bool `yaml:"async,omitempty" agtkdoc:"Run this command hook asynchronously while Codex continues (Codex-specific)."`
+}
+
 func (h *Hook) GetCommon() *Common { return &h.Common }
 func (*Hook) Category() Category   { return CategoryHook }
 
@@ -335,7 +359,7 @@ func (*Hook) Category() Category   { return CategoryHook }
 
 type MCPServer struct {
 	Common     `yaml:",inline"`
-	Transport  Transport         `yaml:"transport"            agtkdoc:"required;One of stdio, http, sse."`
+	Transport  Transport         `yaml:"transport"            agtkdoc:"required;One of stdio, http, sse. Codex has no sse client, so an sse server is reported and skipped when rendering for that platform."`
 	Command    string            `yaml:"command,omitempty"    agtkdoc:"Executable for stdio transport. Supports ${VAR} expansion."`
 	Args       []string          `yaml:"args,omitempty"       agtkdoc:"Arguments for stdio transport."`
 	Env        map[string]string `yaml:"env,omitempty"        agtkdoc:"Environment variables for stdio transport."`
@@ -366,6 +390,7 @@ type OAuthConfig struct {
 type MCPExtensions struct {
 	Claude   *ClaudeMCPExt   `yaml:"claude,omitempty"`
 	OpenCode *OpenCodeMCPExt `yaml:"opencode,omitempty"`
+	Codex    *CodexMCPExt    `yaml:"codex,omitempty"`
 }
 
 type ClaudeMCPExt struct {
@@ -376,6 +401,18 @@ type ClaudeMCPExt struct {
 type OpenCodeMCPExt struct {
 	Enabled *bool `yaml:"enabled,omitempty" agtkdoc:"OpenCode-specific enable toggle."`
 	Timeout int   `yaml:"timeout,omitempty" agtkdoc:"OpenCode-specific connect timeout in ms."`
+}
+
+// CodexMCPExt carries Codex's mcp_servers table options that have no
+// canonical equivalent (canonical Transport/Command/Args/Env/URL/Headers/
+// OAuth already cover the connection shape itself).
+type CodexMCPExt struct {
+	EnabledTools      []string `yaml:"enabled_tools,omitempty"        agtkdoc:"Tool allowlist for this server (Codex-specific)."`
+	DisabledTools     []string `yaml:"disabled_tools,omitempty"       agtkdoc:"Tool denylist for this server (Codex-specific)."`
+	ApprovalMode      string   `yaml:"approval_mode,omitempty"        agtkdoc:"Default tool-approval behaviour for this server, rendered as Codex's default_tools_approval_mode (Codex-specific)."`
+	StartupTimeoutSec int      `yaml:"startup_timeout_sec,omitempty"  agtkdoc:"Seconds to wait for the server to start (Codex-specific)."`
+	Required          bool     `yaml:"required,omitempty"             agtkdoc:"If true, Codex refuses to start without this server (Codex-specific)."`
+	BearerTokenEnvVar string   `yaml:"bearer_token_env_var,omitempty" agtkdoc:"Env var holding a bearer token for this server (Codex-specific)."`
 }
 
 func (m *MCPServer) GetCommon() *Common { return &m.Common }

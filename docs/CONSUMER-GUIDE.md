@@ -100,7 +100,7 @@ Or the three-step variant for CI:
 ```bash
 agtk lock     # resolve refs to SHAs → .agentic-toolkit.lock.yaml (commit it)
 agtk fetch    # hydrate the cache from the lockfile (CI; never resolves refs)
-agtk render   # write platform-native files under .claude/ etc.
+agtk render   # write platform-native files for each opted-in platform
 ```
 
 Other commands:
@@ -112,6 +112,59 @@ Other commands:
 
 Re-run `agtk lock` (or `agtk sync`) whenever you change the stack file,
 want to bump pinned refs to current heads, or pin a new ref.
+
+## Rendering targets
+
+`agtk render` writes Claude Code's layout and nothing else unless you say
+otherwise. Add `platforms:` to your stack file to render additional
+targets from the same definitions:
+
+```yaml
+extends:
+  - https://github.com/you/your-toolkit.git/stacks/default.yaml@main
+platforms:
+  - claude
+  - codex
+```
+
+Omitting `platforms:` is the same as `[claude]`. Naming a platform with
+no render adapter fails the render rather than writing nothing.
+
+Where each category lands:
+
+| Category | `claude` | `codex` |
+|---|---|---|
+| `skills` | `.claude/skills/<name>/SKILL.md` | `.agents/skills/<name>/SKILL.md` |
+| `commands` | `.claude/commands/<name>.md` | converted to a skill at `.agents/skills/<name>/SKILL.md` |
+| `agents` | `.claude/agents/<name>/AGENT.md` | `.codex/agents/<name>.toml` |
+| `rules` | `.claude/rules/<name>.md` | `.agents/rules/<name>.md`, indexed in `AGENTS.md` |
+| `instructions` | `CLAUDE.md` managed region | `AGENTS.md` |
+| `mcp` | `.mcp.json` | `.codex/config.toml` |
+| `settings` | `.claude/settings.json` | `.codex/config.toml` |
+| `hooks` | `.claude/settings.json` | `.codex/config.toml` |
+
+Three things to know before opting into `codex`:
+
+- **`AGENTS.md` becomes agtk's file.** It is rewritten from your
+  `instructions:` on every render, plus an index of your `rules:` —
+  Codex has no rules-discovery mechanism, so without the index a rule is
+  written where nothing reads it. If you already have a hand-authored
+  `AGENTS.md`, the first render refuses until you pass `--force`, so move
+  anything you want to keep into an `instruction` definition first.
+  `CLAUDE.md` is unaffected: the two files are built independently from
+  the same `instructions:`, and neither reads the other.
+- **A command and a skill sharing a name collide on Codex**, since both
+  land at `.agents/skills/<name>/SKILL.md`. The skill wins and the
+  command is skipped, with a line on stdout saying so. Nothing changes on
+  Claude, where the two have separate destinations.
+- **A `prompt` hook handler and an `sse` MCP transport are skipped**, and
+  reported. Codex parses a prompt handler but never runs it, and has no
+  sse client. The same definitions still render for Claude in the same
+  pass.
+
+Codex's skills and rules share the `.agents/` directory with the memory
+store below. They occupy different subdirectories and agtk only ever
+removes files it wrote, so the two do not interfere.
 
 ## Memory store
 

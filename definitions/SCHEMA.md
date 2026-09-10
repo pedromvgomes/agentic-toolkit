@@ -142,6 +142,15 @@ An agent is a named subagent the parent agent can delegate to. Canonical fields 
 | `isolation` | `string` | no | Set to 'worktree' to isolate the agent in a git worktree. |
 | `initial_prompt` | `string` | no | Auto-submitted first turn when run as the main agent. |
 
+### `extensions.codex` (CodexAgentExt)
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `model_reasoning_effort` | `string` | no | Codex reasoning-effort override for this subagent. |
+| `sandbox_mode` | `string` | no | Codex sandbox mode override for this subagent. |
+| `mcp_servers` | `[]string` | no | Names of mcp definitions this subagent is granted, by (category, name). |
+| `skills_config` | `map[string]` | no | Codex skills.config fragment scoped to this subagent. |
+
 ### `extensions.cursor` (CursorAgentExt)
 
 | Field | Type | Required | Description |
@@ -283,6 +292,12 @@ A hook attaches a handler to a lifecycle event. Canonical handler types are `com
 | `status_message` | `string` | no | UI message shown while the hook runs. |
 | `once` | `bool` | no | Fire only once per session. |
 
+### `extensions.codex` (CodexHookExt)
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `async` | `bool` | no | Run this command hook asynchronously while Codex continues (Codex-specific). |
+
 ### `extensions.cursor` (CursorHookExt)
 
 | Field | Type | Required | Description |
@@ -293,7 +308,7 @@ A hook attaches a handler to a lifecycle event. Canonical handler types are `com
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `type` | `HandlerType` | **yes** | Handler kind: command or prompt. |
+| `type` | `HandlerType` | **yes** | Handler kind: command or prompt. Codex runs command handlers only — it parses a prompt handler but never executes it, so one is reported and skipped when rendering for that platform. |
 | `command` | `string` | no | Shell command (handler type=command). |
 | `prompt` | `string` | no | Prompt template (handler type=prompt). |
 | `model` | `string` | no | Model override for prompt-type handlers. |
@@ -333,7 +348,7 @@ An MCP server definition declares one Model Context Protocol server. Canonical t
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `transport` | `Transport` | **yes** | One of stdio, http, sse. |
+| `transport` | `Transport` | **yes** | One of stdio, http, sse. Codex has no sse client, so an sse server is reported and skipped when rendering for that platform. |
 | `command` | `string` | no | Executable for stdio transport. Supports ${VAR} expansion. |
 | `args` | `[]string` | no | Arguments for stdio transport. |
 | `env` | `map[string]string` | no | Environment variables for stdio transport. |
@@ -348,6 +363,17 @@ An MCP server definition declares one Model Context Protocol server. Canonical t
 |-------|------|----------|-------------|
 | `headers_helper` | `string` | no | Path or command emitting JSON headers at connection time (Claude-only). |
 | `ws_url` | `string` | no | WebSocket URL for Claude's ws transport (out of canonical). |
+
+### `extensions.codex` (CodexMCPExt)
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `enabled_tools` | `[]string` | no | Tool allowlist for this server (Codex-specific). |
+| `disabled_tools` | `[]string` | no | Tool denylist for this server (Codex-specific). |
+| `approval_mode` | `string` | no | Default tool-approval behaviour for this server, rendered as Codex's default_tools_approval_mode (Codex-specific). |
+| `startup_timeout_sec` | `int` | no | Seconds to wait for the server to start (Codex-specific). |
+| `required` | `bool` | no | If true, Codex refuses to start without this server (Codex-specific). |
+| `bearer_token_env_var` | `string` | no | Env var holding a bearer token for this server (Codex-specific). |
 
 ### `extensions.opencode` (OpenCodeMCPExt)
 

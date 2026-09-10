@@ -441,15 +441,18 @@ func presentExtensions(def Definition) map[Platform]bool {
 		m[PlatformClaude] = d.Extensions.Claude != nil
 		m[PlatformCursor] = d.Extensions.Cursor != nil
 		m[PlatformOpenCode] = d.Extensions.OpenCode != nil
+		m[PlatformCodex] = d.Extensions.Codex != nil
 	case *Command:
 		m[PlatformOpenCode] = d.Extensions.OpenCode != nil
 		m[PlatformCopilot] = d.Extensions.Copilot != nil
 	case *Hook:
 		m[PlatformClaude] = d.Extensions.Claude != nil
 		m[PlatformCursor] = d.Extensions.Cursor != nil
+		m[PlatformCodex] = d.Extensions.Codex != nil
 	case *MCPServer:
 		m[PlatformClaude] = d.Extensions.Claude != nil
 		m[PlatformOpenCode] = d.Extensions.OpenCode != nil
+		m[PlatformCodex] = d.Extensions.Codex != nil
 	}
 	return m
 }
