@@ -170,6 +170,9 @@ func List(root string) ([]Document, []Refused, error) {
 // the cost of being wrong is a handoff somebody has to re-create, against a
 // branch choosing this session's commands.
 func tracked(root, path string) bool {
+	// #nosec G204 -- fixed argv; `--` ends the options, so the one variable is
+	// read as a pathspec and never as a flag. It is a name os.ReadDir returned
+	// from the handoff directory, and no shell is involved.
 	cmd := exec.Command("git", "ls-files", "--error-unmatch", "--", path)
 	cmd.Dir = root
 	err := cmd.Run()
