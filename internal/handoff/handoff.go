@@ -119,9 +119,9 @@ func List(root string) ([]Document, []Refused, error) {
 		return nil, nil, fmt.Errorf("read %s: %w", dir, err)
 	}
 
-	// Read once, before the walk. A git that will not answer refuses
-	// everything rather than letting the walk decide file by file.
-	tracked, answered := trackedNames(root)
+	// Read once, before the walk. A git that will not answer offers nothing
+	// rather than letting the walk decide file by file.
+	untracked, answered := untrackedNames(root)
 
 	var (
 		docs    []Document
@@ -149,7 +149,11 @@ func List(root string) ([]Document, []Refused, error) {
 			refused = append(refused, Refused{Path: path, Reason: RefusedIrregular})
 			continue
 		}
-		if !answered || tracked[strings.ToLower(name)] {
+		// Offered only where git named it. A name git spells differently from
+		// the directory listing — one composed, the other decomposed — is
+		// refused rather than guessed at: the two are the same file, and which
+		// spelling reached us is not evidence about who wrote it.
+		if !answered || !untracked[name] {
 			refused = append(refused, Refused{Path: path, Reason: RefusedTracked})
 			continue
 		}
@@ -161,23 +165,28 @@ func List(root string) ([]Document, []Refused, error) {
 	return docs, refused, nil
 }
 
-// trackedNames returns the names git tracks directly under the handoff
-// directory, keyed by their lower-cased form, and whether git answered.
+// untrackedNames returns the names git reports as untracked directly under the
+// handoff directory, and whether git answered.
 //
-// One question for the whole index rather than one per file, and no pathspec:
-// a pathspec is matched case-sensitively too, so `-- handoff` misses an index
-// holding `Handoff/task.md` and the whole directory would read as untracked.
-// Both components are folded here instead, because git's index is
-// case-sensitive and a filesystem need not be — `handoff/Task.md` in the index
-// with `task.md` on disk is what a checkout leaves when the name already
-// exists in another case, and either component can differ.
+// The question is put to git rather than answered here. Deciding it by
+// comparing strings means reimplementing git's own path comparison, and that
+// comparison has more folds in it than it looks: the index is case-sensitive
+// where a filesystem need not be, and `core.precomposeunicode` decides whether
+// a name arrives composed or decomposed. Each fold missed is a branch-authored
+// document read as locally written, and closing them one at a time is how the
+// same defect was found three times.
+//
+// `--exclude-standard` is deliberately absent. `handoff/` is excluded through
+// the repository's `info/exclude`, so applying the ignore rules would hide
+// every legitimate handoff and the feature would report nothing, always.
+// Ignored-but-untracked is exactly the state a handoff lives in.
 //
 // Only a clean exit is an answer. Every failing status is git declining to
-// answer, and the caller reads that as everything being tracked: the cost of
+// answer, and the caller reads that as nothing being offerable: the cost of
 // being wrong is a handoff somebody re-creates, against a branch choosing what
 // a session runs.
-func trackedNames(root string) (map[string]bool, bool) {
-	cmd := exec.Command("git", "ls-files", "-z") // #nosec G204 -- fixed argv, no variable arguments and no shell
+func untrackedNames(root string) (map[string]bool, bool) {
+	cmd := exec.Command("git", "ls-files", "-z", "-o") // #nosec G204 -- fixed argv, no variable arguments and no shell
 	cmd.Dir = root
 	out, err := cmd.Output()
 	if err != nil {
@@ -189,15 +198,15 @@ func trackedNames(root string) (map[string]bool, bool) {
 			continue
 		}
 		dir, rest, ok := strings.Cut(entry, "/")
-		// Depth one: something git tracks deeper than the directory's own
-		// entries is not a candidate and cannot alias one.
+		// Depth one: a consumed handoff lives in handoff/done/ and is not a
+		// candidate.
 		if !ok || strings.Contains(rest, "/") {
 			continue
 		}
 		if !strings.EqualFold(dir, Dir) {
 			continue
 		}
-		names[strings.ToLower(rest)] = true
+		names[rest] = true
 	}
 	return names, true
 }

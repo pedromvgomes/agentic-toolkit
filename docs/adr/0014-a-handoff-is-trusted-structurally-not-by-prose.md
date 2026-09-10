@@ -15,8 +15,19 @@ it as locally written. The rule was sound; the test for it was measuring somethi
 
 `internal/handoff` decides it instead, and `agtk handoff list` is how both entry points ask. It
 `Lstat`s the handoff directory before its entries, refuses a symlink rather than resolving one,
-measures containment against the resolved directory, and treats a `git ls-files` that declines
-to answer — exit 128, a directory that is not a repository — as tracked. Every refusal is named.
+refuses a nested repository, and names every refusal.
+
+**Which documents are local is asked of git, not computed here.** `git ls-files -o` reports what
+is untracked; anything it does not name is refused. Comparing paths ourselves means
+reimplementing git's own comparison, and that comparison has more folds in it than it looks: the
+index is case-sensitive where a filesystem need not be, a pathspec is case-sensitive too, and
+`core.precomposeunicode` decides whether a name arrives composed or decomposed. Each fold missed
+is a branch-authored document read as locally written — which is how the same defect was found
+three times before the question was handed to the component that owns it.
+
+`--exclude-standard` is deliberately absent: `handoff/` is excluded through the repository's
+`info/exclude`, so applying the ignore rules would hide every legitimate handoff. Ignored and
+untracked is exactly the state a handoff lives in.
 
 This applies ADR 0007 §4 rather than restating it: symlinks are refused, not followed, because
 following one makes the property being relied on false. There it is "the reviewed code is a

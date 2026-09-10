@@ -215,6 +215,12 @@ func TestATrackedNameIsRefusedWhateverCaseItIsOnDisk(t *testing.T) {
 		// matched case-sensitively too — so restricting the query to
 		// `-- handoff` would miss this entirely.
 		"the directory is what differs": {onDisk: "task.md", indexed: "Handoff/task.md"},
+		// Case is not the only fold. A filesystem may store a name decomposed
+		// while the index holds it composed; the two are one file, and a
+		// comparison that comes out unequal hands the branch's content over.
+		"composed in the index, decomposed on disk": {
+			onDisk: "café.md", indexed: Dir + "/café.md",
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			root := repo(t)
