@@ -14,7 +14,6 @@
 package handoff
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -120,6 +119,10 @@ func List(root string) ([]Document, []Refused, error) {
 		return nil, nil, fmt.Errorf("read %s: %w", dir, err)
 	}
 
+	// Read once, before the walk. A git that will not answer refuses
+	// everything rather than letting the walk decide file by file.
+	tracked, answered := trackedNames(root)
+
 	var (
 		docs    []Document
 		refused []Refused
@@ -146,7 +149,7 @@ func List(root string) ([]Document, []Refused, error) {
 			refused = append(refused, Refused{Path: path, Reason: RefusedIrregular})
 			continue
 		}
-		if tracked(root, path) {
+		if !answered || tracked[strings.ToLower(name)] {
 			refused = append(refused, Refused{Path: path, Reason: RefusedTracked})
 			continue
 		}
@@ -158,32 +161,41 @@ func List(root string) ([]Document, []Refused, error) {
 	return docs, refused, nil
 }
 
-// tracked reports whether git has this path in the index.
+// trackedNames returns the names git tracks directly under the handoff
+// directory, keyed by their lower-cased form, and whether git answered.
 //
-// Only a clean exit means tracked, and only exit 1 means untracked: that is
-// the status `--error-unmatch` uses to say "no such path in the index". Every
-// other status is git declining to answer — 128 is what a directory that is
-// not a repository returns — and an unanswered question is read as tracked.
+// One question for the whole directory rather than one per file, and keyed by
+// case, because git's index is case-sensitive and a filesystem need not be.
+// With `handoff/Task.md` in the index and `task.md` on disk — which is what a
+// checkout leaves on a case-insensitive filesystem when the name already
+// exists in another case — asking about the on-disk spelling finds no entry,
+// and a branch-authored document reads as locally written.
 //
-// Failing that way round is the whole point. The answer decides whether a
-// document chooses what subagents holding Write and Bash are told to do, so
-// the cost of being wrong is a handoff somebody has to re-create, against a
-// branch choosing this session's commands.
-func tracked(root, path string) bool {
-	// #nosec G204 -- fixed argv; `--` ends the options, so the one variable is
-	// read as a pathspec and never as a flag. It is a name os.ReadDir returned
-	// from the handoff directory, and no shell is involved.
-	cmd := exec.Command("git", "ls-files", "--error-unmatch", "--", path)
+// Only a clean exit is an answer. Every failing status is git declining to
+// answer, and the caller reads that as everything being tracked: the cost of
+// being wrong is a handoff somebody re-creates, against a branch choosing what
+// a session runs.
+func trackedNames(root string) (map[string]bool, bool) {
+	cmd := exec.Command("git", "ls-files", "-z", "--", Dir) // #nosec G204 -- fixed argv; Dir is this package's own constant and no shell is involved
 	cmd.Dir = root
-	err := cmd.Run()
-	if err == nil {
-		return true
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, false
 	}
-	var exit *exec.ExitError
-	if errors.As(err, &exit) && exit.ExitCode() == 1 {
-		return false
+	names := map[string]bool{}
+	for _, entry := range strings.Split(string(out), "\x00") {
+		if entry == "" {
+			continue
+		}
+		rest, ok := strings.CutPrefix(entry, Dir+"/")
+		if !ok || strings.Contains(rest, "/") {
+			// Depth one: something git tracks deeper than the directory's own
+			// entries is not a candidate and cannot alias one.
+			continue
+		}
+		names[strings.ToLower(rest)] = true
 	}
-	return true
+	return names, true
 }
 
 // hasExactly reports whether dir holds an entry named exactly name.

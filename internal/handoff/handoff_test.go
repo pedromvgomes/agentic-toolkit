@@ -201,6 +201,59 @@ func TestACaseAliasedHandoffDirectoryIsRefused(t *testing.T) {
 	}
 }
 
+// git's index is case-sensitive and a filesystem need not be, so the on-disk
+// spelling and the indexed one can differ in either direction. A checkout of
+// `handoff/Task.md` where `task.md` already exists writes the existing file
+// and leaves the on-disk name lowercase; the reverse happens just as easily.
+// Either way, asking git about the on-disk spelling finds no entry and the
+// branch's content reads as locally written.
+func TestATrackedNameIsRefusedWhateverCaseItIsOnDisk(t *testing.T) {
+	for name, tc := range map[string]struct{ onDisk, indexed string }{
+		"lowercase on disk, capitalised in the index": {onDisk: "task.md", indexed: "Task.md"},
+		"capitalised on disk, lowercase in the index": {onDisk: "Task.md", indexed: "task.md"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			root := repo(t)
+			write(t, filepath.Join(root, "README.md"), "x\n")
+			commit(t, root, "init")
+
+			path := filepath.Join(root, Dir, tc.onDisk)
+			write(t, path, "# attacker chosen\n")
+			blob := run(t, root, "hash-object", "-w", path)
+			run(t, root, "update-index", "--add", "--cacheinfo", "100644,"+blob+","+Dir+"/"+tc.indexed)
+
+			docs, refused, err := List(root)
+			if err != nil {
+				t.Fatalf("list: %v", err)
+			}
+			if len(docs) != 0 {
+				t.Fatalf("a case-variant of a tracked name was handed over: %v", names(docs))
+			}
+			if got := reasons(refused)[tc.onDisk]; got != RefusedTracked {
+				t.Errorf("%s refused as %q, want the tracked reason", tc.onDisk, got)
+			}
+		})
+	}
+}
+
+// A git that will not answer refuses everything: the answer decides whether a
+// document directs subagents holding Write, Edit and Bash.
+func TestAnUnanswerableGitRefusesEveryCandidate(t *testing.T) {
+	root := t.TempDir() // not a repository, so ls-files cannot answer
+	write(t, filepath.Join(root, Dir, "task.md"), "# do the thing\n")
+
+	docs, refused, err := List(root)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(docs) != 0 {
+		t.Errorf("a document was handed over though tracked-ness was unknown: %v", names(docs))
+	}
+	if got := reasons(refused)["task.md"]; got != RefusedTracked {
+		t.Errorf("task.md refused as %q, want the tracked reason", got)
+	}
+}
+
 // Consumed work is not a candidate, and the walk is depth one, so a directory
 // under handoff/ is never descended into.
 func TestConsumedHandoffsAreNotCandidates(t *testing.T) {
@@ -247,20 +300,14 @@ func TestNoHandoffDirectoryIsNotAnError(t *testing.T) {
 	}
 }
 
-// A git command that cannot answer leaves the question open, and the answer it
-// stands in for decides whether a document directs subagents holding Bash.
-func TestAnUnanswerableTrackedCheckRefuses(t *testing.T) {
-	root := t.TempDir() // not a git repository, so ls-files cannot answer
-	write(t, filepath.Join(root, Dir, "task.md"), "# do the thing\n")
-
-	docs, refused, err := List(root)
+// run executes one git command in root and returns its trimmed stdout.
+func run(t *testing.T, root string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = root
+	out, err := cmd.Output()
 	if err != nil {
-		t.Fatalf("list: %v", err)
+		t.Fatalf("git %s: %v", strings.Join(args, " "), err)
 	}
-	if len(docs) != 0 {
-		t.Errorf("a document was handed over though tracked-ness was unknown: %v", names(docs))
-	}
-	if got := reasons(refused)["task.md"]; got != RefusedTracked {
-		t.Errorf("task.md refused as %q, want the tracked reason", got)
-	}
+	return strings.TrimSpace(string(out))
 }
