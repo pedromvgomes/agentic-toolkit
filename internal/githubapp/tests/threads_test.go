@@ -196,41 +196,12 @@ func TestAThreadListThatNeverEndsIsRefusedRatherThanLoopedOn(t *testing.T) {
 	}
 }
 
-// A review posted by somebody else says nothing about whether this App has
-// reviewed the head, and counting one would make every re-run a no-op on a
-// pull request a person has reviewed.
-func TestOnlyTheAppsOwnReviewsCountAsHavingReviewedAHead(t *testing.T) {
-	c, net := client(t, append(auth(far()), query(
-		`{"data":{"repository":{"pullRequest":{"reviews":{"pageInfo":{"hasNextPage":false,"endCursor":""},"nodes":[`+
-			`{"commit":{"oid":"aaa"},"viewerDidAuthor":true},`+
-			`{"commit":{"oid":"bbb"},"viewerDidAuthor":false},`+
-			`{"commit":null,"viewerDidAuthor":true}]}}}}}`))...)
-
-	reviewed, err := c.ReadReviewedCommits(context.Background(), 7)
-	if err != nil {
-		t.Fatalf("read the reviews: %v", err)
-	}
-	net.done()
-	if !reviewed["aaa"] {
-		t.Error("the App's own review of aaa was not counted")
-	}
-	if reviewed["bbb"] {
-		t.Error("somebody else's review of bbb was counted as the App's")
-	}
-	if len(reviewed) != 1 {
-		t.Errorf("read %d reviewed commits: %v", len(reviewed), reviewed)
-	}
-}
-
 // A pull request number below one addresses nothing, and interpolating it
 // would ask GitHub about a resource nobody named.
 func TestReadingThreadsRefusesANumberThatIsNotOne(t *testing.T) {
 	c, _ := client(t)
 	if _, err := c.ReadReviewThreads(context.Background(), 0); err == nil {
 		t.Error("thread 0 was accepted as a pull request number")
-	}
-	if _, err := c.ReadReviewedCommits(context.Background(), -1); err == nil {
-		t.Error("review -1 was accepted as a pull request number")
 	}
 }
 

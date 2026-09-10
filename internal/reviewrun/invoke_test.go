@@ -150,9 +150,7 @@ func TestDecodeFindingsRefusesMalformedJSON(t *testing.T) {
 // The schemas are the single definition of what a run answers with, so they
 // have to be JSON before anything is sent.
 func TestEverySchemaIsValidJSON(t *testing.T) {
-	for name, schema := range map[string]json.RawMessage{
-		"finding": findingSchema, "validator": validatorSchema, "judge": judgeSchema,
-	} {
+	for name, schema := range providerSchemas() {
 		var v any
 		if err := json.Unmarshal(schema, &v); err != nil {
 			t.Errorf("the %s schema is not valid JSON: %v", name, err)
