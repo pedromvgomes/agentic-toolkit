@@ -217,6 +217,24 @@ func TestConsumedHandoffsAreNotCandidates(t *testing.T) {
 	}
 }
 
+// A regular file named handoff/ is not a directory of documents. Refused and
+// named rather than ignored, so the reason a session sees nothing is visible.
+func TestAHandoffPathThatIsNotADirectoryIsRefused(t *testing.T) {
+	root := repo(t)
+	write(t, filepath.Join(root, Dir), "not a directory\n")
+
+	docs, refused, err := List(root)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(docs) != 0 {
+		t.Fatalf("a file named handoff handed over %v", names(docs))
+	}
+	if len(refused) != 1 || refused[0].Reason != RefusedIrregular {
+		t.Errorf("a non-directory handoff was not refused: %v", reasons(refused))
+	}
+}
+
 // A worktree with no handoff directory is the common case and is not an error.
 func TestNoHandoffDirectoryIsNotAnError(t *testing.T) {
 	root := repo(t)
