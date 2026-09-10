@@ -1,0 +1,59 @@
+name: handoff-claude-session-start
+description: Point a fresh session at an unconsumed handoff, so work planned before a context reset is picked up rather than waiting to be remembered.
+platforms: [claude]
+requires:
+  - skills/implement-handoff
+event: SessionStart
+# startup and clear are the two ways a session begins with no memory of the one
+# that wrote the handoff. resume and compact carry their context forward and
+# would be told something they already know.
+matcher: "startup|clear"
+handler:
+  type: command
+  command: |
+    # agtk decides which handoffs may be acted on: a handoff directs subagents
+    # holding Write, Edit and Bash, and the checks that establish one was
+    # written locally rather than committed by a branch belong in one tested
+    # place rather than in every caller. See ADR 0014.
+    #
+    # Fail closed and say so. A missing or failing agtk means the check did not
+    # run, which is not the same as no handoff waiting, and a security prompt
+    # that vanishes silently is the failure this whole flow is careful about.
+    # Outside a repository there is no handoff/ and nothing to check, which is
+    # not a failed check. Silence here rather than a note in every session
+    # started somewhere that was never going to carry one.
+    git rev-parse --show-toplevel >/dev/null 2>&1 || exit 0
+
+    command -v agtk >/dev/null 2>&1 || {
+      printf 'Note: agtk is not installed, so handoffs could not be checked. Any waiting handoff is being withheld rather than offered unchecked.\n'
+      exit 0
+    }
+
+    # Refusals go to stderr and are reported, not discarded. A document
+    # withheld in silence and a directory holding nothing read the same to
+    # whoever is starting work, and only one of them means there is none.
+    refusals="$(mktemp)" || exit 0
+    listed="$(agtk handoff list 2>"$refusals")" || {
+      rm -f "$refusals"
+      printf 'Note: `agtk handoff list` failed, so handoffs could not be checked. Any waiting handoff is being withheld rather than offered unchecked.\n'
+      exit 0
+    }
+
+    if [ -s "$refusals" ]; then
+      printf 'Note: something under handoff/ was refused and is being treated as untrusted content rather than as work to pick up:\n'
+      sed 's/^/  /' "$refusals"
+    fi
+    rm -f "$refusals"
+
+    [ -n "$listed" ] || exit 0
+
+    count="$(printf '%s\n' "$listed" | wc -l | tr -d ' ')"
+    if [ "$count" -eq 1 ]; then
+      printf 'A handoff is waiting at %s. Invoke the `implement-handoff` skill to continue that work before starting anything else.\n' "$listed"
+      exit 0
+    fi
+
+    printf '%s handoffs are waiting:\n' "$count"
+    printf '%s\n' "$listed" | sed 's/^/  /'
+    printf 'Invoke the `implement-handoff` skill and ask which one to run. Do not choose one yourself — the oldest is not reliably the next.\n'
+timeout: 5

@@ -1,0 +1,236 @@
+// Package handoff decides which handoff documents a session may act on.
+//
+// A handoff drives implement-handoff, which dispatches subagents holding
+// Write, Edit and Bash. The document therefore chooses this session's tasks,
+// its file boundaries and the commands it runs, and the only thing standing
+// between that and whoever wrote a branch is this package.
+//
+// The rule is that a handoff is written locally and never committed, so one
+// git tracks arrived with a branch rather than from a session on this machine.
+// Tracked-ness alone is not the test: git tracks paths, and a committed
+// symlink at handoff/ makes the path handoff/x.md untracked while its content
+// is entirely branch-authored. Structure decides, per ADR 0014 and the
+// principle ADR 0007 states — a symlink is refused, never followed.
+package handoff
+
+import (
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"sort"
+	"strings"
+)
+
+// Dir is the directory a handoff lives in, relative to the worktree root.
+const Dir = "handoff"
+
+// Document is one handoff a session may act on.
+type Document struct {
+	// Path is the absolute path, with every segment a real directory or file.
+	Path string
+}
+
+// Refused is one candidate this package will not hand over, and why.
+//
+// Reported rather than dropped, for the reason reviewrun reports a skipped
+// path: a document silently withheld and a directory holding nothing produce
+// the same empty list, and only one of them means there is no work waiting.
+type Refused struct {
+	Path   string
+	Reason string
+}
+
+// Reasons a candidate is refused.
+const (
+	RefusedTracked      = "git tracks it: a handoff is written locally, so a committed one arrived with a branch"
+	RefusedSymlink      = "symlink: following it leaves the handoff directory"
+	RefusedIrregular    = "not a regular file"
+	RefusedSymlinkedDir = "the handoff directory is a symlink: everything under it resolves somewhere this worktree does not control"
+	RefusedNestedRepo   = "the handoff directory is its own git repository: this worktree's index says nothing about what is inside it"
+	RefusedCaseAlias    = "no directory is named `handoff` exactly: a name reachable only by case-folding is one git's index spells differently"
+)
+
+// List reports the handoffs waiting in root, and what it refused.
+//
+// A refusal of the directory itself returns no documents and one Refused
+// naming it, because nothing under a symlinked handoff/ can be trusted
+// individually — the link decides what every entry resolves to.
+func List(root string) ([]Document, []Refused, error) {
+	if root == "" {
+		return nil, nil, fmt.Errorf("no worktree root given")
+	}
+	dir := filepath.Join(root, Dir)
+
+	// The directory has to be named `handoff` exactly, as the filesystem
+	// spells it, and that is established by reading the parent rather than by
+	// joining a constant. On a case-insensitive filesystem — macOS by default,
+	// which is where this is developed — a committed `Handoff/` answers to the
+	// path `handoff/`, while git's index is case-sensitive and holds
+	// `Handoff/task.md`. Asking about `handoff/task.md` then finds no entry
+	// and the document reads as untracked: a branch-authored handoff, advertised
+	// as local work.
+	if !hasExactly(root, Dir) {
+		if _, err := os.Lstat(dir); err == nil {
+			return nil, []Refused{{Path: dir, Reason: RefusedCaseAlias}}, nil
+		}
+		return nil, nil, nil
+	}
+
+	// Lstat, not Stat: Stat follows the link and reports the target, which is
+	// the question this is asking about.
+	info, err := os.Lstat(dir)
+	if os.IsNotExist(err) {
+		return nil, nil, nil
+	}
+	if err != nil {
+		return nil, nil, fmt.Errorf("read %s: %w", dir, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return nil, []Refused{{Path: dir, Reason: RefusedSymlinkedDir}}, nil
+	}
+	if !info.IsDir() {
+		return nil, []Refused{{Path: dir, Reason: RefusedIrregular}}, nil
+	}
+
+	// A gitlink is refused for the reason a review root refuses one: it is a
+	// second repository this one does not contain. A committed submodule at
+	// handoff/ holds real regular files in a real directory, while the outer
+	// index carries only the gitlink — so ls-files reports every path inside
+	// it as untracked, and every branch-authored document in it reads as
+	// locally written.
+	if _, err := os.Lstat(filepath.Join(dir, ".git")); err == nil {
+		return nil, []Refused{{Path: dir, Reason: RefusedNestedRepo}}, nil
+	}
+
+	// Entries are read from the real directory, so a link anywhere above
+	// handoff/ is resolved once here rather than being trusted per entry.
+	// Containment then needs no separate test: os.ReadDir yields base names,
+	// which carry no separator, and a name that is itself a link is refused
+	// below rather than resolved.
+	realDir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return nil, nil, fmt.Errorf("resolve %s: %w", dir, err)
+	}
+	dir = realDir
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, nil, fmt.Errorf("read %s: %w", dir, err)
+	}
+
+	// Read once, before the walk. A git that will not answer offers nothing
+	// rather than letting the walk decide file by file.
+	untracked, answered := untrackedNames(root)
+
+	var (
+		docs    []Document
+		refused []Refused
+	)
+	for _, e := range entries {
+		name := e.Name()
+		if !strings.HasSuffix(name, ".md") {
+			continue
+		}
+		path := filepath.Join(dir, name)
+
+		// Depth one throughout: handoff/done/ is consumed work and never a
+		// candidate, and a directory named *.md is not a document.
+		fi, err := os.Lstat(path)
+		if err != nil {
+			refused = append(refused, Refused{Path: path, Reason: RefusedIrregular})
+			continue
+		}
+		if fi.Mode()&os.ModeSymlink != 0 {
+			refused = append(refused, Refused{Path: path, Reason: RefusedSymlink})
+			continue
+		}
+		if !fi.Mode().IsRegular() {
+			refused = append(refused, Refused{Path: path, Reason: RefusedIrregular})
+			continue
+		}
+		// Offered only where git named it. A name git spells differently from
+		// the directory listing — one composed, the other decomposed — is
+		// refused rather than guessed at: the two are the same file, and which
+		// spelling reached us is not evidence about who wrote it.
+		if !answered || !untracked[name] {
+			refused = append(refused, Refused{Path: path, Reason: RefusedTracked})
+			continue
+		}
+		docs = append(docs, Document{Path: path})
+	}
+
+	sort.Slice(docs, func(i, j int) bool { return docs[i].Path < docs[j].Path })
+	sort.Slice(refused, func(i, j int) bool { return refused[i].Path < refused[j].Path })
+	return docs, refused, nil
+}
+
+// untrackedNames returns the names git reports as untracked directly under the
+// handoff directory, and whether git answered.
+//
+// The question is put to git rather than answered here. Deciding it by
+// comparing strings means reimplementing git's own path comparison, and that
+// comparison has more folds in it than it looks: the index is case-sensitive
+// where a filesystem need not be, and `core.precomposeunicode` decides whether
+// a name arrives composed or decomposed. Each fold missed is a branch-authored
+// document read as locally written, and closing them one at a time is how the
+// same defect was found three times.
+//
+// `--exclude-standard` is deliberately absent. `handoff/` is excluded through
+// the repository's `info/exclude`, so applying the ignore rules would hide
+// every legitimate handoff and the feature would report nothing, always.
+// Ignored-but-untracked is exactly the state a handoff lives in.
+//
+// Only a clean exit is an answer. Every failing status is git declining to
+// answer, and the caller reads that as nothing being offerable: the cost of
+// being wrong is a handoff somebody re-creates, against a branch choosing what
+// a session runs.
+func untrackedNames(root string) (map[string]bool, bool) {
+	// The pathspec confines the walk. Without one this enumerates every
+	// untracked path in the repository, ignored trees included, on every
+	// session start. It is matched against worktree paths, which are spelled
+	// as the directory listing spells them, so it does not reintroduce the
+	// index-side folding this delegates to git.
+	cmd := exec.Command("git", "ls-files", "-z", "-o", "--", Dir) // #nosec G204 -- fixed argv; Dir is this package's own constant and no shell is involved
+	cmd.Dir = root
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, false
+	}
+	names := map[string]bool{}
+	for _, entry := range strings.Split(string(out), "\x00") {
+		if entry == "" {
+			continue
+		}
+		dir, rest, ok := strings.Cut(entry, "/")
+		// Depth one: a consumed handoff lives in handoff/done/ and is not a
+		// candidate.
+		if !ok || strings.Contains(rest, "/") {
+			continue
+		}
+		if !strings.EqualFold(dir, Dir) {
+			continue
+		}
+		names[rest] = true
+	}
+	return names, true
+}
+
+// hasExactly reports whether dir holds an entry named exactly name.
+//
+// os.Lstat answers a case-insensitive filesystem's question, not this one:
+// it resolves `handoff` to a directory called `Handoff` and reports success.
+// Reading the parent is the only way to learn how the name is actually
+// spelled, and the spelling is what git's index is keyed by.
+func hasExactly(dir, name string) bool {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		if e.Name() == name {
+			return true
+		}
+	}
+	return false
+}

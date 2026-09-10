@@ -6,6 +6,10 @@ description: |
   validates and judges what they find, and on a PR posts one review with inline comments. Findings come back numbered RED/AMBER/GREEN
   and the user picks what gets fixed. Trigger on "review my branch", "review my changes", "review before push", "panel review",
   "review PR 123", "review this PR", "review <github PR url>", "code review the open PR".
+requires:
+  # Fixing a pull request's findings is routed here, so a stack carrying one
+  # without the other offers a fix path that does not exist.
+  - skills/pr-review-resolver
 ---
 
 # Panel code review

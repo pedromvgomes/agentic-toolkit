@@ -1,7 +1,7 @@
 ---
 description: Seed an empty memory store with the invariants and gotchas a newcomer to this codebase would get wrong.
 argument_hint: "[area...]"
-tools: [Bash, Read, Grep, Glob, Task]
+tools: [Bash, Read, Grep, Glob, Task, Agent]
 ---
 
 Seed the repo's memory store: one sweep over the codebase that stages the durable facts an

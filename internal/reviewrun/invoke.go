@@ -59,7 +59,7 @@ func (d driverInvoker) build(r review.Runner, timeout time.Duration, workDir str
 //
 // Asked, never switched on by name. Codex answers one, because its credential
 // is a file it rewrites in place and its refresh tokens are effectively
-// single-use, so a second concurrent run invalidates the first — see ADR 0005.
+// single-use, so a second concurrent run invalidates the first — see ADR 0012.
 // A provider with a static bearer token answers zero and its runs go in
 // parallel.
 func (d driverInvoker) Limit(r review.Runner) (int, error) {

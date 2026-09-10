@@ -1,19 +1,35 @@
-description: Default toolkit stack — workflow-agnostic skills, the plan-approval and memory-first instructions, the memory-explorer and wrap-session-reviewer agents, the memory-curate and memory-seed commands and the upstream skill-creator skill.
+description: |
+  Default toolkit stack — the two-stage feature flow (plan on opus, hand off, implement on
+  sonnet, review in a capped loop, open the PR), the workflow-agnostic skills around it, the
+  plan-approval and memory-first instructions, the memory and session agents, the memory
+  commands and the upstream skill-creator skill.
+
+  It sets the session's default model to sonnet, because the implementing half of the flow is
+  meant to land there and only /plan-feature's own frontmatter raises a session above it.
 skills:
   - agents-md-creator
   - challenge
-  - continuation-session
   - panel-code-review
   - pr-review-resolver
   - tdd-bugfix
   - wrap-session
+  # The feature flow. Each is usable on its own — a handoff written by hand, a
+  # review loop over any branch, shipping any finished branch — so they are
+  # listed as skills rather than hidden behind the command that chains them.
+  - write-handoff
+  - implement-handoff
+  - review-implementation
+  - open-pr
   - github.com/anthropics/skills.git/skills/skill-creator@main
 agents:
   - memory-explorer
   - wrap-session-reviewer
+  - plan-reviewer
+  - task-implementer
 commands:
   - memory-curate
   - memory-seed
+  - plan-feature
 mcp:
   - context7
 instructions:
@@ -24,5 +40,7 @@ instructions:
 hooks:
   - memory-claude-session-end
   - memory-claude-session-start
+  - handoff-claude-session-start
 settings:
   - skill-permissions
+  - feature-flow-model
