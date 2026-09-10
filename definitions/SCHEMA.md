@@ -124,7 +124,7 @@ An agent is a named subagent the parent agent can delegate to. Canonical fields 
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `model` | `string` | no | Model shorthand: inherit, sonnet, opus, haiku, or a full model id. |
+| `model` | `string` | no | Model shorthand: inherit, sonnet, opus, haiku, fable, or a full model id. Not validated: an unknown value is rendered as written. |
 | `tools` | `[]string` | no | Tool allowlist (Claude tool-name vocabulary). Empty = inherit. |
 | `color` | `AgentColor` | no | UI color hint. One of: red, blue, green, yellow, purple, orange, pink, cyan. |
 | `extensions` | `AgentExtensions` | no | Per-platform extension blocks. |

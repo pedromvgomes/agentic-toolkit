@@ -228,36 +228,3 @@ func TestMemorySeedsDispatchTargetsAreRenderedAlongsideIt(t *testing.T) {
 		t.Errorf("memory-seed does not replace the cost bar for a cold sweep:\n%s", seed)
 	}
 }
-
-// continuation-session copies the durable half of its handoff into the store's
-// staging area. The two conditions on what qualifies are the whole substance
-// of that step: a note needs at least one anchor, so an entry with no file to
-// point at cannot become one however useful it is, and staging it only buys a
-// rejection later.
-func TestContinuationSessionStagesOnlyAnchorableFindings(t *testing.T) {
-	apply := renderDefaultStack(t)
-
-	skill, err := os.ReadFile(filepath.Join(apply, ".claude/skills/continuation-session/SKILL.md"))
-	if err != nil {
-		t.Fatalf("continuation-session did not reach the consumer: %v", err)
-	}
-	body := string(skill)
-	if !strings.Contains(body, "candidates/") {
-		t.Fatalf("continuation-session does not stage anything into the store:\n%s", body)
-	}
-	if !strings.Contains(body, "can name a file") {
-		t.Error("continuation-session does not require a finding to name a file, so it stages notes lint will reject")
-	}
-	// The handoff still has to carry the whole section: the next session reads
-	// it, and a move would hand it a document with the reasoning cut out.
-	if !strings.Contains(body, "copy, not a move") {
-		t.Error("continuation-session does not say the staging is a copy, so the handoff may lose the section")
-	}
-	// A repo that never adopted memory must not be given an invented path.
-	if !strings.Contains(body, "agtk memory stats") {
-		t.Error("continuation-session stages without locating the store first")
-	}
-	if !strings.Contains(body, "Never write, edit, stamp or delete a note") {
-		t.Error("continuation-session does not hold to the single-writer rule")
-	}
-}

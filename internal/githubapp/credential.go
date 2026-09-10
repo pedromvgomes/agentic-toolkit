@@ -137,7 +137,7 @@ func checkDir(dir string) error {
 // Load reads the registration this machine holds.
 //
 // A key file any account other than its owner can read is refused rather than
-// used. The whole shape of ADR 0005 is that the blast radius of the App key is
+// used. The whole shape of ADR 0012 is that the blast radius of the App key is
 // one machine's one user; a group-readable key makes that untrue, and using it
 // anyway would mean the refusal exists only in the documentation.
 func Load(dir string) (*Credential, error) {

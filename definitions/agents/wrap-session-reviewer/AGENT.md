@@ -5,7 +5,7 @@ description: Reviews changes from a working session and updates AGENTS.md (creat
 model: sonnet
 requires:
   - skills/agents-md-creator
-tools: [Read, Write, Edit, MultiEdit, Bash, Grep, Glob, Task]
+tools: [Read, Write, Edit, MultiEdit, Bash, Grep, Glob, Task, Agent]
 color: green
 ---
 
@@ -37,7 +37,10 @@ Based on `scope`:
 - **branch_commits**:
     1. Determine the default branch. Try `git symbolic-ref refs/remotes/origin/HEAD` and strip `refs/remotes/origin/` to get the name. Fallback chain if
        that fails: `main`, `master`, `develop`.
-    2. Find the merge-base: `git merge-base HEAD <default_branch>` (or `origin/<default_branch>` if remote is available).
+    2. Find the merge-base against the **remote** ref: `git merge-base HEAD origin/<default_branch>`. Fall back to the local
+       `<default_branch>` only when no remote-tracking ref exists. A local default branch is only as current as the last time
+       somebody checked it out, and in a bare-repo worktree layout nobody ever does — so preferring it silently widens the range
+       to include work that landed upstream months ago, and the review reports on files this branch never touched.
     3. `git diff --name-only <merge_base>...HEAD`
 - **both**: union of the two sets above. Deduplicate.
 

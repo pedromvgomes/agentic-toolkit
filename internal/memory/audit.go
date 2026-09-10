@@ -72,6 +72,43 @@ func (s *Store) auditNote(n *Note) []Drift {
 			drifts = append(drifts, s.auditGlob(a)...)
 			continue
 		}
+		// Containment before the read. HashFile is an os.ReadFile, which
+		// resolves every path component, so an anchor under a linked directory
+		// would be read from outside the repository and its blob reported —
+		// and because Stamp refuses that anchor, its recorded blob stays empty
+		// and audit would re-read the outside file on every run rather than
+		// once.
+		// Only a path that actually resolves can be judged for containment:
+		// EvalSymlinks cannot resolve one that is absent, and reading that as
+		// "outside the project" would report every deleted anchor as invalid.
+		// Missing is the kind an agent may act on by dropping the anchor, so
+		// the two must not collapse.
+		//
+		// Stat and not Lstat, so the test follows the link: a symlink whose
+		// target is gone is a missing anchor, and Lstat would call it an escape
+		// for the same reason EvalSymlinks fails on it. Following here only
+		// establishes that something is there; contained() still decides
+		// whether it may be read.
+		// A leaf symlink is refused here as it is when stamping. Replacing an
+		// anchored file with an in-project link to identical content would
+		// otherwise audit as fresh while `anchor` refuses to stamp it, so the
+		// note reads as holding against a file the store will not record.
+		fi, lstatErr := os.Lstat(s.abs(a.Path))
+		_, targetErr := os.Stat(s.abs(a.Path))
+		if lstatErr == nil && targetErr == nil && fi.Mode()&os.ModeSymlink != 0 {
+			drifts = append(drifts, Drift{
+				Kind: DriftInvalid, Path: a.Path, Was: a.Blob,
+				Detail: "is a symlink, which is not anchorable",
+			})
+			continue
+		}
+		if targetErr == nil && !s.contained(s.abs(a.Path)) {
+			drifts = append(drifts, Drift{
+				Kind: DriftInvalid, Path: a.Path, Was: a.Blob,
+				Detail: "resolves outside the project",
+			})
+			continue
+		}
 		now, err := HashFile(s.abs(a.Path))
 		switch {
 		case os.IsNotExist(err):
