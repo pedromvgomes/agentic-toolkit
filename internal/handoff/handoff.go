@@ -164,19 +164,20 @@ func List(root string) ([]Document, []Refused, error) {
 // trackedNames returns the names git tracks directly under the handoff
 // directory, keyed by their lower-cased form, and whether git answered.
 //
-// One question for the whole directory rather than one per file, and keyed by
-// case, because git's index is case-sensitive and a filesystem need not be.
-// With `handoff/Task.md` in the index and `task.md` on disk — which is what a
-// checkout leaves on a case-insensitive filesystem when the name already
-// exists in another case — asking about the on-disk spelling finds no entry,
-// and a branch-authored document reads as locally written.
+// One question for the whole index rather than one per file, and no pathspec:
+// a pathspec is matched case-sensitively too, so `-- handoff` misses an index
+// holding `Handoff/task.md` and the whole directory would read as untracked.
+// Both components are folded here instead, because git's index is
+// case-sensitive and a filesystem need not be — `handoff/Task.md` in the index
+// with `task.md` on disk is what a checkout leaves when the name already
+// exists in another case, and either component can differ.
 //
 // Only a clean exit is an answer. Every failing status is git declining to
 // answer, and the caller reads that as everything being tracked: the cost of
 // being wrong is a handoff somebody re-creates, against a branch choosing what
 // a session runs.
 func trackedNames(root string) (map[string]bool, bool) {
-	cmd := exec.Command("git", "ls-files", "-z", "--", Dir) // #nosec G204 -- fixed argv; Dir is this package's own constant and no shell is involved
+	cmd := exec.Command("git", "ls-files", "-z") // #nosec G204 -- fixed argv, no variable arguments and no shell
 	cmd.Dir = root
 	out, err := cmd.Output()
 	if err != nil {
@@ -187,10 +188,13 @@ func trackedNames(root string) (map[string]bool, bool) {
 		if entry == "" {
 			continue
 		}
-		rest, ok := strings.CutPrefix(entry, Dir+"/")
+		dir, rest, ok := strings.Cut(entry, "/")
+		// Depth one: something git tracks deeper than the directory's own
+		// entries is not a candidate and cannot alias one.
 		if !ok || strings.Contains(rest, "/") {
-			// Depth one: something git tracks deeper than the directory's own
-			// entries is not a candidate and cannot alias one.
+			continue
+		}
+		if !strings.EqualFold(dir, Dir) {
 			continue
 		}
 		names[strings.ToLower(rest)] = true

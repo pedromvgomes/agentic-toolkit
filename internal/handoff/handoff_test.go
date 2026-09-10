@@ -209,8 +209,12 @@ func TestACaseAliasedHandoffDirectoryIsRefused(t *testing.T) {
 // branch's content reads as locally written.
 func TestATrackedNameIsRefusedWhateverCaseItIsOnDisk(t *testing.T) {
 	for name, tc := range map[string]struct{ onDisk, indexed string }{
-		"lowercase on disk, capitalised in the index": {onDisk: "task.md", indexed: "Task.md"},
-		"capitalised on disk, lowercase in the index": {onDisk: "Task.md", indexed: "task.md"},
+		"lowercase on disk, capitalised in the index": {onDisk: "task.md", indexed: Dir + "/Task.md"},
+		"capitalised on disk, lowercase in the index": {onDisk: "Task.md", indexed: Dir + "/task.md"},
+		// The directory carries the alias just as easily, and a pathspec is
+		// matched case-sensitively too — so restricting the query to
+		// `-- handoff` would miss this entirely.
+		"the directory is what differs": {onDisk: "task.md", indexed: "Handoff/task.md"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			root := repo(t)
@@ -220,7 +224,7 @@ func TestATrackedNameIsRefusedWhateverCaseItIsOnDisk(t *testing.T) {
 			path := filepath.Join(root, Dir, tc.onDisk)
 			write(t, path, "# attacker chosen\n")
 			blob := run(t, root, "hash-object", "-w", path)
-			run(t, root, "update-index", "--add", "--cacheinfo", "100644,"+blob+","+Dir+"/"+tc.indexed)
+			run(t, root, "update-index", "--add", "--cacheinfo", "100644,"+blob+","+tc.indexed)
 
 			docs, refused, err := List(root)
 			if err != nil {
