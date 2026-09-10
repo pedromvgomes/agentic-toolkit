@@ -4,13 +4,13 @@ kind: invariant
 description: A scoped stamping grant lists each note name with no trailing wildcard, because kebab-case note names nest.
 anchors:
   - path: internal/curator/curator.go
-    blob: c1d5e5e32814
+    blob: a8ac0f37cab8
   - path: internal/memory/lint.go
-    blob: 4126a2258ab4
+    blob: 55ed2c6534eb
 confidence: verified
 ---
 
-`anchorGrants` (`internal/curator/curator.go:288`) emits one grant per note as
+`anchorGrants` (`internal/curator/curator.go:300`) emits one grant per note as
 `Bash(<agtk> memory anchor <name>)` with **no trailing wildcard**, so a scoped run stamps one
 note per call. An unscoped run gets the open `anchor*` form, since its scope is the store.
 
@@ -27,9 +27,10 @@ worse than a stale one, because no later audit flags it again — the failure AD
 to prevent, reintroduced through the grant meant to enforce it.
 
 `TestAScopedRunCanOnlyStampTheNotesItNames`
-(`internal/curator/tests/run_test.go:315-324`) asserts the scoped run holds the exact grant
-and not the open `anchor*` one. The reasoning is also written down beside the code, at
-`internal/curator/curator.go:280-287`.
+(`internal/curator/tests/run_test.go:299-308`) asserts the scoped run holds the exact grant
+and not the open `anchor*` one, and `TestAScopedStampingGrantDoesNotReachPrefixedNames`
+(`:314-322`) asserts no stamping grant in a scoped run ends in `*`. The reasoning is also
+written down beside the code, at `internal/curator/curator.go:288-299`.
 
 Related: [[curator-write-grant-is-spelled-edit-with-no-mode]], on what the rest of that grant
 does and does not bound.

@@ -4,9 +4,9 @@ kind: gotcha
 description: A hook's fail_closed parses and validates but no adapter ever writes it, so every rendered hook is fail-open.
 anchors:
   - path: internal/definitions/types.go
-    blob: 55ae4363b731
+    blob: ee984767cd43
   - path: definitions/SCHEMA.md
-    blob: 238cadf3d190
+    blob: 759e101e6d39
   - path: internal/adapters/claude/*.go
     matches:
       - path: internal/adapters/claude/diff.go

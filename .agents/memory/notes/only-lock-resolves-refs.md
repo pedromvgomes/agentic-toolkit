@@ -5,16 +5,42 @@ description: Every command except lock and sync's relock uses FrozenProvider, so
 anchors:
   - path: internal/cli/*.go
     matches:
+      - path: internal/cli/codereview.go
+        blob: 3601595c0eaa
+      - path: internal/cli/codereview_approve.go
+        blob: b9a95b835939
+      - path: internal/cli/codereview_approve_test.go
+        blob: 057de70cec50
+      - path: internal/cli/codereview_explain_test.go
+        blob: a22feda4cd47
+      - path: internal/cli/codereview_init.go
+        blob: b7938d155a7e
+      - path: internal/cli/codereview_init_test.go
+        blob: db0c644e8f17
+      - path: internal/cli/codereview_initialize.go
+        blob: b27674748a1e
+      - path: internal/cli/codereview_json_test.go
+        blob: 96483e4bdf63
+      - path: internal/cli/codereview_pr.go
+        blob: 3bdb8f071215
+      - path: internal/cli/codereview_pr_test.go
+        blob: d1a4f36f7fd7
+      - path: internal/cli/codereview_run.go
+        blob: 47db478ff54a
+      - path: internal/cli/codereview_threads_test.go
+        blob: a62196c4e28b
       - path: internal/cli/fetch.go
         blob: 1d58f9a1891e
+      - path: internal/cli/handoff.go
+        blob: d1d9642d265c
       - path: internal/cli/init.go
         blob: 1fd7afc3ea51
       - path: internal/cli/jsonout.go
-        blob: cb82873c6a58
+        blob: 70e84445dc0a
       - path: internal/cli/lock.go
         blob: a52fb8f8e2ac
       - path: internal/cli/memory.go
-        blob: 36f459299379
+        blob: 7ab84a4dc55e
       - path: internal/cli/paths.go
         blob: d30919b87867
       - path: internal/cli/paths_test.go
@@ -26,7 +52,7 @@ anchors:
       - path: internal/cli/render_error_test.go
         blob: c9d380c11494
       - path: internal/cli/root.go
-        blob: 87870af8e371
+        blob: 9b775bf0b883
       - path: internal/cli/status.go
         blob: 9c0513063466
       - path: internal/cli/sync.go
