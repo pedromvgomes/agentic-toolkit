@@ -222,6 +222,72 @@ func TestRemoveStale_RefusesEntriesOutsideRoot(t *testing.T) {
 	}
 }
 
+// TestRemoveStale_RefusesEntriesBehindAnEscapingSymlink: `..` segments
+// are one way out of the root and a symlinked ancestor is the other. A
+// lexical check passes the second, and the removal then follows the
+// link out of the repository — so containment is decided after
+// resolving symlinks.
+func TestRemoveStale_RefusesEntriesBehindAnEscapingSymlink(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "root")
+	outside := filepath.Join(base, "outside")
+	for _, d := range []string{root, outside} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	victim := filepath.Join(outside, "victim.md")
+	if err := os.WriteFile(victim, []byte("not agtk's"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(root, "escape")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+
+	oldManifest := fsops.NewManifestState()
+	oldManifest.Files["escape/victim.md"] = "h1"
+
+	errs := fsops.New("test").RemoveStale(root, oldManifest, fsops.NewManifestState(), nil)
+	if len(errs) != 1 {
+		t.Fatalf("want one refusal, got %d: %v", len(errs), errs)
+	}
+	if !strings.Contains(errs[0].Error(), "resolves outside") {
+		t.Errorf("error should say why it refused: %v", errs[0])
+	}
+	if _, err := os.Stat(victim); err != nil {
+		t.Errorf("a file outside the root was deleted through a symlink: %v", err)
+	}
+}
+
+// TestRemoveStale_FollowsSymlinksThatStayInside: the check refuses an
+// escape, not a symlink. A consumer whose layout routes a directory
+// through one still gets its stale files cleaned up.
+func TestRemoveStale_FollowsSymlinksThatStayInside(t *testing.T) {
+	root := t.TempDir()
+	real := filepath.Join(root, "real")
+	if err := os.MkdirAll(real, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stale := filepath.Join(real, "stale.md")
+	if err := os.WriteFile(stale, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(real, filepath.Join(root, "via")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+
+	oldManifest := fsops.NewManifestState()
+	oldManifest.Files["via/stale.md"] = "h1"
+
+	errs := fsops.New("test").RemoveStale(root, oldManifest, fsops.NewManifestState(), nil)
+	if len(errs) != 0 {
+		t.Fatalf("a symlink staying inside the root was refused: %v", errs)
+	}
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Errorf("stale file behind an internal symlink was not removed: %v", err)
+	}
+}
+
 func TestManifestRoundTrip(t *testing.T) {
 	tmp := t.TempDir()
 	ops := fsops.New("test")

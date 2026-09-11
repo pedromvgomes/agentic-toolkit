@@ -485,3 +485,30 @@ func TestConfig_DryRunSaysNothingWhenEverythingIsSkipped(t *testing.T) {
 		}
 	}
 }
+
+// TestConfig_DryRunAnnouncesClearingManagedKeys: a plan with no mcp,
+// hook or setting left still reclaims what a previous render claimed,
+// so the preview says so rather than going quiet about a file it is
+// about to rewrite.
+func TestConfig_DryRunAnnouncesClearingManagedKeys(t *testing.T) {
+	tmp := t.TempDir()
+	var out bytes.Buffer
+
+	renderCodex(t, mixedConfigPlan(), tmp)
+
+	if err := codex.Render(simpleProjectPlan(), codex.Options{
+		Scope: codex.ScopeProject, ProjectRoot: tmp, DryRun: true, Stdout: &out,
+	}); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if !strings.Contains(out.String(), "clearing managed keys") {
+		t.Errorf("dry run silent about the keys the render would reclaim: %q", out.String())
+	}
+
+	// And the real render does exactly what the preview said.
+	renderCodex(t, simpleProjectPlan(), tmp)
+	cfg := mustReadTOML(t, configPath(tmp))
+	if _, ok := cfg["mcp_servers"]; ok {
+		t.Errorf("managed keys not reclaimed: %v", mapKeys(cfg))
+	}
+}

@@ -170,29 +170,53 @@ func (o Ops) ApplyWholeOp(op WholeOp, newManifest ManifestState, stdout io.Write
 // The manifest is a committed file, so its keys are input rather than
 // something this process wrote in this run. A key that resolves outside
 // root is reported and left alone: without the check, a manifest entry
-// carrying `..` segments turns a render into a delete of any file the
-// invoking user can write.
+// turns a render into a delete of any file the invoking user can write.
+//
+// Containment is decided after resolving symlinks, because a lexical
+// check answers only half of it. `..` segments are one way out of the
+// root; a key whose ancestor directory is a symlink pointing elsewhere
+// is the other, and the branch that can commit the key can commit the
+// symlink beside it.
 func (o Ops) RemoveStale(root string, oldManifest, newManifest ManifestState, stdout io.Writer) []error {
+	// Resolve the root itself too, so a consumer who symlinks their
+	// render root somewhere is not mistaken for an escape.
+	realRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		realRoot = filepath.Clean(root)
+	}
+
 	var errs []error
 	for relPath := range oldManifest.Files {
 		if _, kept := newManifest.Files[relPath]; kept {
 			continue
 		}
 		full := filepath.Join(root, relPath)
-		if !withinRoot(root, full) {
+		parent, perr := filepath.EvalSymlinks(filepath.Dir(full))
+		if perr != nil {
+			// The directory is gone, so the entry is too. Nothing to
+			// remove, and nothing that could escape through it.
+			continue
+		}
+		// Resolve only the parent: the entry itself may legitimately be
+		// a symlink, and removing it unlinks the name rather than
+		// whatever it points at.
+		resolved := filepath.Join(parent, filepath.Base(full))
+		if !withinRoot(realRoot, resolved) {
 			errs = append(errs, fmt.Errorf("%s: manifest entry %q resolves outside %s; not removed", o.Prefix, relPath, root))
 			continue
 		}
-		if rerr := os.Remove(full); rerr != nil && !os.IsNotExist(rerr) {
-			errs = append(errs, fmt.Errorf("%s: remove stale %s: %w", o.Prefix, full, rerr))
+		if rerr := os.Remove(resolved); rerr != nil && !os.IsNotExist(rerr) {
+			errs = append(errs, fmt.Errorf("%s: remove stale %s: %w", o.Prefix, resolved, rerr))
 		} else if stdout != nil {
-			fmt.Fprintf(stdout, "removed %s\n", full)
+			fmt.Fprintf(stdout, "removed %s\n", resolved)
 		}
 	}
 	return errs
 }
 
-// withinRoot reports whether full names a path inside root. Equality
+// withinRoot reports whether full names a path inside root. Both are
+// expected to be symlink-resolved already, so this is the lexical half
+// of a check whose other half is its caller's EvalSymlinks. Equality
 // with root itself does not count: a render removes files under its
 // root, never the root.
 func withinRoot(root, full string) bool {

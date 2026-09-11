@@ -162,6 +162,14 @@ func reportDryRun(stdout io.Writer, plan *resolver.Plan, ops []fsops.WholeOp, rt
 	reportNotes(stdout, hookNotes)
 	if len(mcpServers) > 0 || len(hooks) > 0 || len(settingFragments) > 0 {
 		fmt.Fprintf(stdout, "would update %s (managed keys)\n", configPath(rts))
+		return
+	}
+	// Nothing to write is not the same as nothing to do: a render with
+	// no mcp, hook or setting left still reclaims the keys a previous
+	// one claimed, and a preview silent about that is a preview of a
+	// different render.
+	if current, err := readConfig(configPath(rts)); err == nil && len(readManagedList(current)) > 0 {
+		fmt.Fprintf(stdout, "would update %s (clearing managed keys)\n", configPath(rts))
 	}
 }
 
