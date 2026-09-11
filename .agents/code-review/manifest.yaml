@@ -1,8 +1,12 @@
-# The review a repo gets when it declares none of its own.
+# The roster agentic-toolkit holds itself to. This path is what `Load` reads
+# instead of the manifest embedded in the binary, so this file governs every
+# review of this repo — the embedded default is what a repo gets while it
+# declares none of its own, and this repo declares this.
 #
-# A consumer that writes its own manifest replaces this one whole: prompt
-# bodies stay shareable through `builtin:` references rather than through a
-# merge algorithm, so there is one roster per repo and never half of two.
+# A manifest is used whole. Prompt bodies stay shareable through `builtin:`
+# references rather than through a merge algorithm, so there is one roster per
+# repo and never half of two — which is why `conventions:` below is the whole
+# list and not an addition to the default seven.
 #
 # Two rosters, one per provider, and the same panels and rules for each. The
 # local pass is Claude and the pull request is codex, so a change is read by two
