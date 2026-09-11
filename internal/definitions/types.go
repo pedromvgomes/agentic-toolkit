@@ -404,9 +404,15 @@ type OpenCodeMCPExt struct {
 }
 
 // CodexMCPExt carries Codex's mcp_servers table options that have no
-// canonical equivalent (canonical Transport/Command/Args/Env/URL/Headers/
-// OAuth already cover the connection shape itself).
+// canonical equivalent (canonical Transport/Command/Env/URL/Headers/
+// OAuth already cover the connection shape itself), plus the one
+// canonical field a server may need to differ on per platform: a server
+// that is told which client it serves takes a different argv under
+// Codex than under Claude, and splitting it into two definitions would
+// rename it — the definition's name is the name the server is addressed
+// by.
 type CodexMCPExt struct {
+	Args              []string `yaml:"args,omitempty"                 agtkdoc:"Replaces the canonical args when Codex needs different ones — a server told which client it is talking to, say. Stdio transport only; omit to inherit the canonical args."`
 	EnabledTools      []string `yaml:"enabled_tools,omitempty"        agtkdoc:"Tool allowlist for this server (Codex-specific)."`
 	DisabledTools     []string `yaml:"disabled_tools,omitempty"       agtkdoc:"Tool denylist for this server (Codex-specific)."`
 	ApprovalMode      string   `yaml:"approval_mode,omitempty"        agtkdoc:"Default tool-approval behaviour for this server, rendered as Codex's default_tools_approval_mode (Codex-specific)."`

@@ -11,5 +11,5 @@ command = 'npx'
 DATABASE_URL = '${CONTEXT7_KEY}'
 
 [mcp_servers.serena]
-args = ['start-mcp-server', '--context', 'claude-code', '--project-from-cwd']
+args = ['start-mcp-server', '--context', 'codex', '--project-from-cwd']
 command = 'serena'

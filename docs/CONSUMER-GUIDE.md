@@ -162,6 +162,13 @@ directory, with one exception: `mcp:` renders nothing for `claude`,
 because Claude Code keeps user-scoped MCP servers in `~/.claude.json`
 under a per-project map rather than in a `.mcp.json` of its own.
 
+Where a definition is *almost* portable, an extension block carries the
+difference rather than a second definition. An MCP server told which
+client it is serving takes a different argv under each, so it declares
+`extensions.codex.args` and stays one definition — splitting it would
+rename it, since the definition's name is the name the server is
+addressed by.
+
 Three things to know before opting into `codex`:
 
 - **`AGENTS.md` becomes agtk's file.** It is rewritten from your

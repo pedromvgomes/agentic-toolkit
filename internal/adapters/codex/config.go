@@ -311,12 +311,19 @@ func collectMCPServers(plan *resolver.Plan) (map[string]any, []string) {
 			continue
 		}
 		m := d.Definition.(*definitions.MCPServer)
+		// A Codex args override replaces the canonical argv rather than
+		// extending it: the difference it exists for is one flag's value,
+		// and appending would leave both values on the command line.
+		args := m.Args
+		if ext := m.Extensions.Codex; ext != nil && len(ext.Args) > 0 {
+			args = ext.Args
+		}
 		entry := map[string]any{}
 		switch m.Transport {
 		case definitions.TransportStdio:
 			entry["command"] = m.Command
-			if len(m.Args) > 0 {
-				entry["args"] = m.Args
+			if len(args) > 0 {
+				entry["args"] = args
 			}
 			if len(m.Env) > 0 {
 				entry["env"] = m.Env

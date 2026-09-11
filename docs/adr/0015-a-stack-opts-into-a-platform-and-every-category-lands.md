@@ -97,6 +97,13 @@ and an error would fail a render that is fine on Claude.
   thing Codex rejects — it is a thing Codex neither reads nor complains about. Narrowing is
   applied once in the render dispatch rather than inside an adapter, since the allowlist is a
   property of the definition and not of any one layout.
+- Narrowing is the wrong tool where a definition is *almost* portable, so `CodexMCPExt` gains
+  an `args` override. A server that is told which client it serves differs between the two
+  platforms by one flag's value, and the alternatives were both worse: a `serena-claude` and a
+  `serena-codex` rename the server, because a definition's name is the key it is addressed by
+  and consumers hold `mcp__serena__*` permission patterns against it; leaving one argv for both
+  starts the server in the wrong client's context. The override replaces the canonical argv
+  rather than extending it — appending would leave the flag carrying two values.
 - `.codex/config.toml` is removed rather than left empty when the last key agtk owned goes and
   the consumer had none of their own in it. A nought-byte file is one Codex still parses and
   one more line in every diff.

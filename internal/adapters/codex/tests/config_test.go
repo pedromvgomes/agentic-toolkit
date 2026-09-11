@@ -66,6 +66,48 @@ func TestConfig_MCPStdioAndHTTP(t *testing.T) {
 	}
 }
 
+// TestConfig_MCPArgsOverride: a server that is told which client it
+// serves needs a different argv per platform, and splitting it into two
+// definitions would rename it — the definition's name is the name the
+// server is addressed by. The override replaces the canonical argv
+// rather than extending it, so the flag it exists to change carries one
+// value and not two.
+func TestConfig_MCPArgsOverride(t *testing.T) {
+	tmp := t.TempDir()
+
+	plan := makePlan([]resolver.PlannedDefinition{
+		pdMCP("serena", definitions.TransportStdio, &definitions.MCPServer{
+			Command: "serena",
+			Args:    []string{"start-mcp-server", "--context", "claude-code"},
+		}, &definitions.CodexMCPExt{
+			Args: []string{"start-mcp-server", "--context", "codex"},
+		}, "default"),
+		pdMCP("plain", definitions.TransportStdio, &definitions.MCPServer{
+			Command: "plain",
+			Args:    []string{"--shared"},
+		}, nil, "default"),
+	}, "default")
+
+	renderCodex(t, plan, tmp)
+	servers := subTable(t, mustReadTOML(t, configPath(tmp)), "mcp_servers")
+
+	got := subTable(t, servers, "serena")["args"].([]any)
+	want := []string{"start-mcp-server", "--context", "codex"}
+	if len(got) != len(want) {
+		t.Fatalf("args = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("args[%d] = %v, want %q", i, got[i], want[i])
+		}
+	}
+
+	// A server with no override keeps the canonical argv.
+	if plainArgs := subTable(t, servers, "plain")["args"].([]any); len(plainArgs) != 1 || plainArgs[0] != "--shared" {
+		t.Errorf("a server without an override lost its canonical args: %v", plainArgs)
+	}
+}
+
 // TestConfig_MCPSSEReportedNotRendered: Codex speaks stdio and
 // streamable http only. An sse definition is skipped and said out loud,
 // rather than written as a url Codex would never connect to.

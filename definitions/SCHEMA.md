@@ -368,6 +368,7 @@ An MCP server definition declares one Model Context Protocol server. Canonical t
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
+| `args` | `[]string` | no | Replaces the canonical args when Codex needs different ones — a server told which client it is talking to, say. Stdio transport only; omit to inherit the canonical args. |
 | `enabled_tools` | `[]string` | no | Tool allowlist for this server (Codex-specific). |
 | `disabled_tools` | `[]string` | no | Tool denylist for this server (Codex-specific). |
 | `approval_mode` | `string` | no | Default tool-approval behaviour for this server, rendered as Codex's default_tools_approval_mode (Codex-specific). |
