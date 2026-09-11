@@ -41,7 +41,6 @@ import (
 	"path/filepath"
 
 	"github.com/pedromvgomes/agentic-toolkit/internal/adapters/fsops"
-	"github.com/pedromvgomes/agentic-toolkit/internal/definitions"
 	"github.com/pedromvgomes/agentic-toolkit/internal/resolver"
 )
 
@@ -145,17 +144,24 @@ func Render(plan *resolver.Plan, opts Options) error {
 // reportDryRun prints what each whole-owned file's intended action would
 // be, plus the mixed-ownership config.toml a real render would touch,
 // without writing anything.
+//
+// The config.toml line is decided by the collectors the real render
+// uses, not by which categories the plan holds: a plan whose every mcp
+// and hook is one Codex cannot express collects nothing, and the render
+// it is previewing would leave the file alone. Running the collectors
+// here is also what surfaces their skip reports in a dry run.
 func reportDryRun(stdout io.Writer, plan *resolver.Plan, ops []fsops.WholeOp, rts roots, manifest fsops.ManifestState) {
 	wholeOps.ReportDryRunWholeOps(stdout, ops, rts.ProjectRoot, manifest)
 	if stdout == nil {
 		return
 	}
-	for _, d := range plan.Definitions {
-		switch d.Category {
-		case definitions.CategoryHook, definitions.CategoryMCP, definitions.CategorySetting:
-			fmt.Fprintf(stdout, "would update %s (managed keys)\n", configPath(rts))
-			return
-		}
+	mcpServers, mcpNotes := collectMCPServers(plan)
+	hooks, hookNotes := collectHooks(plan)
+	settingFragments := collectSettingFragments(plan)
+	reportNotes(stdout, mcpNotes)
+	reportNotes(stdout, hookNotes)
+	if len(mcpServers) > 0 || len(hooks) > 0 || len(settingFragments) > 0 {
+		fmt.Fprintf(stdout, "would update %s (managed keys)\n", configPath(rts))
 	}
 }
 

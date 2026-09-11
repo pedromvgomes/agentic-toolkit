@@ -393,3 +393,95 @@ func managedList(t *testing.T, cfg map[string]any) []string {
 	}
 	return out
 }
+
+// TestConfig_SettingFragmentCannotDisableHooks: a fragment naming
+// `features` would replace the table the hooks flag lives in, leaving
+// every rendered hook in the file and none of them running. The hook
+// definitions own the flag, so the fragment is dropped instead — the
+// same precedence they already have over a fragment naming `hooks`.
+func TestConfig_SettingFragmentCannotDisableHooks(t *testing.T) {
+	tmp := t.TempDir()
+
+	plan := makePlan([]resolver.PlannedDefinition{
+		pdHook("guard", "PreToolUse", "Bash", definitions.HookHandler{
+			Type: definitions.HandlerCommand, Command: "./guard.sh",
+		}, 0, nil, "default"),
+		pdSetting("theirs", map[string]any{
+			"features": map[string]any{"web_search": true},
+			"hooks":    map[string]any{"Stop": "nonsense"},
+		}, "default"),
+	}, "default")
+
+	renderCodex(t, plan, tmp)
+	cfg := mustReadTOML(t, configPath(tmp))
+
+	if got := subTable(t, cfg, "features")["hooks"]; got != true {
+		t.Errorf("a setting fragment disabled the hooks it rendered alongside: features = %v", cfg["features"])
+	}
+	if _, ok := subTable(t, cfg, "hooks")["PreToolUse"]; !ok {
+		t.Errorf("the fragment replaced the hook tables: %v", cfg["hooks"])
+	}
+	// Only what agtk actually wrote is released on a later render.
+	got := managedList(t, cfg)
+	want := []string{"features.hooks", "hooks"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("managed list = %v, want %v", got, want)
+	}
+}
+
+// TestConfig_SettingFragmentKeepsUnrelatedLookalikeKeys: the overlap
+// check is segment-wise, so a fragment key that merely shares a prefix
+// with a claimed path is not mistaken for it.
+func TestConfig_SettingFragmentKeepsUnrelatedLookalikeKeys(t *testing.T) {
+	tmp := t.TempDir()
+
+	plan := makePlan([]resolver.PlannedDefinition{
+		pdHook("guard", "PreToolUse", "", definitions.HookHandler{
+			Type: definitions.HandlerCommand, Command: "./guard.sh",
+		}, 0, nil, "default"),
+		pdSetting("theirs", map[string]any{"feature_flags": map[string]any{"beta": true}}, "default"),
+	}, "default")
+
+	renderCodex(t, plan, tmp)
+	cfg := mustReadTOML(t, configPath(tmp))
+
+	if subTable(t, cfg, "feature_flags")["beta"] != true {
+		t.Errorf("a key sharing a prefix with features.hooks was dropped: %v", mapKeys(cfg))
+	}
+	if subTable(t, cfg, "features")["hooks"] != true {
+		t.Errorf("hooks flag lost: %v", cfg["features"])
+	}
+}
+
+// TestConfig_DryRunSaysNothingWhenEverythingIsSkipped: a plan whose
+// every mcp and hook is one Codex cannot express collects nothing, so
+// the render it previews would leave config.toml alone. The dry run
+// says so, and reports the skips that led there.
+func TestConfig_DryRunSaysNothingWhenEverythingIsSkipped(t *testing.T) {
+	tmp := t.TempDir()
+	var out bytes.Buffer
+
+	plan := makePlan([]resolver.PlannedDefinition{
+		pdMCP("streamy", definitions.TransportSSE, &definitions.MCPServer{
+			URL: "https://example.test/sse",
+		}, nil, "default"),
+		pdHook("ask", "Stop", "", definitions.HookHandler{
+			Type: definitions.HandlerPrompt, Prompt: "summarize",
+		}, 0, nil, "default"),
+	}, "default")
+
+	if err := codex.Render(plan, codex.Options{
+		Scope: codex.ScopeProject, ProjectRoot: tmp, DryRun: true, Stdout: &out,
+	}); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+
+	if strings.Contains(out.String(), "config.toml") && strings.Contains(out.String(), "would update") {
+		t.Errorf("dry run announced a write the render would not make: %q", out.String())
+	}
+	for _, want := range []string{`mcp "streamy" not rendered`, `hook "ask" not rendered`} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("dry run did not report %q: %q", want, out.String())
+		}
+	}
+}

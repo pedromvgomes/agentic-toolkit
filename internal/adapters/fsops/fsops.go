@@ -166,6 +166,12 @@ func (o Ops) ApplyWholeOp(op WholeOp, newManifest ManifestState, stdout io.Write
 // RemoveStale deletes paths tracked by oldManifest but absent from
 // newManifest — files a previous render owned that this one no longer
 // plans to write.
+//
+// The manifest is a committed file, so its keys are input rather than
+// something this process wrote in this run. A key that resolves outside
+// root is reported and left alone: without the check, a manifest entry
+// carrying `..` segments turns a render into a delete of any file the
+// invoking user can write.
 func (o Ops) RemoveStale(root string, oldManifest, newManifest ManifestState, stdout io.Writer) []error {
 	var errs []error
 	for relPath := range oldManifest.Files {
@@ -173,6 +179,10 @@ func (o Ops) RemoveStale(root string, oldManifest, newManifest ManifestState, st
 			continue
 		}
 		full := filepath.Join(root, relPath)
+		if !withinRoot(root, full) {
+			errs = append(errs, fmt.Errorf("%s: manifest entry %q resolves outside %s; not removed", o.Prefix, relPath, root))
+			continue
+		}
 		if rerr := os.Remove(full); rerr != nil && !os.IsNotExist(rerr) {
 			errs = append(errs, fmt.Errorf("%s: remove stale %s: %w", o.Prefix, full, rerr))
 		} else if stdout != nil {
@@ -180,6 +190,17 @@ func (o Ops) RemoveStale(root string, oldManifest, newManifest ManifestState, st
 		}
 	}
 	return errs
+}
+
+// withinRoot reports whether full names a path inside root. Equality
+// with root itself does not count: a render removes files under its
+// root, never the root.
+func withinRoot(root, full string) bool {
+	rel, err := filepath.Rel(root, full)
+	if err != nil {
+		return false
+	}
+	return rel != "." && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // ReportDryRunWholeOps prints each op's intended action, and each

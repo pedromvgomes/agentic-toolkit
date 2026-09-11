@@ -45,7 +45,11 @@ const hooksFeaturePath = "features.hooks"
 // mcp definitions own `mcp_servers`, hook definitions own `hooks` and
 // the feature flag, and a setting fragment naming an already-claimed
 // path is dropped — the same precedence settings.json gives hooks over
-// settings.
+// settings. Claims are compared segment-wise, because writing a table
+// claims everything under it: a fragment naming `features` would
+// otherwise pass a string-equality check against `features.hooks` and
+// replace the table the flag lives in, leaving every rendered hook in
+// the file and none of them running.
 func renderConfig(plan *resolver.Plan, rts roots, opts Options) error {
 	mcpServers, mcpNotes := collectMCPServers(plan)
 	hooks, hookNotes := collectHooks(plan)
@@ -73,8 +77,10 @@ func renderConfig(plan *resolver.Plan, rts roots, opts Options) error {
 
 	managed := map[string]bool{}
 	claim := func(path string, value any) {
-		if managed[path] {
-			return
+		for claimed := range managed {
+			if pathsOverlap(claimed, path) {
+				return
+			}
 		}
 		setPath(current, path, value)
 		managed[path] = true
@@ -171,6 +177,16 @@ func reportNotes(stdout io.Writer, notes []string) {
 
 // splitPath splits a dotted managed-key path into its segments.
 func splitPath(p string) []string { return strings.Split(p, ".") }
+
+// pathsOverlap reports whether writing one of these paths would disturb
+// the other: the same path, or one naming a table the other lives
+// inside. Comparison is segment-wise, so `features` overlaps
+// `features.hooks` while `feature_flags` overlaps neither.
+func pathsOverlap(a, b string) bool {
+	return a == b ||
+		strings.HasPrefix(a, b+".") ||
+		strings.HasPrefix(b, a+".")
+}
 
 // setPath writes value at the dotted path, creating intermediate tables.
 // A non-table value blocking the way is replaced: agtk claimed the path,

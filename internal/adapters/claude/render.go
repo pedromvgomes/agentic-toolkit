@@ -65,10 +65,9 @@ type Options struct {
 	// derive from Scope. Tests use this to render into a temp dir.
 	ScopeRoot string
 
-	// ProjectRoot overrides the project root used for CLAUDE.md output
-	// and the fallback AGENTS.md lookup under project scope. Empty =
-	// parent of ScopeRoot. Ignored under user scope (CLAUDE.md always
-	// lives inside ScopeRoot).
+	// ProjectRoot overrides the project root CLAUDE.md is written to
+	// under project scope. Empty = parent of ScopeRoot. Ignored under
+	// user scope (CLAUDE.md always lives inside ScopeRoot).
 	ProjectRoot string
 
 	// DryRun reports what would change without touching the filesystem.

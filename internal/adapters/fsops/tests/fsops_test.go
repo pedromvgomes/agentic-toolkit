@@ -181,6 +181,47 @@ func TestRemoveStale(t *testing.T) {
 	}
 }
 
+// TestRemoveStale_RefusesEntriesOutsideRoot: the manifest is committed,
+// so its keys are input to a render rather than something the render
+// wrote. An entry that resolves outside the root is reported and the
+// file it names is left alone — otherwise checking out a branch and
+// rendering deletes whatever the entry points at.
+func TestRemoveStale_RefusesEntriesOutsideRoot(t *testing.T) {
+	base := t.TempDir()
+	root := filepath.Join(base, "root")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	outsider := filepath.Join(base, "outsider.md")
+	if err := os.WriteFile(outsider, []byte("not agtk's"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	oldManifest := fsops.NewManifestState()
+	oldManifest.Files["../outsider.md"] = "h1"
+	oldManifest.Files[".."] = "h2"
+
+	var out bytes.Buffer
+	errs := fsops.New("test").RemoveStale(root, oldManifest, fsops.NewManifestState(), &out)
+	if len(errs) != 2 {
+		t.Fatalf("want one error per escaping entry, got %d: %v", len(errs), errs)
+	}
+	for _, err := range errs {
+		if !strings.Contains(err.Error(), "resolves outside") {
+			t.Errorf("error should say why it refused: %v", err)
+		}
+	}
+	if _, err := os.Stat(outsider); err != nil {
+		t.Errorf("a file outside the root was removed: %v", err)
+	}
+	if _, err := os.Stat(base); err != nil {
+		t.Errorf("the root's parent was removed: %v", err)
+	}
+	if strings.Contains(out.String(), "removed") {
+		t.Errorf("a refused entry was reported as removed: %q", out.String())
+	}
+}
+
 func TestManifestRoundTrip(t *testing.T) {
 	tmp := t.TempDir()
 	ops := fsops.New("test")
