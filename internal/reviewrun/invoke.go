@@ -114,9 +114,16 @@ func request(r review.Runner, prompt string, schema json.RawMessage, root *Root,
 
 // classify turns one driver outcome into a report.
 //
-// Four outcomes, three of which are "could not answer":
+// Five outcomes, four of which are "could not answer":
 //
 //   - an error is an outage: the run could not be carried out.
+//   - Blocked is a run whose provider declined to serve the credential
+//     rather than attempting and failing at it — a quota exhausted or a
+//     credential rejected. Checked ahead of IsError, which the driver's
+//     contract sets alongside it: this is the one outcome a caller may
+//     route around by trying a different provider, and folding it into the
+//     ordinary IsError case would lose the one signal that makes that
+//     possible.
 //   - IsError is a run that was made and did not answer — an unmet schema
 //     constraint, a sandbox refusal, or the CLI declaring its own failure.
 //     They are indistinguishable at this layer and Text carries whatever
@@ -129,6 +136,9 @@ func classify(res agentic.Result, err error, label string) (json.RawMessage, Rep
 	switch {
 	case err != nil:
 		return nil, Unavailable("%s could not be run: %v", label, err)
+	case res.Blocked != nil:
+		return nil, Blocked("%s's provider declined to serve the credential (%s): %s",
+			label, res.Blocked.Reason, account(res.Text))
 	case res.IsError:
 		return nil, Unavailable("%s ran and did not answer: %s", label, account(res.Text))
 	case len(res.Structured) == 0:

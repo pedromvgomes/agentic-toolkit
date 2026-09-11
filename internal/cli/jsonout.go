@@ -408,22 +408,24 @@ func statsJSON(env *Env, store *memory.Store, st memory.Stats) memoryStatsJSON {
 // ===== code review =====
 
 type reviewOutJSON struct {
-	Version     int             `json:"version"`
-	Manifest    string          `json:"manifest"`
-	Range       string          `json:"range"`
-	Panel       string          `json:"panel"`
-	Available   bool            `json:"available"`
-	Reason      string          `json:"reason,omitempty"`
-	Partial     bool            `json:"partial"`
-	Findings    []findingJSON   `json:"findings"`
-	Good        []string        `json:"good,omitempty"`
-	Runs        []runReportJSON `json:"runs"`
-	Skipped     []skippedJSON   `json:"skipped,omitempty"`
-	Conventions []string        `json:"conventions,omitempty"`
-	Discarded   []string        `json:"discarded_judge_ids,omitempty"`
-	Reattached  []string        `json:"reattached_injection_ids,omitempty"`
-	Dropped     int             `json:"dropped_by_validator"`
-	CostUSD     float64         `json:"cost_usd"`
+	Version      int             `json:"version"`
+	Manifest     string          `json:"manifest"`
+	Range        string          `json:"range"`
+	Panel        string          `json:"panel"`
+	Available    bool            `json:"available"`
+	Reason       string          `json:"reason,omitempty"`
+	Blocked      bool            `json:"blocked,omitempty"`
+	FallbackFrom string          `json:"fallback_from,omitempty"`
+	Partial      bool            `json:"partial"`
+	Findings     []findingJSON   `json:"findings"`
+	Good         []string        `json:"good,omitempty"`
+	Runs         []runReportJSON `json:"runs"`
+	Skipped      []skippedJSON   `json:"skipped,omitempty"`
+	Conventions  []string        `json:"conventions,omitempty"`
+	Discarded    []string        `json:"discarded_judge_ids,omitempty"`
+	Reattached   []string        `json:"reattached_injection_ids,omitempty"`
+	Dropped      int             `json:"dropped_by_validator"`
+	CostUSD      float64         `json:"cost_usd"`
 }
 
 type findingJSON struct {
@@ -483,21 +485,23 @@ type skippedJSON struct {
 // later review of the same change.
 func reviewJSON(r *reviewrun.Review) reviewOutJSON {
 	out := reviewOutJSON{
-		Version:     jsonVersion,
-		Manifest:    r.Manifest,
-		Range:       r.Range,
-		Panel:       r.Panel,
-		Available:   r.Available,
-		Reason:      r.Reason,
-		Partial:     r.Partial(),
-		Findings:    []findingJSON{},
-		Runs:        []runReportJSON{},
-		Good:        r.Good,
-		Conventions: r.Conventions,
-		Discarded:   r.DiscardedIDs,
-		Reattached:  r.ReattachedIDs,
-		Dropped:     r.DroppedByValidator,
-		CostUSD:     r.CostUSD,
+		Version:      jsonVersion,
+		Manifest:     r.Manifest,
+		Range:        r.Range,
+		Panel:        r.Panel,
+		Available:    r.Available,
+		Reason:       r.Reason,
+		Blocked:      r.Blocked,
+		FallbackFrom: r.FallbackFrom,
+		Partial:      r.Partial(),
+		Findings:     []findingJSON{},
+		Runs:         []runReportJSON{},
+		Good:         r.Good,
+		Conventions:  r.Conventions,
+		Discarded:    r.DiscardedIDs,
+		Reattached:   r.ReattachedIDs,
+		Dropped:      r.DroppedByValidator,
+		CostUSD:      r.CostUSD,
 	}
 	for _, f := range r.Findings {
 		out.Findings = append(out.Findings, findingRow(f))
@@ -807,6 +811,14 @@ type reviewPostJSON struct {
 	// tell them apart.
 	Available bool   `json:"available"`
 	Reason    string `json:"reason,omitempty"`
+	// Blocked reports that Available is false because every provider this
+	// review could try declined to serve the credential — the one
+	// unavailable reason Posted is always false for by design, rather than
+	// because posting itself failed.
+	Blocked bool `json:"blocked,omitempty"`
+	// FallbackFrom names the panel this review's Panel was tried in place
+	// of, after a block. Empty when no fallback was attempted.
+	FallbackFrom string `json:"fallback_from,omitempty"`
 	// Partial reports that some run could not answer, so what it would have
 	// found is unknown rather than absent.
 	Partial bool `json:"partial"`
@@ -935,11 +947,13 @@ type unthreadedJSON struct {
 
 func pullRequestPostJSON(t *pullRequestTarget, r *reviewrun.Review, payload githubapp.ReviewPayload, place reviewpost.Placement, posted *githubapp.PostedReview, failures []fileCommentFailure) reviewPostJSON {
 	out := reviewPostJSON{
-		Version:     jsonVersion,
-		PullRequest: pullRequestRow(t),
-		Available:   r.Available,
-		Reason:      r.Reason,
-		Partial:     r.Partial(),
+		Version:      jsonVersion,
+		PullRequest:  pullRequestRow(t),
+		Available:    r.Available,
+		Reason:       r.Reason,
+		Blocked:      r.Blocked,
+		FallbackFrom: r.FallbackFrom,
+		Partial:      r.Partial(),
 		Payload: reviewPayloadJSON{
 			CommitID: payload.CommitID,
 			Event:    payload.Event,

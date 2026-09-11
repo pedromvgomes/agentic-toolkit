@@ -484,6 +484,43 @@ func TestThePostedJSONCarriesWhetherTheReviewReachedAVerdict(t *testing.T) {
 	}
 }
 
+// A caller reading --json has to be able to tell a review that stayed
+// unavailable because it was blocked from one that failed ordinarily, and
+// runCodeReviewPR routes on exactly this field to withhold the post.
+func TestAPostedJSONCarriesWhetherTheReviewWasBlocked(t *testing.T) {
+	target := &pullRequestTarget{
+		slug: mustSlug("acme", "widgets"),
+		pr:   githubapp.PullRequest{Number: 7, HeadSHA: strings.Repeat("2", 40)},
+	}
+	result := reviewFor(false)
+	result.Blocked = true
+	result.FallbackFrom = "standard"
+	payload, place := reviewpost.Build(result, target.pr, nil)
+
+	var out bytes.Buffer
+	env := &Env{Stdin: strings.NewReader(""), Stdout: &out, Stderr: io.Discard, WorkDir: t.TempDir()}
+	if err := reportReview(env, target, result, payload, place, nil, nil, true); err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		Blocked      bool   `json:"blocked"`
+		FallbackFrom string `json:"fallback_from"`
+		Posted       bool   `json:"posted"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatalf("the output is not JSON: %v\n%s", err, out.String())
+	}
+	if !got.Blocked {
+		t.Error("a blocked review does not report itself as blocked")
+	}
+	if got.FallbackFrom != "standard" {
+		t.Errorf("the fallback panel is not reported: got %q", got.FallbackFrom)
+	}
+	if got.Posted {
+		t.Error("a blocked review reports itself as posted")
+	}
+}
+
 // A --json consumer parsing this stream must not be handed prose because the
 // post is what failed.
 func TestAFailedPostStillReportsAsJSONUnderJSON(t *testing.T) {

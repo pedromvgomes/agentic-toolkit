@@ -120,6 +120,7 @@ One configured model invocation. It says which CLI, which model and which prompt
 | `validate` | `bool` | no | Whether findings are put to the validator. Unset leaves it to the context, and a context that posts validates regardless: a false finding on a PR is published and blocks approval. |
 | `judge` | `Runner` | no | Judge for reviews this panel produces, instead of the manifest's. Unset uses the manifest's. |
 | `validator` | `Runner` | no | Validator for reviews this panel produces, instead of the manifest's. Unset uses the manifest's. |
+| `fallback` | `string` | no | Panel to retry, on a different provider, when every run this panel made was blocked (a provider declining to serve the credential — spent quota or a rejected token). Tried once; a manifest naming its panels' own twins on each provider is the usual shape. Refused if it costs less than this panel (fewer reviewers times quorum), or if it shares any provider with this panel — the block would only recur. |
 
 ### `defaults`
 
@@ -185,6 +186,10 @@ The `signals` vocabulary is closed and ships with the binary; `agtk code-review 
 # local pass is Claude and the pull request is codex, so a change is read by two
 # models trained differently before anyone else sees it. Every model is named:
 # a reviewer left on the CLI's default is a model nobody chose.
+#
+# Every panel names its twin on the other provider as its fallback, so a
+# provider that blocks a run — a spent quota, a rejected token — is retried
+# once on the other roster rather than left unavailable.
 version: 1
 
 reviewers:
@@ -207,30 +212,36 @@ panels:
   quick:
     description: One Claude reviewer over all three axes. The pre-push pass, where being fast is what it is worth.
     reviewers: [unified]
+    fallback: quick-codex
   standard:
     description: Correctness and security on Claude, each with its own scope.
     reviewers: [correctness, security]
+    fallback: standard-codex
   deep:
     description: Every axis on Claude, run twice, so agreement between independent instances is the confidence signal.
     reviewers: [correctness, security, performance]
     quorum: 2
+    fallback: deep-codex
 
   quick-codex:
     description: One codex reviewer over all three axes.
     reviewers: [unified-codex]
     judge:     {provider: codex, model: astra, prompt: builtin:judge}
     validator: {provider: codex, model: sol,   prompt: builtin:validator}
+    fallback: quick
   standard-codex:
     description: Correctness and security on codex, each with its own scope. The second model's first look at the change.
     reviewers: [correctness-codex, security-codex]
     judge:     {provider: codex, model: astra, prompt: builtin:judge}
     validator: {provider: codex, model: sol,   prompt: builtin:validator}
+    fallback: standard
   deep-codex:
     description: Every axis on codex, run twice, so agreement between independent instances is the confidence signal.
     reviewers: [correctness-codex, security-codex, performance-codex]
     quorum: 2
     judge:     {provider: codex, model: astra, prompt: builtin:judge}
     validator: {provider: codex, model: sol,   prompt: builtin:validator}
+    fallback: deep
 
 defaults:
   worktree: quick

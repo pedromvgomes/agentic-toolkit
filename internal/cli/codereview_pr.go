@@ -332,7 +332,13 @@ func runCodeReviewPR(cmd *cobra.Command, env *Env, target reviewTarget, flags ru
 	}
 	payload, place := reviewpost.Build(result, t.pr, t.added)
 
-	if flags.noPost {
+	// A blocked review — every provider it could try declined to serve the
+	// credential — takes the same path as --no-post: reported to the caller,
+	// posted nowhere. A block is a credential/quota condition, not a defect
+	// for a person on the pull request to see, and during an outage it would
+	// otherwise repeat on every open PR. An ordinary failure is not blocked
+	// and still posts, so it stays visible.
+	if flags.noPost || result.Blocked {
 		if err := reportReview(env, t, result, payload, place, nil, nil, flags.json); err != nil {
 			return err
 		}
