@@ -400,6 +400,46 @@ func TestRender_CLAUDEmd_PreservesUserContent(t *testing.T) {
 }
 
 // TestRender_DryRun does no writes but reports actions.
+// TestRender_DryRunSurfacesUnreadableMixedOwnershipJSON: Options.DryRun
+// promises that errors depending on filesystem state are still
+// surfaced. A render reads settings.json and .mcp.json whether or not
+// it has anything to put in them, so one that will not parse is a
+// failure the preview can see — and reporting success for it would
+// preview a render that cannot run. The codex adapter answers for its
+// own config.toml the same way.
+func TestRender_DryRunSurfacesUnreadableMixedOwnershipJSON(t *testing.T) {
+	for _, tc := range []struct{ name, rel string }{
+		{"settings.json", ".claude/settings.json"},
+		{".mcp.json", ".mcp.json"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tmp := t.TempDir()
+			target := filepath.Join(tmp, filepath.FromSlash(tc.rel))
+			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(target, []byte("{ not valid json\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+
+			opts := claude.Options{
+				Scope:       claude.ScopeProject,
+				ScopeRoot:   filepath.Join(tmp, ".claude"),
+				ProjectRoot: tmp,
+			}
+			dry := opts
+			dry.DryRun = true
+
+			if err := claude.Render(simpleProjectPlan(), dry); err == nil {
+				t.Fatal("dry run reported success for a file the render refuses")
+			}
+			if err := claude.Render(simpleProjectPlan(), opts); err == nil {
+				t.Error("real render accepted a file the dry run refused")
+			}
+		})
+	}
+}
+
 func TestRender_DryRun(t *testing.T) {
 	tmp := t.TempDir()
 	scopeRoot := filepath.Join(tmp, ".claude")

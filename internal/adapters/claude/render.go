@@ -115,8 +115,7 @@ func Render(plan *resolver.Plan, opts Options) error {
 	}
 
 	if opts.DryRun {
-		reportDryRun(opts.Stdout, plan, ops, roots, manifest)
-		return nil
+		return reportDryRun(opts.Stdout, plan, ops, roots, manifest)
 	}
 
 	if err := os.MkdirAll(roots.ScopeRoot, 0o755); err != nil { // #nosec G301 -- 0755: the scope root in the user's repo, meant to be committed
@@ -157,10 +156,26 @@ func Render(plan *resolver.Plan, opts Options) error {
 // reportDryRun prints what each whole-owned file's intended action would
 // be, plus the mixed-ownership targets (CLAUDE.md, settings.json) that a
 // real render would touch, without writing anything.
-func reportDryRun(stdout io.Writer, plan *resolver.Plan, ops []fsops.WholeOp, roots scopeRoots, manifest fsops.ManifestState) {
+//
+// The mixed-ownership JSON is parsed here for the reason Options.DryRun
+// states: a render reads settings.json and .mcp.json whether or not it
+// has anything to put in them, so a file that will not parse is a
+// failure this preview can see, and reporting success for one previews a
+// render that will not happen.
+func reportDryRun(stdout io.Writer, plan *resolver.Plan, ops []fsops.WholeOp, roots scopeRoots, manifest fsops.ManifestState) error {
 	wholeOps.ReportDryRunWholeOps(stdout, ops, roots.ScopeRoot, manifest)
+
+	if _, err := readSettings(settingsPath(roots)); err != nil {
+		return err
+	}
+	if roots.Scope == ScopeProject {
+		if _, err := readSettings(mcpJSONPath(roots)); err != nil {
+			return err
+		}
+	}
+
 	if stdout == nil {
-		return
+		return nil
 	}
 
 	// Settings + CLAUDE.md preview. Cheap but accurate enough: just
@@ -182,6 +197,7 @@ func reportDryRun(stdout io.Writer, plan *resolver.Plan, ops []fsops.WholeOp, ro
 	if hasSettings {
 		fmt.Fprintf(stdout, "would update %s (managed top-level keys)\n", settingsPath(roots))
 	}
+	return nil
 }
 
 // scopeRoots holds the resolved root directories for a render run.

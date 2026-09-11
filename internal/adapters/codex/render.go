@@ -110,8 +110,7 @@ func Render(plan *resolver.Plan, opts Options) error {
 	}
 
 	if opts.DryRun {
-		reportDryRun(opts.Stdout, plan, ops, rts, manifest)
-		return nil
+		return reportDryRun(opts.Stdout, plan, ops, rts, manifest)
 	}
 
 	if err := os.MkdirAll(rts.AgentsRoot, 0o755); err != nil { // #nosec G301 -- 0755: the agents root in the user's repo, meant to be committed
@@ -150,27 +149,37 @@ func Render(plan *resolver.Plan, opts Options) error {
 // and hook is one Codex cannot express collects nothing, and the render
 // it is previewing would leave the file alone. Running the collectors
 // here is also what surfaces their skip reports in a dry run.
-func reportDryRun(stdout io.Writer, plan *resolver.Plan, ops []fsops.WholeOp, rts roots, manifest fsops.ManifestState) {
+//
+// config.toml is parsed whichever line applies, for the reason
+// Options.DryRun states: a file the render cannot read is a failure
+// that depends on filesystem state, and a preview reporting success for
+// one previews a render that will not happen.
+func reportDryRun(stdout io.Writer, plan *resolver.Plan, ops []fsops.WholeOp, rts roots, manifest fsops.ManifestState) error {
 	wholeOps.ReportDryRunWholeOps(stdout, ops, rts.ProjectRoot, manifest)
-	if stdout == nil {
-		return
-	}
+
 	mcpServers, mcpNotes := collectMCPServers(plan)
 	hooks, hookNotes := collectHooks(plan)
 	settingFragments := collectSettingFragments(plan)
 	reportNotes(stdout, mcpNotes)
 	reportNotes(stdout, hookNotes)
-	if len(mcpServers) > 0 || len(hooks) > 0 || len(settingFragments) > 0 {
-		fmt.Fprintf(stdout, "would update %s (managed keys)\n", configPath(rts))
-		return
+
+	current, err := readConfig(configPath(rts))
+	if err != nil {
+		return err
 	}
-	// Nothing to write is not the same as nothing to do: a render with
-	// no mcp, hook or setting left still reclaims the keys a previous
-	// one claimed, and a preview silent about that is a preview of a
-	// different render.
-	if current, err := readConfig(configPath(rts)); err == nil && len(readManagedList(current)) > 0 {
+	if stdout == nil {
+		return nil
+	}
+	switch {
+	case len(mcpServers) > 0 || len(hooks) > 0 || len(settingFragments) > 0:
+		fmt.Fprintf(stdout, "would update %s (managed keys)\n", configPath(rts))
+	case len(readManagedList(current)) > 0:
+		// Nothing to write is not the same as nothing to do: a render
+		// with no mcp, hook or setting left still reclaims the keys a
+		// previous one claimed.
 		fmt.Fprintf(stdout, "would update %s (clearing managed keys)\n", configPath(rts))
 	}
+	return nil
 }
 
 // roots holds the resolved root directories for a render run. Unlike the

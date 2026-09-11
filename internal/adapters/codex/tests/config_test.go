@@ -512,3 +512,31 @@ func TestConfig_DryRunAnnouncesClearingManagedKeys(t *testing.T) {
 		t.Errorf("managed keys not reclaimed: %v", mapKeys(cfg))
 	}
 }
+
+// TestConfig_DryRunSurfacesAnUnreadableConfig: Options.DryRun promises
+// that errors depending on filesystem state are still surfaced. A
+// config.toml that will not parse is one, and a preview that reported
+// success for it would be previewing a render that cannot run.
+func TestConfig_DryRunSurfacesAnUnreadableConfig(t *testing.T) {
+	tmp := t.TempDir()
+	writeConfigFile(t, tmp, "this is [ not valid TOML\n")
+
+	var out bytes.Buffer
+	err := codex.Render(mixedConfigPlan(), codex.Options{
+		Scope: codex.ScopeProject, ProjectRoot: tmp, DryRun: true, Stdout: &out,
+	})
+	if err == nil {
+		t.Fatalf("dry run reported success for a config the render refuses: %q", out.String())
+	}
+	if !strings.Contains(err.Error(), "parse") {
+		t.Errorf("error should name the parse failure: %v", err)
+	}
+
+	// And the real render fails the same way, rather than the two
+	// disagreeing about the same file.
+	if err := codex.Render(mixedConfigPlan(), codex.Options{
+		Scope: codex.ScopeProject, ProjectRoot: tmp,
+	}); err == nil {
+		t.Error("real render accepted a config the dry run refused")
+	}
+}
