@@ -213,14 +213,49 @@ func TestAPanelCannotFallBackToACheaperPanel(t *testing.T) {
 	}
 }
 
-// Equal cost is the floor a fallback must clear, not a ceiling: a panel may
-// fall back to one at least as deep as itself.
-func TestAPanelMayFallBackToAnEquallyOrMoreExpensivePanel(t *testing.T) {
+// A fallback sharing a provider with the panel declaring it would recur into
+// the identical block the moment it actually mattered, so it is refused —
+// even one that is otherwise a perfectly legal, deeper panel.
+func TestAPanelCannotFallBackToAPanelOnTheSameProvider(t *testing.T) {
 	src := strings.Replace(complete,
 		"  standard: {reviewers: [correctness, security]}",
 		"  standard: {reviewers: [correctness, security], fallback: deep}", 1)
-	if _, err := review.ParseBytes("manifest.yaml", []byte(src)); err != nil {
-		t.Fatalf("a fallback at least as deep as its panel was refused: %v", err)
+	err := expectFailure(t, src)
+	if !review.IsKind(err, review.ErrInvalidPanel) {
+		t.Fatalf("kind = %v, want invalid_panel", err)
+	}
+	if !strings.Contains(err.Error(), "claudecode") {
+		t.Errorf("error = %q, want it to name the shared provider", err)
+	}
+}
+
+// A manifest with a panel on each provider, for exercising a fallback that
+// legitimately differs.
+const twoProviderManifest = `version: 1
+reviewers:
+  correctness:       {provider: claudecode, model: sonnet, prompt: builtin:correctness}
+  correctness-codex:  {provider: codex,      model: sol,    prompt: builtin:correctness}
+judge:     {provider: claudecode, model: opus,   prompt: builtin:judge}
+validator: {provider: claudecode, model: sonnet, prompt: builtin:validator}
+panels:
+  quick:
+    reviewers: [correctness]
+    fallback: quick-codex
+  quick-codex:
+    reviewers: [correctness-codex]
+    judge:     {provider: codex, model: astra, prompt: builtin:judge}
+    validator: {provider: codex, model: sol,   prompt: builtin:validator}
+defaults:
+  worktree: quick
+  pr:       quick
+`
+
+// Equal cost is the floor a fallback must clear, not a ceiling: a panel may
+// fall back to one at least as deep as itself, as long as it is on a
+// different provider.
+func TestAPanelMayFallBackToAnEquallyOrMoreExpensivePanelOnAnotherProvider(t *testing.T) {
+	if _, err := review.ParseBytes("manifest.yaml", []byte(twoProviderManifest)); err != nil {
+		t.Fatalf("a same-cost fallback on a different provider was refused: %v", err)
 	}
 }
 

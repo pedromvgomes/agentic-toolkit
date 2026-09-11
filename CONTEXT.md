@@ -184,7 +184,15 @@ hits only the judge still re-runs the reviewers too, on the other provider.
 Refused, at parse time, if it costs less than the panel declaring it — equal cost is the floor,
 not the ceiling. A panel an **Escalation** rule raised is not allowed to fall back to one the
 rule would not have chosen; that would spend a fraction of the review the rule asked for and
-say nothing about it.
+say nothing about it. Refused too if it shares a provider with the panel declaring it: "a
+different provider" is the property enforced, not a convention a manifest is trusted to follow,
+because a shared provider recurs into the identical block instead of recovering from it.
+
+A `security:prompt-injection` **Finding** the first panel's reviewers already caught survives
+into the fallback panel's own verdict, matched by fingerprint, even when the fallback panel's
+reviewers do not independently reach it — the one place this pipeline still reattaches a
+finding across two different runs, because the retry that recovers a block is otherwise the one
+path that could convert an already-detected injection into a review that reads as clean.
 _Avoid_: retry, backup panel, secondary
 
 **Context**:

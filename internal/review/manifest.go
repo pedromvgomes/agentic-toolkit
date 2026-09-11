@@ -153,7 +153,12 @@ type Panel struct {
 	// it: a shallower fallback would silently run, answer, and read as the
 	// review an escalation rule raised to this panel for, while spending a
 	// fraction of it.
-	Fallback string `yaml:"fallback,omitempty" agtkdoc:"Panel to retry, on a different provider, when every run this panel made was blocked (a provider declining to serve the credential — spent quota or a rejected token). Tried once; a manifest naming its panels' own twins on each provider is the usual shape. Refused if it costs less than this panel (fewer reviewers times quorum): a shallower fallback would silently give up whatever escalation raised to this one."`
+	//
+	// Refused too if it shares any provider with the panel declaring it
+	// (Providers). "On a different provider" is not this field's own
+	// convention to keep; a fallback that shares a provider would repeat
+	// the identical block the moment it was actually needed.
+	Fallback string `yaml:"fallback,omitempty" agtkdoc:"Panel to retry, on a different provider, when every run this panel made was blocked (a provider declining to serve the credential — spent quota or a rejected token). Tried once; a manifest naming its panels' own twins on each provider is the usual shape. Refused if it costs less than this panel (fewer reviewers times quorum), or if it shares any provider with this panel — the block would only recur."`
 }
 
 // EffectiveJudge is the judge that reconciles a review the named panel
@@ -179,6 +184,29 @@ func (m *Manifest) EffectiveValidator(panel string) *Runner {
 		return p.Validator
 	}
 	return m.Validator
+}
+
+// Providers is the set of providers a review this panel produces actually
+// runs on — every reviewer's, plus the effective judge's and validator's.
+//
+// A panel names no provider of its own; this is what a caller comparing two
+// panels for a shared provider — parse.go's fallback validation, the one
+// place this is asked — has to compute instead.
+func (m *Manifest) Providers(panel string) map[string]bool {
+	p := m.Panels[panel]
+	out := make(map[string]bool, len(p.Reviewers)+2)
+	for _, name := range p.Reviewers {
+		if r, ok := m.Reviewers[name]; ok {
+			out[r.Provider] = true
+		}
+	}
+	if j := m.EffectiveJudge(panel); j != nil {
+		out[j.Provider] = true
+	}
+	if v := m.EffectiveValidator(panel); v != nil {
+		out[v.Provider] = true
+	}
+	return out
 }
 
 // EffectiveQuorum is Quorum, or 1 when the panel does not set one.

@@ -64,6 +64,18 @@ one code path.
   than rebuilding them — only the panel differs between the two, and neither the tree nor the
   manifest changed in between. The runs and cost the first, blocked panel already made are
   carried into the returned `Review` rather than discarded with it.
+- A `fallback:` is refused, too, if it shares any provider with the panel declaring it: "on a
+  different provider" is enforced, not merely a naming convention a manifest is trusted to
+  follow. `standard.fallback: deep` (same provider, just deeper) is otherwise a perfectly legal
+  fallback by every other check, and would recur into the identical block the moment it
+  actually mattered.
+- A prompt-injection finding (`security:prompt-injection`) the first, blocked panel's reviewers
+  already caught is carried into the fallback's own result if the fallback panel does not
+  independently reach the same finding — matched by fingerprint, since ids are per-run and mean
+  nothing across two different panels. ADR 0008's reattachment happens inside one judge's own
+  run, and a judge that never starts (blocked, same as any other outage) never reaches it;
+  without this, the retry this feature exists to make is the one path that can convert a real,
+  already-detected injection into a review that looks clean.
 - Only `claudecode`'s driver dialect can report a block as of v0.7.0; `codex`'s explicitly
   reports none. A `codex`-backed panel that hits a rate limit today fails ordinarily (ordinary
   failure, posts as before) rather than triggering a fallback — the mechanism is ready for the

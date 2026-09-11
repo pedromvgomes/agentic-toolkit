@@ -133,6 +133,17 @@ type Review struct {
 	// place of, after every run on it was blocked. Empty when no fallback
 	// was attempted.
 	FallbackFrom string
+
+	// injectedCarry holds this run's own prompt-injection candidates, kept
+	// once validation clears them whether or not the judge went on to
+	// answer. A fallback that reaches a verdict on a different panel splices
+	// these into its own Findings by Fingerprint, so an injection the first,
+	// blocked panel's reviewers already caught cannot be silently absent
+	// from a review that ends up looking clean — the conversion ADR 0007
+	// and ADR 0008 exist to prevent, reopened at the one seam this feature
+	// adds between the reviewer that catches an injection and the judge
+	// that would otherwise re-attach it.
+	injectedCarry []Finding
 }
 
 // RunReport is one Runner's outcome, for the review record.

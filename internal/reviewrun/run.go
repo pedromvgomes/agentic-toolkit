@@ -298,6 +298,14 @@ func Run(ctx context.Context, opts Options) (*Review, error) {
 	combined = append(combined, out.Reports...)
 	alt.Reports = append(combined, alt.Reports...)
 	alt.CostUSD += out.CostUSD
+	// A verdict the fallback panel reaches on its own must not read as clean
+	// when the first panel's reviewers already caught something this
+	// pipeline may never drop. Only reached when alt has a verdict at all —
+	// an alt that is itself unavailable already posts as such, which is
+	// visible on its own terms and loses nothing silently.
+	if alt.Available {
+		alt.Findings, alt.ReattachedIDs = mergeCarriedInjections(alt.Findings, alt.ReattachedIDs, out.injectedCarry)
+	}
 	// The fallback panel blocked too: neither provider could serve this
 	// review, and that is still a block rather than an ordinary failure to
 	// surface. A fallback that failed for an unrelated reason is left to
@@ -326,6 +334,36 @@ func onlyBlocked(reports []RunReport) bool {
 		sawBlocked = true
 	}
 	return sawBlocked
+}
+
+// mergeCarriedInjections appends the carried, prompt-injection findings not
+// already present in findings, and returns the reattached ids alongside
+// them for the review's own record.
+//
+// Matched by Fingerprint rather than ID: ids are per-run labels the panel
+// that produced findings assigned, and carried came from a different run
+// entirely — a run whose judge may never have started. A carried finding
+// gets a synthetic id rather than one from either panel's own "f1", "f2", …
+// scheme, since it was never put to either judge and reusing that scheme
+// risks colliding with an id one of them did issue.
+func mergeCarriedInjections(findings []Finding, reattached []string, carried []Finding) ([]Finding, []string) {
+	if len(carried) == 0 {
+		return findings, reattached
+	}
+	present := make(map[string]bool, len(findings))
+	for _, f := range findings {
+		present[f.Fingerprint()] = true
+	}
+	for i, f := range carried {
+		if present[f.Fingerprint()] {
+			continue
+		}
+		f.ID = fmt.Sprintf("carried-%d", i+1)
+		findings = append(findings, f)
+		reattached = append(reattached, f.ID)
+	}
+	sort.Strings(reattached)
+	return findings, reattached
 }
 
 // runPanel performs one review against one panel, with no fallback of its
@@ -407,6 +445,13 @@ func decide(ctx context.Context, opts Options, inv invoker, sched *scheduler,
 	for _, f := range candidates {
 		if f.Upheld() {
 			kept = append(kept, f)
+			// Stashed whether or not the judge goes on to answer: a judge
+			// that never runs (blocked or any other outage) never reaches
+			// applyJudgement's own reattachment, and Run's fallback is the
+			// only other place these can still be carried forward from.
+			if f.Injected() {
+				out.injectedCarry = append(out.injectedCarry, f)
+			}
 		} else {
 			out.DroppedByValidator++
 		}

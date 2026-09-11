@@ -149,6 +149,15 @@ func (m *Manifest) validate(filePath string) error {
 					"%q costs less than this panel (%d run(s) vs %d); a fallback shallower than the panel it replaces would silently give up whatever escalation raised to it",
 					panel.Fallback, fallback.Cost(), panel.Cost())
 			}
+			// A fallback is tried because a provider declined to serve the
+			// credential; one that shares that provider would recur into the
+			// identical block the moment it actually mattered, rather than
+			// recovering from it.
+			if shared := sharedProviders(m.Providers(name), m.Providers(panel.Fallback)); len(shared) > 0 {
+				return fieldErr(filePath, field+".fallback", ErrInvalidPanel,
+					"%q shares provider(s) %s with this panel; a block there would recur on the fallback instead of being recovered from",
+					panel.Fallback, strings.Join(shared, ", "))
+			}
 		}
 	}
 
@@ -519,6 +528,18 @@ func sortedMapKeys[V any](m map[string]V) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {
 		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// sharedProviders names the providers two panels have in common, sorted.
+func sharedProviders(a, b map[string]bool) []string {
+	var out []string
+	for p := range a {
+		if b[p] {
+			out = append(out, p)
+		}
 	}
 	sort.Strings(out)
 	return out
