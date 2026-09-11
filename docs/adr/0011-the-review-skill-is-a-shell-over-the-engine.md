@@ -25,14 +25,14 @@ under ADR 0007 rather than something to pass.
 **Promoting the language prompt bodies to `builtin:`.** The skill carried Go, Kotlin/Spring,
 React and Rust sets, and they were not filler: the Go security body names `text/template`
 against `html/template`, `hmac.Equal`, `http.MaxBytesReader`. Rejected for the reason
-`internal/reviewrun/prompt.go` already gives — a stack prompt inside the binary is one the
+`source/toolkit/internal/reviewrun/prompt.go` already gives — a stack prompt inside the binary is one the
 toolkit owes every repo writing that language, forever, and a repo that has the language can
 write a body that knows its own stack. Shipping them as bodies a consumer copies into its
 **Review manifest** was weighed and also rejected: they would be the toolkit's to maintain
 in everything but name.
 
 The four `shared/` bodies were not a trade-off at all. Comment hygiene and the
-repo-conventions rule are already in `internal/reviewrun/prompts/correctness.md`, and the
+repo-conventions rule are already in `source/toolkit/internal/reviewrun/prompts/correctness.md`, and the
 severity calibration and evidence rule are in the reviewer preamble.
 
 **A skill that can approve.** Rejected. Approval is four conditions with no override, and

@@ -9,7 +9,7 @@ before:
 builds:
   - id: agtk
     binary: agtk
-    main: ./cmd/agtk
+    main: ./source/toolkit/cmd/agtk
     env:
       - CGO_ENABLED=0
     goos:
@@ -20,7 +20,7 @@ builds:
       - arm64
     ldflags:
       - -s -w
-      - -X github.com/pedromvgomes/agentic-toolkit/internal/version.Version={{ .Version }}
+      - -X github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/version.Version={{ .Version }}
 
 archives:
   - id: agtk

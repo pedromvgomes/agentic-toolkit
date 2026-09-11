@@ -3,13 +3,13 @@ name: schemagen-documents-only-hand-named-types
 kind: gotcha
 description: schemagen discovers no top-level types; each one is a hand-written reflect.TypeOf call, so a new manifest struct documents as nothing and errors as nothing.
 anchors:
-  - path: tools/schemagen/main.go
-    blob: 33d0e62defbd
+  - path: source/toolkit/tools/schemagen/main.go
+    blob: effbadf9177a
 confidence: verified
 ---
 
 There is no package walk and no registry. Every documented top-level struct is an explicit
-`reflect.TypeOf(...)` call someone wrote in `tools/schemagen/main.go` —
+`reflect.TypeOf(...)` call someone wrote in `source/toolkit/tools/schemagen/main.go` —
 `stk.Stack{}` at `:241`, `stk.MemoryConfig{}` at `:248`, `sourceref.Source{}` at `:271`,
 `rev.Manifest{}` at `:297` (then `rev.Runner{}` `:304`, `rev.Panel{}` `:309`,
 `rev.Defaults{}` `:316`, `rev.Escalation{}` `:323`), `lock.Lockfile{}` at `:366` — plus one

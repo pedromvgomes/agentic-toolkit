@@ -6,7 +6,7 @@ same **Definition**s are written a second time, into Codex's own layout, by a se
 **Adapter** over shared machinery.
 
 Reviews have run both Claude Code and Codex per-**Reviewer** for a while, but that subsystem
-invokes a model and never touches `internal/stack` or `internal/adapters`. Rendering is the
+invokes a model and never touches `source/toolkit/internal/stack` or `source/toolkit/internal/adapters`. Rendering is the
 other direction: files written for a tool to read. A repo that already runs both providers
 had no way to say so to the thing that writes its files.
 

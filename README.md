@@ -31,7 +31,7 @@ After install, `agtk update` upgrades in place from the same release archives â€
 If you have a Go toolchain and prefer it:
 
 ```bash
-go install github.com/pedromvgomes/agentic-toolkit/cmd/agtk@latest
+go install github.com/pedromvgomes/agentic-toolkit/source/toolkit/cmd/agtk@latest
 ```
 
 ## What you get
@@ -48,8 +48,10 @@ go install github.com/pedromvgomes/agentic-toolkit/cmd/agtk@latest
 
 ```
 agentic-toolkit/
-  cmd/agtk/             # CLI entrypoint
-  internal/             # CLI implementation (private packages)
+  source/toolkit/       # the Go tooling
+    cmd/agtk/           # CLI entrypoint
+    internal/           # CLI implementation (private packages)
+    tools/              # code generators run via `go generate`
   definitions/          # the catalog
     rules/              # rule definitions
     skills/             # skill definitions

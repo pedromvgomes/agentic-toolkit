@@ -3,63 +3,63 @@ name: only-lock-resolves-refs
 kind: invariant
 description: Every command except lock and sync's relock uses FrozenProvider, so nothing else can reach the network to resolve a ref.
 anchors:
-  - path: internal/cli/*.go
+  - path: source/toolkit/internal/cli/*.go
     matches:
-      - path: internal/cli/codereview.go
+      - path: source/toolkit/internal/cli/codereview.go
         blob: 3601595c0eaa
-      - path: internal/cli/codereview_approve.go
+      - path: source/toolkit/internal/cli/codereview_approve.go
         blob: b9a95b835939
-      - path: internal/cli/codereview_approve_test.go
+      - path: source/toolkit/internal/cli/codereview_approve_test.go
         blob: 057de70cec50
-      - path: internal/cli/codereview_explain_test.go
+      - path: source/toolkit/internal/cli/codereview_explain_test.go
         blob: a22feda4cd47
-      - path: internal/cli/codereview_init.go
+      - path: source/toolkit/internal/cli/codereview_init.go
         blob: b7938d155a7e
-      - path: internal/cli/codereview_init_test.go
+      - path: source/toolkit/internal/cli/codereview_init_test.go
         blob: db0c644e8f17
-      - path: internal/cli/codereview_initialize.go
+      - path: source/toolkit/internal/cli/codereview_initialize.go
         blob: b27674748a1e
-      - path: internal/cli/codereview_json_test.go
+      - path: source/toolkit/internal/cli/codereview_json_test.go
         blob: 96483e4bdf63
-      - path: internal/cli/codereview_pr.go
+      - path: source/toolkit/internal/cli/codereview_pr.go
         blob: 3bdb8f071215
-      - path: internal/cli/codereview_pr_test.go
+      - path: source/toolkit/internal/cli/codereview_pr_test.go
         blob: d1a4f36f7fd7
-      - path: internal/cli/codereview_run.go
+      - path: source/toolkit/internal/cli/codereview_run.go
         blob: 47db478ff54a
-      - path: internal/cli/codereview_threads_test.go
+      - path: source/toolkit/internal/cli/codereview_threads_test.go
         blob: a62196c4e28b
-      - path: internal/cli/fetch.go
+      - path: source/toolkit/internal/cli/fetch.go
         blob: 1d58f9a1891e
-      - path: internal/cli/handoff.go
+      - path: source/toolkit/internal/cli/handoff.go
         blob: d1d9642d265c
-      - path: internal/cli/init.go
+      - path: source/toolkit/internal/cli/init.go
         blob: 1fd7afc3ea51
-      - path: internal/cli/jsonout.go
+      - path: source/toolkit/internal/cli/jsonout.go
         blob: 70e84445dc0a
-      - path: internal/cli/lock.go
+      - path: source/toolkit/internal/cli/lock.go
         blob: a52fb8f8e2ac
-      - path: internal/cli/memory.go
+      - path: source/toolkit/internal/cli/memory.go
         blob: 7ab84a4dc55e
-      - path: internal/cli/paths.go
+      - path: source/toolkit/internal/cli/paths.go
         blob: d30919b87867
-      - path: internal/cli/paths_test.go
+      - path: source/toolkit/internal/cli/paths_test.go
         blob: b5f76810ea63
-      - path: internal/cli/plan.go
+      - path: source/toolkit/internal/cli/plan.go
         blob: 3f69225eaee4
-      - path: internal/cli/render.go
+      - path: source/toolkit/internal/cli/render.go
         blob: 3725b3a58942
-      - path: internal/cli/render_error_test.go
+      - path: source/toolkit/internal/cli/render_error_test.go
         blob: c9d380c11494
-      - path: internal/cli/root.go
+      - path: source/toolkit/internal/cli/root.go
         blob: 9b775bf0b883
-      - path: internal/cli/status.go
+      - path: source/toolkit/internal/cli/status.go
         blob: 9c0513063466
-      - path: internal/cli/sync.go
+      - path: source/toolkit/internal/cli/sync.go
         blob: 9220465043b9
-      - path: internal/cli/sync_stale_test.go
+      - path: source/toolkit/internal/cli/sync_stale_test.go
         blob: 45a9c7cba741
-      - path: internal/cli/update.go
+      - path: source/toolkit/internal/cli/update.go
         blob: b2b0526bee75
 confidence: verified
 ---
@@ -74,7 +74,7 @@ lockfile authoritative rather than advisory.
 Picking the wrong provider in a new command does not fail loudly. It quietly turns a
 reproducible command into one whose output depends on what a branch points at today.
 
-The anchor is the glob `internal/cli/*.go`, not the files that construct a provider today:
+The anchor is the glob `source/toolkit/internal/cli/*.go`, not the files that construct a provider today:
 the claim quantifies over the directory, so what falsifies it is a *new* command file, which
 per-file anchors can never notice appearing. See
 `docs/adr/0005-glob-anchors-mark-quantified-claims.md`.

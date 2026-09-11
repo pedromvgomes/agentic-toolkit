@@ -1,11 +1,11 @@
 ---
 about: a Panel's fallback: must cost at least as much as the panel declaring it, or manifest parsing refuses it
 saw:
-  - internal/review/parse.go
-  - internal/review/selection.go
+  - source/toolkit/internal/review/parse.go
+  - source/toolkit/internal/review/selection.go
 ---
 
-`internal/review/parse.go`'s `validate()` compares `Panel.Cost()` (`selection.go`:
+`source/toolkit/internal/review/parse.go`'s `validate()` compares `Panel.Cost()` (`selection.go`:
 `len(p.Reviewers) * p.EffectiveQuorum()`, the same measure `deeper()` uses for escalation)
 between a panel and the panel its `fallback:` names. A fallback whose cost is lower than the
 panel declaring it is refused with `ErrInvalidPanel`; equal cost is accepted (the built-in

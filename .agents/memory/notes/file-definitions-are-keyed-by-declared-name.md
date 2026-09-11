@@ -3,22 +3,22 @@ name: file-definitions-are-keyed-by-declared-name
 kind: gotcha
 description: For file-shaped categories the definition's own `name:` field becomes the overlay key, not the name the manifest wrote, so overrides and requires can silently miss.
 anchors:
-  - path: internal/resolver/resolver.go
+  - path: source/toolkit/internal/resolver/resolver.go
     blob: 022646e73709
-  - path: internal/resolver/requires.go
+  - path: source/toolkit/internal/resolver/requires.go
     blob: de9ff0d03dc9
-  - path: internal/definitions/parser.go
+  - path: source/toolkit/internal/definitions/parser.go
     blob: c59af791af5f
 confidence: verified
 ---
 
 The resolver keys the override overlay on the name the *parsed definition* reports, not on
 the name the entry asked for: `Name: def.GetCommon().Name`
-(`internal/resolver/resolver.go:409`), and `loadStack` builds `defKey{Category, w.Name}` from
+(`source/toolkit/internal/resolver/resolver.go:409`), and `loadStack` builds `defKey{Category, w.Name}` from
 that (`resolver.go:213`).
 
 Whether that equals the entry's name depends on the category, and the two halves behave
-oppositely (`internal/definitions/parser.go:101-104`):
+oppositely (`source/toolkit/internal/definitions/parser.go:101-104`):
 
 - **Bundle categories (skill, agent)** go through `ParseBundle` with `strictName=true` — a
   `name:` disagreeing with the directory name is a parse *error*. Entry name and key always
@@ -36,7 +36,7 @@ So a manifest listing `rules: [style]` against a `style.md` whose frontmatter sa
    collides with nothing when the two files declare different `name:` values. Both render, no
    `DiagOverride` is emitted (`resolver.go:215-224`), and the stack looks ignored.
 2. **`requires:` double-checks for exactly this reason.** `pullOne` probes the overlay with
-   the *guessed* key first (`internal/resolver/requires.go:112`), resolves, and then re-checks
+   the *guessed* key first (`source/toolkit/internal/resolver/requires.go:112`), resolves, and then re-checks
    under the key the parsed definition actually reports (`requires.go:130-133`); the comment
    at `requires.go:109-111` names the cause. A requirement written as `rules/style` against a
    file declaring `name: house-style` is pulled in even when already present under its real

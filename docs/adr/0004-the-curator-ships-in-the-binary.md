@@ -1,6 +1,6 @@
 # The curator ships in the binary, not as a definition
 
-The curator's prompt lives in `internal/curator/`, embedded into `agtk`, and there is no
+The curator's prompt lives in `source/toolkit/internal/curator/`, embedded into `agtk`, and there is no
 `memory-curator` agent definition. `agtk memory curate` names the roster and the tool grant
 itself when it invokes the provider. This supersedes the sentence in
 `docs/adr/0002-no-model-calls-in-agtk.md` that says model-driven memory work "ships as agent
@@ -41,6 +41,6 @@ the two drifting — machinery whose only purpose is to keep two homes agreeing 
   enforced. For the curator it becomes enforcement — the tool grant is constructed in Go at
   the call site as `--allowedTools`, an argv flag no settings file can widen, so the curator's
   own authority over `notes/` is bounded by code rather than by prose.
-- `internal/curator` is the only package that constructs a driver. `index`, `anchor`, `audit`,
+- `source/toolkit/internal/curator` is the only package that constructs a driver. `index`, `anchor`, `audit`,
   `lint`, `show`, `stats` and `candidates` must stay reachable without one, which is the
   property hooks and CI depend on and is checkable by grep.

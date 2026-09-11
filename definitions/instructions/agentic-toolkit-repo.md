@@ -32,9 +32,10 @@ Requires Go 1.26+.
 
 ## Project structure
 
-- `cmd/agtk/` — CLI entrypoint
-- `internal/` — CLI implementation (private packages): `resolver`, `lockfile`, `stack`,
-  `definitions`, `sourceref`/`sourcestore` (fetch/cache), `review`/`reviewrun`/`reviewpost`/
+- `source/toolkit/` — the Go tooling, all of it
+- `source/toolkit/cmd/agtk/` — CLI entrypoint
+- `source/toolkit/internal/` — CLI implementation (private packages): `resolver`, `lockfile`,
+  `stack`, `definitions`, `sourceref`/`sourcestore` (fetch/cache), `review`/`reviewrun`/`reviewpost`/
   `reviewapprove` (code-review flow), `curator`, `memory`, `githubapp`, `updater`/`updatecheck`,
   `adapters` (per-platform render targets, over the shared `adapters/fsops`)
 - `definitions/` — the catalog, one directory per category: `agents/`, `commands/`, `hooks/`,
@@ -48,7 +49,7 @@ Requires Go 1.26+.
   settled
 - `docs/FEATURE-FLOW.md` — the two-stage feature flow (`/plan-feature` → handoff → implement →
   review → open PR)
-- `internal/cli/tests/` — stack-render tests (e.g. `default_stack_render_test.go`,
+- `source/toolkit/internal/cli/tests/` — stack-render tests (e.g. `default_stack_render_test.go`,
   `feature_flow_stack_render_test.go`) that assert what `agtk render` writes for a given stack
 
 ## Definitions catalog
@@ -56,8 +57,8 @@ Requires Go 1.26+.
 Adding or changing a definition means editing a file under `definitions/<category>/...` and, if
 it should ship by default, wiring it into `stacks/default.yaml` (or another stack). Read
 [`definitions/SCHEMA.md`](definitions/SCHEMA.md) first — each category has a fixed shape, and
-`internal/definitions` validates against it at render time. A definition no stack lists is never
-opened and never reported: adding the file is not adding the definition.
+`source/toolkit/internal/definitions` validates against it at render time. A definition no
+stack lists is never opened and never reported: adding the file is not adding the definition.
 
 ## Boundaries
 
@@ -65,7 +66,7 @@ opened and never reported: adding the file is not adding the definition.
 - Run `make check` before considering a change to Go code done
 - Look up unfamiliar domain terms in [CONTEXT.md](CONTEXT.md) rather than guessing a synonym
 - Check `docs/adr/` before revisiting a decision that already has one
-- Add a stack-render test under `internal/cli/tests/` when a stack's rendered output changes
+- Add a stack-render test under `source/toolkit/internal/cli/tests/` when a stack's rendered output changes
 
 ### Ask first
 - Renumbering or superseding an existing ADR

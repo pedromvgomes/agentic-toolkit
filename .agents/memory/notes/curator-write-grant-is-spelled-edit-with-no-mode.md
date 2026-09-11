@@ -3,16 +3,16 @@ name: curator-write-grant-is-spelled-edit-with-no-mode
 kind: gotcha
 description: The curator's write grant is path-scoped, and both `Write(...)` instead of `Edit(...)` and any permission mode silently unscope it.
 anchors:
-  - path: internal/curator/curator.go
-    blob: a8ac0f37cab8
-  - path: internal/curator/prompt.md
+  - path: source/toolkit/internal/curator/curator.go
+    blob: 1e7fb72d46d4
+  - path: source/toolkit/internal/curator/prompt.md
     blob: e99c915ac4dd
   - path: docs/adr/0004-the-curator-ships-in-the-binary.md
-    blob: 39ec9633f9e1
+    blob: 4c0f5779e9b5
 confidence: verified
 ---
 
-`allowedTools` (`internal/curator/curator.go:216`) builds a path-scoped grant, and the two
+`allowedTools` (`source/toolkit/internal/curator/curator.go:216`) builds a path-scoped grant, and the two
 ways to un-scope it by accident are both non-obvious:
 
 1. **Spelling.** The write grant is `"Edit("+editPattern(notesDir)+")"`
@@ -40,7 +40,7 @@ operations independently of the allowlist — see
 [[bash-writes-are-refused-inside-the-working-directory]].
 
 What is *not* bounded by the grant: which file inside `notesDir` a run writes, and whether it
-hand-edits `INDEX.md`, remain prose in `internal/curator/prompt.md`. And candidate markdown is
+hand-edits `INDEX.md`, remain prose in `source/toolkit/internal/curator/prompt.md`. And candidate markdown is
 model-authored input the curator reads and acts on; nothing in the grant stops an instruction
 in one from being carried out with the `Edit` it holds over the notes directory.
 
