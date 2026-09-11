@@ -127,10 +127,13 @@ platforms:
   - codex
 ```
 
-Omitting `platforms:` is the same as `[claude]`. Naming a platform with
-no render adapter fails the render rather than writing nothing.
+Omitting `platforms:` is the same as `[claude]`. This lives in the stack
+file rather than behind a `--platform` flag so that every render site —
+your shell, a hook, CI, a colleague's checkout — reads the same answer
+out of something committed. Naming a platform with no render adapter
+fails the render rather than writing nothing.
 
-Where each category lands:
+Where each category lands, under the default `--scope project`:
 
 | Category | `claude` | `codex` |
 |---|---|---|
@@ -143,6 +146,11 @@ Where each category lands:
 | `settings` | `.claude/settings.json` | `.codex/config.toml` |
 | `hooks` | `.claude/settings.json` | `.codex/config.toml` |
 
+Under `--scope user` the same layouts are written beneath your home
+directory, with one exception: `mcp:` renders nothing for `claude`,
+because Claude Code keeps user-scoped MCP servers in `~/.claude.json`
+under a per-project map rather than in a `.mcp.json` of its own.
+
 Three things to know before opting into `codex`:
 
 - **`AGENTS.md` becomes agtk's file.** It is rewritten from your
@@ -151,6 +159,8 @@ Three things to know before opting into `codex`:
   written where nothing reads it. If you already have a hand-authored
   `AGENTS.md`, the first render refuses until you pass `--force`, so move
   anything you want to keep into an `instruction` definition first.
+  There is no longer any path by which an `AGENTS.md` you wrote reaches
+  `CLAUDE.md`: agtk owns the one and generates the other.
   `CLAUDE.md` is unaffected: the two files are built independently from
   the same `instructions:`, and neither reads the other.
 - **A command and a skill sharing a name collide on Codex**, since both
@@ -158,9 +168,13 @@ Three things to know before opting into `codex`:
   command is skipped, with a line on stdout saying so. Nothing changes on
   Claude, where the two have separate destinations.
 - **A `prompt` hook handler and an `sse` MCP transport are skipped**, and
-  reported. Codex parses a prompt handler but never runs it, and has no
-  sse client. The same definitions still render for Claude in the same
-  pass.
+  reported on stdout — by a dry run as well as a real render, so
+  `--dry-run` shows you what a render would leave out. Codex parses a
+  prompt handler but never runs it, and has no sse client. The same
+  definitions still render for Claude in the same pass. A hook's
+  `fail_closed` is dropped without a line of its own: a Codex hook
+  blocks by the exit code it returns, so there is no key for it to go
+  to.
 
 Codex's skills and rules share the `.agents/` directory with the memory
 store below. They occupy different subdirectories and agtk only ever

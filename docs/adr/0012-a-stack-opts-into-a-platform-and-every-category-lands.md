@@ -70,19 +70,34 @@ and an error would fail a render that is fine on Claude.
   Claude spends `settings.json` and `.mcp.json`. Ownership is recorded there per dotted key
   path rather than per top-level key, because the flag that turns hooks on is one key inside
   a `[features]` table a consumer may also be using — reclaiming the whole table to release
-  one key would take their flags with it.
+  one key would take their flags with it. Claims are compared segment-wise for the same
+  reason: a `settings:` fragment naming `features` would pass a string-equality check against
+  `features.hooks` and replace the table the flag lives in, which leaves every rendered hook
+  in the file and none of them running. The fragment is dropped instead, the precedence
+  `settings.json` already gives hooks over settings.
 - A hook agtk writes is one Codex would not run unless hooks are enabled, so the adapter
   sets `features.hooks` itself. It is written and released with the hooks, not left as a
   step a consumer has to know about.
 - Two canonical values have no Codex destination and are reported rather than written: a
   `prompt` handler, which Codex parses and never executes, and an `sse` transport, which
   Codex has no client for. Both are skipped per definition and the render continues — the
-  same definition is usually rendering correctly for Claude in the same pass. `fail_closed`
-  is not reported, because a Codex hook blocks by its exit code and there is no key it
-  belongs in.
+  same definition is usually rendering correctly for Claude in the same pass. A dry run
+  reports them too, because it decides what it says about `config.toml` by running the same
+  collectors the render does rather than by reading which categories the plan holds.
+  `fail_closed` is not reported, because a Codex hook blocks by its exit code and there is
+  no key it belongs in.
 - A converted command carries its "only on an explicit user request" restriction as the
   first line of its body. Codex's `SKILL.md` frontmatter has no equivalent of Claude's
   `disable-model-invocation`, so the restriction is prose or it is nothing.
 - `AGENTS.md` carries an index of `rules:` — description and relative link — that `CLAUDE.md`
   does not. Codex has no rules-discovery mechanism, so without the index a rule file is
   written where nothing will ever read it.
+- Two properties of the shared machinery are the whole point of sharing it, and they reach
+  the Claude adapter as much as the Codex one. Stale removal refuses a manifest entry that
+  resolves outside the render root, lexically or through a symlinked ancestor: the manifest
+  is committed, so its keys are input to a render rather than something the render wrote, and
+  an entry carrying `..` — or sitting behind a symlink committed beside it — turns a render
+  into a delete of anything the invoking user can write. And a dry run fails on a
+  mixed-ownership file that will not parse, because `Options.DryRun` says errors depending on
+  filesystem state are surfaced, and a preview that exits clean before a render that aborts
+  on the same file is previewing a different render.
