@@ -13,7 +13,7 @@ that commits a `handoff -> real` symlink alongside `real/task.md` leaves the pat
 `handoff/task.md` untracked while its content is entirely branch-authored, and the check reports
 it as locally written. The rule was sound; the test for it was measuring something adjacent.
 
-`internal/handoff` decides it instead, and `agtk handoff list` is how both entry points ask. It
+`source/toolkit/internal/handoff` decides it instead, and `agtk handoff list` is how both entry points ask. It
 `Lstat`s the handoff directory before its entries, refuses a symlink rather than resolving one,
 refuses a nested repository, and names every refusal.
 
@@ -63,8 +63,8 @@ at render when the question can be asked.
   nothing.
 - **The rendered definitions no longer describe the mechanism**, only that they defer to it and
   what to do when it cannot run. The render tests changed accordingly: they assert delegation and
-  the fail-closed path, and which handoffs may be acted on is proved in `internal/handoff`.
-- **`internal/memory`'s anchor confinement had the same defect** — lexical, never resolving —
+  the fail-closed path, and which handoffs may be acted on is proved in `source/toolkit/internal/handoff`.
+- **`source/toolkit/internal/memory`'s anchor confinement had the same defect** — lexical, never resolving —
   and is fixed alongside. Two instances of one class, and the second was already recorded as a
   memory note; leaving it would have made that note the only thing standing between a repeat.
 - **Confinement resolves the whole path, not its last component.** `Lstat` on the leaf refuses a

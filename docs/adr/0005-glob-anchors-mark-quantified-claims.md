@@ -1,6 +1,6 @@
 # Glob anchors mark quantified claims, not merely multi-file ones
 
-A note is anchored per file by default. It gets a glob anchor — `internal/cli/*.go` — when its
+A note is anchored per file by default. It gets a glob anchor — `source/toolkit/internal/cli/*.go` — when its
 claim **quantifies over a file set**: *every*, *only*, *no* X in this directory. A claim that
 merely happens to touch several files gets one anchor per file, listed.
 
@@ -8,7 +8,7 @@ The rule reads backwards at first glance, because the multi-file case is the one
 like it wants a glob. What decides it is not how many files the claim was derived from but
 what would falsify it. A quantified claim is falsified by a file that does not exist yet, and
 a per-file anchor can never notice one appearing. `only-lock-resolves-refs` is the instance
-that produced this rule: it anchored five named files in `internal/cli/`, while its own body
+that produced this rule: it anchored five named files in `source/toolkit/internal/cli/`, while its own body
 named the failure mode as "picking the wrong provider in a *new* command". A sixth file
 constructing a `LiveProvider` breaks the invariant and `agtk memory audit` reports nothing —
 the note stays green while the thing it protects is gone.

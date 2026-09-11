@@ -3,15 +3,15 @@ name: stack-identifiers-are-not-lockfile-keys
 kind: gotcha
 description: A stack's identifier is built from the raw URL and the ref as written, while its lockfile row uses the split repo URL and the resolved ref — the two never join.
 anchors:
-  - path: internal/resolver/resolver.go
-    blob: 022646e73709
-  - path: internal/resolver/types.go
-    blob: f324cf4d5af4
+  - path: source/toolkit/internal/resolver/resolver.go
+    blob: 8095f3afd96d
+  - path: source/toolkit/internal/resolver/types.go
+    blob: 4fd32a68d9d0
 confidence: verified
 ---
 
 `loadExtends` derives two different keys from one `extends:` entry
-(`internal/resolver/resolver.go:234-266`):
+(`source/toolkit/internal/resolver/resolver.go:234-266`):
 
 - the **source** row: `s.sources.add(repoURL, rr.Ref, rr.SHA, SourceStack)` (`:245`) — the
   repo half of the URL, in-repo path stripped by `splitGitURL` (`:237`), and the provider's
@@ -32,7 +32,7 @@ The same split has a second effect. Visit dedupe is on the identifier
 the ref omitted — is two identifiers, hence visited and applied **twice**, appending its id
 twice to `StackOrder`, while the source table collapses both to a single row because `rr.Ref`
 resolved to the same branch. An adapter doing last-wins tiebreaking over `StackOrder` (which
-`internal/resolver/types.go:40-45` says is what it is for) sees a duplicate with no
+`source/toolkit/internal/resolver/types.go:40-45` says is what it is for) sees a duplicate with no
 counterpart in the lockfile.
 
 Note the contrast with local-path extends (`resolver.go:270`), whose identifier is built from

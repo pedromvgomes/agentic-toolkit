@@ -7,76 +7,76 @@
 ## agents-md-lookup-prefers-the-stack-dir  (gotcha, verified)
 CLAUDE.md seeds its @-import from the stack directory's AGENTS.md before the project root's.
 
-- internal/adapters/claude/instructions.go
+- source/toolkit/internal/adapters/claude/instructions.go
 
 ## anchored-symlinks-are-refused-not-followed  (invariant, verified)
 The lexical anchor check is backed by a filesystem containment check at every resolution site, so a symlink in the anchored set is refused rather than hashed through.
 
-- internal/memory/lint.go
-- internal/memory/anchor.go
-- internal/memory/audit.go
-- internal/memory/blob.go
+- source/toolkit/internal/memory/lint.go
+- source/toolkit/internal/memory/anchor.go
+- source/toolkit/internal/memory/audit.go
+- source/toolkit/internal/memory/blob.go
 
 ## auto-update-config-does-not-gate-agtk-update  (gotcha, verified)
 auto_update config gates only the background checker; `agtk update` never reads it, despite the doc comment saying it does.
 
-- internal/userconfig/types.go
-- internal/cli/update.go
-- internal/cli/root.go
+- source/toolkit/internal/userconfig/types.go
+- source/toolkit/internal/cli/update.go
+- source/toolkit/internal/cli/root.go
 
 ## bash-writes-are-refused-inside-the-working-directory  (gotcha, verified)
 A second guard, separate from the tool allowlist, can refuse a Bash command that creates a file inside the session's own working directory — so a constructed `Bash(...)` grant is necessary but not sufficient.
 
-- internal/curator/curator.go
+- source/toolkit/internal/curator/curator.go
 
 ## completion-paths-are-implemented-twice  (gotcha, verified)
 The completion install path strategy exists twice — POSIX sh in install.sh and Go in completioninstall — and no test cross-checks them.
 
 - install.sh
-- internal/completioninstall/*.go
+- source/toolkit/internal/completioninstall/*.go
 
 ## completion-refresh-follows-the-self-replace  (invariant, verified)
 The completion refresh shells out to whatever binary is on disk, so it must run after the self-replace and its failure must stay non-fatal.
 
-- internal/completioninstall/install.go
-- internal/cli/update.go
+- source/toolkit/internal/completioninstall/install.go
+- source/toolkit/internal/cli/update.go
 
 ## credential-guards-are-hand-maintained-lists  (gotcha, verified)
 Half the credential-surface guards are scoped to package lists a person edits, so a new package is not covered until someone adds it by name.
 
-- internal/cli/tests/credential_surface_test.go
+- source/toolkit/internal/cli/tests/credential_surface_test.go
 
 ## curator-write-grant-is-spelled-edit-with-no-mode  (gotcha, verified)
 The curator's write grant is path-scoped, and both `Write(...)` instead of `Edit(...)` and any permission mode silently unscope it.
 
-- internal/curator/curator.go
-- internal/curator/prompt.md
+- source/toolkit/internal/curator/curator.go
+- source/toolkit/internal/curator/prompt.md
 - docs/adr/0004-the-curator-ships-in-the-binary.md
 
 ## empty-ref-resolves-only-against-a-unique-pin  (gotcha, verified)
 An entry with no ref resolves from the lockfile only when its URL is pinned exactly once; a second pin of the same repo makes it read as "not pinned".
 
-- internal/sourcestore/provider.go
-- internal/sourcestore/tests/frozen_provider_test.go
+- source/toolkit/internal/sourcestore/provider.go
+- source/toolkit/internal/sourcestore/tests/frozen_provider_test.go
 
 ## file-definitions-are-keyed-by-declared-name  (gotcha, verified)
 For file-shaped categories the definition's own `name:` field becomes the overlay key, not the name the manifest wrote, so overrides and requires can silently miss.
 
-- internal/resolver/resolver.go
-- internal/resolver/requires.go
-- internal/definitions/parser.go
+- source/toolkit/internal/resolver/resolver.go
+- source/toolkit/internal/resolver/requires.go
+- source/toolkit/internal/definitions/parser.go
 
 ## generated-schema-docs-have-no-ci-guard  (gotcha, verified)
 SCHEMA.md and CONFIG-SCHEMA.md are generated but nothing verifies them, so they drift silently.
 
-- tools/schemagen/main.go
+- source/toolkit/tools/schemagen/main.go
 - .github/workflows/*.yml
 
 ## handoff-trust-is-asked-of-git  (invariant, verified)
 Whether a handoff is locally written is decided by asking git what is untracked, never by comparing paths, because git's path comparison folds case, pathspecs and Unicode composition.
 
-- internal/handoff/handoff.go
-- internal/cli/handoff.go
+- source/toolkit/internal/handoff/handoff.go
+- source/toolkit/internal/cli/handoff.go
 - definitions/hooks/handoff-claude-session-start.yaml
 - definitions/skills/implement-handoff/SKILL.md
 - docs/adr/0014-a-handoff-is-trusted-structurally-not-by-prose.md
@@ -84,173 +84,173 @@ Whether a handoff is locally written is decided by asking git what is untracked,
 ## hook-fail-closed-is-never-rendered  (gotcha, verified)
 A hook's fail_closed parses and validates but no adapter ever writes it, so every rendered hook is fail-open.
 
-- internal/definitions/types.go
+- source/toolkit/internal/definitions/types.go
 - definitions/SCHEMA.md
-- internal/adapters/claude/*.go
+- source/toolkit/internal/adapters/claude/*.go
 
 ## memory-config-is-entry-manifest-only  (gotcha, verified)
 A stack reached through extends: may set memory:, and it parses fine and is silently ignored — so a manifest's memory.root can disagree with agtk's.
 
-- internal/resolver/resolver.go
-- internal/resolver/types.go
-- internal/stack/types.go
+- source/toolkit/internal/resolver/resolver.go
+- source/toolkit/internal/resolver/types.go
+- source/toolkit/internal/stack/types.go
 
 ## memory-new-does-not-validate-its-root  (invariant, verified)
 memory.New accepts an absolute or climbing root; confinement lives in ValidateRoot, which only the CLI remembers to call.
 
-- internal/memory/store.go
-- internal/cli/memory.go
-- internal/memory/hits.go
+- source/toolkit/internal/memory/store.go
+- source/toolkit/internal/cli/memory.go
+- source/toolkit/internal/memory/hits.go
 
 ## model-fields-are-unvalidated-and-fable-is-deliberate  (gotcha, verified)
 The model shorthand list in agtkdoc is documentation, not an enum — nothing validates it, and plan-reviewer's `model: fable` is a deliberate choice a review has already misfiled as a defect.
 
-- internal/definitions/types.go
-- internal/adapters/claude/files.go
+- source/toolkit/internal/definitions/types.go
+- source/toolkit/internal/adapters/claude/files.go
 - definitions/agents/plan-reviewer/AGENT.md
 - docs/FEATURE-FLOW.md
-- internal/cli/tests/feature_flow_stack_render_test.go
+- source/toolkit/internal/cli/tests/feature_flow_stack_render_test.go
 
 ## no-shared-git-fixture-helper  (gotcha, verified)
 Every package hand-rolls its own git fixture builder — eight and counting, two of them both called newRepo — so a test needing a repo picks one to copy rather than one to import.
 
-- internal/cli/tests/helpers_test.go
-- internal/cli/tests/handoff_test.go
-- internal/cli/tests/codereview_run_test.go
-- internal/cli/codereview_init_test.go
-- internal/cli/codereview_pr_test.go
-- internal/sourcestore/tests/helpers_test.go
-- internal/review/tests/repo_test.go
-- internal/reviewrun/tests/repo_test.go
-- internal/reviewrun/run_test.go
-- internal/handoff/handoff_test.go
-- internal/curator/tests/run_test.go
+- source/toolkit/internal/cli/tests/helpers_test.go
+- source/toolkit/internal/cli/tests/handoff_test.go
+- source/toolkit/internal/cli/tests/codereview_run_test.go
+- source/toolkit/internal/cli/codereview_init_test.go
+- source/toolkit/internal/cli/codereview_pr_test.go
+- source/toolkit/internal/sourcestore/tests/helpers_test.go
+- source/toolkit/internal/review/tests/repo_test.go
+- source/toolkit/internal/reviewrun/tests/repo_test.go
+- source/toolkit/internal/reviewrun/run_test.go
+- source/toolkit/internal/handoff/handoff_test.go
+- source/toolkit/internal/curator/tests/run_test.go
 
 ## nonzero-exit-needs-a-sentinel-in-execute  (invariant, verified)
 A command that prints its own report and exits non-zero must return a sentinel error registered in Execute.
 
-- internal/cli/root.go
-- internal/cli/status.go
-- internal/cli/memory.go
+- source/toolkit/internal/cli/root.go
+- source/toolkit/internal/cli/status.go
+- source/toolkit/internal/cli/memory.go
 
 ## only-lock-resolves-refs  (invariant, verified)
 Every command except lock and sync's relock uses FrozenProvider, so nothing else can reach the network to resolve a ref.
 
-- internal/cli/*.go
+- source/toolkit/internal/cli/*.go
 
 ## platform-extension-check-is-a-hand-written-switch  (invariant, verified)
 Every extension pointer field in definitions/types.go must have a line in presentExtensions; omitting one silently disables the platform check for it.
 
-- internal/definitions/parser.go
-- internal/definitions/types.go
+- source/toolkit/internal/definitions/parser.go
+- source/toolkit/internal/definitions/types.go
 
 ## provider-schemas-require-every-property  (invariant, verified)
 Every key in a provider schema's `properties` must also appear in that object's `required`, or OpenAI strict mode refuses the schema and the run dies having read nothing.
 
-- internal/reviewrun/schema.go
-- internal/reviewrun/schema_test.go
-- internal/reviewrun/invoke.go
+- source/toolkit/internal/reviewrun/schema.go
+- source/toolkit/internal/reviewrun/schema_test.go
+- source/toolkit/internal/reviewrun/invoke.go
 
 ## render-prunes-manifest-files-it-no-longer-owns  (invariant, verified)
 Render deletes every path the previous manifest tracked that this render did not produce, so dropping a definition needs no cleanup step.
 
-- internal/adapters/claude/render.go
+- source/toolkit/internal/adapters/claude/render.go
 
 ## render-refuses-files-it-does-not-track  (invariant, verified)
 A file on disk that is absent from .agtk-manifest.json is treated as user-owned, and render refuses rather than overwrite it.
 
-- internal/adapters/claude/render.go
-- internal/adapters/claude/files.go
+- source/toolkit/internal/adapters/claude/render.go
+- source/toolkit/internal/adapters/claude/files.go
 
 ## review-bodies-have-their-own-page-size  (gotcha, verified)
 A GraphQL query returning review bodies pages at reviewsPerPage (10), not the general pageSize (25), because a review body is the largest document on a pull request.
 
-- internal/githubapp/replies.go
-- internal/githubapp/graphql.go
-- internal/githubapp/client.go
+- source/toolkit/internal/githubapp/replies.go
+- source/toolkit/internal/githubapp/graphql.go
+- source/toolkit/internal/githubapp/client.go
 
 ## review-is-model-free-reviewrun-is-not  (invariant, verified)
-capability.go is the only file in internal/review that names the driver, and internal/reviewrun is the only package that invokes a model — so a credential belongs above reviewrun, in the CLI.
+capability.go is the only file in source/toolkit/internal/review that names the driver, and source/toolkit/internal/reviewrun is the only package that invokes a model — so a credential belongs above reviewrun, in the CLI.
 
-- internal/review/*.go
-- internal/reviewrun/run.go
-- internal/cli/codereview.go
+- source/toolkit/internal/review/*.go
+- source/toolkit/internal/reviewrun/run.go
+- source/toolkit/internal/cli/codereview.go
 
 ## schemagen-documents-only-hand-named-types  (gotcha, verified)
 schemagen discovers no top-level types; each one is a hand-written reflect.TypeOf call, so a new manifest struct documents as nothing and errors as nothing.
 
-- tools/schemagen/main.go
+- source/toolkit/tools/schemagen/main.go
 
 ## scoped-anchor-grant-names-each-note-exactly  (invariant, verified)
 A scoped stamping grant lists each note name with no trailing wildcard, because kebab-case note names nest.
 
-- internal/curator/curator.go
-- internal/memory/lint.go
+- source/toolkit/internal/curator/curator.go
+- source/toolkit/internal/memory/lint.go
 
 ## settings-merge-is-shallow-last-wins  (gotcha, verified)
 Two setting definitions writing the same top-level key resolve by stack order then definition name, silently and with no override diagnostic.
 
-- internal/adapters/claude/settings.go
-- internal/resolver/resolver.go
+- source/toolkit/internal/adapters/claude/settings.go
+- source/toolkit/internal/resolver/resolver.go
 
 ## source-mode-writes-land-in-workdir  (invariant, verified)
 Under --source the toolkit tree is read-only; every write goes to the working directory instead.
 
-- internal/cli/paths.go
-- internal/cli/memory.go
+- source/toolkit/internal/cli/paths.go
+- source/toolkit/internal/cli/memory.go
 
 ## source-urls-are-matched-byte-for-byte  (invariant, verified)
 Nothing canonicalizes a source URL's scheme or .git suffix, so two spellings of one repo are two sources with two cache trees and two lockfile rows.
 
-- internal/sourcestore/*.go
-- internal/resolver/*.go
-- internal/lockfile/*.go
+- source/toolkit/internal/sourcestore/*.go
+- source/toolkit/internal/resolver/*.go
+- source/toolkit/internal/lockfile/*.go
 
 ## stack-identifiers-are-not-lockfile-keys  (gotcha, verified)
 A stack's identifier is built from the raw URL and the ref as written, while its lockfile row uses the split repo URL and the resolved ref — the two never join.
 
-- internal/resolver/resolver.go
-- internal/resolver/types.go
+- source/toolkit/internal/resolver/resolver.go
+- source/toolkit/internal/resolver/types.go
 
 ## stack-schema-is-strict-and-legacy-keys-are-intercepted  (gotcha, verified)
 A stack field must exist on the struct before any manifest may use it, and five names are stolen by the v1 migration check.
 
-- internal/stack/parser.go
-- internal/stack/types.go
+- source/toolkit/internal/stack/parser.go
+- source/toolkit/internal/stack/types.go
 
 ## suppression-requires-a-complete-verdict  (invariant, verified)
 A posted review suppresses a re-review only when this installation authored it, its commit and marker head both name the head, and the marker reads verdict=complete; an unparseable marker deliberately counts as no verdict.
 
-- internal/cli/codereview_pr.go
-- internal/reviewapprove/gate.go
-- internal/reviewrun/marker.go
-- internal/githubapp/replies.go
+- source/toolkit/internal/cli/codereview_pr.go
+- source/toolkit/internal/reviewapprove/gate.go
+- source/toolkit/internal/reviewrun/marker.go
+- source/toolkit/internal/githubapp/replies.go
 
 ## unlisted-definitions-are-invisible-to-render  (invariant, verified)
 No resolution path enumerates definitions/, so a definition on disk that no stack lists is never opened and never reported.
 
-- internal/resolver/*.go
-- internal/definitions/walk.go
+- source/toolkit/internal/resolver/*.go
+- source/toolkit/internal/definitions/walk.go
 
 ## updater-archive-name-mirrors-goreleaser  (invariant, verified)
-internal/updater reconstructs goreleaser's archive filename from scratch, and nothing checks the two still agree.
+source/toolkit/internal/updater reconstructs goreleaser's archive filename from scratch, and nothing checks the two still agree.
 
-- internal/updater/updater.go
-- internal/updater/updater_test.go
+- source/toolkit/internal/updater/updater.go
+- source/toolkit/internal/updater/updater_test.go
 - .goreleaser.yaml
 
 ## user-config-errors-are-swallowed-by-root  (gotcha, verified)
 userconfig.Load's only caller discards the error, so a misspelled key silently disables auto-update — the outcome the package doc promises is impossible.
 
-- internal/cli/root.go
-- internal/userconfig/loader.go
-- internal/userconfig/types.go
+- source/toolkit/internal/cli/root.go
+- source/toolkit/internal/userconfig/loader.go
+- source/toolkit/internal/userconfig/types.go
 
 ## yaml-error-kinds-are-string-matched  (gotcha, verified)
 ErrUnknownField and a ParseError's line/column are recovered by string-matching goccy's message text, so a dependency bump can silently degrade them.
 
-- internal/definitions/parser.go
-- internal/definitions/errors.go
-- internal/stack/parser.go
-- internal/lockfile/parser.go
+- source/toolkit/internal/definitions/parser.go
+- source/toolkit/internal/definitions/errors.go
+- source/toolkit/internal/stack/parser.go
+- source/toolkit/internal/lockfile/parser.go
 - go.mod

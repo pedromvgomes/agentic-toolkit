@@ -11,7 +11,7 @@ blocked too — it reports no verdict to the caller and posts nothing to the pul
 That last part is a deliberate, narrow carve-out from the review's own invariant that a failure
 stays visible: ordinarily, a review that never reaches a verdict still posts, precisely so an
 ordinary bug or outage is seen rather than silently repeating (a failing judge makes the whole
-review unavailable; see `decide` in `internal/reviewrun/run.go`). A block is different in kind —
+review unavailable; see `decide` in `source/toolkit/internal/reviewrun/run.go`). A block is different in kind —
 a credential or quota condition, not a defect in the change or the review itself — and during a
 provider-wide outage the visible-failure invariant would otherwise post the same non-finding to
 every open pull request. So the carve-out is scoped to exactly the reviews that stayed
@@ -45,7 +45,7 @@ one code path.
 
 ## Consequences
 
-- `internal/review`'s `Panel` gains an explicit `fallback:` field, validated like
+- `source/toolkit/internal/review`'s `Panel` gains an explicit `fallback:` field, validated like
   `escalate[].to` (must name a declared, different panel). It is not inferred from the
   `-codex`-suffix naming convention the built-in manifest happens to use, so a manifest that
   names its panels differently still works.

@@ -3,8 +3,8 @@ name: generated-schema-docs-have-no-ci-guard
 kind: gotcha
 description: SCHEMA.md and CONFIG-SCHEMA.md are generated but nothing verifies them, so they drift silently.
 anchors:
-  - path: tools/schemagen/main.go
-    blob: 33d0e62defbd
+  - path: source/toolkit/tools/schemagen/main.go
+    blob: effbadf9177a
   - path: .github/workflows/*.yml
     matches:
       - path: .github/workflows/ci-build.yml
@@ -25,9 +25,9 @@ confidence: verified
 ---
 
 `definitions/SCHEMA.md` and `definitions/CONFIG-SCHEMA.md` are produced by
-`tools/schemagen` from the structs in `internal/{definitions,stack,lockfile,review}` via
-`go generate ./...` (the directives live at `internal/stack/types.go:35` and
-`internal/definitions/types.go:7`) — and only from the structs it was told about by name, see
+`source/toolkit/tools/schemagen` from the structs in `source/toolkit/internal/{definitions,stack,lockfile,review}` via
+`go generate ./...` (the directives live at `source/toolkit/internal/stack/types.go:35` and
+`source/toolkit/internal/definitions/types.go:7`) — and only from the structs it was told about by name, see
 [[schemagen-documents-only-hand-named-types]].
 
 No workflow runs or checks it. Both files had already drifted before anyone noticed: the

@@ -44,11 +44,11 @@ invoking a model.
 _Avoid_: adapter, target, tool
 
 **Adapter**:
-The package (`internal/adapters/<platform>`) that **Render**s a resolved plan into one
+The package (`source/toolkit/internal/adapters/<platform>`) that **Render**s a resolved plan into one
 **Platform**'s on-disk layout. Owns the mapping from each **Category** to that platform's
 file conventions, and the policy where a canonical value has no native equivalent — a
 converted construct, or a reported skip. The write/track machinery every Adapter shares
-lives in `internal/adapters/fsops`.
+lives in `source/toolkit/internal/adapters/fsops`.
 
 **Render**:
 Writing resolved **Definition**s into a consumer's layout for each of its opted-in
@@ -550,7 +550,7 @@ has no name because per-stack partitioning is not built.
 **"Review"** — the activity and the artifact. **Review** is the artifact posted to the PR; say
 "review run" for the activity, and **Approval** is never part of either. A **Comment thread**
 is never a "review thread" for the same reason, even though that is GitHub's own field name —
-the wire type in `internal/githubapp` keeps GitHub's spelling because it is what GitHub
+the wire type in `source/toolkit/internal/githubapp` keeps GitHub's spelling because it is what GitHub
 answers with, and nothing else does.
 
 **"Judge" vs "Curator"** — both are single model runs holding final authority over what

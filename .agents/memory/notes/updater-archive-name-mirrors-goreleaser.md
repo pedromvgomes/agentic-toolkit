@@ -1,14 +1,14 @@
 ---
 name: updater-archive-name-mirrors-goreleaser
 kind: invariant
-description: internal/updater reconstructs goreleaser's archive filename from scratch, and nothing checks the two still agree.
+description: source/toolkit/internal/updater reconstructs goreleaser's archive filename from scratch, and nothing checks the two still agree.
 anchors:
-  - path: internal/updater/updater.go
+  - path: source/toolkit/internal/updater/updater.go
     blob: 988145a4be2e
-  - path: internal/updater/updater_test.go
+  - path: source/toolkit/internal/updater/updater_test.go
     blob: 2b81c32b734a
   - path: .goreleaser.yaml
-    blob: 4b63dd35baa8
+    blob: eb5e6c9bd70a
 confidence: verified
 ---
 
@@ -31,7 +31,7 @@ for **every already-installed binary in the field**, and only after the release 
 — the old binaries construct a URL that 404s. The new binary being built at the time is fine,
 so a local build, the test suite and CI all stay green.
 
-Nothing guards this. `internal/updater/updater_test.go` exercises `lookupChecksum` and
+Nothing guards this. `source/toolkit/internal/updater/updater_test.go` exercises `lookupChecksum` and
 `extractTarGz` with hand-written literals (`agtk_1.0.0_darwin_arm64.tar.gz`,
 `updater_test.go:12`) that happen to match today's template but are never derived from it;
 `Install` itself is never called in a test, and the CLI tests inject a stub `Installer`.

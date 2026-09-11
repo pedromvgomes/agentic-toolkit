@@ -3,13 +3,13 @@ name: bash-writes-are-refused-inside-the-working-directory
 kind: gotcha
 description: A second guard, separate from the tool allowlist, can refuse a Bash command that creates a file inside the session's own working directory — so a constructed `Bash(...)` grant is necessary but not sufficient.
 anchors:
-  - path: internal/curator/curator.go
-    blob: a8ac0f37cab8
+  - path: source/toolkit/internal/curator/curator.go
+    blob: 1e7fb72d46d4
 confidence: verified
 ---
 
 `allowedTools` builds grants scoped to the store's directories —
-`"Bash(rm "+candidatesDir+"/*)"` (`internal/curator/curator.go:268`) and its notes-directory
+`"Bash(rm "+candidatesDir+"/*)"` (`source/toolkit/internal/curator/curator.go:268`) and its notes-directory
 twin (`:276`), deliberately scoped rather than a bare `rm` so the one agent holding a
 constructed grant cannot remove anything else (see
 [[curator-write-grant-is-spelled-edit-with-no-mode]]).

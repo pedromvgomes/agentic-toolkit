@@ -3,17 +3,17 @@ name: platform-extension-check-is-a-hand-written-switch
 kind: invariant
 description: Every extension pointer field in definitions/types.go must have a line in presentExtensions; omitting one silently disables the platform check for it.
 anchors:
-  - path: internal/definitions/parser.go
+  - path: source/toolkit/internal/definitions/parser.go
     blob: c59af791af5f
-  - path: internal/definitions/types.go
+  - path: source/toolkit/internal/definitions/types.go
     blob: ee984767cd43
 confidence: verified
 ---
 
-`validateExtensionsAgainstPlatforms` (`internal/definitions/parser.go:415`) enforces that a
+`validateExtensionsAgainstPlatforms` (`source/toolkit/internal/definitions/parser.go:415`) enforces that a
 populated `extensions.<platform>` block names a platform the definition's `platforms:` list
 allows. It gets the set of populated blocks from `presentExtensions`
-(`internal/definitions/parser.go:433`), a type switch that names each pointer field by hand:
+(`source/toolkit/internal/definitions/parser.go:433`), a type switch that names each pointer field by hand:
 
     case *Agent:
         m[PlatformClaude]   = d.Extensions.Claude != nil
@@ -21,7 +21,7 @@ allows. It gets the set of populated blocks from `presentExtensions`
         m[PlatformOpenCode] = d.Extensions.OpenCode != nil
 
 The invariant: **every `*<Platform><Category>Ext` pointer field declared on an extensions
-struct in `internal/definitions/types.go` must have a line in `presentExtensions`.** As of
+struct in `source/toolkit/internal/definitions/types.go` must have a line in `presentExtensions`.** As of
 this reading all do — Skill/Claude (`types.go:133`), Rule/Cursor (`:156`),
 Agent/{Claude,Cursor,OpenCode} (`:207`), Command/{OpenCode,Copilot} (`:251`),
 Hook/{Claude,Cursor} (`:297`), MCPServer/{Claude,OpenCode} (`:366`); Instruction and Setting

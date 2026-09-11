@@ -3,18 +3,18 @@ name: provider-schemas-require-every-property
 kind: invariant
 description: Every key in a provider schema's `properties` must also appear in that object's `required`, or OpenAI strict mode refuses the schema and the run dies having read nothing.
 anchors:
-  - path: internal/reviewrun/schema.go
+  - path: source/toolkit/internal/reviewrun/schema.go
     blob: 9debfb476136
-  - path: internal/reviewrun/schema_test.go
+  - path: source/toolkit/internal/reviewrun/schema_test.go
     blob: d1d2491081d1
-  - path: internal/reviewrun/invoke.go
+  - path: source/toolkit/internal/reviewrun/invoke.go
     blob: 2437e89a42e9
 confidence: verified
 ---
 
-The schemas in `internal/reviewrun/schema.go` — `findingSchema`, `validatorSchema`,
+The schemas in `source/toolkit/internal/reviewrun/schema.go` — `findingSchema`, `validatorSchema`,
 `judgeSchema` — reach a provider as `agentic.Request.Schema`
-(`internal/reviewrun/invoke.go:107`). For codex the driver writes the schema to a file, passes
+(`source/toolkit/internal/reviewrun/invoke.go:107`). For codex the driver writes the schema to a file, passes
 `--output-schema`, and the provider names it `codex_output_schema` in the request.
 
 OpenAI's strict structured-output mode refuses a schema where a key in `properties` is absent
@@ -34,8 +34,8 @@ string, which every consumer already guards on, so nothing posts the word "null"
 
 This is invisible on Claude, whose schema handling accepts either spelling. The built-in
 default roster reviews a worktree on claudecode and a pull request on codex
-(`internal/review/default.yaml:59-60`), so a schema that breaks the rule passes every local
+(`source/toolkit/internal/review/default.yaml:59-60`), so a schema that breaks the rule passes every local
 review and kills every posted one.
-`TestProviderSchemasRequireEveryDeclaredProperty` (`internal/reviewrun/schema_test.go:55`)
+`TestProviderSchemasRequireEveryDeclaredProperty` (`source/toolkit/internal/reviewrun/schema_test.go:55`)
 walks the decoded JSON generically rather than listing field names, so a schema that gains a
 property fails there instead of on the next pull request review.

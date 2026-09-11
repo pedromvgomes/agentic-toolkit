@@ -1,8 +1,8 @@
 ---
 about: codex's agentic-driver dialect cannot report a Block, so fallback only ever fires away from claudecode, never toward it
 saw:
-  - internal/reviewrun/invoke.go
-  - internal/review/default.yaml
+  - source/toolkit/internal/reviewrun/invoke.go
+  - source/toolkit/internal/review/default.yaml
   - go.mod
 ---
 
@@ -14,8 +14,8 @@ dialect does not implement `BlockReporter` at all — the driver's own test
 (`codex/parse_test.go`, `TestCodexClaimsNoBlocksItCannotRead`) asserts exactly that, because
 `turn.failed` carries only prose.
 
-`internal/reviewrun/invoke.go`'s `classify()` only ever sees `res.Blocked != nil` when the
-underlying dialect can detect one. `internal/review/default.yaml` wires every panel to its
+`source/toolkit/internal/reviewrun/invoke.go`'s `classify()` only ever sees `res.Blocked != nil` when the
+underlying dialect can detect one. `source/toolkit/internal/review/default.yaml` wires every panel to its
 twin on the other provider both ways (`quick.fallback: quick-codex`, `quick-codex.fallback:
 quick`) for symmetry and so a manifest author copying the shape gets it right, but in practice
 today a `*-codex` panel that gets rate-limited fails as an ordinary outage (posts as before,

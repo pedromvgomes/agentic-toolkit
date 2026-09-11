@@ -3,17 +3,17 @@ name: nonzero-exit-needs-a-sentinel-in-execute
 kind: invariant
 description: A command that prints its own report and exits non-zero must return a sentinel error registered in Execute.
 anchors:
-  - path: internal/cli/root.go
-    blob: 9b775bf0b883
-  - path: internal/cli/status.go
-    blob: 9c0513063466
-  - path: internal/cli/memory.go
-    blob: 7ab84a4dc55e
+  - path: source/toolkit/internal/cli/root.go
+    blob: 4eb683110c5a
+  - path: source/toolkit/internal/cli/status.go
+    blob: 647224af57c4
+  - path: source/toolkit/internal/cli/memory.go
+    blob: 555cb4f35496
 confidence: verified
 ---
 
 `Execute` renders any error returned by a command through `renderTopLevelError`, prefixed
-with `agtk:` (called at `internal/cli/root.go:278`, defined at `:297`). A command that has
+with `agtk:` (called at `source/toolkit/internal/cli/root.go:278`, defined at `:297`). A command that has
 already printed a structured report — drift buckets, stale notes, lint issues, a curation
 report — would therefore print its findings twice, the second time as an error message.
 
@@ -34,7 +34,7 @@ and the output is wrong. `Execute` is also the only place that knows a sentinel 
 adding one without registering it there silently reverts to the prefixed rendering.
 
 Scope, for whoever arrives here while writing a hook: this protocol covers commands that
-reach `agtk`'s own `Execute` (`internal/cli/root.go:278`). It says nothing about the exit
+reach `agtk`'s own `Execute` (`source/toolkit/internal/cli/root.go:278`). It says nothing about the exit
 code of a *rendered* hook's `handler.command` — that runs under the consuming platform, and
 the `fail_closed` field that looks like it governs it does not; see
 [[hook-fail-closed-is-never-rendered]].

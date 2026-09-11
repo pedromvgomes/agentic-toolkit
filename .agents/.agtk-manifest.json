@@ -42,6 +42,6 @@
     ".codex/agents/plan-reviewer.toml": "638a36f3b11cf3570a96cce1a038c018eecde2976c27bd7bc03b15ad0330180b",
     ".codex/agents/task-implementer.toml": "0116971b85b2b10abae87158684205df4fc0283cc0823435a53370e1e66873d4",
     ".codex/agents/wrap-session-reviewer.toml": "72192e4cd7e52b18f5416a193beda82e85d5151f2fccbf9d21f6dc77e38996e5",
-    "AGENTS.md": "4539a23aa08e80e14cb81d313d354ead72a8c6605ff675dc835a86d2ade020ef"
+    "AGENTS.md": "696bbb89bffb2d7f7fcf4aac7ad95e5abad6de81460c670f8cd4b2a34f63e4a6"
   }
 }

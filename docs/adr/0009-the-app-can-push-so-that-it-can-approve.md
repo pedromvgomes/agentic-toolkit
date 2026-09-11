@@ -14,7 +14,7 @@ and in CONTEXT.md rests on that grant rather than on the approval endpoint accep
 The grant is wider than the use. ADR 0006 argues from blast radius that the installation token
 reaches every repository the App is installed on, and this widens what that token can do from
 commenting on pull requests to writing code in all of them. What keeps the difference honest is
-a guard rather than a convention: no file under `internal/` names an endpoint that writes
+a guard rather than a convention: no file under `source/toolkit/internal/` names an endpoint that writes
 contents, refs, trees, blobs or a merge, so the permission is held and never spent. Removing the
 permission breaks approval silently and removing the guard breaks nothing visibly, which is why
 the guard carries the explanation.

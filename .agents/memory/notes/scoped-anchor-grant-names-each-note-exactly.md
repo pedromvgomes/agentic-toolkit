@@ -3,18 +3,18 @@ name: scoped-anchor-grant-names-each-note-exactly
 kind: invariant
 description: A scoped stamping grant lists each note name with no trailing wildcard, because kebab-case note names nest.
 anchors:
-  - path: internal/curator/curator.go
-    blob: a8ac0f37cab8
-  - path: internal/memory/lint.go
+  - path: source/toolkit/internal/curator/curator.go
+    blob: 1e7fb72d46d4
+  - path: source/toolkit/internal/memory/lint.go
     blob: 55ed2c6534eb
 confidence: verified
 ---
 
-`anchorGrants` (`internal/curator/curator.go:300`) emits one grant per note as
+`anchorGrants` (`source/toolkit/internal/curator/curator.go:300`) emits one grant per note as
 `Bash(<agtk> memory anchor <name>)` with **no trailing wildcard**, so a scoped run stamps one
 note per call. An unscoped run gets the open `anchor*` form, since its scope is the store.
 
-The wildcard is the trap. Note names are kebab-case — `nameRe` at `internal/memory/lint.go:14`
+The wildcard is the trap. Note names are kebab-case — `nameRe` at `source/toolkit/internal/memory/lint.go:14`
 is `^[a-z0-9]+(-[a-z0-9]+)*$` — so one name can be a proper prefix of another. A grant reading
 `Bash(<agtk> memory anchor lockfile-pins*)` also permits
 `anchor lockfile-pins-shas-not-tags`, a different note the run never checked. The reasoning
@@ -27,10 +27,10 @@ worse than a stale one, because no later audit flags it again — the failure AD
 to prevent, reintroduced through the grant meant to enforce it.
 
 `TestAScopedRunCanOnlyStampTheNotesItNames`
-(`internal/curator/tests/run_test.go:299-308`) asserts the scoped run holds the exact grant
+(`source/toolkit/internal/curator/tests/run_test.go:299-308`) asserts the scoped run holds the exact grant
 and not the open `anchor*` one, and `TestAScopedStampingGrantDoesNotReachPrefixedNames`
 (`:314-322`) asserts no stamping grant in a scoped run ends in `*`. The reasoning is also
-written down beside the code, at `internal/curator/curator.go:288-299`.
+written down beside the code, at `source/toolkit/internal/curator/curator.go:288-299`.
 
 Related: [[curator-write-grant-is-spelled-edit-with-no-mode]], on what the rest of that grant
 does and does not bound.
