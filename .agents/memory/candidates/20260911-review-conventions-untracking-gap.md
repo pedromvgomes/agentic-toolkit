@@ -9,14 +9,6 @@ saw:
   - definitions/CONFIG-SCHEMA.md
 ---
 
-Superseded version: this candidate originally claimed `.agents/code-review/manifest.yaml`
-does not exist in this repo, backed by a `find` run before commit
-79fc0b9 ("fix(code-review): nominate this repo's conventions from their tracked
-sources") added exactly that file on the same branch. That claim is false as of
-79fc0b9 and must not reach `notes/`. What follows is re-verified against the
-manifest as it stands after `a28029f` ("fix(code-review): drop the
-referencing_files rules from this repo's manifest").
-
 **Mechanism claims, re-checked and still true:**
 
 - Convention documents are read at the base ref, never the head under review.
@@ -34,7 +26,7 @@ referencing_files rules from this repo's manifest").
   to `missing` and surfaces as `MissingConventions` on the run result
   (`reviewrun/run.go:162` calls `readConventions(..., m.ConventionDocs(...),
   nominated)`; `run.go:191` threads `missing` through). This is the mechanism
-  `.agents/code-review/manifest.yaml`'s own `conventions:` comment now leans on:
+  `.agents/code-review/manifest.yaml`'s own `conventions:` comment leans on:
   nominating `CONTEXT.md` plus the five tracked `definitions/instructions/*.md`
   sources (rather than relying on `CLAUDE.md`/`AGENTS.md`, which are rendered
   output and untracked) converts a silent loss of coverage into a reported one.
@@ -49,9 +41,8 @@ referencing_files rules from this repo's manifest").
   Because this catalog ships arbitrary asset files inside definition bundles
   (formats outside the recognised set), one such file in a change would refuse
   the whole review if a `referencing_files` rule were present — which is why
-  `.agents/code-review/manifest.yaml` (as of `a28029f`) carries no
-  `referencing_files` escalation rule, keeping `changed_files` and `signals` as
-  the raising criteria instead.
+  `.agents/code-review/manifest.yaml` carries no `referencing_files` escalation
+  rule, keeping `changed_files` and `signals` as the raising criteria instead.
 
 - `definitions/CONFIG-SCHEMA.md`'s review-manifest section still requires
   `version`, `reviewers`, `judge`, `validator`, `panels`, `defaults`; only
