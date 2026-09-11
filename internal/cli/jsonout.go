@@ -890,7 +890,7 @@ func unchangedHeadJSON(t *pullRequestTarget) reviewUnchangedJSON {
 	return reviewUnchangedJSON{
 		Version:     jsonVersion,
 		PullRequest: pullRequestRow(t),
-		Reason: fmt.Sprintf("%s#%d already carries a review of %s; pass --force to review it again",
+		Reason: fmt.Sprintf("%s#%d already carries a completed review of %s; pass --force to review it again",
 			t.slug, t.pr.Number, t.pr.HeadSHA),
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 )
 
 // StampResult reports what `agtk memory anchor` did to one note.
@@ -79,7 +80,7 @@ func (s *Store) Stamp(n *Note) (StampResult, error) {
 			a.Matches = matches
 			res.Anchors = append(res.Anchors, StampedAnchor{Path: a.Path, Matches: len(matches), IsGlob: true})
 		default:
-			blob, err := hashRegularFile(s.abs(a.Path))
+			blob, err := s.hashRegularFile(s.abs(a.Path))
 			if err != nil {
 				return res, fmt.Errorf("hash %s: %w", a.Path, err)
 			}
@@ -113,10 +114,10 @@ func (s *Store) Stamp(n *Note) (StampResult, error) {
 }
 
 // hashRegularFile returns the blob id of a regular file, or "" when the
-// path is absent or is not a regular file. Only a genuine read failure is
-// an error.
-func hashRegularFile(abs string) (string, error) {
-	info, err := os.Stat(abs)
+// path is absent, is not a regular file, or resolves outside the project.
+// Only a genuine read failure is an error.
+func (s *Store) hashRegularFile(abs string) (string, error) {
+	info, err := os.Lstat(abs)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return "", nil
@@ -126,7 +127,39 @@ func hashRegularFile(abs string) (string, error) {
 	if !info.Mode().IsRegular() {
 		return "", nil
 	}
+	if !s.contained(abs) {
+		return "", nil
+	}
 	return HashFile(abs)
+}
+
+// contained reports whether abs resolves to somewhere inside the project.
+//
+// ValidateAnchorPath confines an anchor lexically: it reads the pattern, not
+// the filesystem, so `..` and absolute paths are refused and a path that
+// spells out as project-relative is accepted whatever it resolves to. A
+// symlink inside the project is the gap that leaves.
+//
+// Lstat on the final component is not enough on its own. The kernel resolves
+// every directory above it, so `internal/x -> ~/.ssh` with the anchor
+// `internal/x/id_rsa` names a real regular file and would be hashed —
+// recording a file from outside the repository into a note that is then
+// committed. The whole path has to be resolved, not its last segment.
+func (s *Store) contained(abs string) bool {
+	real, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		return false
+	}
+	root, err := filepath.EvalSymlinks(s.ProjectRoot)
+	if err != nil {
+		return false
+	}
+	rel, err := filepath.Rel(root, real)
+	if err != nil {
+		return false
+	}
+	rel = filepath.ToSlash(rel)
+	return rel != ".." && !strings.HasPrefix(rel, "../")
 }
 
 // globFiles resolves a project-relative pattern to the regular files it
@@ -147,8 +180,13 @@ func (s *Store) globFiles(pattern string) ([]string, error) {
 	}
 	var files []string
 	for _, hit := range hits {
-		info, err := os.Stat(hit)
-		if err != nil || !info.Mode().IsRegular() {
+		// Lstat and then resolve: a symlink is skipped rather than followed,
+		// and a match under a symlinked directory resolves outside the project
+		// however ordinary its own name looks. A glob is the easier way in of
+		// the two, because filepath.Glob walks through a linked directory
+		// component and the pattern never names the link.
+		info, err := os.Lstat(hit)
+		if err != nil || !info.Mode().IsRegular() || !s.contained(hit) {
 			continue
 		}
 		files = append(files, hit)

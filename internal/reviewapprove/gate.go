@@ -52,7 +52,7 @@ type Inputs struct {
 // because one would make each of these a checklist rather than a control, and
 // the person who would type it is the one the gate exists to slow down.
 func Check(in Inputs) []Refusal {
-	marker, found := lastReview(in.Reviews, in.Head)
+	marker, found := LastReview(in.Reviews, in.Head)
 	if !found {
 		// Nothing else is knowable. A pull request whose head carries no
 		// review of this installation's has no findings to weigh and no
@@ -68,7 +68,7 @@ func Check(in Inputs) []Refusal {
 	if !marker.Complete {
 		refusals = append(refusals, Refusal{
 			Missing: "that review did not reach a verdict, so what it did not find is unknown rather than absent",
-			Remedy:  fmt.Sprintf("agtk code-review run --pr %d --force", in.Number),
+			Remedy:  rerunRemedy(in.Number, marker.Complete),
 		})
 	}
 	refusals = append(refusals, deadlocks(marker)...)
@@ -77,8 +77,31 @@ func Check(in Inputs) []Refusal {
 	return refusals
 }
 
-// lastReview finds the newest review this installation posted against head,
+// rerunRemedy is the command that reviews this head again.
+//
+// --force only where it is actually needed. A review run suppresses a re-run
+// on a head whose newest review reached a verdict and on no other, so a
+// complete review is the one case a plain run declines to pass. Naming the
+// flag anywhere else sends someone reaching for an override nothing is
+// stopping them without — and telling a person to force their way past a
+// review that examined nothing is the advice this whole distinction exists to
+// stop giving.
+func rerunRemedy(number int, complete bool) string {
+	if complete {
+		return fmt.Sprintf("agtk code-review run --pr %d --force", number)
+	}
+	return fmt.Sprintf("agtk code-review run --pr %d", number)
+}
+
+// LastReview finds the newest review this installation posted against head,
 // and reads back what it found.
+//
+// Exported because two commands turn on it and they must not disagree. A
+// review run reads it to decide whether this head has already been reviewed,
+// and approval reads it to decide whether that review may be approved. Two
+// selections would let a head count as reviewed by one and unreviewed by the
+// other, which is a pull request that refuses to be re-reviewed and refuses to
+// be approved.
 //
 // This installation's own, because anyone who can review a pull request can
 // type the characters that open a review marker, and one claiming a clean
@@ -90,7 +113,7 @@ func Check(in Inputs) []Refusal {
 // checked against the commit as well as GitHub's: a body can be edited after
 // it is posted, and a marker describing another commit is not a review of this
 // one whatever the review is attached to.
-func lastReview(reviews []githubapp.SubmittedReview, head string) (reviewrun.ReviewMarker, bool) {
+func LastReview(reviews []githubapp.SubmittedReview, head string) (reviewrun.ReviewMarker, bool) {
 	var (
 		found  reviewrun.ReviewMarker
 		anyYet bool
@@ -152,7 +175,7 @@ func unanswered(in Inputs, marker reviewrun.ReviewMarker) []Refusal {
 			refusals = append(refusals, Refusal{
 				Missing: fmt.Sprintf("%s %s carries no thread on this pull request, so there is nothing to answer on",
 					f.Severity, f.Fingerprint),
-				Remedy: fmt.Sprintf("agtk code-review run --pr %d --force", in.Number),
+				Remedy: rerunRemedy(in.Number, marker.Complete),
 			})
 			continue
 		}

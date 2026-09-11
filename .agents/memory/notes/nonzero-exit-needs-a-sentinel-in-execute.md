@@ -4,11 +4,11 @@ kind: invariant
 description: A command that prints its own report and exits non-zero must return a sentinel error registered in Execute.
 anchors:
   - path: internal/cli/root.go
-    blob: 87870af8e371
+    blob: 9b775bf0b883
   - path: internal/cli/status.go
     blob: 9c0513063466
   - path: internal/cli/memory.go
-    blob: 36f459299379
+    blob: 7ab84a4dc55e
 confidence: verified
 ---
 
@@ -32,3 +32,9 @@ to flip the exit code.
 Returning a plain `errors.New` from such a command is the failure: the exit code is right
 and the output is wrong. `Execute` is also the only place that knows a sentinel exists, so
 adding one without registering it there silently reverts to the prefixed rendering.
+
+Scope, for whoever arrives here while writing a hook: this protocol covers commands that
+reach `agtk`'s own `Execute` (`internal/cli/root.go:278`). It says nothing about the exit
+code of a *rendered* hook's `handler.command` — that runs under the consuming platform, and
+the `fail_closed` field that looks like it governs it does not; see
+[[hook-fail-closed-is-never-rendered]].

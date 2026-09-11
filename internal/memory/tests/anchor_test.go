@@ -3,6 +3,7 @@ package tests
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/pedromvgomes/agentic-toolkit/internal/memory"
@@ -229,6 +230,195 @@ func TestStampRejectsEscapingAnchor(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestStampRefusesASymlinkedAnchor is the escape the lexical check cannot
+// see. ValidateAnchorPath reads the pattern and not the filesystem, so a path
+// that spells out as project-relative still resolves wherever a link inside
+// the project points — and following it records a hash of a file outside the
+// repository into a note that is then committed.
+func TestStampRefusesASymlinkedAnchor(t *testing.T) {
+	outside := filepath.Join(t.TempDir(), "outside.txt")
+	write(t, outside, "secrets\n")
+
+	s := project(t, map[string]string{"internal/a/a.go": "package a\n"})
+	if err := os.Symlink(outside, filepath.Join(s.ProjectRoot, "internal/a/linked.go")); err != nil {
+		t.Fatal(err)
+	}
+	writeNote(t, s, "linked", note("linked", "  - path: internal/a/linked.go\n"))
+
+	res, err := s.Stamp(loadOne(t, s, "linked"))
+	if err != nil {
+		t.Fatalf("stamp: %v", err)
+	}
+	if len(res.Missing) != 1 || res.Missing[0] != "internal/a/linked.go" {
+		t.Errorf("Missing = %+v, want the symlinked anchor refused", res.Missing)
+	}
+	if blob := loadOne(t, s, "linked").Anchors[0].Blob; blob != "" {
+		t.Errorf("a symlinked anchor recorded the blob %q of a file outside the project", blob)
+	}
+}
+
+// A glob never names the link, so it is the easier way in of the two: the
+// pattern matches whatever the directory holds.
+func TestGlobAnchorsSkipSymlinkedMatches(t *testing.T) {
+	outside := filepath.Join(t.TempDir(), "outside.txt")
+	write(t, outside, "secrets\n")
+
+	s := project(t, map[string]string{"internal/a/real.go": "package a\n"})
+	if err := os.Symlink(outside, filepath.Join(s.ProjectRoot, "internal/a/linked.go")); err != nil {
+		t.Fatal(err)
+	}
+	writeNote(t, s, "globbed", note("globbed", "  - path: internal/a/*.go\n"))
+
+	if _, err := s.Stamp(loadOne(t, s, "globbed")); err != nil {
+		t.Fatalf("stamp: %v", err)
+	}
+	for _, m := range loadOne(t, s, "globbed").Anchors[0].Matches {
+		if strings.HasSuffix(m.Path, "linked.go") {
+			t.Errorf("a glob followed a symlink out of the project: %+v", m)
+		}
+	}
+}
+
+// The escape a check on the final component cannot see. The kernel resolves
+// every directory above the anchor, so a linked directory inside the project
+// makes `internal/x/id_rsa` name a real regular file outside the repository —
+// and hashing it writes that file's blob into a note that is then committed.
+func TestStampRefusesAnAnchorUnderASymlinkedDirectory(t *testing.T) {
+	outside := t.TempDir()
+	write(t, filepath.Join(outside, "id_rsa"), "PRIVATE KEY\n")
+
+	s := project(t, map[string]string{"internal/a/a.go": "package a\n"})
+	if err := os.Symlink(outside, filepath.Join(s.ProjectRoot, "internal/linked")); err != nil {
+		t.Fatal(err)
+	}
+	writeNote(t, s, "under-link", note("under-link", "  - path: internal/linked/id_rsa\n"))
+
+	res, err := s.Stamp(loadOne(t, s, "under-link"))
+	if err != nil {
+		t.Fatalf("stamp: %v", err)
+	}
+	if len(res.Missing) != 1 {
+		t.Errorf("Missing = %+v, want the anchor under a linked directory refused", res.Missing)
+	}
+	if blob := loadOne(t, s, "under-link").Anchors[0].Blob; blob != "" {
+		t.Errorf("recorded the blob %q of a file outside the project", blob)
+	}
+}
+
+// The same directory, reached by a glob. filepath.Glob walks through the
+// linked component, so the pattern enumerates the target directory and would
+// record each outside filename, spelled as if it were project-relative.
+func TestGlobAnchorsDoNotEnumerateASymlinkedDirectory(t *testing.T) {
+	outside := t.TempDir()
+	write(t, filepath.Join(outside, "secret.go"), "package secret\n")
+
+	s := project(t, map[string]string{"internal/a/a.go": "package a\n"})
+	if err := os.Symlink(outside, filepath.Join(s.ProjectRoot, "internal/linked")); err != nil {
+		t.Fatal(err)
+	}
+	writeNote(t, s, "under-link-glob", note("under-link-glob", "  - path: internal/linked/*.go\n"))
+
+	if _, err := s.Stamp(loadOne(t, s, "under-link-glob")); err != nil {
+		t.Fatalf("stamp: %v", err)
+	}
+	if matches := loadOne(t, s, "under-link-glob").Anchors[0].Matches; len(matches) != 0 {
+		t.Errorf("a glob enumerated a directory outside the project: %+v", matches)
+	}
+}
+
+// Audit reads with HashFile, which is an os.ReadFile and resolves every path
+// component. Stamp refusing the anchor leaves its recorded blob empty, so an
+// audit that did not check containment would read the outside file on every
+// run rather than once.
+func TestAuditRefusesAnAnchorUnderASymlinkedDirectory(t *testing.T) {
+	outside := t.TempDir()
+	write(t, filepath.Join(outside, "id_rsa"), "PRIVATE KEY\n")
+
+	s := project(t, map[string]string{"internal/a/a.go": "package a\n"})
+	if err := os.Symlink(outside, filepath.Join(s.ProjectRoot, "internal/linked")); err != nil {
+		t.Fatal(err)
+	}
+	writeNote(t, s, "audited", note("audited", "  - path: internal/linked/id_rsa\n"))
+
+	drifts := s.AuditNote(loadOne(t, s, "audited")).Drifts
+	if len(drifts) != 1 {
+		t.Fatalf("drifts = %+v, want one refusal", drifts)
+	}
+	if drifts[0].Kind != memory.DriftInvalid {
+		t.Errorf("drift kind = %q, want invalid", drifts[0].Kind)
+	}
+	if drifts[0].Now != "" {
+		t.Errorf("audit reported the blob %q of a file outside the project", drifts[0].Now)
+	}
+}
+
+// A deleted anchor is missing, not invalid. The distinction carries: missing
+// is the one an agent may act on by dropping the anchor, and a containment
+// check that cannot resolve an absent path would call every deletion an
+// escape.
+func TestADeletedAnchorIsMissingRatherThanOutsideTheProject(t *testing.T) {
+	s := stampedStore(t)
+	if err := os.Remove(filepath.Join(s.ProjectRoot, "internal/resolver/graph.go")); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	for _, d := range s.AuditNote(loadOne(t, s, "pins-shas")).Drifts {
+		if d.Path == "internal/resolver/graph.go" && d.Kind != memory.DriftMissing {
+			t.Errorf("a deleted anchor reported as %q: %+v", d.Kind, d)
+		}
+	}
+}
+
+// A symlink whose target is gone is a missing anchor, not an escape. Lstat
+// succeeds on it and EvalSymlinks does not, so the two failures look alike
+// from the wrong side of the link.
+func TestADanglingSymlinkedAnchorIsMissingRatherThanOutsideTheProject(t *testing.T) {
+	gone := filepath.Join(t.TempDir(), "gone.go")
+	s := project(t, map[string]string{"internal/a/a.go": "package a\n"})
+	if err := os.Symlink(gone, filepath.Join(s.ProjectRoot, "internal/a/dangling.go")); err != nil {
+		t.Fatal(err)
+	}
+	writeNote(t, s, "dangling", note("dangling", "  - path: internal/a/dangling.go\n    blob: 0123456789ab\n"))
+
+	drifts := s.AuditNote(loadOne(t, s, "dangling")).Drifts
+	if len(drifts) != 1 {
+		t.Fatalf("drifts = %+v, want one", drifts)
+	}
+	if drifts[0].Kind != memory.DriftMissing {
+		t.Errorf("a dangling symlink reported as %q, want missing: %+v", drifts[0].Kind, drifts[0])
+	}
+}
+
+// Replacing an anchored file with an in-project symlink to identical content
+// must not audit as fresh: `anchor` refuses to stamp such a path, so a note
+// reading as held against it would be held against a file the store will not
+// record.
+func TestAuditRefusesAnAnchorReplacedByASymlink(t *testing.T) {
+	s := stampedStore(t)
+	target := filepath.Join(s.ProjectRoot, "internal/resolver/graph.go")
+	body, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	copyPath := filepath.Join(s.ProjectRoot, "internal/resolver/graph_copy.go")
+	write(t, copyPath, string(body))
+	if err := os.Remove(target); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(copyPath, target); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, d := range s.AuditNote(loadOne(t, s, "pins-shas")).Drifts {
+		if d.Path == "internal/resolver/graph.go" {
+			if d.Kind != memory.DriftInvalid {
+				t.Errorf("a symlinked anchor audited as %q, want invalid: %+v", d.Kind, d)
+			}
+			return
+		}
+	}
+	t.Error("replacing the anchored file with a symlink audited as fresh")
 }
 
 // TestStampMarksMissingAnchors: the kept hash must be distinguishable from

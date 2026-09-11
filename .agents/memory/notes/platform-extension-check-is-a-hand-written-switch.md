@@ -6,7 +6,7 @@ anchors:
   - path: internal/definitions/parser.go
     blob: c59af791af5f
   - path: internal/definitions/types.go
-    blob: 55ae4363b731
+    blob: ee984767cd43
 confidence: verified
 ---
 

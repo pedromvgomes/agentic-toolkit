@@ -300,6 +300,40 @@ func TestAnAnswerableFindingWithNoThreadOnThePullRequestIsRefused(t *testing.T) 
 	}
 }
 
+// A review that reached no verdict does not suppress the next run, so the
+// remedy for one is a plain run. Naming --force here sends a person reaching
+// for an override nothing is stopping them without, to get past a review that
+// examined nothing.
+func TestTheRemedyForANoVerdictReviewDoesNotReachForForce(t *testing.T) {
+	refusals := gate([]githubapp.SubmittedReview{reviewOf(false)}, nil)
+	if len(refusals) != 1 || !strings.Contains(refusals[0].Missing, "did not reach a verdict") {
+		t.Fatalf("a review with no verdict was not refused:\n%s", missing(refusals))
+	}
+	if strings.Contains(refusals[0].Remedy, "--force") {
+		t.Errorf("the remedy reaches for --force to get past a review that found nothing: %q",
+			refusals[0].Remedy)
+	}
+	if !strings.Contains(refusals[0].Remedy, "code-review run --pr") {
+		t.Errorf("the remedy does not re-review the head: %q", refusals[0].Remedy)
+	}
+}
+
+// The same refusal on a complete review keeps --force, because a head whose
+// newest review reached a verdict is the one case a plain run declines to
+// pass.
+func TestAFindingWithNoThreadOnACompleteReviewStillNeedsForce(t *testing.T) {
+	refusals := gate(
+		[]githubapp.SubmittedReview{reviewOf(true, answerable(red, review.SeverityRed))},
+		nil,
+	)
+	if len(refusals) != 1 {
+		t.Fatalf("want one refusal, got:\n%s", missing(refusals))
+	}
+	if !strings.Contains(refusals[0].Remedy, "--force") {
+		t.Errorf("a complete review's re-post remedy dropped --force: %q", refusals[0].Remedy)
+	}
+}
+
 // A fingerprint marker in a comment somebody else wrote is a claim about
 // identity from an author who does not hold it.
 func TestAThreadSomebodyElseOpenedCannotCarryAFindingsIdentity(t *testing.T) {

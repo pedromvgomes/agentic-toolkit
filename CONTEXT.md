@@ -421,6 +421,67 @@ prompt bodies they use. Read by `agtk code-review` and by nothing else. A roster
 carried would be a second one, and the two would disagree the first time either changed.
 _Avoid_: panels.json, roster file, review config
 
+### Feature flow
+**Handoff**:
+A document that lets a session with no memory of the one that wrote it continue the work.
+Carries a goal, the current state and the next steps; optionally a plan's **Task** list, its
+**Slice**s and a **Predecessor**. The optional half is what keeps one writer sufficient: a
+handoff written by hand mid-work carries none of it and is still a handoff, read as a
+one-**Task** list.
+
+Lives in `handoff/` at the worktree root, excluded through the repo's `info/exclude` rather
+than its `.gitignore` — the folder is a fact about how somebody works, not about the project,
+and a **Consumer** that never adopted the flow should not carry a line for it.
+_Avoid_: continuation doc, session doc, context dump
+
+**Predecessor**:
+The pull request a **Handoff**'s work may not start before, merged into the base branch. A
+handoff written while a PR is open has one; a handoff written with no PR open has none, and
+its session resumes on the same branch immediately.
+
+It decides *waiting*, not *where*: the worktree is a constant, so a handoff with a predecessor
+resumes by branching off the updated base in the same directory. Reading it is automatic and
+moving the branch is not — the first spends nothing, and the second changes where somebody is
+standing.
+
+Not "gate", which **Approval** already lists as a word to avoid. The two are different enough
+that one word for both would be a real loss: a predecessor is a fact about ordering that any
+session can read from GitHub, and approval is a control that no model may reach.
+_Avoid_: gate, dependency, blocker, prerequisite
+
+**Slice**:
+One pull request's worth of a plan. A plan spanning several slices names them in landing
+order, and each slice becomes its own **Handoff**, whose **Predecessor** is the slice before
+it. A plan of a single slice has no predecessor and never writes a second handoff.
+_Avoid_: phase, stage, milestone, chunk
+
+**Task**:
+The unit one **Implementer** is given: a description, the files it may touch, and a
+**Complexity**. Tasks land in order and one at a time, so a task is also the unit that gets
+committed, reviewed, or sent back.
+_Avoid_: step, item, ticket
+
+**Complexity**:
+Which model a **Task**'s **Implementer** runs on: `routine | intricate`, for sonnet and opus.
+Two values rather than three, because a third would need a rule for what it selects and there
+is no third model in the flow to give it.
+_Avoid_: difficulty, size, weight, effort
+
+**Coordinator**:
+The main session that reads a **Handoff**, spawns one **Implementer** per **Task**, reviews
+what comes back and decides whether it lands. Never a subagent — not because nesting is
+refused, since it is allowed three layers deep, but because the coordinator's model is the one
+thing in the flow that outlives a single call, and a delegated coordinator would hold the
+implementers' transcripts in the context the flow exists to keep clear.
+_Avoid_: orchestrator, driver, parent
+
+**Implementer**:
+The subagent handed exactly one **Task** and the files it may touch. It returns a short
+structured report and nothing else: its transcript never reaches the **Coordinator**, which
+reviews the diff instead. Denied the `Agent` tool, so "one implementer at a time" is a fact
+about its tool set rather than a sentence it is asked to honour.
+_Avoid_: worker, executor, builder
+
 ## Flagged ambiguities
 **"Marker"** — the bare noun is a **Signal** synonym to avoid; the HTML comment that carries a
 **Fingerprint** is a **Fingerprint marker**, always both words.
@@ -486,6 +547,16 @@ say whose. It carries a second scope that reads the same way: *n* **Hit**s can w
 **Note**s, so a rate below one read per note is bounded by how much reading has happened rather
 than by how good the notes are, and **Cold** is empty of information over the same range. Both
 scopes have to hold before a rate is evidence for pruning.
+
+**"Task"** — a unit of work inside a **Handoff**, and also the name of the Claude Code tool that
+spawns a subagent. The glossary sense owns the bare noun; call the mechanism "the Agent tool",
+never "a Task", so that "one task at a time" stays a statement about work and not about calls.
+
+**"Review" in the feature flow** — one change is reviewed twice, and neither pass is a new
+sense of the word. The local loop before a pull request exists and the pass posted to it
+afterwards are both review runs; **Review** is still only the artifact posted, and only the
+second produces one. They differ in **Panel** and therefore in which model family reads the
+change, which is the point of running both.
 
 ## Example dialogue
 > **Dev:** `graph.go` changed, so the note about SHA pinning is suspect now, right?

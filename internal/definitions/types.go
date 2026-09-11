@@ -180,7 +180,7 @@ func (*Instruction) Category() Category   { return CategoryInstruction }
 
 type Agent struct {
 	Common     `yaml:",inline"`
-	Model      string          `yaml:"model,omitempty"      agtkdoc:"Model shorthand: inherit, sonnet, opus, haiku, or a full model id."`
+	Model      string          `yaml:"model,omitempty"      agtkdoc:"Model shorthand: inherit, sonnet, opus, haiku, fable, or a full model id. Not validated: an unknown value is rendered as written."`
 	Tools      []string        `yaml:"tools,omitempty"      agtkdoc:"Tool allowlist (Claude tool-name vocabulary). Empty = inherit."`
 	Color      AgentColor      `yaml:"color,omitempty"      agtkdoc:"UI color hint. One of: red, blue, green, yellow, purple, orange, pink, cyan."`
 	Extensions AgentExtensions `yaml:"extensions,omitempty" agtkdoc:"Per-platform extension blocks."`
