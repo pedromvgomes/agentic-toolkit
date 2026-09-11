@@ -78,9 +78,6 @@ func TestPathHelpers_SourceDefaultManifest(t *testing.T) {
 	if got, want := lockfilePath(env), filepath.Join("/cwd", LockFileName); got != want {
 		t.Errorf("lockfilePath = %q, want %q", got, want)
 	}
-	if got, want := renderStackDir(env), "/cwd"; got != want {
-		t.Errorf("renderStackDir = %q, want %q", got, want)
-	}
 }
 
 func TestPathHelpers_SourceNamedStack(t *testing.T) {

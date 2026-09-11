@@ -4,8 +4,10 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 
+	"github.com/pedromvgomes/agentic-toolkit/internal/adapters/fsops"
 	"github.com/pedromvgomes/agentic-toolkit/internal/definitions"
 	"github.com/pedromvgomes/agentic-toolkit/internal/resolver"
 )
@@ -64,18 +66,18 @@ func Diff(plan *resolver.Plan, opts Options) (Drift, error) {
 	if err != nil {
 		return Drift{}, err
 	}
-	manifest, err := readManifest(roots.ScopeRoot)
+	manifest, err := wholeOps.ReadManifest(roots.ScopeRoot)
 	if err != nil {
 		return Drift{}, err
 	}
-	wholeOps, err := planWholeOwned(plan, roots)
+	ops, err := planWholeOwned(plan, roots)
 	if err != nil {
 		return Drift{}, err
 	}
 
-	planned := make(map[string]string, len(wholeOps))
-	for _, op := range wholeOps {
-		planned[op.RelPath] = contentHash(op.Content)
+	planned := make(map[string]string, len(ops))
+	for _, op := range ops {
+		planned[op.RelPath] = fsops.ContentHash(op.Content)
 	}
 
 	var d Drift
@@ -94,7 +96,7 @@ func Diff(plan *resolver.Plan, opts Options) (Drift, error) {
 			d.Missing = append(d.Missing, rel)
 			continue
 		}
-		if contentHash(raw) != recordedHash {
+		if fsops.ContentHash(raw) != recordedHash {
 			d.Modified = append(d.Modified, rel)
 		}
 	}
@@ -116,8 +118,8 @@ func Diff(plan *resolver.Plan, opts Options) (Drift, error) {
 		// user-modification signal already covers it).
 		if recorded := manifest.Files[rel]; recorded != planned[rel] {
 			abs := absPath(roots.ScopeRoot, rel)
-			if raw, err := os.ReadFile(abs); err == nil && contentHash(raw) == recorded { // #nosec G304 -- reads the file agtk is diffing, at the path the invoker named
-				if !contains(d.Modified, rel) {
+			if raw, err := os.ReadFile(abs); err == nil && fsops.ContentHash(raw) == recorded { // #nosec G304 -- reads the file agtk is diffing, at the path the invoker named
+				if !slices.Contains(d.Modified, rel) {
 					d.Modified = append(d.Modified, rel)
 				}
 			}
@@ -144,13 +146,4 @@ func Diff(plan *resolver.Plan, opts Options) (Drift, error) {
 
 func absPath(scopeRoot, rel string) string {
 	return filepath.Join(scopeRoot, filepath.FromSlash(rel))
-}
-
-func contains(haystack []string, needle string) bool {
-	for _, s := range haystack {
-		if s == needle {
-			return true
-		}
-	}
-	return false
 }

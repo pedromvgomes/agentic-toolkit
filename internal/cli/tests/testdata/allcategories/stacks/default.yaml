@@ -1,0 +1,19 @@
+description: Every category, plus a skills/commands name collision.
+skills:
+  - review
+agents:
+  - helper
+commands:
+  - review
+  - deploy
+rules:
+  - style
+instructions:
+  - house-style
+hooks:
+  - guard
+mcp:
+  - ctx
+settings:
+  - base
+  - claude-only

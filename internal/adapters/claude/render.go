@@ -8,12 +8,17 @@
 //     records which paths were written and their content hashes; on
 //     re-render, files in the manifest can be overwritten freely, files
 //     present on disk but absent from the manifest trigger a collision
-//     refusal unless Options.Force is set.
+//     refusal unless Options.Force is set. The write/track machinery
+//     behind this model is shared with every other platform adapter via
+//     internal/adapters/fsops — this package supplies only the category-
+//     to-directory mapping and the per-category frontmatter shape.
 //  2. Managed-region files (CLAUDE.md). agtk owns only the region between
 //     <!-- BEGIN AGTK MANAGED --> and <!-- END AGTK MANAGED -->; content
 //     outside the markers is preserved verbatim. When CLAUDE.md does not
-//     exist, project-scope renders seed it from AGENTS.md (via @AGENTS.md
-//     import) when present, else create a fresh file.
+//     exist, project-scope renders create it with just the managed
+//     block — CLAUDE.md never reads or references AGENTS.md, which (when
+//     a stack also renders for the codex platform) is a wholly separate,
+//     independently-generated file.
 //  3. Mixed-ownership JSON (settings.json, .mcp.json). agtk owns only
 //     the top-level keys it has rendered in each file, recorded in
 //     `_meta.agtk.managed`. User keys are preserved. MCP servers render
@@ -33,6 +38,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/pedromvgomes/agentic-toolkit/internal/adapters/fsops"
+	"github.com/pedromvgomes/agentic-toolkit/internal/definitions"
 	"github.com/pedromvgomes/agentic-toolkit/internal/resolver"
 )
 
@@ -58,20 +65,10 @@ type Options struct {
 	// derive from Scope. Tests use this to render into a temp dir.
 	ScopeRoot string
 
-	// ProjectRoot overrides the project root used for CLAUDE.md output
-	// and the fallback AGENTS.md lookup under project scope. Empty =
-	// parent of ScopeRoot. Ignored under user scope (CLAUDE.md always
-	// lives inside ScopeRoot).
+	// ProjectRoot overrides the project root CLAUDE.md is written to
+	// under project scope. Empty = parent of ScopeRoot. Ignored under
+	// user scope (CLAUDE.md always lives inside ScopeRoot).
 	ProjectRoot string
-
-	// StackDir is the directory rooting the stack definition (where the
-	// entry manifest lives). When non-empty and project-scoped, AGENTS.md
-	// is sourced from here first, falling back to ProjectRoot. The
-	// seeded `@`-import in CLAUDE.md is the relative path from
-	// ProjectRoot to the AGENTS.md actually found, so it resolves at
-	// agent runtime regardless of which root supplied the file. Empty
-	// = same as ProjectRoot (collapses to pre-stack-dir behavior).
-	StackDir string
 
 	// DryRun reports what would change without touching the filesystem.
 	// Errors that depend on filesystem state (collision refusal,
@@ -101,25 +98,24 @@ func Render(plan *resolver.Plan, opts Options) error {
 
 	// Plan all whole-owned-file writes first so collisions are surfaced
 	// before any filesystem mutation. Settings/CLAUDE.md follow.
-	wholeOps, err := planWholeOwned(plan, roots)
+	ops, err := planWholeOwned(plan, roots)
 	if err != nil {
 		return err
 	}
 
-	manifest, err := readManifest(roots.ScopeRoot)
+	manifest, err := wholeOps.ReadManifest(roots.ScopeRoot)
 	if err != nil {
 		return err
 	}
 
 	if !opts.Force {
-		if cerrs := detectCollisions(wholeOps, manifest); len(cerrs) > 0 {
+		if cerrs := wholeOps.DetectCollisions(ops, manifest); len(cerrs) > 0 {
 			return errors.Join(cerrs...)
 		}
 	}
 
 	if opts.DryRun {
-		reportDryRun(opts.Stdout, plan, wholeOps, roots, manifest)
-		return nil
+		return reportDryRun(opts.Stdout, plan, ops, roots, manifest)
 	}
 
 	if err := os.MkdirAll(roots.ScopeRoot, 0o755); err != nil { // #nosec G301 -- 0755: the scope root in the user's repo, meant to be committed
@@ -127,26 +123,16 @@ func Render(plan *resolver.Plan, opts Options) error {
 	}
 
 	var errs []error
-	newManifest := newManifestState()
-	for _, op := range wholeOps {
-		if err := applyWholeOp(op, newManifest, opts); err != nil {
+	newManifest := fsops.NewManifestState()
+	for _, op := range ops {
+		if err := wholeOps.ApplyWholeOp(op, newManifest, opts.Stdout); err != nil {
 			errs = append(errs, err)
 		}
 	}
 
 	// Stale-cleanup: paths that were tracked last time but are not in
 	// this render. Remove only files we own (manifest tracked).
-	for path := range manifest.Files {
-		if _, kept := newManifest.Files[path]; kept {
-			continue
-		}
-		full := filepath.Join(roots.ScopeRoot, path)
-		if rerr := os.Remove(full); rerr != nil && !os.IsNotExist(rerr) {
-			errs = append(errs, fmt.Errorf("claude: remove stale %s: %w", full, rerr))
-		} else if opts.Stdout != nil {
-			fmt.Fprintf(opts.Stdout, "removed %s\n", full)
-		}
-	}
+	errs = append(errs, wholeOps.RemoveStale(roots.ScopeRoot, manifest, newManifest, opts.Stdout)...)
 
 	if err := renderInstructions(plan, roots, opts); err != nil {
 		errs = append(errs, err)
@@ -160,24 +146,65 @@ func Render(plan *resolver.Plan, opts Options) error {
 		errs = append(errs, err)
 	}
 
-	if err := writeManifest(roots.ScopeRoot, newManifest); err != nil {
+	if err := wholeOps.WriteManifest(roots.ScopeRoot, newManifest); err != nil {
 		errs = append(errs, err)
 	}
 
 	return errors.Join(errs...)
 }
 
+// reportDryRun prints what each whole-owned file's intended action would
+// be, plus the mixed-ownership targets (CLAUDE.md, settings.json) that a
+// real render would touch, without writing anything.
+//
+// The mixed-ownership JSON is parsed here for the reason Options.DryRun
+// states: a render reads settings.json and .mcp.json whether or not it
+// has anything to put in them, so a file that will not parse is a
+// failure this preview can see, and reporting success for one previews a
+// render that will not happen.
+func reportDryRun(stdout io.Writer, plan *resolver.Plan, ops []fsops.WholeOp, roots scopeRoots, manifest fsops.ManifestState) error {
+	wholeOps.ReportDryRunWholeOps(stdout, ops, roots.ScopeRoot, manifest)
+
+	if _, err := readSettings(settingsPath(roots)); err != nil {
+		return err
+	}
+	if roots.Scope == ScopeProject {
+		if _, err := readSettings(mcpJSONPath(roots)); err != nil {
+			return err
+		}
+	}
+
+	if stdout == nil {
+		return nil
+	}
+
+	// Settings + CLAUDE.md preview. Cheap but accurate enough: just
+	// announce the targets — actual diff would require running the
+	// merge logic without writing.
+	hasInstr := false
+	hasSettings := false
+	for _, d := range plan.Definitions {
+		switch d.Category {
+		case definitions.CategoryInstruction:
+			hasInstr = true
+		case definitions.CategoryHook, definitions.CategoryMCP, definitions.CategorySetting:
+			hasSettings = true
+		}
+	}
+	if hasInstr {
+		fmt.Fprintf(stdout, "would update %s (managed region)\n", instructionsPath(roots))
+	}
+	if hasSettings {
+		fmt.Fprintf(stdout, "would update %s (managed top-level keys)\n", settingsPath(roots))
+	}
+	return nil
+}
+
 // scopeRoots holds the resolved root directories for a render run.
 type scopeRoots struct {
 	Scope       Scope
 	ScopeRoot   string // <workdir>/.claude or ~/.claude (or override)
-	ProjectRoot string // <workdir> or ~/.claude (no AGENTS.md fallback under user scope)
-	// StackDir is where the stack definition lives. Equal to ProjectRoot
-	// when --config is not in use (or under user scope). Distinct from
-	// ProjectRoot in the bare-repo + worktree workflow, where AGENTS.md
-	// may live next to the manifest while CLAUDE.md is rendered into
-	// the apply dir.
-	StackDir string
+	ProjectRoot string // <workdir> or ~/.claude
 }
 
 // resolveRoots derives ScopeRoot and ProjectRoot from opts.
@@ -206,18 +233,10 @@ func resolveRoots(opts Options) (scopeRoots, error) {
 	if opts.ProjectRoot != "" {
 		roots.ProjectRoot = filepath.Clean(opts.ProjectRoot)
 	} else if opts.Scope == ScopeUser {
-		// User scope: CLAUDE.md lives inside ScopeRoot; project root is
-		// the same dir for the AGENTS.md (non-)lookup path. The
-		// instructions renderer suppresses the AGENTS.md seed under
-		// user scope regardless.
+		// User scope: CLAUDE.md lives inside ScopeRoot.
 		roots.ProjectRoot = roots.ScopeRoot
 	} else {
 		roots.ProjectRoot = filepath.Dir(roots.ScopeRoot)
-	}
-	if opts.StackDir != "" {
-		roots.StackDir = filepath.Clean(opts.StackDir)
-	} else {
-		roots.StackDir = roots.ProjectRoot
 	}
 	return roots, nil
 }

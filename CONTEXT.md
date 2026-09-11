@@ -33,9 +33,27 @@ The repo that `agtk` renders into. Owns an **Entry manifest**, a lockfile, and i
 **Memory store**.
 _Avoid_: client, target, downstream
 
+**Platform**:
+A target agentic-coding tool with its own on-disk layout that a **Stack**'s definitions can
+render into — `claude`, `codex`, and (declared but not yet rendered) `cursor`, `copilot`,
+`opencode`, `agents`. A **Stack** opts additional Platforms in explicitly (`platforms:`);
+omitting the field renders `claude` only, unchanged from before Platforms existed. Distinct
+from a **Reviewer**'s Provider (the coding-agent CLI a **Runner** invokes, see Code review
+below): a Platform is about which files get written for a tool to read, never about
+invoking a model.
+_Avoid_: adapter, target, tool
+
+**Adapter**:
+The package (`internal/adapters/<platform>`) that **Render**s a resolved plan into one
+**Platform**'s on-disk layout. Owns the mapping from each **Category** to that platform's
+file conventions, and the policy where a canonical value has no native equivalent — a
+converted construct, or a reported skip. The write/track machinery every Adapter shares
+lives in `internal/adapters/fsops`.
+
 **Render**:
-Writing resolved **Definition**s into a consumer's platform-specific layout (`.claude/`,
-`CLAUDE.md`, a manifest). The inverse direction of `fetch`.
+Writing resolved **Definition**s into a consumer's layout for each of its opted-in
+**Platform**s (`.claude/` + `CLAUDE.md` for `claude`; `.agents/` + `AGENTS.md` + `.codex/`
+for `codex`), one **Adapter** run per Platform. The inverse direction of `fetch`.
 _Avoid_: install, apply, generate
 
 ### Memory

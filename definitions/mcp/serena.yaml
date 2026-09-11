@@ -1,6 +1,5 @@
 name: serena
 description: Serena MCP server — semantic code retrieval and editing tools, started against the current project directory.
-platforms: [claude]
 transport: stdio
 command: serena
 args:
@@ -8,3 +7,16 @@ args:
   - --context
   - claude-code
   - --project-from-cwd
+extensions:
+  codex:
+    # Serena tailors its prompts and tool descriptions to the client it is
+    # serving, so the context it is started in has to name the platform
+    # actually calling it. Everything else about the server is the same,
+    # which is why this is an override on one definition rather than a
+    # serena-claude and a serena-codex: the definition's name is the name
+    # the server is addressed by, and two of them would mean two.
+    args:
+      - start-mcp-server
+      - --context
+      - codex
+      - --project-from-cwd

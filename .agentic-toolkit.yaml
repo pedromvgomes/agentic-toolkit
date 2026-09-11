@@ -10,6 +10,23 @@ extends:
   - ./stacks/serena.yaml
   - ./stacks/rtk.yaml
 
+# Both platforms, so a Codex reviewer on the panel reads the same
+# definitions a Claude one does. Rendering for a platform is what puts
+# this repo's instructions where that platform looks for them; a panel
+# whose Codex reviewers ran without them would be reviewing this repo
+# with less context than its Claude reviewers, and the disagreement
+# between the two is the signal the panel exists to produce.
+platforms:
+  - claude
+  - codex
+
+# Scoped to this repo rather than to stacks/default.yaml: it describes
+# agentic-toolkit's own layout, commands and boundaries, which is exactly
+# what a consumer repo extending the default stack must not be told about
+# its own tree.
+instructions:
+  - agentic-toolkit-repo
+
 # The store is already here and committed, and every deterministic memory
 # command finds it from the default `memory.root`. Only the provider needs
 # saying: curation is the one operation that spends money, so `memory.agent`

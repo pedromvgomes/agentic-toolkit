@@ -1,6 +1,6 @@
 # agentic-toolkit
 
-A toolkit for initializing repositories with shared agent assets — skills, agents, rules, instructions, commands, hooks, MCP configs — across multiple agentic platforms (Claude Code, Cursor, GitHub Copilot, OpenCode, ...).
+A toolkit for initializing repositories with shared agent assets — skills, agents, rules, instructions, commands, hooks, MCP configs — across multiple agentic platforms. Claude Code and Codex render today; a stack opts into the ones it wants with `platforms:`.
 
 This repository is two things in one:
 

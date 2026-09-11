@@ -14,6 +14,7 @@
 //	hooks:       []EntryRef
 //	mcp:         []EntryRef
 //	settings:    []EntryRef
+//	platforms:   optional; []Platform, rendering targets beyond Claude Code
 //	memory:      optional; memory-store settings, entry manifest only
 //
 // Override semantics: depth-first walk of `extends:`, post-order overlay
@@ -60,6 +61,8 @@ type Stack struct {
 	MCP          []EntryRef `yaml:"mcp,omitempty"`
 	Settings     []EntryRef `yaml:"settings,omitempty"`
 
+	Platforms []definitions.Platform `yaml:"platforms,omitempty" agtkdoc:"Rendering targets. Omit to render Claude Code only \u2014 today's behavior, unchanged. List additional platforms (e.g. codex) to also render their on-disk layout from the same definitions; each named platform must have a render adapter."`
+
 	Memory *MemoryConfig `yaml:"memory,omitempty" agtkdoc:"Repo-resident memory store settings. Honoured only in the entry manifest \u2014 the store's location is a fact about the consumer repo, not about a shareable stack, so a stack reached through extends: that sets it gets a diagnostic instead of silently relocating the consumer's committed notes."`
 }
 
@@ -103,6 +106,16 @@ func (s *Stack) EffectiveRoot() string {
 		return DefaultRoot
 	}
 	return s.Root
+}
+
+// EffectivePlatforms returns Platforms if set, else a single-element slice
+// naming Claude Code — omitting platforms: renders exactly what agtk has
+// always rendered, with no behavior change for a stack that never sets it.
+func (s *Stack) EffectivePlatforms() []definitions.Platform {
+	if len(s.Platforms) == 0 {
+		return []definitions.Platform{definitions.PlatformClaude}
+	}
+	return s.Platforms
 }
 
 // EntriesFor returns the EntryRef slice for cat. Returns nil for unknown

@@ -29,6 +29,7 @@ const (
 	ErrInvalidEntry    ErrorKind = "invalid_entry"
 	ErrInvalidExtends  ErrorKind = "invalid_extends"
 	ErrLegacyConfig    ErrorKind = "legacy_config"
+	ErrUnknownPlatform ErrorKind = "unknown_platform"
 )
 
 func (e *ParseError) Error() string {

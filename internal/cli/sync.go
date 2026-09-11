@@ -5,11 +5,9 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"path/filepath"
 
 	"github.com/spf13/cobra"
 
-	"github.com/pedromvgomes/agentic-toolkit/internal/adapters/claude"
 	"github.com/pedromvgomes/agentic-toolkit/internal/lockfile"
 	"github.com/pedromvgomes/agentic-toolkit/internal/resolver"
 	"github.com/pedromvgomes/agentic-toolkit/internal/sourcestore"
@@ -102,21 +100,7 @@ func runSync(env *Env, cacheRoot, scopeFlag string, dryRun, force bool) error {
 		return fmt.Errorf("resolve: %w", err)
 	}
 
-	opts := claude.Options{
-		Scope:  scope,
-		DryRun: dryRun,
-		Force:  force,
-		Stdout: env.Stdout,
-	}
-	if scope == claude.ScopeProject {
-		opts.ScopeRoot = filepath.Join(env.WorkDir, ".claude")
-		opts.ProjectRoot = env.WorkDir
-		opts.StackDir = renderStackDir(env)
-	}
-	if err := claude.Render(plan, opts); err != nil {
-		return fmt.Errorf("render: %w", err)
-	}
-	return nil
+	return renderPlatforms(st, plan, env, scope, dryRun, force)
 }
 
 // lockIsStale returns true when the lockfile is missing, records no manifest

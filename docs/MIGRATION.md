@@ -122,9 +122,13 @@ skills:
 
 ## Other notes
 
-- `platforms:` is no longer a config field. Platform targeting is
-  applied at render time per command (future work — currently agtk
-  renders for all platforms each definition supports).
+- `platforms:` is back as a v2 field, with different semantics: a
+  top-level list of rendering targets (e.g. `codex`), each rendered by
+  its own adapter from the same definitions. Omit it and only Claude
+  Code renders, same as every stack today. This is distinct from a
+  single definition's own `platforms:` field, which narrows which
+  targets *that definition* applies to, not which targets the stack
+  renders for.
 - The `agtk init --source` flag is now `agtk init --extends`.
 - A new `agtk sync` command runs `lock` (if stale) + `fetch` + `render`
   in one step, suitable for the everyday `pull-and-update` workflow.
