@@ -156,6 +156,45 @@ reviewers and not for its judge. Both are overrides — a panel naming neither u
 manifest's, so declaring them on one panel is never the price of declaring them on all.
 _Avoid_: profile, preset, tier
 
+**Block**:
+A **Provider** declining to serve the credential it was given, rather than attempting the run
+and failing — reported by `agentic-driver` as `Result.Blocked`, distinct from every other bad
+verdict a run can return. It is the one outage `agtk` routes around instead of surfacing: a
+**Panel** that stayed unavailable because every run on it was blocked retries once on its
+**Fallback panel**, and if that also comes back blocked, the review reports "no verdict" to the
+caller without posting anything to the pull request — a block is a credential/quota condition,
+not a defect the review invariant exists to surface. An ordinary failure (a bad schema, a
+sandbox refusal, a timeout) is not a Block and always posts, same as before.
+
+Only `claudecode`'s dialect can report one as of this writing; `codex`'s cannot, so a panel that
+runs on `codex` fails ordinarily under load rather than triggering a fallback.
+_Avoid_: rate limit, throttle, outage (an outage posts; a Block does not)
+
+**Fallback panel**:
+The **Panel** named in another's `fallback:` field, tried once, whole, when every run of the
+first panel that did not answer was **Block**ed. A run that answered, or a failure with any
+other cause sitting alongside a **Block**, is not this condition: the review's unavailability
+then has a cause a different provider cannot fix, and it must stay as visible as any other
+outage. Explicit per panel rather than inferred from a naming convention, because a **Panel**
+carries no provider of its own — each **Runner** in it does — and inference would silently
+break on a manifest that names its panels differently. Retried whole rather than by role: a
+**Panel**'s **Reviewer**s, **Judge** and **Validator** are not decomposable, so a block that
+hits only the judge still re-runs the reviewers too, on the other provider.
+
+Refused, at parse time, if it costs less than the panel declaring it — equal cost is the floor,
+not the ceiling. A panel an **Escalation** rule raised is not allowed to fall back to one the
+rule would not have chosen; that would spend a fraction of the review the rule asked for and
+say nothing about it. Refused too if it shares a provider with the panel declaring it: "a
+different provider" is the property enforced, not a convention a manifest is trusted to follow,
+because a shared provider recurs into the identical block instead of recovering from it.
+
+A `security:prompt-injection` **Finding** the first panel's reviewers already caught survives
+into the fallback panel's own verdict, matched by fingerprint, even when the fallback panel's
+reviewers do not independently reach it — the one place this pipeline still reattaches a
+finding across two different runs, because the retry that recovers a block is otherwise the one
+path that could convert an already-detected injection into a review that reads as clean.
+_Avoid_: retry, backup panel, secondary
+
 **Context**:
 What a review runs against — the local working tree, or an open PR. It names the default
 **Panel**, and it decides what a run is obliged to do rather than what it may: a context that

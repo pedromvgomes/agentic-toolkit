@@ -128,6 +128,37 @@ func (m *Manifest) validate(filePath string) error {
 			return fieldErr(filePath, field+".validate", ErrMissingRequired,
 				"this panel validates, but neither it nor the manifest declares a validator")
 		}
+		if panel.Fallback != "" {
+			if panel.Fallback == name {
+				return fieldErr(filePath, field+".fallback", ErrInvalidPanel,
+					"a panel cannot fall back to itself")
+			}
+			fallback, ok := m.Panels[panel.Fallback]
+			if !ok {
+				return fieldErr(filePath, field+".fallback", ErrUnknownName,
+					"%q is not a panel this manifest declares; declared: %s",
+					panel.Fallback, strings.Join(sortedMapKeys(m.Panels), ", "))
+			}
+			// A fallback cheaper than the panel it replaces would silently
+			// give up whatever an escalation rule raised to this panel for:
+			// the retry would run, answer, and look like the review the rule
+			// asked for while spending a fraction of it. Equal cost is the
+			// floor, not the ceiling — a panel may fall back to a deeper one.
+			if fallback.Cost() < panel.Cost() {
+				return fieldErr(filePath, field+".fallback", ErrInvalidPanel,
+					"%q costs less than this panel (%d run(s) vs %d); a fallback shallower than the panel it replaces would silently give up whatever escalation raised to it",
+					panel.Fallback, fallback.Cost(), panel.Cost())
+			}
+			// A fallback is tried because a provider declined to serve the
+			// credential; one that shares that provider would recur into the
+			// identical block the moment it actually mattered, rather than
+			// recovering from it.
+			if shared := sharedProviders(m.Providers(name), m.Providers(panel.Fallback)); len(shared) > 0 {
+				return fieldErr(filePath, field+".fallback", ErrInvalidPanel,
+					"%q shares provider(s) %s with this panel; a block there would recur on the fallback instead of being recovered from",
+					panel.Fallback, strings.Join(shared, ", "))
+			}
+		}
 	}
 
 	for _, ctx := range Contexts {
@@ -497,6 +528,18 @@ func sortedMapKeys[V any](m map[string]V) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {
 		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// sharedProviders names the providers two panels have in common, sorted.
+func sharedProviders(a, b map[string]bool) []string {
+	var out []string
+	for p := range a {
+		if b[p] {
+			out = append(out, p)
+		}
 	}
 	sort.Strings(out)
 	return out

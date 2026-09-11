@@ -38,6 +38,11 @@ type scripted struct {
 	limits   map[string]int
 	limitErr error
 
+	// blockedProviders makes every run on the named provider come back
+	// blocked, ahead of any fail* script — the provider declined to serve
+	// the credential rather than the run being made and failing.
+	blockedProviders map[string]bool
+
 	// seen records every prompt, in call order.
 	seen []string
 	// counts is how many runs each role made.
@@ -64,7 +69,7 @@ func roleOf(prompt string) string {
 	}
 }
 
-func (s *scripted) Invoke(_ context.Context, _ review.Runner, req agentic.Request) (agentic.Result, error) {
+func (s *scripted) Invoke(_ context.Context, r review.Runner, req agentic.Request) (agentic.Result, error) {
 	s.mu.Lock()
 	role := roleOf(req.Prompt)
 	s.seen = append(s.seen, req.Prompt)
@@ -74,6 +79,10 @@ func (s *scripted) Invoke(_ context.Context, _ review.Runner, req agentic.Reques
 	n := s.counts[role]
 	s.counts[role]++
 	s.mu.Unlock()
+
+	if s.blockedProviders[r.Provider] {
+		return agentic.Result{IsError: true, Text: "quota exhausted", Blocked: &agentic.Block{Reason: agentic.BlockExhausted}}, nil
+	}
 
 	switch role {
 	case RoleJudge:

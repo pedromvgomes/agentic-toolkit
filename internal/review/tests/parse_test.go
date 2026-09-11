@@ -167,6 +167,11 @@ func TestNamesMustResolve(t *testing.T) {
 			strings.Replace(complete, "  - to: deep\n    any:", "  - to: deepest\n    any:", 1),
 			[]string{"deepest", "deep, quick, standard"},
 		},
+		{
+			"panel falls back to an undeclared panel",
+			strings.Replace(complete, "  quick:    {reviewers: [correctness]}", "  quick:    {reviewers: [correctness], fallback: nonexistent}", 1),
+			[]string{"nonexistent", "deep, quick, standard"},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -180,6 +185,77 @@ func TestNamesMustResolve(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// A panel naming itself as its own fallback would retry forever without
+// ever reaching a different provider, so it is refused.
+func TestAPanelCannotFallBackToItself(t *testing.T) {
+	src := strings.Replace(complete, "  quick:    {reviewers: [correctness]}", "  quick:    {reviewers: [correctness], fallback: quick}", 1)
+	err := expectFailure(t, src)
+	if !review.IsKind(err, review.ErrInvalidPanel) {
+		t.Fatalf("kind = %v, want invalid_panel", err)
+	}
+}
+
+// A fallback cheaper than the panel declaring it would silently give up
+// whatever escalation raised to that panel, so it is refused.
+func TestAPanelCannotFallBackToACheaperPanel(t *testing.T) {
+	src := strings.Replace(complete,
+		"  deep:     {reviewers: [correctness, security, performance], quorum: 2}",
+		"  deep:     {reviewers: [correctness, security, performance], quorum: 2, fallback: quick}", 1)
+	err := expectFailure(t, src)
+	if !review.IsKind(err, review.ErrInvalidPanel) {
+		t.Fatalf("kind = %v, want invalid_panel", err)
+	}
+	if !strings.Contains(err.Error(), "quick") || !strings.Contains(err.Error(), "costs less") {
+		t.Errorf("error = %q, want it to name the cheaper panel", err)
+	}
+}
+
+// A fallback sharing a provider with the panel declaring it would recur into
+// the identical block the moment it actually mattered, so it is refused —
+// even one that is otherwise a perfectly legal, deeper panel.
+func TestAPanelCannotFallBackToAPanelOnTheSameProvider(t *testing.T) {
+	src := strings.Replace(complete,
+		"  standard: {reviewers: [correctness, security]}",
+		"  standard: {reviewers: [correctness, security], fallback: deep}", 1)
+	err := expectFailure(t, src)
+	if !review.IsKind(err, review.ErrInvalidPanel) {
+		t.Fatalf("kind = %v, want invalid_panel", err)
+	}
+	if !strings.Contains(err.Error(), "claudecode") {
+		t.Errorf("error = %q, want it to name the shared provider", err)
+	}
+}
+
+// A manifest with a panel on each provider, for exercising a fallback that
+// legitimately differs.
+const twoProviderManifest = `version: 1
+reviewers:
+  correctness:       {provider: claudecode, model: sonnet, prompt: builtin:correctness}
+  correctness-codex:  {provider: codex,      model: sol,    prompt: builtin:correctness}
+judge:     {provider: claudecode, model: opus,   prompt: builtin:judge}
+validator: {provider: claudecode, model: sonnet, prompt: builtin:validator}
+panels:
+  quick:
+    reviewers: [correctness]
+    fallback: quick-codex
+  quick-codex:
+    reviewers: [correctness-codex]
+    judge:     {provider: codex, model: astra, prompt: builtin:judge}
+    validator: {provider: codex, model: sol,   prompt: builtin:validator}
+defaults:
+  worktree: quick
+  pr:       quick
+`
+
+// Equal cost is the floor a fallback must clear, not a ceiling: a panel may
+// fall back to one at least as deep as itself, as long as it is on a
+// different provider.
+func TestAPanelMayFallBackToAnEquallyOrMoreExpensivePanelOnAnotherProvider(t *testing.T) {
+	if _, err := review.ParseBytes("manifest.yaml", []byte(twoProviderManifest)); err != nil {
+		t.Fatalf("a same-cost fallback on a different provider was refused: %v", err)
 	}
 }
 

@@ -35,6 +35,23 @@ func TestARunThatDeclaredItsOwnFailureCarriesItsAccount(t *testing.T) {
 	}
 }
 
+// A provider that declines to serve the credential is a block, not an
+// ordinary declared failure — it carries the reason and stays distinguishable
+// from IsError, which the driver's contract sets alongside it either way.
+func TestABlockedProviderIsDistinctFromAnOrdinaryFailure(t *testing.T) {
+	res := agentic.Result{IsError: true, Text: "rate limited", Blocked: &agentic.Block{Reason: agentic.BlockExhausted}}
+	raw, report := classify(res, nil, "security")
+	if raw != nil || report.Available {
+		t.Fatalf("a block produced an answer: %v %+v", raw, report)
+	}
+	if !report.Blocked {
+		t.Fatalf("a blocked run was not reported as blocked: %+v", report)
+	}
+	if !strings.Contains(report.Reason, "declined to serve the credential") || !strings.Contains(report.Reason, "exhausted") {
+		t.Errorf("the report does not name the block: %q", report.Reason)
+	}
+}
+
 // The driver's contract says this cannot happen. It is branched on anyway,
 // because the alternative reading is "found nothing" — the one failure a
 // review must never make silently.
