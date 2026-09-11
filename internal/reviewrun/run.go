@@ -363,6 +363,11 @@ func mergeCarriedInjections(findings []Finding, reattached []string, carried []F
 		reattached = append(reattached, f.ID)
 	}
 	sort.Strings(reattached)
+	// decide already sorted the fallback panel's own Findings; an appended
+	// carried finding — often RED, since that is what this exists for —
+	// has to be resorted in rather than left trailing behind findings the
+	// fallback panel's own judge ranked below it.
+	sortFindings(findings)
 	return findings, reattached
 }
 
