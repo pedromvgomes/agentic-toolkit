@@ -1,0 +1,6 @@
+description: A settings fragment in Claude's own vocabulary, which no other platform can read.
+platforms: [claude]
+value:
+  permissions:
+    allow:
+      - "Bash(agtk memory stats*)"

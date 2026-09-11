@@ -125,6 +125,18 @@ func clearConfigManaged(target string, opts Options) error {
 		deletePath(current, p)
 	}
 	clearManagedMarker(current)
+	if len(current) == 0 {
+		// Everything in the file was agtk's, and there is nothing left to
+		// put back. An empty config.toml teaches Codex nothing and shows
+		// up in every diff, so the file goes with the last key it held.
+		if err := os.Remove(target); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("codex: remove %s: %w", target, err)
+		}
+		if opts.Stdout != nil {
+			fmt.Fprintf(opts.Stdout, "removed %s\n", target)
+		}
+		return nil
+	}
 	return writeConfig(target, current, opts)
 }
 

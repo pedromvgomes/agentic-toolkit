@@ -494,6 +494,10 @@ func TestConfig_DryRunAnnouncesClearingManagedKeys(t *testing.T) {
 	tmp := t.TempDir()
 	var out bytes.Buffer
 
+	// Hand-authored content is what keeps the file alive once agtk's
+	// keys go; without it the render removes the file instead, which is
+	// TestConfig_DryRunAnnouncesTheRemoval's case.
+	writeConfigFile(t, tmp, "sandbox_mode = \"workspace-write\"\n")
 	renderCodex(t, mixedConfigPlan(), tmp)
 
 	if err := codex.Render(simpleProjectPlan(), codex.Options{
@@ -538,5 +542,52 @@ func TestConfig_DryRunSurfacesAnUnreadableConfig(t *testing.T) {
 		Scope: codex.ScopeProject, ProjectRoot: tmp,
 	}); err == nil {
 		t.Error("real render accepted a config the dry run refused")
+	}
+}
+
+// TestConfig_GoesWithItsLastKey: when everything agtk wrote is released
+// and the consumer had nothing of their own in the file, the file goes
+// too. A nought-byte config.toml is one Codex still has to parse, and
+// one more line in every diff, for no content.
+func TestConfig_GoesWithItsLastKey(t *testing.T) {
+	tmp := t.TempDir()
+
+	renderCodex(t, mixedConfigPlan(), tmp)
+	if _, err := os.Stat(configPath(tmp)); err != nil {
+		t.Fatalf("config.toml should exist while agtk has keys in it: %v", err)
+	}
+
+	var out bytes.Buffer
+	if err := codex.Render(simpleProjectPlan(), codex.Options{
+		Scope: codex.ScopeProject, ProjectRoot: tmp, Stdout: &out,
+	}); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if _, err := os.Stat(configPath(tmp)); !os.IsNotExist(err) {
+		t.Errorf("config.toml outlived the last key it held: %v", err)
+	}
+	if !strings.Contains(out.String(), "removed") {
+		t.Errorf("removal not reported: %q", out.String())
+	}
+}
+
+// TestConfig_DryRunAnnouncesTheRemoval: the preview distinguishes a file
+// that will be rewritten without agtk's keys from one that will be
+// deleted, because those are different outcomes for whoever reads it.
+func TestConfig_DryRunAnnouncesTheRemoval(t *testing.T) {
+	tmp := t.TempDir()
+	renderCodex(t, mixedConfigPlan(), tmp)
+
+	var out bytes.Buffer
+	if err := codex.Render(simpleProjectPlan(), codex.Options{
+		Scope: codex.ScopeProject, ProjectRoot: tmp, DryRun: true, Stdout: &out,
+	}); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if !strings.Contains(out.String(), "would remove") {
+		t.Errorf("dry run did not announce the removal: %q", out.String())
+	}
+	if _, err := os.Stat(configPath(tmp)); err != nil {
+		t.Errorf("dry run removed the file it was previewing: %v", err)
 	}
 }

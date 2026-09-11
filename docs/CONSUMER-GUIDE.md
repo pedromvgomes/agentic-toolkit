@@ -127,7 +127,18 @@ platforms:
   - codex
 ```
 
-Omitting `platforms:` is the same as `[claude]`. This lives in the stack
+There are two `platforms:` fields and they answer different questions.
+This one, on the stack, names the platforms a render *writes for*. The
+one on an individual definition narrows the platforms *that definition*
+is meant for, and a definition that omits it goes to all of them — so a
+hook shelling out to a Claude-only binary, or a settings fragment in
+Claude's `permissions` vocabulary, declares `platforms: [claude]` and is
+skipped when the Codex adapter runs. Categories that carry context
+rather than wiring — `instructions:`, `skills:`, `rules:`, `agents:`,
+`commands:` — are usually meant for every platform and should leave the
+field off.
+
+Omitting the stack's `platforms:` is the same as `[claude]`. This lives in the stack
 file rather than behind a `--platform` flag so that every render site —
 your shell, a hook, CI, a colleague's checkout — reads the same answer
 out of something committed. Naming a platform with no render adapter

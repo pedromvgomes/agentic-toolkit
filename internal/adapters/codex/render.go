@@ -176,10 +176,33 @@ func reportDryRun(stdout io.Writer, plan *resolver.Plan, ops []fsops.WholeOp, rt
 	case len(readManagedList(current)) > 0:
 		// Nothing to write is not the same as nothing to do: a render
 		// with no mcp, hook or setting left still reclaims the keys a
-		// previous one claimed.
-		fmt.Fprintf(stdout, "would update %s (clearing managed keys)\n", configPath(rts))
+		// previous one claimed, and takes the file with them when it
+		// held nothing else.
+		if onlyManagedKeysRemain(configPath(rts)) {
+			fmt.Fprintf(stdout, "would remove %s\n", configPath(rts))
+		} else {
+			fmt.Fprintf(stdout, "would update %s (clearing managed keys)\n", configPath(rts))
+		}
 	}
 	return nil
+}
+
+// onlyManagedKeysRemain reports whether clearing agtk's keys would empty
+// the file, which is what decides between updating it and removing it.
+//
+// It parses the file again rather than working from the caller's map: a
+// copy of that map shares every nested table inside it, so deleting a
+// dotted path out of the copy would delete it from the caller's too.
+func onlyManagedKeysRemain(path string) bool {
+	probe, err := readConfig(path)
+	if err != nil {
+		return false
+	}
+	for _, p := range readManagedList(probe) {
+		deletePath(probe, p)
+	}
+	clearManagedMarker(probe)
+	return len(probe) == 0
 }
 
 // roots holds the resolved root directories for a render run. Unlike the

@@ -16,3 +16,4 @@ mcp:
   - ctx
 settings:
   - base
+  - claude-only

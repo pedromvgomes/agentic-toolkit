@@ -85,6 +85,7 @@ func runRender(env *Env, cacheRoot, scopeFlag string, dryRun, force bool) error 
 func renderPlatforms(st *stack.Stack, plan *resolver.Plan, env *Env, scope claude.Scope, dryRun, force bool) error {
 	var errs []error
 	for _, p := range st.EffectivePlatforms() {
+		plan := narrowToPlatform(plan, p)
 		switch p {
 		case definitions.PlatformClaude:
 			opts := claude.Options{
@@ -121,6 +122,49 @@ func renderPlatforms(st *stack.Stack, plan *resolver.Plan, env *Env, scope claud
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// narrowToPlatform drops the definitions that declare a platforms:
+// allowlist p is not on, so each adapter renders only what was meant for
+// it. A definition without the field targets every platform.
+//
+// This runs per platform rather than inside an adapter because the
+// allowlist is a property of the definition, not of any one platform's
+// layout: a Claude-only settings fragment is Claude-only whichever
+// adapter is asking. With a single render target the field never
+// decided anything; with two it is the only thing standing between a
+// platform and a neighbour's vocabulary — Claude's permissions block
+// written into Codex's config.toml is accepted by nothing and rejected
+// by no one.
+func narrowToPlatform(plan *resolver.Plan, p definitions.Platform) *resolver.Plan {
+	kept := make([]resolver.PlannedDefinition, 0, len(plan.Definitions))
+	for _, d := range plan.Definitions {
+		if targetsPlatform(d.Definition, p) {
+			kept = append(kept, d)
+		}
+	}
+	if len(kept) == len(plan.Definitions) {
+		return plan
+	}
+	narrowed := *plan
+	narrowed.Definitions = kept
+	return &narrowed
+}
+
+// targetsPlatform reports whether def is meant for p. An empty allowlist
+// means every platform, which is what the schema asks authors to leave
+// it as unless they are deliberately narrowing.
+func targetsPlatform(def definitions.Definition, p definitions.Platform) bool {
+	allowed := def.GetCommon().Platforms
+	if len(allowed) == 0 {
+		return true
+	}
+	for _, a := range allowed {
+		if a == p {
+			return true
+		}
+	}
+	return false
 }
 
 // codexScope converts the flag-derived claude.Scope into codex's own

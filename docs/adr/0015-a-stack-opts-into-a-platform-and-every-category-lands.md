@@ -89,6 +89,17 @@ and an error would fail a render that is fine on Claude.
 - A converted command carries its "only on an explicit user request" restriction as the
   first line of its body. Codex's `SKILL.md` frontmatter has no equivalent of Claude's
   `disable-model-invocation`, so the restriction is prose or it is nothing.
+- A definition's own `platforms:` allowlist starts being enforced, because it finally decides
+  something. The field predates this change and the schema always described it as a narrowing
+  list, but with one render target there was nothing to narrow against, and nothing read it.
+  With two, it is what keeps one platform's vocabulary out of another's files: a `permissions`
+  block in Claude's matcher syntax, or a hook shelling out to `--client=claude-code`, is not a
+  thing Codex rejects — it is a thing Codex neither reads nor complains about. Narrowing is
+  applied once in the render dispatch rather than inside an adapter, since the allowlist is a
+  property of the definition and not of any one layout.
+- `.codex/config.toml` is removed rather than left empty when the last key agtk owned goes and
+  the consumer had none of their own in it. A nought-byte file is one Codex still parses and
+  one more line in every diff.
 - `AGENTS.md` carries an index of `rules:` — description and relative link — that `CLAUDE.md`
   does not. Codex has no rules-discovery mechanism, so without the index a rule file is
   written where nothing will ever read it.

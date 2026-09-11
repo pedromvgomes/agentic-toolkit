@@ -93,6 +93,30 @@ func TestRender_MultiPlatform_EveryCategory(t *testing.T) {
 
 }
 
+// TestRender_MultiPlatform_NarrowedDefinitionReachesOnlyItsPlatform: a
+// definition's own platforms: allowlist narrows which platforms render
+// it. With one render target the field decided nothing; with two it is
+// what keeps one platform's vocabulary out of another's files — a Claude
+// permissions block means nothing to Codex, and Codex would neither read
+// it nor complain about it.
+func TestRender_MultiPlatform_NarrowedDefinitionReachesOnlyItsPlatform(t *testing.T) {
+	work, _ := renderAllCategories(t, "render", "--cache")
+
+	settings := readFile(t, filepath.Join(work, ".claude/settings.json"))
+	if !strings.Contains(settings, "permissions") {
+		t.Errorf("claude: the claude-only fragment did not reach settings.json:\n%s", settings)
+	}
+
+	cfg := readFile(t, filepath.Join(work, ".codex/config.toml"))
+	if strings.Contains(cfg, "permissions") {
+		t.Errorf("codex: a claude-only fragment reached config.toml:\n%s", cfg)
+	}
+	// The un-narrowed fragment still reaches both.
+	if !strings.Contains(cfg, "gpt-5-codex") {
+		t.Errorf("codex: the shared fragment was dropped with the narrowed one:\n%s", cfg)
+	}
+}
+
 // TestRender_MultiPlatform_DryRunWritesNeitherLayout: --dry-run reports
 // both platforms' targets and creates neither platform's roots.
 func TestRender_MultiPlatform_DryRunWritesNeitherLayout(t *testing.T) {
