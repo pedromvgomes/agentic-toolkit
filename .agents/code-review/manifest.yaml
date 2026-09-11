@@ -90,16 +90,14 @@ escalate:
       - signals: {in: [auth, crypto, concurrency, sensitive-data, fix-revert]}
       - context: {in: [pr]}
 
-  # Widely used code: the count separates a one-line change nobody depends on
-  # from a one-line change everybody does.
-  - to: deep
-    all:
-      - referencing_files: {gte: 20}
-      - context: {in: [worktree]}
-  - to: deep-codex
-    all:
-      - referencing_files: {gte: 20}
-      - context: {in: [pr]}
+  # No referencing_files rule. The count is unavailable for a change touching
+  # any file type this build does not recognise, and a manifest that reads an
+  # unavailable count is refused rather than read as low — so a single asset in
+  # an unlisted format inside a definition bundle would stop the review from
+  # starting at all. This catalog ships arbitrary files alongside definitions,
+  # so that is reachable here in a way it is not in a repo of one language. A
+  # review that runs without the blast-radius criterion is worth more than one
+  # that refuses; changed_files and signals still raise.
 
   # Irreversible or wide, but the risk is not in the diff: a migration's cost is
   # the table it locks, and a pipeline's is what it can reach. The security
