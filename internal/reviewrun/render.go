@@ -13,7 +13,11 @@ import (
 func Render(w io.Writer, r *Review) {
 	fmt.Fprintf(w, "manifest: %s\n", r.Manifest)
 	fmt.Fprintf(w, "range:    %s\n", r.Range)
-	fmt.Fprintf(w, "panel:    %s\n\n", r.Panel)
+	fmt.Fprintf(w, "panel:    %s\n", r.Panel)
+	if r.FallbackFrom != "" {
+		fmt.Fprintf(w, "fallback: %s -> %s (provider blocked)\n", r.FallbackFrom, r.Panel)
+	}
+	fmt.Fprintln(w)
 
 	if !r.Available {
 		fmt.Fprintf(w, "This review could not reach a verdict: %s\n\n", r.Reason)

@@ -128,6 +128,28 @@ func (m *Manifest) validate(filePath string) error {
 			return fieldErr(filePath, field+".validate", ErrMissingRequired,
 				"this panel validates, but neither it nor the manifest declares a validator")
 		}
+		if panel.Fallback != "" {
+			if panel.Fallback == name {
+				return fieldErr(filePath, field+".fallback", ErrInvalidPanel,
+					"a panel cannot fall back to itself")
+			}
+			fallback, ok := m.Panels[panel.Fallback]
+			if !ok {
+				return fieldErr(filePath, field+".fallback", ErrUnknownName,
+					"%q is not a panel this manifest declares; declared: %s",
+					panel.Fallback, strings.Join(sortedMapKeys(m.Panels), ", "))
+			}
+			// A fallback cheaper than the panel it replaces would silently
+			// give up whatever an escalation rule raised to this panel for:
+			// the retry would run, answer, and look like the review the rule
+			// asked for while spending a fraction of it. Equal cost is the
+			// floor, not the ceiling — a panel may fall back to a deeper one.
+			if fallback.Cost() < panel.Cost() {
+				return fieldErr(filePath, field+".fallback", ErrInvalidPanel,
+					"%q costs less than this panel (%d run(s) vs %d); a fallback shallower than the panel it replaces would silently give up whatever escalation raised to it",
+					panel.Fallback, fallback.Cost(), panel.Cost())
+			}
+		}
 	}
 
 	for _, ctx := range Contexts {

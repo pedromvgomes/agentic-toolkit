@@ -93,19 +93,34 @@ type PlannedRun struct {
 	Prompt   string
 }
 
-// Prepare works out everything a review needs and starts no process.
+// preparedMaterial is what a review needs that does not depend on which
+// panel runs: the manifest, the profile the escalation rules read, and the
+// review root together with its patch and convention documents.
 //
-// Shared by the review and by --dry-run, so what a preview prints is what a
-// run would send rather than a second rendering of it that could drift.
-//
-// The caller closes the returned root.
-func Prepare(opts Options) (*Plan, *review.Manifest, *review.Selection, *Root, error) {
+// Its own type because a fallback retries on a different panel over the
+// same change — the manifest did not change, the tree did not change, the
+// diff did not change — and building all of this twice would mean writing a
+// second copy of the review root and re-running `git diff` a second time
+// for a panel choice that costs nothing to redo.
+type preparedMaterial struct {
+	m           *review.Manifest
+	manifestLbl string
+	profile     *review.Profile
+	root        *Root
+	material    Material
+	missing     []string
+}
+
+// prepareMaterial builds everything a review needs that no panel choice
+// changes, and starts no process. The caller closes the returned root.
+func prepareMaterial(opts Options) (*preparedMaterial, error) {
 	m, manifestPath, builtin, err := loadManifest(opts)
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, err
 	}
-	if err := review.CheckCapabilities(manifestLabel(manifestPath, builtin), m); err != nil {
-		return nil, nil, nil, nil, err
+	manifestLbl := manifestLabel(manifestPath, builtin)
+	if err := review.CheckCapabilities(manifestLbl, m); err != nil {
+		return nil, err
 	}
 
 	profile, err := review.BuildProfile(review.ProfileOptions{
@@ -115,11 +130,7 @@ func Prepare(opts Options) (*Plan, *review.Manifest, *review.Selection, *Root, e
 		Exclude: m.Exclude,
 	})
 	if err != nil {
-		return nil, nil, nil, nil, err
-	}
-	sel, err := review.Select(m, opts.Context, profile, opts.Panel)
-	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, err
 	}
 
 	// A preview classifies the tree without writing it: Prepare is the seam
@@ -130,7 +141,7 @@ func Prepare(opts Options) (*Plan, *review.Manifest, *review.Selection, *Root, e
 	}
 	root, err := build(opts.Dir, opts.Head)
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, err
 	}
 
 	reviewable := profile.ReviewableFiles()
@@ -141,7 +152,7 @@ func Prepare(opts Options) (*Plan, *review.Manifest, *review.Selection, *Root, e
 	patch, err := review.Patch(opts.Dir, opts.Base, opts.Head, reviewable)
 	if err != nil {
 		_ = root.Close()
-		return nil, nil, nil, nil, err
+		return nil, err
 	}
 
 	// A manifest that names its own documents has said where its rules live,
@@ -157,29 +168,41 @@ func Prepare(opts Options) (*Plan, *review.Manifest, *review.Selection, *Root, e
 		Root:         root,
 		Range:        rangeLabel(opts.baseLabel(), opts.Head),
 	}
+	return &preparedMaterial{
+		m: m, manifestLbl: manifestLbl, profile: profile, root: root,
+		material: material, missing: missing,
+	}, nil
+}
+
+// planFor builds the plan for one panel choice against material already
+// prepared. panelOverride is opts.Panel's meaning: "" lets the rules choose,
+// a name forces it.
+func planFor(opts Options, pm *preparedMaterial, panelOverride string) (*Plan, *review.Selection, error) {
+	sel, err := review.Select(pm.m, opts.Context, pm.profile, panelOverride)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	plan := &Plan{
 		Panel:              sel.Panel,
-		Manifest:           manifestLabel(manifestPath, builtin),
-		Range:              material.Range,
-		Material:           material,
-		MissingConventions: missing,
+		Manifest:           pm.manifestLbl,
+		Range:              pm.material.Range,
+		Material:           pm.material,
+		MissingConventions: pm.missing,
 	}
-	panel := m.Panels[sel.Panel]
-	judge := m.EffectiveJudge(sel.Panel)
+	panel := pm.m.Panels[sel.Panel]
+	judge := pm.m.EffectiveJudge(sel.Panel)
 	judgeBody, err := runnerBody(opts.Dir, opts.Base, *judge)
 	if err != nil {
-		_ = root.Close()
-		return nil, nil, nil, nil, err
+		return nil, nil, err
 	}
 	for _, name := range panel.Reviewers {
-		runner := m.Reviewers[name]
+		runner := pm.m.Reviewers[name]
 		body, err := runnerBody(opts.Dir, opts.Base, runner)
 		if err != nil {
-			_ = root.Close()
-			return nil, nil, nil, nil, err
+			return nil, nil, err
 		}
-		prompt := material.compose(body)
+		prompt := pm.material.compose(body)
 		for i := 1; i <= panel.EffectiveQuorum(); i++ {
 			plan.Runs = append(plan.Runs, PlannedRun{
 				Label:    instanceLabel(name, i, panel.EffectiveQuorum()),
@@ -201,21 +224,118 @@ func Prepare(opts Options) (*Plan, *review.Manifest, *review.Selection, *Root, e
 		Role:     RoleJudge,
 		Provider: judge.Provider,
 		Model:    judge.Model,
-		Prompt:   material.composeWith(judgeBody, judgeTail("(supplied once the reviewers have answered)\n", opts.Threads.Foldable()), judgeInjectionClause),
+		Prompt:   pm.material.composeWith(judgeBody, judgeTail("(supplied once the reviewers have answered)\n", opts.Threads.Foldable()), judgeInjectionClause),
 	})
-	return plan, m, sel, root, nil
+	return plan, sel, nil
+}
+
+// Prepare works out everything a review needs and starts no process.
+//
+// Shared by the review and by --dry-run, so what a preview prints is what a
+// run would send rather than a second rendering of it that could drift.
+//
+// The caller closes the returned root.
+func Prepare(opts Options) (*Plan, *review.Manifest, *review.Selection, *Root, error) {
+	pm, err := prepareMaterial(opts)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	plan, sel, err := planFor(opts, pm, opts.Panel)
+	if err != nil {
+		_ = pm.root.Close()
+		return nil, nil, nil, nil, err
+	}
+	return plan, pm.m, sel, pm.root, nil
 }
 
 // Run reviews the change and returns what survived.
+//
+// A review left unavailable because every run that did not answer was
+// blocked — a provider declining to serve the credential, rather than
+// attempting the run and failing at it — is retried once, whole, on the
+// panel's own declared Fallback, before Run gives up. It is a single hop
+// rather than a chain: the retry calls runPanel directly, so nothing
+// re-enters this wrapper and a manifest whose fallback pointers formed a
+// cycle still costs exactly one extra panel rather than spending forever.
+// An ordinary failure (a bad schema, a sandbox refusal, a timeout) is not a
+// block and is never retried here — it is left exactly as visible as it
+// always was, even when a block happened to hit an unrelated run in the
+// same panel.
 func Run(ctx context.Context, opts Options) (*Review, error) {
-	plan, m, sel, root, err := Prepare(opts)
+	pm, err := prepareMaterial(opts)
 	if err != nil {
 		return nil, err
 	}
 	// Removed on every exit path including cancellation: the root is written
 	// into the system temporary directory, and an interrupted review has no
-	// later opportunity to tidy up after itself.
-	defer func() { _ = root.Close() }()
+	// later opportunity to tidy up after itself. Shared across a fallback
+	// attempt, so it is closed once here rather than once per panel tried.
+	defer func() { _ = pm.root.Close() }()
+
+	out, err := runPanel(ctx, opts, pm, opts.Panel)
+	if err != nil {
+		return nil, err
+	}
+	if out.Available || !onlyBlocked(out.Reports) {
+		return out, nil
+	}
+
+	panel, ok := pm.m.Panels[out.Panel]
+	if !ok || panel.Fallback == "" || panel.Fallback == out.Panel {
+		out.Blocked = true
+		return out, nil
+	}
+
+	alt, err := runPanel(ctx, opts, pm, panel.Fallback)
+	if err != nil {
+		return nil, err
+	}
+	alt.FallbackFrom = out.Panel
+	// The first attempt's runs and spend are not lost with its Review: every
+	// run actually made belongs in the record and in the total, whichever
+	// panel it ran under.
+	combined := make([]RunReport, 0, len(out.Reports)+len(alt.Reports))
+	combined = append(combined, out.Reports...)
+	alt.Reports = append(combined, alt.Reports...)
+	alt.CostUSD += out.CostUSD
+	// The fallback panel blocked too: neither provider could serve this
+	// review, and that is still a block rather than an ordinary failure to
+	// surface. A fallback that failed for an unrelated reason is left to
+	// post visibly, same as any other outage.
+	if !alt.Available && onlyBlocked(alt.Reports) {
+		alt.Blocked = true
+	}
+	return alt, nil
+}
+
+// onlyBlocked reports whether every run in reports that did not answer was
+// blocked by its provider, with at least one such run present. A run that
+// answered is ignored either way; a run that failed for any other reason
+// makes this false, because the review's unavailability then has a cause a
+// different provider cannot fix, and a block elsewhere in the same panel
+// must not make that failure invisible.
+func onlyBlocked(reports []RunReport) bool {
+	sawBlocked := false
+	for _, r := range reports {
+		if r.Report.Available {
+			continue
+		}
+		if !r.Report.Blocked {
+			return false
+		}
+		sawBlocked = true
+	}
+	return sawBlocked
+}
+
+// runPanel performs one review against one panel, with no fallback of its
+// own. Run is the seam that decides whether a second panel gets tried; it
+// owns pm's root and closes it, so runPanel does not.
+func runPanel(ctx context.Context, opts Options, pm *preparedMaterial, panelOverride string) (*Review, error) {
+	plan, sel, err := planFor(opts, pm, panelOverride)
+	if err != nil {
+		return nil, err
+	}
 
 	inv := opts.invoker
 	if inv == nil {
@@ -227,7 +347,7 @@ func Run(ctx context.Context, opts Options) (*Review, error) {
 		Panel:              plan.Panel,
 		Manifest:           plan.Manifest,
 		Range:              plan.Range,
-		Skipped:            root.Skipped,
+		Skipped:            pm.root.Skipped,
 		Conventions:        plan.Material.ConventionPaths(),
 		MissingConventions: plan.MissingConventions,
 		// What the pull request already carried is recorded whether or not a
@@ -237,7 +357,7 @@ func Run(ctx context.Context, opts Options) (*Review, error) {
 		Threads: opts.Threads,
 	}
 
-	candidates, reports := runReviewers(ctx, opts, inv, sched, m, plan)
+	candidates, reports := runReviewers(ctx, opts, inv, sched, pm.m, plan)
 	out.Reports = append(out.Reports, reports...)
 
 	// A panel where nothing answered has looked at nothing, and an empty
@@ -252,7 +372,7 @@ func Run(ctx context.Context, opts Options) (*Review, error) {
 		return out, nil
 	}
 
-	decide(ctx, opts, inv, sched, m, sel, plan.Material, candidates, out)
+	decide(ctx, opts, inv, sched, pm.m, sel, plan.Material, candidates, out)
 	return out, nil
 }
 

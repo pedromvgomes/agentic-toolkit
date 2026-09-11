@@ -167,6 +167,11 @@ func TestNamesMustResolve(t *testing.T) {
 			strings.Replace(complete, "  - to: deep\n    any:", "  - to: deepest\n    any:", 1),
 			[]string{"deepest", "deep, quick, standard"},
 		},
+		{
+			"panel falls back to an undeclared panel",
+			strings.Replace(complete, "  quick:    {reviewers: [correctness]}", "  quick:    {reviewers: [correctness], fallback: nonexistent}", 1),
+			[]string{"nonexistent", "deep, quick, standard"},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -180,6 +185,42 @@ func TestNamesMustResolve(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// A panel naming itself as its own fallback would retry forever without
+// ever reaching a different provider, so it is refused.
+func TestAPanelCannotFallBackToItself(t *testing.T) {
+	src := strings.Replace(complete, "  quick:    {reviewers: [correctness]}", "  quick:    {reviewers: [correctness], fallback: quick}", 1)
+	err := expectFailure(t, src)
+	if !review.IsKind(err, review.ErrInvalidPanel) {
+		t.Fatalf("kind = %v, want invalid_panel", err)
+	}
+}
+
+// A fallback cheaper than the panel declaring it would silently give up
+// whatever escalation raised to that panel, so it is refused.
+func TestAPanelCannotFallBackToACheaperPanel(t *testing.T) {
+	src := strings.Replace(complete,
+		"  deep:     {reviewers: [correctness, security, performance], quorum: 2}",
+		"  deep:     {reviewers: [correctness, security, performance], quorum: 2, fallback: quick}", 1)
+	err := expectFailure(t, src)
+	if !review.IsKind(err, review.ErrInvalidPanel) {
+		t.Fatalf("kind = %v, want invalid_panel", err)
+	}
+	if !strings.Contains(err.Error(), "quick") || !strings.Contains(err.Error(), "costs less") {
+		t.Errorf("error = %q, want it to name the cheaper panel", err)
+	}
+}
+
+// Equal cost is the floor a fallback must clear, not a ceiling: a panel may
+// fall back to one at least as deep as itself.
+func TestAPanelMayFallBackToAnEquallyOrMoreExpensivePanel(t *testing.T) {
+	src := strings.Replace(complete,
+		"  standard: {reviewers: [correctness, security]}",
+		"  standard: {reviewers: [correctness, security], fallback: deep}", 1)
+	if _, err := review.ParseBytes("manifest.yaml", []byte(src)); err != nil {
+		t.Fatalf("a fallback at least as deep as its panel was refused: %v", err)
 	}
 }
 

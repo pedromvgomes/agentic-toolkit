@@ -97,6 +97,20 @@ func TestAnUnavailableReviewSaysWhyAndPrintsNoTables(t *testing.T) {
 	}
 }
 
+func TestARecoveredFallbackNamesThePanelItFellBackFrom(t *testing.T) {
+	out := render(&Review{Panel: "quick-codex", FallbackFrom: "quick", Available: true})
+	if !strings.Contains(out, "fallback: quick -> quick-codex") {
+		t.Errorf("the record does not name the fallback: %s", out)
+	}
+}
+
+func TestARegularReviewNamesNoFallback(t *testing.T) {
+	out := render(&Review{Panel: "quick", Available: true})
+	if strings.Contains(out, "fallback:") {
+		t.Errorf("a review that never fell back names one:\n%s", out)
+	}
+}
+
 func TestTheDiscardedJudgeIDsAreReported(t *testing.T) {
 	out := render(&Review{Available: true, Panel: "quick", DiscardedIDs: []string{"f99"}})
 	if !strings.Contains(out, "f99") || !strings.Contains(out, "did not issue") {

@@ -19,6 +19,11 @@ type Report struct {
 	Available bool
 	// Reason says why it did not, and is empty when it did.
 	Reason string
+	// Blocked reports that the run's provider declined to serve the
+	// credential rather than attempting and failing — the one outcome a
+	// caller may route around by trying a different provider. False for
+	// every other reason a run did not answer.
+	Blocked bool
 
 	findings []Finding
 }
@@ -31,6 +36,13 @@ func Answered(findings []Finding) Report {
 // Unavailable builds a Report for a run that could not answer.
 func Unavailable(format string, args ...interface{}) Report {
 	return Report{Reason: fmt.Sprintf(format, args...)}
+}
+
+// Blocked builds a Report for a run whose provider declined to serve the
+// credential — a quota exhausted or a credential rejected — rather than
+// attempting the run and failing at it.
+func Blocked(format string, args ...interface{}) Report {
+	return Report{Reason: fmt.Sprintf(format, args...), Blocked: true}
 }
 
 // Findings returns what the run reported and whether it reported at all.
@@ -112,6 +124,15 @@ type Review struct {
 	Available bool
 	// Reason says why it did not, and is empty when it did.
 	Reason string
+	// Blocked reports that the review stayed unavailable because every
+	// provider it could try declined to serve the credential — the one
+	// unavailable reason a caller posts nothing for, rather than surfacing
+	// visibly like an ordinary failure.
+	Blocked bool
+	// FallbackFrom names the panel this review's own Panel was tried in
+	// place of, after every run on it was blocked. Empty when no fallback
+	// was attempted.
+	FallbackFrom string
 }
 
 // RunReport is one Runner's outcome, for the review record.

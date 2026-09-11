@@ -137,6 +137,23 @@ type Panel struct {
 	// never the price of declaring them on one.
 	Judge     *Runner `yaml:"judge,omitempty"     agtkdoc:"Judge for reviews this panel produces, instead of the manifest's. Unset uses the manifest's."`
 	Validator *Runner `yaml:"validator,omitempty" agtkdoc:"Validator for reviews this panel produces, instead of the manifest's. Unset uses the manifest's."`
+
+	// Fallback names the panel to retry, whole, when every run this panel
+	// made was blocked — a provider declining to serve the credential rather
+	// than attempting the run and failing at it, e.g. a spent quota or a
+	// rejected token. Explicit rather than inferred from a naming
+	// convention, because a panel carries no provider of its own; only its
+	// reviewers do.
+	//
+	// Tried once. A review that falls back and is blocked again on the
+	// fallback panel too reports no verdict rather than trying further, so a
+	// manifest cannot describe a cycle that spends money forever.
+	//
+	// Refused at parse time if its Cost is lower than the panel declaring
+	// it: a shallower fallback would silently run, answer, and read as the
+	// review an escalation rule raised to this panel for, while spending a
+	// fraction of it.
+	Fallback string `yaml:"fallback,omitempty" agtkdoc:"Panel to retry, on a different provider, when every run this panel made was blocked (a provider declining to serve the credential — spent quota or a rejected token). Tried once; a manifest naming its panels' own twins on each provider is the usual shape. Refused if it costs less than this panel (fewer reviewers times quorum): a shallower fallback would silently give up whatever escalation raised to this one."`
 }
 
 // EffectiveJudge is the judge that reconciles a review the named panel
