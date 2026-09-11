@@ -399,7 +399,6 @@ func TestRender_CLAUDEmd_PreservesUserContent(t *testing.T) {
 	}
 }
 
-// TestRender_DryRun does no writes but reports actions.
 // TestRender_DryRunSurfacesUnreadableMixedOwnershipJSON: Options.DryRun
 // promises that errors depending on filesystem state are still
 // surfaced. A render reads settings.json and .mcp.json whether or not
@@ -440,6 +439,7 @@ func TestRender_DryRunSurfacesUnreadableMixedOwnershipJSON(t *testing.T) {
 	}
 }
 
+// TestRender_DryRun does no writes but reports actions.
 func TestRender_DryRun(t *testing.T) {
 	tmp := t.TempDir()
 	scopeRoot := filepath.Join(tmp, ".claude")
