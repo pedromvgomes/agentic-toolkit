@@ -75,15 +75,20 @@ func renderConfig(plan *resolver.Plan, rts roots, opts Options) error {
 		deletePath(current, p)
 	}
 
-	managed := map[string]bool{}
+	// claimed accumulates the paths agtk writes, in claim order, and is
+	// what the next render reads back to release them. A slice rather
+	// than a set because overlap is checked against whole segments, not
+	// by key equality: a path is refused when an existing claim names a
+	// table it lives inside, which no map lookup answers.
+	var claimed []string
 	claim := func(path string, value any) {
-		for claimed := range managed {
-			if pathsOverlap(claimed, path) {
+		for _, c := range claimed {
+			if pathsOverlap(c, path) {
 				return
 			}
 		}
 		setPath(current, path, value)
-		managed[path] = true
+		claimed = append(claimed, path)
 	}
 
 	if len(mcpServers) > 0 {
@@ -97,12 +102,8 @@ func renderConfig(plan *resolver.Plan, rts roots, opts Options) error {
 		claim(key, value)
 	}
 
-	paths := make([]string, 0, len(managed))
-	for p := range managed {
-		paths = append(paths, p)
-	}
-	sort.Strings(paths)
-	setManagedList(current, paths)
+	sort.Strings(claimed)
+	setManagedList(current, claimed)
 
 	return writeConfig(target, current, opts)
 }
