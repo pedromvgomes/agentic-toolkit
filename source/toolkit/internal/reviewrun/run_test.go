@@ -236,6 +236,32 @@ func TestARepoLocalPromptBodyIsReadFromTheBaseRef(t *testing.T) {
 	}
 }
 
+// A base ref older than the manifest's move holds both the manifest and the
+// bodies it names at the earlier path. Resolving bodies against the current
+// ManifestDir while the manifest came from the older one would look for them
+// where that ref never put them, and refuse a review whose rules are right
+// there.
+func TestARepoLocalPromptBodyFollowsTheManifestToTheLegacyPath(t *testing.T) {
+	local := strings.Replace(testManifest, `prompt: "builtin:correctness"`, `prompt: "./mine.md"`, 1)
+	r := newGitRepo(t)
+	r.write(review.LegacyManifestRelPath, local)
+	r.write(review.LegacyManifestDir+"/mine.md", "THE BODY AT THE OLDER PATH\n")
+	r.write("a.go", "package main\n")
+	base := r.commit("base")
+	r.write("a.go", "package main\n\nvar x = 1\n")
+	r.commit("change")
+
+	plan, _, _, root, err := Prepare(Options{Dir: r.dir, Base: base, Context: review.ContextPR})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = root.Close() }()
+
+	if !strings.Contains(plan.Runs[0].Prompt, "THE BODY AT THE OLDER PATH") {
+		t.Error("the prompt body beside the legacy manifest was not read")
+	}
+}
+
 // A repo-local prompt that does not exist at the base ref is a refusal, not a
 // reviewer that starts with no instructions.
 func TestAMissingRepoLocalPromptIsRefused(t *testing.T) {
