@@ -240,3 +240,70 @@ func TestInitNamesARuleThisRepoCannotEvaluate(t *testing.T) {
 		}
 	}
 }
+
+// Writing the default beside a manifest left at the legacy path would end a
+// migration in the worst way: the new path exists, so every loader stops
+// looking at the old one and finds the default instead of refusing.
+func TestInitRefusesWhenAManifestSitsAtTheLegacyPath(t *testing.T) {
+	dir := initRepo(t)
+	writeLegacyManifest(t, dir)
+
+	err := initIn(t, dir, false, false)
+	if err == nil {
+		t.Fatal("init wrote the default over a repo whose manifest is at the legacy path")
+	}
+	if !strings.Contains(err.Error(), review.LegacyManifestDir) ||
+		!strings.Contains(err.Error(), review.ManifestDir) {
+		t.Errorf("error = %q, want it to name both the legacy path and where the manifest belongs", err)
+	}
+	if _, statErr := os.Stat(review.ManifestPath(dir)); !os.IsNotExist(statErr) {
+		t.Error("the refusal should not have written a manifest")
+	}
+}
+
+// --force is the escape hatch for a repo that has decided to abandon the old
+// manifest rather than move it.
+func TestInitForcesPastALegacyManifest(t *testing.T) {
+	dir := initRepo(t)
+	writeLegacyManifest(t, dir)
+
+	if err := initIn(t, dir, true, false); err != nil {
+		t.Fatalf("init --force: %v", err)
+	}
+	if _, err := os.Stat(review.ManifestPath(dir)); err != nil {
+		t.Errorf("--force should have written the default: %v", err)
+	}
+}
+
+// --dry-run names the legacy manifest, because the repo it matters to is
+// exactly the one asking where the manifest would go.
+func TestInitDryRunNamesAManifestAtTheLegacyPath(t *testing.T) {
+	dir := initRepo(t)
+	writeLegacyManifest(t, dir)
+
+	var out bytes.Buffer
+	env := &Env{Stdin: strings.NewReader(""), Stdout: &out, Stderr: io.Discard, WorkDir: dir}
+	if err := runCodeReviewInit(env, false, true); err != nil {
+		t.Fatalf("init --dry-run: %v", err)
+	}
+	if !strings.Contains(out.String(), review.LegacyManifestDir) {
+		t.Errorf("output = %q, want it to name the legacy manifest", out.String())
+	}
+}
+
+func writeLegacyManifest(t *testing.T, dir string) {
+	t.Helper()
+	path := review.LegacyManifestPath(dir)
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, review.DefaultManifestYAML(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func initIn(t *testing.T, dir string, force, dryRun bool) error {
+	t.Helper()
+	env := &Env{Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: io.Discard, WorkDir: dir}
+	return runCodeReviewInit(env, force, dryRun)
+}

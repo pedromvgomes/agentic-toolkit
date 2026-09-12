@@ -70,6 +70,13 @@ const ManifestRelPath = ManifestDir + "/" + ManifestFile
 // LegacyManifestRelPath is LegacyManifestDir's manifest as git names it.
 const LegacyManifestRelPath = LegacyManifestDir + "/" + ManifestFile
 
+// LegacyManifestPath is where a manifest sits if it was never moved out of
+// LegacyManifestDir. Nothing loads from here; callers look for it so a repo
+// mid-migration is told, rather than reviewed under the embedded default.
+func LegacyManifestPath(projectRoot string) string {
+	return filepath.Join(projectRoot, filepath.FromSlash(LegacyManifestRelPath))
+}
+
 // legacyManifestErr is the refusal a repo gets when its only manifest is at
 // the path ManifestDir replaced.
 //
@@ -139,7 +146,7 @@ func Load(projectRoot string) (m *Manifest, path string, builtin bool, err error
 		if !os.IsNotExist(statErr) {
 			return nil, path, false, fmt.Errorf("read %s: %w", path, statErr)
 		}
-		legacy := filepath.Join(projectRoot, filepath.FromSlash(LegacyManifestRelPath))
+		legacy := LegacyManifestPath(projectRoot)
 		if _, legacyErr := os.Stat(legacy); legacyErr == nil {
 			return nil, path, false, legacyManifestErr(legacy)
 		}
