@@ -161,15 +161,15 @@ func refuseIgnoredManifest(dir string) error {
 		remedy := "un-ignore it and commit it"
 		if rel == LegacyManifestRelPath {
 			remedy = fmt.Sprintf(
-				"it sits in a rendered tree that is ignored wholesale, so move it (`git mv %s %s`) and commit it",
+				"move it out of the rendered tree that is ignored wholesale (`git mv %s %s`) and commit it",
 				LegacyManifestDir, ManifestDir)
 		}
 		return &ParseError{
 			Path: rel,
 			Kind: ErrIgnoredManifest,
 			Message: fmt.Sprintf(
-				"review manifest %s is ignored by git, so no ref carries it and the review runs "+
-					"under the built-in default; %s", rel, remedy),
+				"review manifest %s is ignored by git, so no ref could ever carry it and every review "+
+					"would run under the built-in default; refusing until you %s", rel, remedy),
 		}
 	}
 	return nil
