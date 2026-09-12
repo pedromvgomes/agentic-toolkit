@@ -9,8 +9,10 @@ package review
 // It sits under the toolkit's own namespace rather than inside `.agents/`,
 // which a Platform adapter renders: a repo that ignores its rendered trees
 // wholesale would stop tracking the manifest, and an untracked manifest is
-// unreadable at a ref — which LoadAtRef cannot distinguish from a repo that
-// declares none.
+// unreadable at a ref. LoadAtRef refuses one it finds on disk under an ignore
+// rule, so that case is reported rather than silently defaulted; a manifest
+// that is merely untracked stays indistinguishable from a repo declaring
+// none, because that is also what a branch adopting its first one looks like.
 const ManifestDir = ".agentic-toolkit/code-review"
 
 // LegacyManifestDir is where the manifest lived before ManifestDir moved out

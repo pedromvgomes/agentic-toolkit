@@ -123,7 +123,13 @@ func refuseIgnoredManifest(dir string) error {
 		}
 		ignored, ok := gitIgnores(dir, rel)
 		if ok && !ignored {
-			continue
+			// A manifest here is on disk and reachable, so its absence from
+			// the base is the adopting branch's shape and nothing is wrong.
+			// Stop rather than look further: a leftover under the older path
+			// says nothing about a repo that has already written this one,
+			// and refusing over it would name the move as the remedy to a
+			// repo that has already made it.
+			return nil
 		}
 		if !ok {
 			// The same reasoning as the unresolvable ref above: an answer git

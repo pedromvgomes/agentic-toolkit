@@ -298,3 +298,24 @@ func stubGitThatCannotAnswerCheckIgnore(t *testing.T) {
 	}
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 }
+
+// A repo part-way through the move has a manifest at the current path and a
+// leftover under the old one, which the rendered tree's blanket rule ignores.
+// The reachable manifest is what governs: refusing over the leftover would
+// name the move as the remedy to a repo that has already made it.
+func TestLoadAtRefIgnoresALegacyLeftoverBesideAReachableManifest(t *testing.T) {
+	r := newRepo(t)
+	r.write("seed.txt", "x\n")
+	rev := r.commit("base")
+	r.write(".gitignore", "/.agents/\n")
+	r.write(review.ManifestRelPath, complete)
+	r.write(review.LegacyManifestRelPath, complete)
+
+	_, path, builtin, err := review.LoadAtRef(r.dir, rev)
+	if err != nil {
+		t.Fatalf("LoadAtRef refused a repo whose current manifest is reachable: %v", err)
+	}
+	if !builtin || path != "" {
+		t.Errorf("LoadAtRef = (path %q, builtin %v), want the embedded default", path, builtin)
+	}
+}
