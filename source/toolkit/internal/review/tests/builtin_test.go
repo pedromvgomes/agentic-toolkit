@@ -1,6 +1,9 @@
 package tests
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -185,5 +188,190 @@ func TestTheCurrentPathWinsOverALeftoverLegacyCopy(t *testing.T) {
 				t.Errorf("Dir = %q, want %q", m.Dir, review.ManifestDir)
 			}
 		})
+	}
+}
+
+// A manifest that is git-ignored is absent at every ref, so the fallback would
+// review the repo under the toolkit's panels, judge and approval floor forever
+// while a manifest sits in the tree saying otherwise. Nothing else in a posted
+// review says which roster ran, so the repo has no way to notice.
+func TestLoadAtRefRefusesAManifestGitIgnoreKeepsOutOfEveryRef(t *testing.T) {
+	r := newRepo(t)
+	r.write(".gitignore", "/.agentic-toolkit/\n")
+	r.write(review.ManifestRelPath, complete)
+	rev := r.commit("base")
+
+	_, _, builtin, err := review.LoadAtRef(r.dir, rev)
+	if err == nil {
+		t.Fatalf("LoadAtRef accepted an ignored manifest (builtin=%v)", builtin)
+	}
+	if !review.IsKind(err, review.ErrIgnoredManifest) {
+		t.Fatalf("kind = %v, want ignored_manifest", err)
+	}
+	for _, want := range []string{review.ManifestRelPath, "ignored"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error = %q, want it to mention %q", err, want)
+		}
+	}
+}
+
+// The branch that writes a repo's first manifest has it on disk and absent
+// from the base, which is indistinguishable from the ignored case by presence
+// alone. Only the ignore rule separates a mistake from this, and refusing here
+// would make adopting a manifest impossible.
+func TestLoadAtRefFallsBackForAManifestMerelyAbsentFromTheBase(t *testing.T) {
+	r := newRepo(t)
+	r.write("seed.txt", "x\n")
+	rev := r.commit("base")
+	r.write(review.ManifestRelPath, complete)
+
+	_, path, builtin, err := review.LoadAtRef(r.dir, rev)
+	if err != nil {
+		t.Fatalf("LoadAtRef: %v", err)
+	}
+	if !builtin || path != "" {
+		t.Errorf("LoadAtRef = (path %q, builtin %v), want the embedded default", path, builtin)
+	}
+}
+
+// GIT_LITERAL_PATHSPECS is inherited from whoever ran agtk, and check-ignore
+// rejects it outright rather than ignoring it. A machine that exports it would
+// otherwise make every ignore check unanswerable, and the answer that costs
+// nothing to produce is the one that reviews under the wrong roster.
+func TestAnIgnoredManifestIsStillRefusedUnderLiteralPathspecs(t *testing.T) {
+	t.Setenv("GIT_LITERAL_PATHSPECS", "1")
+
+	r := newRepo(t)
+	r.write(".gitignore", "/.agentic-toolkit/\n")
+	r.write(review.ManifestRelPath, complete)
+	rev := r.commit("base")
+
+	_, _, builtin, err := review.LoadAtRef(r.dir, rev)
+	if err == nil {
+		t.Fatalf("LoadAtRef accepted an ignored manifest (builtin=%v)", builtin)
+	}
+	// Both refusals carry ErrIgnoredManifest, so only the message separates
+	// "this manifest is ignored" from "git could not say" — and it is the
+	// second that an unscrubbed variable would produce here.
+	if !strings.Contains(err.Error(), "is ignored by git") {
+		t.Errorf("error = %q, want the refusal that identified the manifest as ignored", err)
+	}
+}
+
+// An ignore status git could not report is not "not ignored". Collapsing the
+// two puts the unknown answer on the path that stays silent, which is the
+// failure the whole check exists to close.
+func TestLoadAtRefRefusesWhenTheIgnoreStatusCannotBeDetermined(t *testing.T) {
+	r := newRepo(t)
+	r.write("seed.txt", "x\n")
+	rev := r.commit("base")
+	// Absent from the base and present on disk: the shape a branch adopting
+	// its first manifest has, which is the one case the ignore rule is what
+	// tells apart. Without an answer, it cannot be told apart.
+	r.write(review.ManifestRelPath, complete)
+
+	stubGitThatCannotAnswerCheckIgnore(t)
+
+	_, _, builtin, err := review.LoadAtRef(r.dir, rev)
+	if err == nil {
+		t.Fatalf("LoadAtRef fell back to the default on an unknown ignore status (builtin=%v)", builtin)
+	}
+	if !review.IsKind(err, review.ErrIgnoredManifest) {
+		t.Fatalf("kind = %v, want ignored_manifest", err)
+	}
+}
+
+// stubGitThatCannotAnswerCheckIgnore puts a git on PATH that fails only
+// check-ignore and delegates everything else, so the one answer under test is
+// unavailable while the rest of the loader still works.
+func stubGitThatCannotAnswerCheckIgnore(t *testing.T) {
+	t.Helper()
+	real, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("no git on PATH")
+	}
+	dir := t.TempDir()
+	stub := filepath.Join(dir, "git")
+	body := "#!/bin/sh\nif [ \"$1\" = check-ignore ]; then exit 128; fi\nexec " + real + " \"$@\"\n"
+	if err := os.WriteFile(stub, []byte(body), 0o700); err != nil { // #nosec G306 -- test stub must be executable
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+// A repo part-way through the move has a manifest at the current path and a
+// leftover under the old one, which the rendered tree's blanket rule ignores.
+// The reachable manifest is what governs: refusing over the leftover would
+// name the move as the remedy to a repo that has already made it.
+func TestLoadAtRefIgnoresALegacyLeftoverBesideAReachableManifest(t *testing.T) {
+	r := newRepo(t)
+	r.write("seed.txt", "x\n")
+	rev := r.commit("base")
+	r.write(".gitignore", "/.agents/\n")
+	r.write(review.ManifestRelPath, complete)
+	r.write(review.LegacyManifestRelPath, complete)
+
+	_, path, builtin, err := review.LoadAtRef(r.dir, rev)
+	if err != nil {
+		t.Fatalf("LoadAtRef refused a repo whose current manifest is reachable: %v", err)
+	}
+	if !builtin || path != "" {
+		t.Errorf("LoadAtRef = (path %q, builtin %v), want the embedded default", path, builtin)
+	}
+}
+
+// A manifest path that cannot be stat'd is not a path that is not there.
+// Treating the two alike puts one more unanswerable question on the silent
+// path, which is the failure the ignore check exists to close.
+func TestLoadAtRefRefusesAManifestPathItCannotRead(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses directory permissions")
+	}
+	r := newRepo(t)
+	r.write("seed.txt", "x\n")
+	rev := r.commit("base")
+	r.write(review.ManifestRelPath, complete)
+
+	// Unreadable parent: stat on the manifest fails with a permission error
+	// rather than with "not there".
+	parent := filepath.Join(r.dir, filepath.FromSlash(review.ManifestDir))
+	if err := os.Chmod(parent, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(parent, 0o750) })
+
+	_, _, builtin, err := review.LoadAtRef(r.dir, rev)
+	if err == nil {
+		t.Fatalf("LoadAtRef fell back to the default on an unreadable manifest path (builtin=%v)", builtin)
+	}
+	if !review.IsKind(err, review.ErrIO) {
+		t.Fatalf("kind = %v, want io", err)
+	}
+}
+
+// The blanket rule covering a rendered tree makes this the likeliest shape of
+// the mistake: a manifest never moved out of `.agents/`, ignored by a rule
+// aimed at the adapter's output. Its remedy is the move rather than an
+// ignore-rule edit, so the refusal has to say so.
+func TestLoadAtRefRefusesAnIgnoredManifestAtTheLegacyPath(t *testing.T) {
+	r := newRepo(t)
+	r.write(".gitignore", "/.agents/\n")
+	r.write(review.LegacyManifestRelPath, complete)
+	rev := r.commit("base")
+
+	_, _, builtin, err := review.LoadAtRef(r.dir, rev)
+	if err == nil {
+		t.Fatalf("LoadAtRef accepted an ignored legacy manifest (builtin=%v)", builtin)
+	}
+	if !review.IsKind(err, review.ErrIgnoredManifest) {
+		t.Fatalf("kind = %v, want ignored_manifest", err)
+	}
+	for _, want := range []string{
+		review.LegacyManifestRelPath,
+		"git mv " + review.LegacyManifestDir + " " + review.ManifestDir,
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error = %q, want it to name %q", err, want)
+		}
 	}
 }

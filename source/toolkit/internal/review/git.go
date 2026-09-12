@@ -60,6 +60,57 @@ func gitStatus(dir string, args ...string) (stdout []byte, exitCode int, err err
 	return out.Bytes(), code, fmt.Errorf("git %s: %s", strings.Join(args, " "), msg)
 }
 
+// gitIgnores reports whether git ignores rel, and whether that could be
+// determined at all.
+//
+// `check-ignore` is the one command here that cannot go through gitStatus:
+// it rejects GIT_LITERAL_PATHSPECS outright, exiting 128 with "pathspec magic
+// not supported by this command". A caller reading that as an ordinary
+// non-zero exit would take it for "not ignored" and never look again, which
+// is the failure this function exists to report. So it runs without that
+// variable, and is safe to: rel is a constant built in this package, never a
+// path taken from a diff, which is what the variable defends against.
+//
+// ok is false when git could not answer. An unknown answer must not read as
+// "not ignored", for the same reason a failed search must not read as a
+// count of zero.
+func gitIgnores(dir, rel string) (ignored, ok bool) {
+	cmd := exec.Command("git", "check-ignore", "-q", "--", rel) // #nosec G204 -- rel is a package constant
+	cmd.Dir = dir
+	// Scrubbed rather than merely unset here: the variable is inherited from
+	// whoever ran agtk, and a machine that exports it globally would make
+	// every check unanswerable — silently, since the answer this produces is
+	// the one that changes nothing.
+	cmd.Env = withoutLiteralPathspecs(os.Environ())
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+	switch err := cmd.Run(); {
+	case err == nil:
+		return true, true
+	default:
+		var exitErr *exec.ExitError
+		// 1 is check-ignore's answer of "no path is ignored"; anything else
+		// is a failure to look.
+		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+			return false, true
+		}
+		return false, false
+	}
+}
+
+// withoutLiteralPathspecs returns env with GIT_LITERAL_PATHSPECS removed, in
+// any spelling of the assignment.
+func withoutLiteralPathspecs(env []string) []string {
+	out := env[:0:0]
+	for _, kv := range env {
+		if strings.HasPrefix(kv, "GIT_LITERAL_PATHSPECS=") {
+			continue
+		}
+		out = append(out, kv)
+	}
+	return out
+}
+
 // diffArgs are the options every diff command carries, so the form the
 // patch parsers depend on is a property of the command rather than of the
 // calling user's configuration.
