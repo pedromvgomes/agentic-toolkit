@@ -286,6 +286,21 @@ func addMemoryGrants(fragments map[string]any, plan *resolver.Plan) error {
 	if !ok {
 		return nil
 	}
+	existing, present := perms[allowKey]
+	if !present {
+		// Gated on the allow list, not on the permissions key. A deny-only
+		// contribution is a stack restricting what an agent may do, and
+		// growing it an allow list it never wrote would answer a tightening
+		// with a grant.
+		return nil
+	}
+	allow, isList := existing.([]any)
+	if !isList {
+		// Silently dropping the grants here would leave the explorer
+		// prompting on a store agtk located itself, with nothing said.
+		return fmt.Errorf("claude: settings `%s.%s` is %T, want a list", permissionsKey, allowKey, existing)
+	}
+
 	root := ""
 	if plan.Stack != nil {
 		root = plan.Stack.MemoryRoot()
@@ -293,30 +308,36 @@ func addMemoryGrants(fragments map[string]any, plan *resolver.Plan) error {
 	if root == "" {
 		root = memory.DefaultRoot
 	}
-	prefix := path.Clean(filepath.ToSlash(root)) + "/"
-	if prefix == "./" {
-		// `memory.root: .` puts the store at the project root, where a path
-		// prefix would be the empty string rather than a directory.
-		prefix = ""
-	}
-
-	existing, present := perms[allowKey]
-	allow, isList := existing.([]any)
-	if present && !isList {
-		// Silently dropping the grants here would leave the explorer
-		// prompting on a store agtk located itself, with nothing said.
-		return fmt.Errorf("claude: settings `%s.%s` is %T, want a list", permissionsKey, allowKey, existing)
-	}
-	for _, grant := range []string{
-		"Read(**/" + prefix + memory.IndexFile + ")",
-		"Write(**/" + prefix + memory.CandidatesDir + "/**)",
-	} {
+	for _, grant := range memoryGrants(root) {
 		if !containsGrant(allow, grant) {
 			allow = append(allow, grant)
 		}
 	}
 	perms[allowKey] = allow
 	return nil
+}
+
+// memoryGrants renders the two store paths as permission patterns.
+//
+// A named root is matched under any prefix, so the grant holds whether the
+// consumer is rendered at the repo root or under a nested working directory.
+// `memory.root: .` has no directory to name, and reusing the same shape there
+// would produce `Write(**/candidates/**)` — a write grant on every directory
+// called `candidates` anywhere in the tree, which is far more than the
+// consumer asked for. That case is anchored instead: the store is the project
+// root, so the paths are exactly these two.
+func memoryGrants(root string) []string {
+	cleaned := path.Clean(filepath.ToSlash(root))
+	if cleaned == "." {
+		return []string{
+			"Read(" + memory.IndexFile + ")",
+			"Write(" + memory.CandidatesDir + "/**)",
+		}
+	}
+	return []string{
+		"Read(**/" + cleaned + "/" + memory.IndexFile + ")",
+		"Write(**/" + cleaned + "/" + memory.CandidatesDir + "/**)",
+	}
 }
 
 func containsGrant(allow []any, grant string) bool {

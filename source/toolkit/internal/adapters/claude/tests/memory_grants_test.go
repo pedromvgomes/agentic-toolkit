@@ -97,14 +97,74 @@ func TestMemoryGrantsFallBackToTheDefaultRoot(t *testing.T) {
 	}
 }
 
-// `memory.root: .` puts the store at the project root, where a path prefix is
-// no directory at all. A grant built by concatenation would read `**/./...`
-// and match nothing.
-func TestMemoryGrantsHandleAStoreAtTheProjectRoot(t *testing.T) {
+// `memory.root: .` puts the store at the project root, where there is no
+// directory to name. Reusing the `**/<root>/...` shape there drops to
+// `Write(**/candidates/**)` — a write grant on every directory called
+// `candidates` anywhere in the tree — so this case is anchored instead.
+func TestAProjectRootStoreGrantsAreAnchoredNotWildcarded(t *testing.T) {
 	allow := renderWithMemoryRoot(t, ".")
 
-	if !hasGrant(allow, "Read(**/INDEX.md)") {
-		t.Errorf("grants did not collapse a project-root store:\n%v", allow)
+	for _, want := range []string{"Read(INDEX.md)", "Write(candidates/**)"} {
+		if !hasGrant(allow, want) {
+			t.Errorf("grants for a project-root store are not anchored:\n%v", allow)
+		}
+	}
+	for _, unwanted := range []string{"Write(**/candidates/**)", "Read(**/INDEX.md)"} {
+		if hasGrant(allow, unwanted) {
+			t.Errorf("grant %q reaches every directory of that name in the tree:\n%v", unwanted, allow)
+		}
+	}
+}
+
+// A deny-only contribution is a stack tightening what an agent may do.
+// Answering that by creating the allow list it never wrote would turn a
+// restriction into a grant.
+func TestADenyOnlyStackGainsNoAllowList(t *testing.T) {
+	tmp := t.TempDir()
+	scopeRoot := filepath.Join(tmp, ".claude")
+
+	plan := makePlan([]resolver.PlannedDefinition{
+		pdSetting("perms", "deny dangerous", map[string]any{
+			"permissions": map[string]any{"deny": []any{"Bash(rm -rf:*)"}},
+		}, "default"),
+	}, "default")
+	plan.Stack = &stack.Stack{}
+
+	if err := claude.Render(plan, claude.Options{
+		Scope: claude.ScopeProject, ScopeRoot: scopeRoot, ProjectRoot: tmp,
+	}); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	raw, err := os.ReadFile(filepath.Join(scopeRoot, "settings.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "allow") {
+		t.Errorf("a deny-only stack grew an allow list:\n%s", raw)
+	}
+}
+
+// The branch that refuses a malformed allow list is the one that chooses to
+// fail loudly rather than drop the grants silently, so it needs its own test.
+func TestAMalformedAllowListIsRefused(t *testing.T) {
+	tmp := t.TempDir()
+	scopeRoot := filepath.Join(tmp, ".claude")
+
+	plan := makePlan([]resolver.PlannedDefinition{
+		pdSetting("perms", "malformed", map[string]any{
+			"permissions": map[string]any{"allow": "Bash(ls)"},
+		}, "default"),
+	}, "default")
+	plan.Stack = &stack.Stack{}
+
+	err := claude.Render(plan, claude.Options{
+		Scope: claude.ScopeProject, ScopeRoot: scopeRoot, ProjectRoot: tmp,
+	})
+	if err == nil {
+		t.Fatal("Render accepted a permissions.allow that is not a list")
+	}
+	if !strings.Contains(err.Error(), "permissions.allow") {
+		t.Errorf("error = %q, want it to name the key", err)
 	}
 }
 
