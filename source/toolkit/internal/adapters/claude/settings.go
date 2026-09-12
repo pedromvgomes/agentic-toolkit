@@ -359,6 +359,13 @@ func usesMemoryStore(plan *resolver.Plan) bool {
 
 // memoryGrants renders the two store paths as permission patterns.
 //
+// The staging grant is spelled `Edit(...)`, never `Write(...)`, for the reason
+// the curator states at the other place agtk builds a store grant: an Edit
+// rule covers every file-editing tool including Write, while a Write rule is
+// not consulted by the file permission check at all. A grant written the
+// obvious way names the right path and pre-approves nothing, so the explorer
+// prompts on every delegation and the settings file says otherwise.
+//
 // A named root is matched under any prefix, so the grant holds whether the
 // consumer is rendered at the repo root or under a nested working directory.
 // `memory.root: .` has no directory to name, and reusing the same shape there
@@ -371,12 +378,12 @@ func memoryGrants(root string) []string {
 	if cleaned == "." {
 		return []string{
 			"Read(" + memory.IndexFile + ")",
-			"Write(" + memory.CandidatesDir + "/**)",
+			"Edit(" + memory.CandidatesDir + "/**)",
 		}
 	}
 	return []string{
 		"Read(**/" + cleaned + "/" + memory.IndexFile + ")",
-		"Write(**/" + cleaned + "/" + memory.CandidatesDir + "/**)",
+		"Edit(**/" + cleaned + "/" + memory.CandidatesDir + "/**)",
 	}
 }
 

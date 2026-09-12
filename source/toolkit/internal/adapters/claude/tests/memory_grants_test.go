@@ -72,7 +72,7 @@ func TestMemoryGrantsFollowAConfiguredRoot(t *testing.T) {
 
 	for _, want := range []string{
 		"Read(**/docs/memory/INDEX.md)",
-		"Write(**/docs/memory/candidates/**)",
+		"Edit(**/docs/memory/candidates/**)",
 	} {
 		if !hasGrant(allow, want) {
 			t.Errorf("settings.json pre-approves no %q, so the explorer prompts on every delegation:\n%v", want, allow)
@@ -92,7 +92,7 @@ func TestMemoryGrantsFallBackToTheDefaultRoot(t *testing.T) {
 
 	for _, want := range []string{
 		"Read(**/" + memory.DefaultRoot + "/INDEX.md)",
-		"Write(**/" + memory.DefaultRoot + "/candidates/**)",
+		"Edit(**/" + memory.DefaultRoot + "/candidates/**)",
 	} {
 		if !hasGrant(allow, want) {
 			t.Errorf("settings.json pre-approves no %q:\n%v", want, allow)
@@ -102,17 +102,17 @@ func TestMemoryGrantsFallBackToTheDefaultRoot(t *testing.T) {
 
 // `memory.root: .` puts the store at the project root, where there is no
 // directory to name. Reusing the `**/<root>/...` shape there drops to
-// `Write(**/candidates/**)` — a write grant on every directory called
+// `Edit(**/candidates/**)` — a write grant on every directory called
 // `candidates` anywhere in the tree — so this case is anchored instead.
 func TestAProjectRootStoreGrantsAreAnchoredNotWildcarded(t *testing.T) {
 	allow := renderWithMemoryRoot(t, ".")
 
-	for _, want := range []string{"Read(INDEX.md)", "Write(candidates/**)"} {
+	for _, want := range []string{"Read(INDEX.md)", "Edit(candidates/**)"} {
 		if !hasGrant(allow, want) {
 			t.Errorf("grants for a project-root store are not anchored:\n%v", allow)
 		}
 	}
-	for _, unwanted := range []string{"Write(**/candidates/**)", "Read(**/INDEX.md)"} {
+	for _, unwanted := range []string{"Edit(**/candidates/**)", "Read(**/INDEX.md)"} {
 		if hasGrant(allow, unwanted) {
 			t.Errorf("grant %q reaches every directory of that name in the tree:\n%v", unwanted, allow)
 		}
@@ -287,5 +287,20 @@ func TestARootTheMemoryCommandsRefuseFailsTheRender(t *testing.T) {
 				t.Errorf("error = %q, want it to name the field", err)
 			}
 		})
+	}
+}
+
+// A `Write(...)` rule is not consulted by the file permission check at all, so
+// a staging grant spelled that way names the right path and pre-approves
+// nothing — the explorer keeps prompting while settings.json says otherwise.
+// The curator makes the same check at the other place agtk builds a store
+// grant; this is the second.
+func TestNoStoreGrantIsSpelledWrite(t *testing.T) {
+	for _, root := range []string{"", "docs/memory", "."} {
+		for _, grant := range renderWithMemoryRoot(t, root) {
+			if strings.HasPrefix(grant, "Write(") {
+				t.Errorf("memory.root %q emitted %q, which the permission check never reads", root, grant)
+			}
+		}
 	}
 }

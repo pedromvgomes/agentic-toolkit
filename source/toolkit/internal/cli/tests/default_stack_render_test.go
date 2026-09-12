@@ -126,7 +126,7 @@ func TestPreApprovedPermissionsNameCommandsThatExist(t *testing.T) {
 	// is the only place the two can be compared.
 	for _, allowed := range []string{
 		"Read(**/" + memory.DefaultRoot + "/INDEX.md)",
-		"Write(**/" + memory.DefaultRoot + "/candidates/**)",
+		"Edit(**/" + memory.DefaultRoot + "/candidates/**)",
 	} {
 		if !strings.Contains(string(settings), allowed) {
 			t.Errorf("settings.json pre-approves no %q, so the explorer prompts for the default store:\n%s", allowed, settings)
