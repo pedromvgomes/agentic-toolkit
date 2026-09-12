@@ -8,7 +8,7 @@ anchors:
       - path: source/toolkit/internal/review/builtin.go
         blob: ad571de35ce9
       - path: source/toolkit/internal/review/capability.go
-        blob: d721c53cfb07
+        blob: b4a67453292c
       - path: source/toolkit/internal/review/change.go
         blob: dab7ddcffb78
       - path: source/toolkit/internal/review/condition.go
@@ -30,9 +30,9 @@ anchors:
       - path: source/toolkit/internal/review/language.go
         blob: 25e2c11ca203
       - path: source/toolkit/internal/review/manifest.go
-        blob: a5c9fb6bcd31
+        blob: fcd5b096bbb5
       - path: source/toolkit/internal/review/parse.go
-        blob: b14bb0ccc49d
+        blob: bc3bb102eadd
       - path: source/toolkit/internal/review/pr.go
         blob: e78d117bdb1f
       - path: source/toolkit/internal/review/selection.go
@@ -46,7 +46,7 @@ anchors:
       - path: source/toolkit/internal/review/untracked.go
         blob: 8b0a17e460d1
   - path: source/toolkit/internal/reviewrun/run.go
-    blob: 34f13bd662ca
+    blob: 9d689cbb3f05
   - path: source/toolkit/internal/cli/codereview.go
     blob: 3601595c0eaa
 confidence: verified
