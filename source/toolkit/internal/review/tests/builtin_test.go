@@ -348,3 +348,30 @@ func TestLoadAtRefRefusesAManifestPathItCannotRead(t *testing.T) {
 		t.Fatalf("kind = %v, want io", err)
 	}
 }
+
+// The blanket rule covering a rendered tree makes this the likeliest shape of
+// the mistake: a manifest never moved out of `.agents/`, ignored by a rule
+// aimed at the adapter's output. Its remedy is the move rather than an
+// ignore-rule edit, so the refusal has to say so.
+func TestLoadAtRefRefusesAnIgnoredManifestAtTheLegacyPath(t *testing.T) {
+	r := newRepo(t)
+	r.write(".gitignore", "/.agents/\n")
+	r.write(review.LegacyManifestRelPath, complete)
+	rev := r.commit("base")
+
+	_, _, builtin, err := review.LoadAtRef(r.dir, rev)
+	if err == nil {
+		t.Fatalf("LoadAtRef accepted an ignored legacy manifest (builtin=%v)", builtin)
+	}
+	if !review.IsKind(err, review.ErrIgnoredManifest) {
+		t.Fatalf("kind = %v, want ignored_manifest", err)
+	}
+	for _, want := range []string{
+		review.LegacyManifestRelPath,
+		"git mv " + review.LegacyManifestDir + " " + review.ManifestDir,
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error = %q, want it to name %q", err, want)
+		}
+	}
+}
