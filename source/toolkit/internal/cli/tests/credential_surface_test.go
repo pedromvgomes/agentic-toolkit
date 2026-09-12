@@ -25,6 +25,22 @@ var credentialSurface = []string{
 	"source/toolkit/internal/reviewapprove",
 }
 
+// mustResolve fails the calling test unless importPath names a package that
+// resolves.
+//
+// Both guards below assert that a package is absent from another package's
+// dependencies. An import path that names nothing is absent from every
+// dependency list, so a stale or mistyped constant does not fail the guard — it
+// empties it, and the test goes on passing while asserting nothing. Resolving
+// the target first is what separates "this boundary holds" from "this test no
+// longer looks".
+func mustResolve(t *testing.T, importPath string) {
+	t.Helper()
+	if _, err := exec.Command("go", "list", importPath).Output(); err != nil {
+		t.Fatalf("go list %s: %v — the package this test guards does not resolve, so the guard is empty", importPath, err)
+	}
+}
+
 // The App installation token reaches every repository the App is installed on,
 // and a review run is driven by a model reading a diff somebody else wrote.
 // Handing that process the credential widens a grant across an entire account.
@@ -34,6 +50,7 @@ var credentialSurface = []string{
 // model cannot reach the package that holds the credential, so passing the
 // token would require adding an import rather than forgetting to remove one.
 func TestTheModelInvokingPackagesCannotReachTheCredential(t *testing.T) {
+	mustResolve(t, credentialPackage)
 	for _, pkg := range []string{
 		"github.com/pedromvgomes/agentic-toolkit/internal/reviewrun",
 		"github.com/pedromvgomes/agentic-toolkit/internal/curator",
@@ -209,11 +226,7 @@ func TestOnlyOnePackageNamesTheApprovalEvent(t *testing.T) {
 // is spelt, and adding one is a deliberate act rather than a forgotten
 // deletion.
 func TestNoReviewPathCanReachTheApproval(t *testing.T) {
-	// A target that does not resolve would make every comparison below fail to
-	// match, so the test would pass while enforcing nothing. Resolve it first.
-	if _, err := exec.Command("go", "list", approvalImportPath).Output(); err != nil {
-		t.Fatalf("go list %s: %v — the approval package this test guards does not resolve, so the guard is empty", approvalImportPath, err)
-	}
+	mustResolve(t, approvalImportPath)
 	for _, pkg := range []string{
 		"github.com/pedromvgomes/agentic-toolkit/internal/reviewrun",
 		"github.com/pedromvgomes/agentic-toolkit/internal/reviewpost",
