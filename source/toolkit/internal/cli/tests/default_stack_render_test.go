@@ -118,14 +118,15 @@ func TestPreApprovedPermissionsNameCommandsThatExist(t *testing.T) {
 		}
 	}
 
-	// The store-path grants are literals in the settings definition: a
-	// settings value is opaque to the adapter that merges it, so nothing
-	// resolves memory.root or the default on the way through. A grant naming
-	// a root agtk does not use is a prompt on every delegation, and the
-	// render is the only place the two can be compared.
+	// The store-path grants come from the claude adapter rather than from the
+	// settings definition, built from the entry manifest's memory.root or,
+	// unset, from memory.DefaultRoot. This pins the unset case, which is what
+	// every consumer that never configured memory renders. A grant naming a
+	// root agtk does not use is a prompt on every delegation, and the render
+	// is the only place the two can be compared.
 	for _, allowed := range []string{
 		"Read(**/" + memory.DefaultRoot + "/INDEX.md)",
-		"Write(**/" + memory.DefaultRoot + "/candidates/**)",
+		"Edit(**/" + memory.DefaultRoot + "/candidates/**)",
 	} {
 		if !strings.Contains(string(settings), allowed) {
 			t.Errorf("settings.json pre-approves no %q, so the explorer prompts for the default store:\n%s", allowed, settings)
