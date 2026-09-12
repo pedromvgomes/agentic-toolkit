@@ -150,8 +150,18 @@ func TestNoInstallationTokenIsWrittenAnywhere(t *testing.T) {
 	}
 }
 
-// approvalPackage owns the approval event and the one call that sends it.
+// approvalPackage owns the approval event and the one call that sends it, as a
+// path from the repo root.
 const approvalPackage = "source/toolkit/internal/reviewapprove"
+
+// approvalImportPath is the same package as an import path.
+//
+// Spelled out rather than built from approvalPackage: the module root is
+// source/toolkit, so the import path is not the module path joined to the
+// repo-relative path, and deriving one from the other yields a package that
+// does not exist. Nothing reports that — `go list -deps` simply never emits it,
+// and the test below passes without testing anything.
+const approvalImportPath = "github.com/pedromvgomes/agentic-toolkit/internal/reviewapprove"
 
 // Approval is a GitHub review with event APPROVE, and one package names it.
 //
@@ -199,7 +209,11 @@ func TestOnlyOnePackageNamesTheApprovalEvent(t *testing.T) {
 // is spelt, and adding one is a deliberate act rather than a forgotten
 // deletion.
 func TestNoReviewPathCanReachTheApproval(t *testing.T) {
-	approval := "github.com/pedromvgomes/agentic-toolkit/" + approvalPackage
+	// A target that does not resolve would make every comparison below fail to
+	// match, so the test would pass while enforcing nothing. Resolve it first.
+	if _, err := exec.Command("go", "list", approvalImportPath).Output(); err != nil {
+		t.Fatalf("go list %s: %v — the approval package this test guards does not resolve, so the guard is empty", approvalImportPath, err)
+	}
 	for _, pkg := range []string{
 		"github.com/pedromvgomes/agentic-toolkit/internal/reviewrun",
 		"github.com/pedromvgomes/agentic-toolkit/internal/reviewpost",
@@ -211,8 +225,8 @@ func TestNoReviewPathCanReachTheApproval(t *testing.T) {
 			t.Fatalf("go list %s: %v", pkg, err)
 		}
 		for dep := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
-			if dep == approval {
-				t.Errorf("%s depends on %s, so a review run can reach the code that approves it", pkg, approval)
+			if dep == approvalImportPath {
+				t.Errorf("%s depends on %s, so a review run can reach the code that approves it", pkg, approvalImportPath)
 			}
 		}
 	}
