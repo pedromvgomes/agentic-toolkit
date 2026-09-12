@@ -6,7 +6,7 @@ anchors:
   - path: source/toolkit/internal/handoff/handoff.go
     blob: 9c006dc4dd34
   - path: source/toolkit/internal/cli/handoff.go
-    blob: afeabea239b8
+    blob: d1d9642d265c
   - path: definitions/hooks/handoff-claude-session-start.yaml
     blob: d5d8a261ef6f
   - path: definitions/skills/implement-handoff/SKILL.md
@@ -57,7 +57,7 @@ directory reachable only by case-folding is refused because the name is what git
 keyed by (`hasExactly`, `:225`).
 
 Two fail-closed choices: a git that will not answer offers nothing (`:196-199`), and paths are
-printed with `%q` (`source/toolkit/internal/cli/handoff.go:85,88`) because the hook pipes this output into a
+printed with `%q` (`source/toolkit/internal/cli/handoff.go:86,89`) because the hook pipes this output into a
 fresh session's context and a filename carrying newlines would otherwise write its own lines
 there.
 

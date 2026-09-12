@@ -4,11 +4,11 @@ kind: invariant
 description: A command that prints its own report and exits non-zero must return a sentinel error registered in Execute.
 anchors:
   - path: source/toolkit/internal/cli/root.go
-    blob: 4eb683110c5a
+    blob: c38cddfed6d5
   - path: source/toolkit/internal/cli/status.go
-    blob: 647224af57c4
+    blob: 9c0513063466
   - path: source/toolkit/internal/cli/memory.go
-    blob: 555cb4f35496
+    blob: ba69103bf419
 confidence: verified
 ---
 
@@ -20,8 +20,8 @@ report — would therefore print its findings twice, the second time as an error
 The protocol is a typed sentinel returned after printing, plus a branch in `Execute` that
 maps it to an exit code and suppresses the prefix: `errStatusDrift` (declared
 `status.go:134`, returned at `:117` and `:124`; branch at `root.go:256`), `errMemoryStale` /
-`errMemoryLint` (declared `memory.go:63`/`:64`, returned at `:359`/`:441`; branch at
-`root.go:261`), `errMemoryCurate` (declared `memory.go:68`, returned at `:832`; branch at
+`errMemoryLint` (declared `memory.go:63`/`:64`, returned at `:366`/`:448`; branch at
+`root.go:261`), `errMemoryCurate` (declared `memory.go:68`, returned at `:839`; branch at
 `root.go:267`), and `updateNewerErr`, which maps to `UpdateCheckExitCode` rather than 1
 (branch at `root.go:273`).
 

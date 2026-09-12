@@ -4,23 +4,23 @@ kind: gotcha
 description: A stack's identifier is built from the raw URL and the ref as written, while its lockfile row uses the split repo URL and the resolved ref — the two never join.
 anchors:
   - path: source/toolkit/internal/resolver/resolver.go
-    blob: 8095f3afd96d
+    blob: 022646e73709
   - path: source/toolkit/internal/resolver/types.go
-    blob: 4fd32a68d9d0
+    blob: f324cf4d5af4
 confidence: verified
 ---
 
 `loadExtends` derives two different keys from one `extends:` entry
-(`source/toolkit/internal/resolver/resolver.go:234-266`):
+(`source/toolkit/internal/resolver/resolver.go:233-265`):
 
-- the **source** row: `s.sources.add(repoURL, rr.Ref, rr.SHA, SourceStack)` (`:245`) — the
-  repo half of the URL, in-repo path stripped by `splitGitURL` (`:237`), and the provider's
+- the **source** row: `s.sources.add(repoURL, rr.Ref, rr.SHA, SourceStack)` (`:244`) — the
+  repo half of the URL, in-repo path stripped by `splitGitURL` (`:236`), and the provider's
   *resolved* ref.
-- the **stack identifier**: `identifier := ext.URL + "@" + ext.Ref` (`:254`) — the full URL
+- the **stack identifier**: `identifier := ext.URL + "@" + ext.Ref` (`:253`) — the full URL
   *including* the in-repo path, and the ref exactly as the user typed it.
 
 That identifier is what lands in `Plan.StackOrder` (built from `s.order`, appended at
-`resolver.go:229`, read at `:91`) and in every `PlannedDefinition.StackName`
+`resolver.go:228`, read at `:91`) and in every `PlannedDefinition.StackName`
 (`resolver.go:413`). So `StackName` cannot be joined to `Plan.Sources` by string: the two
 differ in the path segment and, whenever the manifest left the ref off, in the ref (`""` vs
 the resolved branch name). Anything wanting the sha a definition came from must go through
@@ -35,6 +35,6 @@ resolved to the same branch. An adapter doing last-wins tiebreaking over `StackO
 `source/toolkit/internal/resolver/types.go:40-45` says is what it is for) sees a duplicate with no
 counterpart in the lockfile.
 
-Note the contrast with local-path extends (`resolver.go:270`), whose identifier is built from
+Note the contrast with local-path extends (`resolver.go:269`), whose identifier is built from
 the *parent's* already-resolved `SourceURL@SourceRef` plus the child path, and so does not
 carry the raw-vs-resolved discrepancy.

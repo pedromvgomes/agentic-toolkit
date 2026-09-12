@@ -4,7 +4,7 @@ kind: gotcha
 description: userconfig.Load's only caller discards the error, so a misspelled key silently disables auto-update — the outcome the package doc promises is impossible.
 anchors:
   - path: source/toolkit/internal/cli/root.go
-    blob: 4eb683110c5a
+    blob: c38cddfed6d5
   - path: source/toolkit/internal/userconfig/loader.go
     blob: f0d8d9e6cc1b
   - path: source/toolkit/internal/userconfig/types.go

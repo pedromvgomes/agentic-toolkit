@@ -6,9 +6,9 @@ anchors:
   - path: source/toolkit/internal/userconfig/types.go
     blob: f33029382876
   - path: source/toolkit/internal/cli/update.go
-    blob: 8d3c6530b226
+    blob: b2b0526bee75
   - path: source/toolkit/internal/cli/root.go
-    blob: 4eb683110c5a
+    blob: c38cddfed6d5
 confidence: verified
 ---
 

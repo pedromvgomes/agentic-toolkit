@@ -4,15 +4,15 @@ kind: gotcha
 description: An entry with no ref resolves from the lockfile only when its URL is pinned exactly once; a second pin of the same repo makes it read as "not pinned".
 anchors:
   - path: source/toolkit/internal/sourcestore/provider.go
-    blob: edc68a0a6daf
+    blob: 3a0ccf040c3b
   - path: source/toolkit/internal/sourcestore/tests/frozen_provider_test.go
-    blob: 017e47a9e2a8
+    blob: d590f8c51f87
 confidence: verified
 ---
 
-`FrozenProvider.lookup` (`source/toolkit/internal/sourcestore/provider.go:103-118`) tries the exact
+`FrozenProvider.lookup` (`source/toolkit/internal/sourcestore/provider.go:103-117`) tries the exact
 `(URL, Ref)` key first. A non-empty ref that misses stops there. An *empty* ref falls back to
-`p.byURL[s.URL]` and accepts the pin **only if there is exactly one** (`provider.go:112-115`);
+`p.byURL[s.URL]` and accepts the pin **only if there is exactly one** (`provider.go:113-115`);
 two or more returns `false`, and `Provide` reports `ErrPinNotFound` (`provider.go:87-89`) —
 the same error as a URL that was never locked at all.
 

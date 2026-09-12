@@ -6,7 +6,9 @@ anchors:
   - path: source/toolkit/internal/stack/parser.go
     blob: d2612a7d0b55
   - path: source/toolkit/internal/stack/types.go
-    blob: 67b0972a585e
+    blob: 31695294c268
+  - path: source/toolkit/internal/stack/tests/platforms_test.go
+    blob: 465dc35fb8ab
 confidence: verified
 ---
 
@@ -24,8 +26,12 @@ a migration hint that has nothing to do with the actual problem.
 The list was five. `platforms` was removed from it when `platforms:` came back as a *v2*
 field (`source/toolkit/internal/stack/types.go:64`, semantics contrasted with v1's in
 `docs/MIGRATION.md:125-131`), so a stolen name can be reclaimed: the guard is a pure regex
-match on raw bytes (`topLevelKeyRE`, `parser.go:385-387`) with no link to the struct, and no
-test pinned `platforms` as guarded. The residual cost is that an un-migrated v1 file whose
+match on raw bytes (`topLevelKeyRE`, `parser.go:385-387`) with no link to the struct, so
+nothing had to change but the list. The reclaim is now pinned from the other side —
+`TestParseBytes_PlatformsIsNotTreatedAsLegacy`
+(`source/toolkit/internal/stack/tests/platforms_test.go:44-53`) asserts a `platforms:`-only body
+parses — so putting the name back into `legacyTopLevelKeys` fails a test rather than silently
+stealing it again. Nothing pins the other four, though. The residual cost is that an un-migrated v1 file whose
 only legacy key is `platforms:` now decodes as a v2 stack instead of getting the migration
 hint — v1 also required `source:`, which is still guarded, so real v1 files are still caught.
 

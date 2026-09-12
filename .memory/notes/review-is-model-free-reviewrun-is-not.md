@@ -6,7 +6,7 @@ anchors:
   - path: source/toolkit/internal/review/*.go
     matches:
       - path: source/toolkit/internal/review/builtin.go
-        blob: ad571de35ce9
+        blob: 04e622ab978f
       - path: source/toolkit/internal/review/capability.go
         blob: b4a67453292c
       - path: source/toolkit/internal/review/change.go
@@ -16,7 +16,7 @@ anchors:
       - path: source/toolkit/internal/review/detect.go
         blob: 1a74bc0afffc
       - path: source/toolkit/internal/review/errors.go
-        blob: 0a02e5e95cea
+        blob: e261fd4d030a
       - path: source/toolkit/internal/review/exclude.go
         blob: 449a1d7261d1
       - path: source/toolkit/internal/review/explain.go
@@ -30,7 +30,7 @@ anchors:
       - path: source/toolkit/internal/review/language.go
         blob: 25e2c11ca203
       - path: source/toolkit/internal/review/manifest.go
-        blob: fcd5b096bbb5
+        blob: 921788fb9c56
       - path: source/toolkit/internal/review/parse.go
         blob: bc3bb102eadd
       - path: source/toolkit/internal/review/pr.go
@@ -46,7 +46,7 @@ anchors:
       - path: source/toolkit/internal/review/untracked.go
         blob: 8b0a17e460d1
   - path: source/toolkit/internal/reviewrun/run.go
-    blob: 9d689cbb3f05
+    blob: d4cdd11b4fc6
   - path: source/toolkit/internal/cli/codereview.go
     blob: 3601595c0eaa
 confidence: verified
@@ -58,6 +58,13 @@ type-asserts a provider's interfaces and calls its argument builders (`CheckCapa
 onwards). Manifest parsing, profiling, signal detection and panel selection are all reachable
 with no provider CLI and no network, which is what makes `agtk code-review explain`,
 `panels` and `signals` free to run on a hook (`source/toolkit/internal/cli/codereview.go:14-27`).
+
+**Model-free is not the same as offline**, and the distinction has one exception worth
+knowing: `explain --pr` is model-free but *not* hook-safe. It reads the pull request and
+fetches its head, because base, head and context are what naming a PR decides and none of the
+three is knowable without asking GitHub — so it needs the App registration and fails without
+one, before a panel has run (`source/toolkit/internal/cli/codereview.go:19-24`). Bare
+`explain` is safe on a hook path; `explain --pr` is not.
 
 The check is `grep -rl agentic-driver source/toolkit/internal/review`, which must return exactly
 `capability.go`. That grep is the enforcement — no test asserts it — which is why this is

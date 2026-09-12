@@ -9,11 +9,6 @@ LoadAtRef reads any manifest absent from the base ref as "this repo declares non
 
 - source/toolkit/internal/review/builtin.go
 
-## agents-md-lookup-prefers-the-stack-dir  (gotcha, verified)
-CLAUDE.md seeds its @-import from the stack directory's AGENTS.md before the project root's.
-
-- source/toolkit/internal/adapters/claude/instructions.go
-
 ## anchored-symlinks-are-refused-not-followed  (invariant, verified)
 The lexical anchor check is backed by a filesystem containment check at every resolution site, so a symlink in the anchored set is refused rather than hashed through.
 
@@ -35,12 +30,13 @@ A second guard, separate from the tool allowlist, can refuse a Bash command that
 - source/toolkit/internal/curator/curator.go
 
 ## committed-content-cannot-live-in-a-rendered-tree  (rationale, verified)
-Committed, hand-maintained files must sit outside every platform's rendered tree, which is why the review manifest and the memory store both moved out of .agents/ — but the shipped memory default still points inside it.
+Committed, hand-maintained files must sit outside every platform's rendered tree, which is why the review manifest and the memory store — including the shipped default root — sit outside .agents/.
 
 - .gitignore
 - .agentic-toolkit.yaml
 - source/toolkit/internal/review/manifest.go
 - source/toolkit/internal/memory/types.go
+- source/toolkit/internal/memory/store.go
 
 ## completion-paths-are-implemented-twice  (gotcha, verified)
 The completion install path strategy exists twice — POSIX sh in install.sh and Go in completioninstall — and no test cross-checks them.
@@ -53,6 +49,12 @@ The completion refresh shells out to whatever binary is on disk, so it must run 
 
 - source/toolkit/internal/completioninstall/install.go
 - source/toolkit/internal/cli/update.go
+
+## convention-docs-are-read-literally-at-the-base-ref  (gotcha, verified)
+A review reads convention docs (CONTEXT.md, CLAUDE.md, …) as literal root-level text at the base ref, so an imported file is not resolved and a rule added on the branch under review does not judge it.
+
+- source/toolkit/internal/reviewrun/prompt.go
+- docs/adr/0007-untrusted-heads-are-closed-structurally.md
 
 ## credential-guards-are-hand-maintained-lists  (gotcha, verified)
 Half the credential-surface guards are scoped to package lists a person edits, so a new package is not covered until someone adds it by name.
@@ -80,9 +82,9 @@ For file-shaped categories the definition's own `name:` field becomes the overla
 - source/toolkit/internal/definitions/parser.go
 
 ## generated-schema-docs-have-no-ci-guard  (gotcha, verified)
-SCHEMA.md and CONFIG-SCHEMA.md are generated but nothing verifies them, so they drift silently.
+SCHEMA.md and CONFIG-SCHEMA.md are generated but no workflow regenerates or diffs them, so they drift silently.
 
-- source/toolkit/tools/schemagen/main.go
+- source/toolkit/internal/schemadoc/schemadoc.go
 - .github/workflows/*.yml
 
 ## handoff-trust-is-asked-of-git  (invariant, verified)
@@ -95,11 +97,11 @@ Whether a handoff is locally written is decided by asking git what is untracked,
 - docs/adr/0014-a-handoff-is-trusted-structurally-not-by-prose.md
 
 ## hook-fail-closed-is-never-rendered  (gotcha, verified)
-A hook's fail_closed parses and validates but no adapter ever writes it, so every rendered hook is fail-open.
+A hook's fail_closed parses and validates but no adapter ever writes it, so every rendered hook is fail-open on every platform.
 
 - source/toolkit/internal/definitions/types.go
 - definitions/SCHEMA.md
-- source/toolkit/internal/adapters/claude/*.go
+- source/toolkit/internal/adapters/*/*.go
 
 ## memory-config-is-entry-manifest-only  (gotcha, verified)
 A stack reached through extends: may set memory:, and it parses fine and is silently ignored — so a manifest's memory.root can disagree with agtk's.
@@ -169,12 +171,14 @@ Every key in a provider schema's `properties` must also appear in that object's 
 Render deletes every path the previous manifest tracked that this render did not produce, so dropping a definition needs no cleanup step.
 
 - source/toolkit/internal/adapters/claude/render.go
+- source/toolkit/internal/adapters/codex/render.go
+- source/toolkit/internal/adapters/fsops/fsops.go
 
 ## render-refuses-files-it-does-not-track  (invariant, verified)
 A file on disk that is absent from .agtk-manifest.json is treated as user-owned, and render refuses rather than overwrite it.
 
+- source/toolkit/internal/adapters/fsops/fsops.go
 - source/toolkit/internal/adapters/claude/render.go
-- source/toolkit/internal/adapters/claude/files.go
 
 ## review-bodies-have-their-own-page-size  (gotcha, verified)
 A GraphQL query returning review bodies pages at reviewsPerPage (10), not the general pageSize (25), because a review body is the largest document on a pull request.
@@ -193,7 +197,7 @@ capability.go is the only file in source/toolkit/internal/review that names the 
 ## schemagen-documents-only-hand-named-types  (gotcha, verified)
 schemagen discovers no top-level types; each one is a hand-written reflect.TypeOf call, so a new manifest struct documents as nothing and errors as nothing.
 
-- source/toolkit/tools/schemagen/main.go
+- source/toolkit/internal/schemadoc/schemadoc.go
 
 ## scoped-anchor-grant-names-each-note-exactly  (invariant, verified)
 A scoped stamping grant lists each note name with no trailing wildcard, because kebab-case note names nest.
@@ -231,6 +235,7 @@ A stack field must exist on the struct before any manifest may use it, and four 
 
 - source/toolkit/internal/stack/parser.go
 - source/toolkit/internal/stack/types.go
+- source/toolkit/internal/stack/tests/platforms_test.go
 
 ## suppression-requires-a-complete-verdict  (invariant, verified)
 A posted review suppresses a re-review only when this installation authored it, its commit and marker head both name the head, and the marker reads verdict=complete; an unparseable marker deliberately counts as no verdict.
@@ -267,4 +272,4 @@ ErrUnknownField and a ParseError's line/column are recovered by string-matching 
 - source/toolkit/internal/definitions/errors.go
 - source/toolkit/internal/stack/parser.go
 - source/toolkit/internal/lockfile/parser.go
-- go.mod
+- source/toolkit/go.mod
