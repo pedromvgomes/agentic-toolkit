@@ -4,7 +4,7 @@ kind: gotcha
 description: The curator's write grant is path-scoped, and both `Write(...)` instead of `Edit(...)` and any permission mode silently unscope it.
 anchors:
   - path: source/toolkit/internal/curator/curator.go
-    blob: 1e7fb72d46d4
+    blob: a8ac0f37cab8
   - path: source/toolkit/internal/curator/prompt.md
     blob: e99c915ac4dd
   - path: docs/adr/0004-the-curator-ships-in-the-binary.md

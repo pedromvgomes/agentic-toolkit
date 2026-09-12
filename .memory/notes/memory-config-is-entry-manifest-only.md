@@ -8,7 +8,7 @@ anchors:
   - path: source/toolkit/internal/resolver/types.go
     blob: f324cf4d5af4
   - path: source/toolkit/internal/stack/types.go
-    blob: 67b0972a585e
+    blob: 31695294c268
 confidence: verified
 ---
 
@@ -28,7 +28,7 @@ not hard-fail the consumer's build either."
 So **do not read `memory.root` out of a manifest to learn where the store is** — the YAML and
 `agtk` can disagree. Ask `agtk memory stats --json` for `root`.
 
-`(*Stack).MemoryRoot()` (`source/toolkit/internal/stack/types.go:82`) has no notion of entry-vs-extended; it
+`(*Stack).MemoryRoot()` (`source/toolkit/internal/stack/types.go:85`) has no notion of entry-vs-extended; it
 returns whatever `Memory.Root` is on the struct it is called on. Nothing below the resolver's
 traversal enforces the rule, so a subsystem that mirrors this convention needs its own
 equivalent of the `ctx.Identifier != ""` test at the same point.

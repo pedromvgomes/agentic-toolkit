@@ -6,7 +6,7 @@ anchors:
   - path: source/toolkit/internal/completioninstall/install.go
     blob: 71b67e0cd008
   - path: source/toolkit/internal/cli/update.go
-    blob: 8d3c6530b226
+    blob: b2b0526bee75
 confidence: verified
 ---
 
