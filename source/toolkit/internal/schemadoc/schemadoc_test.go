@@ -1,4 +1,4 @@
-package main
+package schemadoc
 
 import (
 	"os"
@@ -52,5 +52,45 @@ func TestRepoRootRefusesOutsideARepository(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), ".git") {
 		t.Errorf("the error does not say what was looked for: %v", err)
+	}
+}
+
+// The documents land in the catalog of the repo the generator runs from, and
+// the directory is created if it is not there. Where they land is the whole
+// job: a generator that writes them anywhere else leaves the committed docs
+// stale while reporting success.
+func TestGenerateWritesBothDocumentsIntoTheCatalog(t *testing.T) {
+	repo := t.TempDir()
+	if err := os.Mkdir(filepath.Join(repo, ".git"), 0o755); err != nil {
+		t.Fatalf("mkdir .git: %v", err)
+	}
+	t.Chdir(repo)
+
+	if err := Generate(); err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+
+	for _, rel := range []string{
+		filepath.Join(catalogDir, "SCHEMA.md"),
+		filepath.Join(catalogDir, "CONFIG-SCHEMA.md"),
+	} {
+		got, err := os.ReadFile(filepath.Join(repo, rel))
+		if err != nil {
+			t.Errorf("%s: %v", rel, err)
+			continue
+		}
+		if len(got) == 0 {
+			t.Errorf("%s is empty", rel)
+		}
+	}
+}
+
+// Outside a repository there is no catalog to write into, so Generate refuses
+// rather than writing the documents relative to wherever the walk stopped.
+func TestGenerateRefusesOutsideARepository(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	if err := Generate(); err == nil {
+		t.Error("Generate wrote the documents with no .git above the working directory")
 	}
 }
