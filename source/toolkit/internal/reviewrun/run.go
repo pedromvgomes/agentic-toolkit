@@ -20,7 +20,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/review"
+	"github.com/pedromvgomes/agentic-toolkit/internal/review"
 )
 
 // DefaultTimeout bounds one run. A reviewer reads a diff, follows it into the

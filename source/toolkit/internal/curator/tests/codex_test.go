@@ -7,7 +7,7 @@ import (
 
 	"github.com/pedromvgomes/agentic-driver/agentictest"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/curator"
+	"github.com/pedromvgomes/agentic-toolkit/internal/curator"
 )
 
 // codexEnvelope is one `codex exec --json` stream that ends in a turn the

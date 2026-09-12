@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/sourceref"
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/sourcestore"
+	"github.com/pedromvgomes/agentic-toolkit/internal/sourceref"
+	"github.com/pedromvgomes/agentic-toolkit/internal/sourcestore"
 )
 
 // tagFixture adds a tag to the bare repo behind url. When annotated is

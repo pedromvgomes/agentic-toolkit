@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/cli"
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/githubapp"
+	"github.com/pedromvgomes/agentic-toolkit/internal/cli"
+	"github.com/pedromvgomes/agentic-toolkit/internal/githubapp"
 )
 
 // runCLIWithStdin is runCLI with something on standard input, which is how a

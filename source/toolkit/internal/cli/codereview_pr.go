@@ -8,11 +8,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/githubapp"
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/review"
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/reviewapprove"
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/reviewpost"
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/reviewrun"
+	"github.com/pedromvgomes/agentic-toolkit/internal/githubapp"
+	"github.com/pedromvgomes/agentic-toolkit/internal/review"
+	"github.com/pedromvgomes/agentic-toolkit/internal/reviewapprove"
+	"github.com/pedromvgomes/agentic-toolkit/internal/reviewpost"
+	"github.com/pedromvgomes/agentic-toolkit/internal/reviewrun"
 )
 
 // pullRequestTarget is an open pull request, resolved to everything a review

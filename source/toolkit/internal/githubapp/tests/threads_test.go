@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/githubapp"
+	"github.com/pedromvgomes/agentic-toolkit/internal/githubapp"
 )
 
 const graphqlPath = "/graphql"

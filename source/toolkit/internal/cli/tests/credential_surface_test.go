@@ -14,7 +14,7 @@ import (
 
 // credentialPackage is where the GitHub App key and the installation tokens
 // minted from it live. Nothing else in the binary holds either.
-const credentialPackage = "github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/githubapp"
+const credentialPackage = "github.com/pedromvgomes/agentic-toolkit/internal/githubapp"
 
 // credentialSurface are the packages a credential passes through: the one that
 // holds it, and the one that builds what it is spent on. Both are walked
@@ -35,9 +35,9 @@ var credentialSurface = []string{
 // token would require adding an import rather than forgetting to remove one.
 func TestTheModelInvokingPackagesCannotReachTheCredential(t *testing.T) {
 	for _, pkg := range []string{
-		"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/reviewrun",
-		"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/curator",
-		"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/review",
+		"github.com/pedromvgomes/agentic-toolkit/internal/reviewrun",
+		"github.com/pedromvgomes/agentic-toolkit/internal/curator",
+		"github.com/pedromvgomes/agentic-toolkit/internal/review",
 	} {
 		out, err := exec.Command("go", "list", "-deps", "-f", "{{.ImportPath}}", pkg).Output()
 		if err != nil {
@@ -201,10 +201,10 @@ func TestOnlyOnePackageNamesTheApprovalEvent(t *testing.T) {
 func TestNoReviewPathCanReachTheApproval(t *testing.T) {
 	approval := "github.com/pedromvgomes/agentic-toolkit/" + approvalPackage
 	for _, pkg := range []string{
-		"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/reviewrun",
-		"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/reviewpost",
-		"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/review",
-		"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/curator",
+		"github.com/pedromvgomes/agentic-toolkit/internal/reviewrun",
+		"github.com/pedromvgomes/agentic-toolkit/internal/reviewpost",
+		"github.com/pedromvgomes/agentic-toolkit/internal/review",
+		"github.com/pedromvgomes/agentic-toolkit/internal/curator",
 	} {
 		out, err := exec.Command("go", "list", "-deps", "-f", "{{.ImportPath}}", pkg).Output()
 		if err != nil {

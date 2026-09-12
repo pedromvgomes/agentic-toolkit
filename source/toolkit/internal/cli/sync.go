@@ -8,9 +8,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/lockfile"
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/resolver"
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/sourcestore"
+	"github.com/pedromvgomes/agentic-toolkit/internal/lockfile"
+	"github.com/pedromvgomes/agentic-toolkit/internal/resolver"
+	"github.com/pedromvgomes/agentic-toolkit/internal/sourcestore"
 )
 
 // newSyncCmd registers `agtk sync`: a one-shot lock-if-stale + fetch +

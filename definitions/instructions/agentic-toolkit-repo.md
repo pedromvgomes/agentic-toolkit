@@ -23,16 +23,19 @@ before writing about any of those concepts. Terms there are precise and words li
 
 - **Build**: `make build` (writes `./bin/agtk`, stamped with `git describe`)
 - **Install**: `make install`
-- **Test**: `make test` (`go test ./...`)
+- **Test**: `make test` (`go -C source/toolkit test ./...`)
 - **Format**: `make fmt` (`gofmt -s -w .`)
 - **Vet**: `make vet`
 - **Full check** (fmt + vet + test + gofmt cleanliness): `make check`
 
-Requires Go 1.26+.
+Requires Go 1.26+. The module lives at `source/toolkit/go.mod`, not the repo root, so a bare
+`go test ./...` from the root finds no module — use the Makefile, or `go -C source/toolkit`.
 
 ## Project structure
 
-- `source/toolkit/` — the Go tooling, all of it
+- `source/toolkit/` — the Go tooling, all of it, and `go.mod`/`go.sum`: the module root. The
+  module path stays `github.com/pedromvgomes/agentic-toolkit`, so imports read
+  `…/agentic-toolkit/internal/…` and do not repeat the directory.
 - `source/toolkit/cmd/agtk/` — CLI entrypoint
 - `source/toolkit/internal/` — CLI implementation (private packages): `resolver`, `lockfile`,
   `stack`, `definitions`, `sourceref`/`sourcestore` (fetch/cache), `review`/`reviewrun`/`reviewpost`/

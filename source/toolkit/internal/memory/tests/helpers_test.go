@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/memory"
+	"github.com/pedromvgomes/agentic-toolkit/internal/memory"
 )
 
 // project builds a throwaway project tree with a store in it and returns

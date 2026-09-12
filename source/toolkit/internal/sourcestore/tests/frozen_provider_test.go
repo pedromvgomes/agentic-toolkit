@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/lockfile"
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/sourceref"
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/sourcestore"
+	"github.com/pedromvgomes/agentic-toolkit/internal/lockfile"
+	"github.com/pedromvgomes/agentic-toolkit/internal/sourceref"
+	"github.com/pedromvgomes/agentic-toolkit/internal/sourcestore"
 )
 
 func TestFrozenProvider_ServesPinnedSource(t *testing.T) {

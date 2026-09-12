@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/review"
+	"github.com/pedromvgomes/agentic-toolkit/internal/review"
 )
 
 // twoRosters is the shape the context condition exists for: one roster per

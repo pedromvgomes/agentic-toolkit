@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/updatestate"
+	"github.com/pedromvgomes/agentic-toolkit/internal/updatestate"
 )
 
 func TestRoundTrip(t *testing.T) {

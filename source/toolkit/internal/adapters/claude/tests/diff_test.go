@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/adapters/claude"
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/resolver"
+	"github.com/pedromvgomes/agentic-toolkit/internal/adapters/claude"
+	"github.com/pedromvgomes/agentic-toolkit/internal/resolver"
 )
 
 // TestDiff_CleanAfterRender: a freshly-rendered scope reports no drift.

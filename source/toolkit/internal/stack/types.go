@@ -36,7 +36,7 @@ package stack
 //go:generate go run ../../tools/schemagen
 
 import (
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/definitions"
+	"github.com/pedromvgomes/agentic-toolkit/internal/definitions"
 )
 
 // DefaultRoot is the default value of `root:` when a stack file omits it.

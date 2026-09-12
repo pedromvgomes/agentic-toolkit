@@ -11,7 +11,7 @@ import (
 
 	agentic "github.com/pedromvgomes/agentic-driver"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/review"
+	"github.com/pedromvgomes/agentic-toolkit/internal/review"
 )
 
 // requestFor builds a minimal read-only request, for the assertions about the

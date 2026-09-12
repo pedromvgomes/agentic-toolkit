@@ -25,11 +25,11 @@ import (
 	"sort"
 	"strings"
 
-	defs "github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/definitions"
-	lock "github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/lockfile"
-	rev "github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/review"
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/sourceref"
-	stk "github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/stack"
+	defs "github.com/pedromvgomes/agentic-toolkit/internal/definitions"
+	lock "github.com/pedromvgomes/agentic-toolkit/internal/lockfile"
+	rev "github.com/pedromvgomes/agentic-toolkit/internal/review"
+	"github.com/pedromvgomes/agentic-toolkit/internal/sourceref"
+	stk "github.com/pedromvgomes/agentic-toolkit/internal/stack"
 )
 
 // categoryDoc carries the hand-written prose for a category alongside the
@@ -125,8 +125,12 @@ var categories = []categoryDoc{
 	},
 }
 
+// catalogDir is the directory the definitions live in, and the one the
+// generated schema documents are written to.
+const catalogDir = "definitions"
+
 func main() {
-	root, err := moduleRoot()
+	root, err := repoRoot()
 	if err != nil {
 		fail(err)
 	}
@@ -134,8 +138,8 @@ func main() {
 		path string
 		gen  func() ([]byte, error)
 	}{
-		{filepath.Join(root, "definitions", "SCHEMA.md"), render},
-		{filepath.Join(root, "definitions", "CONFIG-SCHEMA.md"), renderConfig},
+		{filepath.Join(root, catalogDir, "SCHEMA.md"), render},
+		{filepath.Join(root, catalogDir, "CONFIG-SCHEMA.md"), renderConfig},
 	} {
 		out, err := doc.gen()
 		if err != nil {
@@ -156,21 +160,28 @@ func fail(err error) {
 	os.Exit(1)
 }
 
-// moduleRoot walks up from the current working directory until it finds a
-// go.mod file and returns that directory.
-func moduleRoot() (string, error) {
+// repoRoot walks up from the current working directory to the repo root.
+//
+// The landmark is .git, which is what "repo root" means — a directory in a
+// clone and a file in a worktree, so neither is tested for. go.mod is the
+// module's landmark, and the module sits under source/toolkit: keying on it
+// would make where the generated docs land a consequence of where the module
+// file sits, and moving the module file would silently relocate the
+// documentation rather than fail. The catalog is not a landmark either, because
+// source/toolkit/internal/definitions is a package of that name.
+func repoRoot() (string, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return "", err
 	}
 	dir := cwd
 	for {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+		if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
 			return dir, nil
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			return "", fmt.Errorf("no go.mod found above %s", cwd)
+			return "", fmt.Errorf("no .git found above %s", cwd)
 		}
 		dir = parent
 	}

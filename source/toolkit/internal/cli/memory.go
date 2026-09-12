@@ -12,9 +12,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/curator"
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/memory"
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/stack"
+	"github.com/pedromvgomes/agentic-toolkit/internal/curator"
+	"github.com/pedromvgomes/agentic-toolkit/internal/memory"
+	"github.com/pedromvgomes/agentic-toolkit/internal/stack"
 )
 
 // The memory command group is deliberately model-free. Curation and

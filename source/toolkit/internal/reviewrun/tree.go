@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/review"
+	"github.com/pedromvgomes/agentic-toolkit/internal/review"
 )
 
 // Root is the code under review, written outside the project directory, and

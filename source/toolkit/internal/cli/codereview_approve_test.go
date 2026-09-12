@@ -12,9 +12,9 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/review"
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/reviewapprove"
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/reviewrun"
+	"github.com/pedromvgomes/agentic-toolkit/internal/review"
+	"github.com/pedromvgomes/agentic-toolkit/internal/reviewapprove"
+	"github.com/pedromvgomes/agentic-toolkit/internal/reviewrun"
 )
 
 // approvalDoer answers the REST calls by path and the GraphQL calls in the

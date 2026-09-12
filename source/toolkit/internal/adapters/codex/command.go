@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/definitions"
+	"github.com/pedromvgomes/agentic-toolkit/internal/definitions"
 )
 
 // commandInvocationNotice opens every converted command's skill body.

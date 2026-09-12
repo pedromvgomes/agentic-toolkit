@@ -9,7 +9,7 @@ import (
 
 	"github.com/pedromvgomes/agentic-driver/agentictest"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/curator"
+	"github.com/pedromvgomes/agentic-toolkit/internal/curator"
 )
 
 // The terminal `result` line of a run. Every provider streams, so a fake's

@@ -10,7 +10,7 @@ import (
 
 	agentic "github.com/pedromvgomes/agentic-driver"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/review"
+	"github.com/pedromvgomes/agentic-toolkit/internal/review"
 )
 
 // scripted is an invoker that answers from a script keyed by role.

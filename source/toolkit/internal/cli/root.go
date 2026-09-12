@@ -19,12 +19,12 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/stack"
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/updatecheck"
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/updater"
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/updatestate"
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/userconfig"
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/version"
+	"github.com/pedromvgomes/agentic-toolkit/internal/stack"
+	"github.com/pedromvgomes/agentic-toolkit/internal/updatecheck"
+	"github.com/pedromvgomes/agentic-toolkit/internal/updater"
+	"github.com/pedromvgomes/agentic-toolkit/internal/updatestate"
+	"github.com/pedromvgomes/agentic-toolkit/internal/userconfig"
+	"github.com/pedromvgomes/agentic-toolkit/internal/version"
 )
 
 // Env carries per-invocation streams and the directories the commands

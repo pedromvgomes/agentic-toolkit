@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/updatestate"
+	"github.com/pedromvgomes/agentic-toolkit/internal/updatestate"
 )
 
 // Checker spawns one live LatestVersion call in a goroutine and posts

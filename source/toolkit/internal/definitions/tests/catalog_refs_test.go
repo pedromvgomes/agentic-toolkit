@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/definitions"
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/stack"
+	"github.com/pedromvgomes/agentic-toolkit/internal/definitions"
+	"github.com/pedromvgomes/agentic-toolkit/internal/stack"
 )
 
 // catalogNames indexes the real definitions/ tree as category -> set of

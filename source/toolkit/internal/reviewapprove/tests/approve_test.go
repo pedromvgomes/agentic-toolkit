@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/githubapp"
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/review"
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/reviewapprove"
+	"github.com/pedromvgomes/agentic-toolkit/internal/githubapp"
+	"github.com/pedromvgomes/agentic-toolkit/internal/review"
+	"github.com/pedromvgomes/agentic-toolkit/internal/reviewapprove"
 )
 
 // fakeGitHub answers the three calls approval makes, and records the one it

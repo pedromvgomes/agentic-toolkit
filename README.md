@@ -28,12 +28,6 @@ Environment overrides:
 
 After install, `agtk update` upgrades in place from the same release archives — no `curl | sh` needed for follow-ups.
 
-If you have a Go toolchain and prefer it:
-
-```bash
-go install github.com/pedromvgomes/agentic-toolkit/source/toolkit/cmd/agtk@latest
-```
-
 ## What you get
 
 - **Definition catalog** under `definitions/` covering eight typed categories: `skill`, `agent`, `command`, `rule`, `instruction`, `hook`, `mcp`, `setting`. See [`definitions/SCHEMA.md`](definitions/SCHEMA.md) for shapes.
@@ -48,7 +42,8 @@ go install github.com/pedromvgomes/agentic-toolkit/source/toolkit/cmd/agtk@lates
 
 ```
 agentic-toolkit/
-  source/toolkit/       # the Go tooling
+  source/toolkit/       # the Go tooling, and the Go module
+    go.mod, go.sum      # the module root — every `go` command runs here
     cmd/agtk/           # CLI entrypoint
     internal/           # CLI implementation (private packages)
     tools/              # code generators run via `go generate`

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/adapters/codex"
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/resolver"
+	"github.com/pedromvgomes/agentic-toolkit/internal/adapters/codex"
+	"github.com/pedromvgomes/agentic-toolkit/internal/resolver"
 )
 
 // TestCommand_ConvertedToSkill: Codex has no command construct, so a

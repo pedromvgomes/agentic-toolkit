@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/githubapp"
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/reviewpost"
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/reviewrun"
+	"github.com/pedromvgomes/agentic-toolkit/internal/githubapp"
+	"github.com/pedromvgomes/agentic-toolkit/internal/reviewpost"
+	"github.com/pedromvgomes/agentic-toolkit/internal/reviewrun"
 )
 
 // posted is a comment agtk would have written for one finding.

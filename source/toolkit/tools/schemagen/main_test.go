@@ -11,17 +11,17 @@ import (
 // describing a shape the code no longer parses, and the "DO NOT EDIT" banner
 // means no reader has any reason to distrust it.
 func TestCommittedSchemaDocsMatchTheStructs(t *testing.T) {
-	root, err := moduleRoot()
+	root, err := repoRoot()
 	if err != nil {
-		t.Fatalf("moduleRoot: %v", err)
+		t.Fatalf("repoRoot: %v", err)
 	}
 
 	for _, doc := range []struct {
 		path string
 		gen  func() ([]byte, error)
 	}{
-		{filepath.Join("definitions", "SCHEMA.md"), render},
-		{filepath.Join("definitions", "CONFIG-SCHEMA.md"), renderConfig},
+		{filepath.Join(catalogDir, "SCHEMA.md"), render},
+		{filepath.Join(catalogDir, "CONFIG-SCHEMA.md"), renderConfig},
 	} {
 		t.Run(doc.path, func(t *testing.T) {
 			want, err := os.ReadFile(filepath.Join(root, doc.path))

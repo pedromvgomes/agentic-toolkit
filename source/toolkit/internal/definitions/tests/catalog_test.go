@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/definitions"
+	"github.com/pedromvgomes/agentic-toolkit/internal/definitions"
 )
 
 // TestCatalogParses walks the real definitions/ tree at the repo root and
@@ -42,7 +42,10 @@ func TestCatalogParses(t *testing.T) {
 }
 
 // repoRoot finds the repo root by walking up from the test file's package
-// directory looking for go.mod.
+// directory looking for .git — a directory in a clone and a file in a worktree.
+//
+// go.mod is not the landmark: it lives under source/toolkit, so keying on it
+// returns the module root and every catalog path resolves inside it.
 func repoRoot(t *testing.T) string {
 	t.Helper()
 	cwd, err := os.Getwd()
@@ -51,12 +54,12 @@ func repoRoot(t *testing.T) string {
 	}
 	dir := cwd
 	for {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+		if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
 			return dir
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			t.Fatalf("no go.mod found walking up from %s", cwd)
+			t.Fatalf("no .git found walking up from %s", cwd)
 		}
 		dir = parent
 	}

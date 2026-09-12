@@ -4,8 +4,8 @@ import (
 	"io/fs"
 	"testing/fstest"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/definitions"
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/resolver"
+	"github.com/pedromvgomes/agentic-toolkit/internal/definitions"
+	"github.com/pedromvgomes/agentic-toolkit/internal/resolver"
 )
 
 // makeFS is a terse fstest.MapFS constructor.

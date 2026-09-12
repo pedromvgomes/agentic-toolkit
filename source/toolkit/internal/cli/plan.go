@@ -6,8 +6,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/resolver"
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/sourcestore"
+	"github.com/pedromvgomes/agentic-toolkit/internal/resolver"
+	"github.com/pedromvgomes/agentic-toolkit/internal/sourcestore"
 )
 
 func newPlanCmd(env *Env) *cobra.Command {

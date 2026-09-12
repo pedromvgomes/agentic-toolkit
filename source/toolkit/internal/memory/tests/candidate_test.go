@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/memory"
+	"github.com/pedromvgomes/agentic-toolkit/internal/memory"
 )
 
 // writeCandidate drops a candidate into the store and returns its path.

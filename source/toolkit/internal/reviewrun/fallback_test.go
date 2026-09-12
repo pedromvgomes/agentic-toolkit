@@ -8,7 +8,7 @@ import (
 
 	agentic "github.com/pedromvgomes/agentic-driver"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/review"
+	"github.com/pedromvgomes/agentic-toolkit/internal/review"
 )
 
 // A manifest with a panel on each provider, one declared as the other's

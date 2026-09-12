@@ -3,7 +3,7 @@ package tests
 import (
 	"testing"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/lockfile"
+	"github.com/pedromvgomes/agentic-toolkit/internal/lockfile"
 )
 
 func TestParse_Full(t *testing.T) {

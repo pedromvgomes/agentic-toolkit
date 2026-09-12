@@ -8,9 +8,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/definitions"
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/sourceref"
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/stack"
+	"github.com/pedromvgomes/agentic-toolkit/internal/definitions"
+	"github.com/pedromvgomes/agentic-toolkit/internal/sourceref"
+	"github.com/pedromvgomes/agentic-toolkit/internal/stack"
 )
 
 // Resolve walks an entry-point stack against the SourceProvider and

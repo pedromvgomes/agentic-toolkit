@@ -11,7 +11,7 @@ package reviewapprove
 import (
 	"strings"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/githubapp"
+	"github.com/pedromvgomes/agentic-toolkit/internal/githubapp"
 )
 
 // Marking is what a reply says to clear a finding.

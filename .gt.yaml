@@ -13,7 +13,7 @@ setup:
         # ahead of it.
         AGTK="${GT_ROOT}/.gt/bin/agtk"
         mkdir -p "$(dirname "$AGTK")"
-        ( cd "${GT_ROOT}/${GT_DEFAULT_BRANCH}" && go build -o "$AGTK" ./source/toolkit/cmd/agtk )
+        ( cd "${GT_ROOT}/${GT_DEFAULT_BRANCH}/source/toolkit" && go build -o "$AGTK" ./cmd/agtk )
 
         if [ "$GT_SETUP_PHASE" = "worktree" ]; then
           "$AGTK" sync                                                        # worktree has its own checkout, source from cwd

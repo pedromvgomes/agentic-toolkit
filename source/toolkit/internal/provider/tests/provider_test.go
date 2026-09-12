@@ -8,7 +8,7 @@ import (
 
 	agentic "github.com/pedromvgomes/agentic-driver"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/provider"
+	"github.com/pedromvgomes/agentic-toolkit/internal/provider"
 )
 
 // mute implements only the mandatory interface: it can be driven, but it

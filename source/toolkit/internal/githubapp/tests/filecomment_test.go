@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/githubapp"
+	"github.com/pedromvgomes/agentic-toolkit/internal/githubapp"
 )
 
 // commentsPath is where a comment against a whole file is posted.

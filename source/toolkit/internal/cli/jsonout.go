@@ -6,13 +6,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/githubapp"
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/lockfile"
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/memory"
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/resolver"
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/review"
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/reviewpost"
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/reviewrun"
+	"github.com/pedromvgomes/agentic-toolkit/internal/githubapp"
+	"github.com/pedromvgomes/agentic-toolkit/internal/lockfile"
+	"github.com/pedromvgomes/agentic-toolkit/internal/memory"
+	"github.com/pedromvgomes/agentic-toolkit/internal/resolver"
+	"github.com/pedromvgomes/agentic-toolkit/internal/review"
+	"github.com/pedromvgomes/agentic-toolkit/internal/reviewpost"
+	"github.com/pedromvgomes/agentic-toolkit/internal/reviewrun"
 )
 
 // jsonVersion is the schema version emitted by every --json output of

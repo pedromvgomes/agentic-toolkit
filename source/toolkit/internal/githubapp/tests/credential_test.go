@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/githubapp"
+	"github.com/pedromvgomes/agentic-toolkit/internal/githubapp"
 )
 
 // testKey is generated once per package run: a 2048-bit key costs enough that

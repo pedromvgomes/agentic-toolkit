@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/githubapp"
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/reviewpost"
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/reviewrun"
+	"github.com/pedromvgomes/agentic-toolkit/internal/githubapp"
+	"github.com/pedromvgomes/agentic-toolkit/internal/reviewpost"
+	"github.com/pedromvgomes/agentic-toolkit/internal/reviewrun"
 )
 
 // graphQLDoer answers REST by path and GraphQL by which query was asked, since

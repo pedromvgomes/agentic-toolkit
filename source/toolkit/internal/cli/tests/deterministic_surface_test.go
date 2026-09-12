@@ -178,7 +178,7 @@ func driverLocalName(f *ast.File) string {
 // dependency graph is where the property would break first and least visibly.
 func TestTheStorePackageCannotReachADriver(t *testing.T) {
 	out, err := exec.Command("go", "list", "-deps", "-f", "{{.ImportPath}}",
-		"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/memory").Output()
+		"github.com/pedromvgomes/agentic-toolkit/internal/memory").Output()
 	if err != nil {
 		t.Fatalf("go list: %v", err)
 	}

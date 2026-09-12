@@ -3,7 +3,7 @@ package tests
 import (
 	"testing"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/memory"
+	"github.com/pedromvgomes/agentic-toolkit/internal/memory"
 )
 
 // TestBlobHashMatchesGit pins the in-process hash to git's own blob id.

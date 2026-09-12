@@ -3,7 +3,7 @@ package resolver
 import (
 	"io/fs"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/sourceref"
+	"github.com/pedromvgomes/agentic-toolkit/internal/sourceref"
 )
 
 // SourceProvider is the resolver's collaborator: it takes a sourceref.Source
