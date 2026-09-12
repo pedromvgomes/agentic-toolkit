@@ -18,6 +18,9 @@ import (
 const (
 	permissionsKey = "permissions"
 	allowKey       = "allow"
+
+	// memoryExplorerAgent is the definition the store grants exist for.
+	memoryExplorerAgent = "memory-explorer"
 )
 
 // settingsPath returns the absolute target path for settings.json.
@@ -300,10 +303,20 @@ func addMemoryGrants(fragments map[string]any, plan *resolver.Plan) error {
 		// prompting on a store agtk located itself, with nothing said.
 		return fmt.Errorf("claude: settings `%s.%s` is %T, want a list", permissionsKey, allowKey, existing)
 	}
+	if !usesMemoryStore(plan) {
+		return nil
+	}
 
 	root := ""
 	if plan.Stack != nil {
 		root = plan.Stack.MemoryRoot()
+	}
+	// Checked here as well as in the memory commands: this is a second entry
+	// point to the same field, and a root the rest of agtk refuses would
+	// otherwise render into patterns that can match no store — a prompt on
+	// every delegation with no diagnostic anywhere.
+	if err := memory.ValidateRoot(root); err != nil {
+		return fmt.Errorf("claude: %w", err)
 	}
 	if root == "" {
 		root = memory.DefaultRoot
@@ -315,6 +328,33 @@ func addMemoryGrants(fragments map[string]any, plan *resolver.Plan) error {
 	}
 	perms[allowKey] = allow
 	return nil
+}
+
+// usesMemoryStore reports whether this consumer has adopted the memory store,
+// from either kind of positive evidence: a `memory:` block in its entry
+// manifest, or a definition in the plan that reads the store.
+//
+// Presence of `memory:` alone is not enough to ask, because the consumer that
+// adopts memory and leaves `memory.root` at the default writes no block at
+// all — which is the common case these grants exist for. A stack that ships
+// no memory tooling and pre-approves something unrelated is the case that
+// must not pick them up: the append happens after the last-wins merge, so
+// such a consumer could not take the key back, and the only way left to
+// decline would be a deny rule saying something else.
+//
+// The agent is named here, so renaming it silently stops the grants. The
+// default-stack render test asserts they arrive, which is what fails if it is
+// ever renamed without this.
+func usesMemoryStore(plan *resolver.Plan) bool {
+	if plan.Stack != nil && plan.Stack.Memory != nil {
+		return true
+	}
+	for _, d := range plan.Definitions {
+		if d.Category == definitions.CategoryAgent && d.Name == memoryExplorerAgent {
+			return true
+		}
+	}
+	return false
 }
 
 // memoryGrants renders the two store paths as permission patterns.

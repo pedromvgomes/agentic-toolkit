@@ -25,6 +25,9 @@ func renderWithMemoryRoot(t *testing.T, root string) []string {
 		pdSetting("perms", "deny dangerous", map[string]any{
 			"permissions": map[string]any{"allow": []any{"Bash(agtk memory stats*)"}},
 		}, "default"),
+		pdAgent("memory-explorer", "reads the store", "body\n",
+			"definitions/agents/memory-explorer", "default",
+			makeFS(map[string]string{"definitions/agents/memory-explorer/AGENT.md": "body\n"})),
 	}, "default")
 	plan.Stack = &stack.Stack{}
 	if root != "" {
@@ -201,5 +204,88 @@ func TestNoPermissionsKeyMeansNoMemoryGrants(t *testing.T) {
 	}
 	if strings.Contains(string(raw), "permissions") {
 		t.Errorf("settings.json grew a permissions key nothing declared:\n%s", raw)
+	}
+}
+
+// A stack that ships no memory tooling and pre-approves something unrelated
+// must not pick up a standing write grant on a store it does not have. The
+// append runs after the last-wins merge, so such a consumer could not take
+// the key back; the only way left to decline would be a deny rule, which
+// states something else.
+func TestAStackWithoutMemoryToolingGetsNoStoreGrants(t *testing.T) {
+	tmp := t.TempDir()
+	scopeRoot := filepath.Join(tmp, ".claude")
+
+	plan := makePlan([]resolver.PlannedDefinition{
+		pdSetting("perms", "allow tests", map[string]any{
+			"permissions": map[string]any{"allow": []any{"Bash(cargo test)"}},
+		}, "default"),
+	}, "default")
+	plan.Stack = &stack.Stack{}
+
+	if err := claude.Render(plan, claude.Options{
+		Scope: claude.ScopeProject, ScopeRoot: scopeRoot, ProjectRoot: tmp,
+	}); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	raw, err := os.ReadFile(filepath.Join(scopeRoot, "settings.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), memory.CandidatesDir) {
+		t.Errorf("a stack with no memory tooling was granted the store:\n%s", raw)
+	}
+}
+
+// A `memory:` block is adoption too: the consumer configured the store, even
+// if no definition in this plan reads it.
+func TestAConfiguredMemoryBlockIsAdoptionEnough(t *testing.T) {
+	tmp := t.TempDir()
+	scopeRoot := filepath.Join(tmp, ".claude")
+
+	plan := makePlan([]resolver.PlannedDefinition{
+		pdSetting("perms", "allow tests", map[string]any{
+			"permissions": map[string]any{"allow": []any{"Bash(cargo test)"}},
+		}, "default"),
+	}, "default")
+	plan.Stack = &stack.Stack{Memory: &stack.MemoryConfig{Root: "docs/memory"}}
+
+	if err := claude.Render(plan, claude.Options{
+		Scope: claude.ScopeProject, ScopeRoot: scopeRoot, ProjectRoot: tmp,
+	}); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	raw, err := os.ReadFile(filepath.Join(scopeRoot, "settings.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "docs/memory/INDEX.md") {
+		t.Errorf("a configured store was not granted:\n%s", raw)
+	}
+}
+
+// A root the memory commands refuse must not render into patterns that can
+// match no store, which is a prompt on every delegation and no diagnostic.
+func TestARootTheMemoryCommandsRefuseFailsTheRender(t *testing.T) {
+	for _, bad := range []string{"../outside", "/etc"} {
+		t.Run(bad, func(t *testing.T) {
+			tmp := t.TempDir()
+			plan := makePlan([]resolver.PlannedDefinition{
+				pdSetting("perms", "allow tests", map[string]any{
+					"permissions": map[string]any{"allow": []any{"Bash(cargo test)"}},
+				}, "default"),
+			}, "default")
+			plan.Stack = &stack.Stack{Memory: &stack.MemoryConfig{Root: bad}}
+
+			err := claude.Render(plan, claude.Options{
+				Scope: claude.ScopeProject, ScopeRoot: filepath.Join(tmp, ".claude"), ProjectRoot: tmp,
+			})
+			if err == nil {
+				t.Fatalf("Render accepted memory.root %q", bad)
+			}
+			if !strings.Contains(err.Error(), "memory.root") {
+				t.Errorf("error = %q, want it to name the field", err)
+			}
+		})
 	}
 }
