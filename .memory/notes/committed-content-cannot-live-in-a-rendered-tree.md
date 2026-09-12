@@ -8,7 +8,7 @@ anchors:
   - path: .agentic-toolkit.yaml
     blob: c9f158d61187
   - path: source/toolkit/internal/review/manifest.go
-    blob: 921788fb9c56
+    blob: b720da152793
   - path: source/toolkit/internal/memory/types.go
     blob: 0a38918747bf
   - path: source/toolkit/internal/memory/store.go
@@ -29,14 +29,14 @@ the second option for both trees that would otherwise sit under `.agents/`:
   (`source/toolkit/internal/review/manifest.go:14`), with the reason stated in its
   doc comment (`:9-13`) — "a repo that ignores its rendered trees wholesale would
   stop tracking the manifest, and an untracked manifest is unreadable at a ref".
-  `LegacyManifestDir = ".agents/code-review"` (`:20`) is kept so a manifest left
+  `LegacyManifestDir = ".agents/code-review"` (`:23`) is kept so a manifest left
   behind there is not read as absent. On disk that means a refusal
   (`legacyManifestErr`, `source/toolkit/internal/review/builtin.go:94-102`,
   called from `Load` at `:165`); at a ref it means the old path is read instead
   (`LoadAtRef`, `:129-137`), because `git mv` cannot reach history — see
   [[a-manifest-missing-at-the-ref-falls-back-silently]]. The const's own doc
-  comment (`manifest.go:16-19`) still says nothing reads from there, which is
-  true of disk only.
+  comment (`manifest.go:16-22`) states that split itself, so the two loaders'
+  divergence is documented where the const is declared.
 - The memory store: `DefaultRoot = ".memory"`
   (`source/toolkit/internal/memory/types.go:34`), with the same reasoning in the
   const's doc comment (`:28-33`) — the rule "binds this default as much as a path

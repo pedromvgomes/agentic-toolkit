@@ -193,6 +193,8 @@ capability.go is the only file in source/toolkit/internal/review that names the 
 - source/toolkit/internal/review/*.go
 - source/toolkit/internal/reviewrun/run.go
 - source/toolkit/internal/cli/codereview.go
+- source/toolkit/internal/cli/tests/credential_surface_test.go
+- source/toolkit/internal/cli/tests/deterministic_surface_test.go
 
 ## schemagen-documents-only-hand-named-types  (gotcha, verified)
 schemagen discovers no top-level types; each one is a hand-written reflect.TypeOf call, so a new manifest struct documents as nothing and errors as nothing.
