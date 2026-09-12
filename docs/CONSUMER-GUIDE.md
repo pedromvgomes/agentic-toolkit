@@ -19,9 +19,10 @@ A consumer repo opts in by committing **two files at the repo root**:
 - `.agentic-toolkit.lock.yaml` — pinned record of every git source the
   resolver fetched. Resolver-written; **commit it**.
 
-Anything else you commit for `agtk` goes under `.agentic-toolkit/` instead —
-see **Toolkit namespace** in [`CONTEXT.md`](../CONTEXT.md) for which of the two
-a given file belongs in, and why a memory store is in neither.
+Configuration for one part of `agtk` goes under `.agentic-toolkit/` instead.
+Content you commit — a memory store, local definitions under `root:` — lives
+where your stack names it, in neither place. See **Toolkit namespace** in
+[`CONTEXT.md`](../CONTEXT.md) for which a given file is.
 
 A stack manifest layers on top of one or more imported stacks (`extends:`)
 and adds project-local definitions on top (per-category lists). The same
