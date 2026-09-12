@@ -319,3 +319,32 @@ func TestLoadAtRefIgnoresALegacyLeftoverBesideAReachableManifest(t *testing.T) {
 		t.Errorf("LoadAtRef = (path %q, builtin %v), want the embedded default", path, builtin)
 	}
 }
+
+// A manifest path that cannot be stat'd is not a path that is not there.
+// Treating the two alike puts one more unanswerable question on the silent
+// path, which is the failure the ignore check exists to close.
+func TestLoadAtRefRefusesAManifestPathItCannotRead(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses directory permissions")
+	}
+	r := newRepo(t)
+	r.write("seed.txt", "x\n")
+	rev := r.commit("base")
+	r.write(review.ManifestRelPath, complete)
+
+	// Unreadable parent: stat on the manifest fails with a permission error
+	// rather than with "not there".
+	parent := filepath.Join(r.dir, filepath.FromSlash(review.ManifestDir))
+	if err := os.Chmod(parent, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(parent, 0o750) })
+
+	_, _, builtin, err := review.LoadAtRef(r.dir, rev)
+	if err == nil {
+		t.Fatalf("LoadAtRef fell back to the default on an unreadable manifest path (builtin=%v)", builtin)
+	}
+	if !review.IsKind(err, review.ErrIO) {
+		t.Fatalf("kind = %v, want io", err)
+	}
+}

@@ -119,7 +119,21 @@ func legacyManifestErr(path string) error {
 func refuseIgnoredManifest(dir string) error {
 	for _, rel := range []string{ManifestRelPath, LegacyManifestRelPath} {
 		if _, statErr := os.Stat(filepath.Join(dir, filepath.FromSlash(rel))); statErr != nil {
-			continue
+			if os.IsNotExist(statErr) {
+				continue
+			}
+			// A path that cannot be read is not a path that is not there.
+			// Moving on would put another unanswerable question on the silent
+			// path, which is what this whole function exists to stop; Load
+			// draws the same line on the same call.
+			return &ParseError{
+				Path:    rel,
+				Kind:    ErrIO,
+				Wrapped: statErr,
+				Message: fmt.Sprintf(
+					"review manifest %s is absent from the base ref and could not be read in the "+
+						"working tree, so whether the repo declares one is unknown: %v", rel, statErr),
+			}
 		}
 		ignored, ok := gitIgnores(dir, rel)
 		if ok && !ignored {
