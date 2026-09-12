@@ -24,9 +24,9 @@ package resolver
 import (
 	"io/fs"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/definitions"
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/lockfile"
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/stack"
+	"github.com/pedromvgomes/agentic-toolkit/internal/definitions"
+	"github.com/pedromvgomes/agentic-toolkit/internal/lockfile"
+	"github.com/pedromvgomes/agentic-toolkit/internal/stack"
 )
 
 // Plan is the resolver's primary output. It is in-memory only — see

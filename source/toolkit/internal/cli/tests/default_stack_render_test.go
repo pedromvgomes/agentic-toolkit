@@ -170,7 +170,13 @@ func dropRemoteEntries(t *testing.T, stack string) {
 	}
 }
 
-// repoRoot walks up from the test's own directory to the module root.
+// repoRoot walks up from the test's own directory to the repo root, which it
+// recognises by .git — a directory in a clone and a file in a worktree.
+//
+// Callers join both catalog paths (definitions/, stacks/) and source paths
+// (source/toolkit/internal/...) onto what this returns, so it has to be the
+// repo root and not the module root: go.mod lives under source/toolkit, and
+// keying on it resolves source/toolkit/source/toolkit/internal.
 func repoRoot(t *testing.T) string {
 	t.Helper()
 
@@ -179,12 +185,12 @@ func repoRoot(t *testing.T) string {
 		t.Fatalf("abs: %v", err)
 	}
 	for {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+		if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
 			return dir
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			t.Fatal("no go.mod above the test directory")
+			t.Fatal("no .git above the test directory")
 		}
 		dir = parent
 	}

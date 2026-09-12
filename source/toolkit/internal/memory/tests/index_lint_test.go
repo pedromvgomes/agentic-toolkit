@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/memory"
+	"github.com/pedromvgomes/agentic-toolkit/internal/memory"
 )
 
 // TestRenderIndexCarriesRoutingFieldsOnly: the index is loaded on every

@@ -5,8 +5,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/handoff"
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/review"
+	"github.com/pedromvgomes/agentic-toolkit/internal/handoff"
+	"github.com/pedromvgomes/agentic-toolkit/internal/review"
 )
 
 func newHandoffCmd(env *Env) *cobra.Command {

@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/updatecheck"
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/updatestate"
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/userconfig"
+	"github.com/pedromvgomes/agentic-toolkit/internal/updatecheck"
+	"github.com/pedromvgomes/agentic-toolkit/internal/updatestate"
+	"github.com/pedromvgomes/agentic-toolkit/internal/userconfig"
 )
 
 func baseGate() updatecheck.Gate {

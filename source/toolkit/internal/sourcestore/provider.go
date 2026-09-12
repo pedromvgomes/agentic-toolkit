@@ -6,9 +6,9 @@ import (
 	"io/fs"
 	"sort"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/lockfile"
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/resolver"
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/sourceref"
+	"github.com/pedromvgomes/agentic-toolkit/internal/lockfile"
+	"github.com/pedromvgomes/agentic-toolkit/internal/resolver"
+	"github.com/pedromvgomes/agentic-toolkit/internal/sourceref"
 )
 
 // LiveProvider implements resolver.SourceProvider against a live remote.

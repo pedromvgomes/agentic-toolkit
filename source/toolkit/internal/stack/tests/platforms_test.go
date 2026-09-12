@@ -3,8 +3,8 @@ package tests
 import (
 	"testing"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/definitions"
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/stack"
+	"github.com/pedromvgomes/agentic-toolkit/internal/definitions"
+	"github.com/pedromvgomes/agentic-toolkit/internal/stack"
 )
 
 func TestEffectivePlatforms_DefaultsToClaudeOnly(t *testing.T) {

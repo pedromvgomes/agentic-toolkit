@@ -19,7 +19,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/userconfig"
+	"github.com/pedromvgomes/agentic-toolkit/internal/userconfig"
 )
 
 // KeyFile and AppFile are what a registration is kept in, inside agtk's own

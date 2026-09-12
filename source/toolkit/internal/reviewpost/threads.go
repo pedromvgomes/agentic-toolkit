@@ -1,8 +1,8 @@
 package reviewpost
 
 import (
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/githubapp"
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/reviewrun"
+	"github.com/pedromvgomes/agentic-toolkit/internal/githubapp"
+	"github.com/pedromvgomes/agentic-toolkit/internal/reviewrun"
 )
 
 // ReadThreads turns what GitHub reports about a pull request's comment threads

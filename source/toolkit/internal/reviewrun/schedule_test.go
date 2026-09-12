@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/review"
+	"github.com/pedromvgomes/agentic-toolkit/internal/review"
 )
 
 // tracker records the high-water mark of concurrent runs per provider.

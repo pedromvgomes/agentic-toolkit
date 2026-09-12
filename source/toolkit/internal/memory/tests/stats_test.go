@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/memory"
+	"github.com/pedromvgomes/agentic-toolkit/internal/memory"
 )
 
 // TestStatsShape counts what a store holds, including the files a glob

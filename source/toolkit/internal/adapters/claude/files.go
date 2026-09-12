@@ -7,9 +7,9 @@ import (
 
 	"github.com/goccy/go-yaml"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/adapters/fsops"
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/definitions"
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/resolver"
+	"github.com/pedromvgomes/agentic-toolkit/internal/adapters/fsops"
+	"github.com/pedromvgomes/agentic-toolkit/internal/definitions"
+	"github.com/pedromvgomes/agentic-toolkit/internal/resolver"
 )
 
 // wholeOps is this adapter's fsops.Ops, tagging every whole-owned-file

@@ -14,7 +14,7 @@ import (
 
 // credentialPackage is where the GitHub App key and the installation tokens
 // minted from it live. Nothing else in the binary holds either.
-const credentialPackage = "github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/githubapp"
+const credentialPackage = "github.com/pedromvgomes/agentic-toolkit/internal/githubapp"
 
 // credentialSurface are the packages a credential passes through: the one that
 // holds it, and the one that builds what it is spent on. Both are walked
@@ -23,6 +23,22 @@ var credentialSurface = []string{
 	"source/toolkit/internal/githubapp",
 	"source/toolkit/internal/reviewpost",
 	"source/toolkit/internal/reviewapprove",
+}
+
+// mustResolve fails the calling test unless importPath names a package that
+// resolves.
+//
+// Both guards below assert that a package is absent from another package's
+// dependencies. An import path that names nothing is absent from every
+// dependency list, so a stale or mistyped constant does not fail the guard — it
+// empties it, and the test goes on passing while asserting nothing. Resolving
+// the target first is what separates "this boundary holds" from "this test no
+// longer looks".
+func mustResolve(t *testing.T, importPath string) {
+	t.Helper()
+	if _, err := exec.Command("go", "list", importPath).Output(); err != nil {
+		t.Fatalf("go list %s: %v — the package this test guards does not resolve, so the guard is empty", importPath, err)
+	}
 }
 
 // The App installation token reaches every repository the App is installed on,
@@ -34,10 +50,11 @@ var credentialSurface = []string{
 // model cannot reach the package that holds the credential, so passing the
 // token would require adding an import rather than forgetting to remove one.
 func TestTheModelInvokingPackagesCannotReachTheCredential(t *testing.T) {
+	mustResolve(t, credentialPackage)
 	for _, pkg := range []string{
-		"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/reviewrun",
-		"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/curator",
-		"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/review",
+		"github.com/pedromvgomes/agentic-toolkit/internal/reviewrun",
+		"github.com/pedromvgomes/agentic-toolkit/internal/curator",
+		"github.com/pedromvgomes/agentic-toolkit/internal/review",
 	} {
 		out, err := exec.Command("go", "list", "-deps", "-f", "{{.ImportPath}}", pkg).Output()
 		if err != nil {
@@ -150,8 +167,18 @@ func TestNoInstallationTokenIsWrittenAnywhere(t *testing.T) {
 	}
 }
 
-// approvalPackage owns the approval event and the one call that sends it.
+// approvalPackage owns the approval event and the one call that sends it, as a
+// path from the repo root.
 const approvalPackage = "source/toolkit/internal/reviewapprove"
+
+// approvalImportPath is the same package as an import path.
+//
+// Spelled out rather than built from approvalPackage: the module root is
+// source/toolkit, so the import path is not the module path joined to the
+// repo-relative path, and deriving one from the other yields a package that
+// does not exist. Nothing reports that — `go list -deps` simply never emits it,
+// and the test below passes without testing anything.
+const approvalImportPath = "github.com/pedromvgomes/agentic-toolkit/internal/reviewapprove"
 
 // Approval is a GitHub review with event APPROVE, and one package names it.
 //
@@ -199,20 +226,20 @@ func TestOnlyOnePackageNamesTheApprovalEvent(t *testing.T) {
 // is spelt, and adding one is a deliberate act rather than a forgotten
 // deletion.
 func TestNoReviewPathCanReachTheApproval(t *testing.T) {
-	approval := "github.com/pedromvgomes/agentic-toolkit/" + approvalPackage
+	mustResolve(t, approvalImportPath)
 	for _, pkg := range []string{
-		"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/reviewrun",
-		"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/reviewpost",
-		"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/review",
-		"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/curator",
+		"github.com/pedromvgomes/agentic-toolkit/internal/reviewrun",
+		"github.com/pedromvgomes/agentic-toolkit/internal/reviewpost",
+		"github.com/pedromvgomes/agentic-toolkit/internal/review",
+		"github.com/pedromvgomes/agentic-toolkit/internal/curator",
 	} {
 		out, err := exec.Command("go", "list", "-deps", "-f", "{{.ImportPath}}", pkg).Output()
 		if err != nil {
 			t.Fatalf("go list %s: %v", pkg, err)
 		}
 		for dep := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
-			if dep == approval {
-				t.Errorf("%s depends on %s, so a review run can reach the code that approves it", pkg, approval)
+			if dep == approvalImportPath {
+				t.Errorf("%s depends on %s, so a review run can reach the code that approves it", pkg, approvalImportPath)
 			}
 		}
 	}

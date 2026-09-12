@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/curator"
+	"github.com/pedromvgomes/agentic-toolkit/internal/curator"
 )
 
 // The curator has no agent definition, so the embedded prompt is the only copy

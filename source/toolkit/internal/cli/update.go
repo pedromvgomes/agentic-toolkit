@@ -8,10 +8,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/completioninstall"
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/updatecheck"
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/updater"
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/version"
+	"github.com/pedromvgomes/agentic-toolkit/internal/completioninstall"
+	"github.com/pedromvgomes/agentic-toolkit/internal/updatecheck"
+	"github.com/pedromvgomes/agentic-toolkit/internal/updater"
+	"github.com/pedromvgomes/agentic-toolkit/internal/version"
 )
 
 // UpdateCheckExitCode is the conventional non-zero status returned by

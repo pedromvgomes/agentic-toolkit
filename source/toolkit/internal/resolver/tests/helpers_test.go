@@ -5,8 +5,8 @@ import (
 	"io/fs"
 	"testing/fstest"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/resolver"
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/sourceref"
+	"github.com/pedromvgomes/agentic-toolkit/internal/resolver"
+	"github.com/pedromvgomes/agentic-toolkit/internal/sourceref"
 )
 
 // fakeProvider serves predetermined fs.FS + ResolvedRef pairs keyed by

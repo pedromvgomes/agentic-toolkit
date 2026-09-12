@@ -13,7 +13,7 @@ import (
 
 	agentic "github.com/pedromvgomes/agentic-driver"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/provider"
+	"github.com/pedromvgomes/agentic-toolkit/internal/provider"
 )
 
 // ReadOnlyTools is the grant a review run asks for.

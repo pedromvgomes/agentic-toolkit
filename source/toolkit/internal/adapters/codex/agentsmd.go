@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/definitions"
+	"github.com/pedromvgomes/agentic-toolkit/internal/definitions"
 )
 
 // buildAgentsMD renders AGENTS.md's content: the instruction bodies, in

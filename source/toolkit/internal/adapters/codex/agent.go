@@ -5,7 +5,7 @@ import (
 
 	"github.com/pelletier/go-toml/v2"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/definitions"
+	"github.com/pedromvgomes/agentic-toolkit/internal/definitions"
 )
 
 // agentTOML is the shape Codex reads a subagent definition in. name,

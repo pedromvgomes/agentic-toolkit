@@ -4,8 +4,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/updatestate"
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/userconfig"
+	"github.com/pedromvgomes/agentic-toolkit/internal/updatestate"
+	"github.com/pedromvgomes/agentic-toolkit/internal/userconfig"
 )
 
 // Gate captures the inputs ShouldCheck needs to decide whether to

@@ -2,24 +2,34 @@
 # .goreleaser.yaml on tag push (see .github/workflows/release.yml).
 
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
-LDFLAGS := -s -w -X github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/version.Version=$(VERSION)
+LDFLAGS := -s -w -X github.com/pedromvgomes/agentic-toolkit/internal/version.Version=$(VERSION)
 
-.PHONY: build install test fmt vet check logo
+# The module lives under source/toolkit, so every go invocation is run there.
+# -o and -coverprofile paths stay absolute, because a relative one would be
+# read against the module directory rather than the directory make ran in.
+GO := go -C source/toolkit
+
+.PHONY: build install test fmt vet check generate logo
 
 build:
-	go build -ldflags "$(LDFLAGS)" -o bin/agtk ./source/toolkit/cmd/agtk
+	$(GO) build -ldflags "$(LDFLAGS)" -o $(CURDIR)/bin/agtk ./cmd/agtk
 
 install:
-	go install -ldflags "$(LDFLAGS)" ./source/toolkit/cmd/agtk
+	$(GO) install -ldflags "$(LDFLAGS)" ./cmd/agtk
 
 test:
-	go test ./...
+	$(GO) test ./...
 
 fmt:
 	gofmt -s -w .
 
+# The generated schema docs land in definitions/, outside the module, so the
+# generator finds the repo root by .git rather than by go.mod.
+generate:
+	$(GO) generate ./...
+
 vet:
-	go vet ./...
+	$(GO) vet ./...
 
 check: fmt vet test
 	@unformatted=$$(gofmt -s -l .); \

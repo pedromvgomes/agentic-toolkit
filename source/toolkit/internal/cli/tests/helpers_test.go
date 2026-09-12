@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/cli"
+	"github.com/pedromvgomes/agentic-toolkit/internal/cli"
 )
 
 // setupGitEnv isolates git from the host's gitconfig so tests are

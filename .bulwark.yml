@@ -18,3 +18,9 @@
 # See bulwark's README.
 coverage:
   source: report
+  # The Go module is source/toolkit, so bulwark looks for the profile beside it.
+  # ci-test writes the profile to the workspace root instead — one place, whatever
+  # the module's depth — and the bulwark stage's artifact lands it there, so say
+  # where it is rather than moving it under the module to be found implicitly.
+  go:
+    report: coverage.out

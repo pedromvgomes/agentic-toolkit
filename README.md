@@ -28,11 +28,13 @@ Environment overrides:
 
 After install, `agtk update` upgrades in place from the same release archives — no `curl | sh` needed for follow-ups.
 
-If you have a Go toolchain and prefer it:
-
-```bash
-go install github.com/pedromvgomes/agentic-toolkit/source/toolkit/cmd/agtk@latest
-```
+These two are the whole of it: the installer and `agtk update`. `go install` is not a supported
+path and cannot work — `go.mod` lives at `source/toolkit/go.mod` while declaring the module path
+`github.com/pedromvgomes/agentic-toolkit`, and the Go toolchain fetches a module in a
+subdirectory only when the declared path is the repo root plus that subdirectory. Keeping the
+declared path short is what stops every import repeating `source/toolkit`, and `agtk` is a
+binary rather than a library, so nothing is given up: every package here is `internal/`, and
+release tags stay plain semver instead of needing a `source/toolkit/` prefix.
 
 ## What you get
 
@@ -48,7 +50,8 @@ go install github.com/pedromvgomes/agentic-toolkit/source/toolkit/cmd/agtk@lates
 
 ```
 agentic-toolkit/
-  source/toolkit/       # the Go tooling
+  source/toolkit/       # the Go tooling, and the Go module
+    go.mod, go.sum      # the module root — every `go` command runs here
     cmd/agtk/           # CLI entrypoint
     internal/           # CLI implementation (private packages)
     tools/              # code generators run via `go generate`

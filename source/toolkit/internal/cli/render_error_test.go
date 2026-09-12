@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/stack"
+	"github.com/pedromvgomes/agentic-toolkit/internal/stack"
 )
 
 func TestRenderTopLevelError_ParseErrorMultiLine(t *testing.T) {

@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/review"
+	"github.com/pedromvgomes/agentic-toolkit/internal/review"
 )
 
 // DefaultParallel is how many runs go at once on a provider that reports no

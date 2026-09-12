@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/review"
+	"github.com/pedromvgomes/agentic-toolkit/internal/review"
 )
 
 // promptFS holds the prompt bodies that ship with the binary.

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/userconfig"
+	"github.com/pedromvgomes/agentic-toolkit/internal/userconfig"
 )
 
 func TestLoad_DefaultsWhenMissing(t *testing.T) {

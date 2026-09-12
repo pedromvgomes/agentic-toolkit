@@ -4,12 +4,15 @@ project_name: agentic-toolkit
 
 before:
   hooks:
-    - go mod tidy
+    - go -C source/toolkit mod tidy
 
 builds:
   - id: agtk
     binary: agtk
-    main: ./source/toolkit/cmd/agtk
+    # dir is the module directory; main is resolved inside it. The archive
+    # files below stay relative to this file, which is at the repo root.
+    dir: source/toolkit
+    main: ./cmd/agtk
     env:
       - CGO_ENABLED=0
     goos:
@@ -20,7 +23,7 @@ builds:
       - arm64
     ldflags:
       - -s -w
-      - -X github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/version.Version={{ .Version }}
+      - -X github.com/pedromvgomes/agentic-toolkit/internal/version.Version={{ .Version }}
 
 archives:
   - id: agtk

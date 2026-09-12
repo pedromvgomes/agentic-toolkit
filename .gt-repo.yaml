@@ -20,7 +20,7 @@ dependabot:
   - ecosystem: github-actions
     directory: /
   - ecosystem: gomod
-    directory: /
+    directory: /source/toolkit
 pipeline:
   ci:
     stages:

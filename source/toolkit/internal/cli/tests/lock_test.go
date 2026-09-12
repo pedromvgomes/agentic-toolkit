@@ -7,7 +7,7 @@ import (
 
 	"github.com/goccy/go-yaml"
 
-	"github.com/pedromvgomes/agentic-toolkit/source/toolkit/internal/lockfile"
+	"github.com/pedromvgomes/agentic-toolkit/internal/lockfile"
 )
 
 func TestLock_ResolvesPrimaryAndWritesLockfile(t *testing.T) {
