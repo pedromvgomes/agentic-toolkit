@@ -187,3 +187,46 @@ func TestTheCurrentPathWinsOverALeftoverLegacyCopy(t *testing.T) {
 		})
 	}
 }
+
+// A manifest that is git-ignored is absent at every ref, so the fallback would
+// review the repo under the toolkit's panels, judge and approval floor forever
+// while a manifest sits in the tree saying otherwise. Nothing else in a posted
+// review says which roster ran, so the repo has no way to notice.
+func TestLoadAtRefRefusesAManifestGitIgnoreKeepsOutOfEveryRef(t *testing.T) {
+	r := newRepo(t)
+	r.write(".gitignore", "/.agentic-toolkit/\n")
+	r.write(review.ManifestRelPath, complete)
+	rev := r.commit("base")
+
+	_, _, builtin, err := review.LoadAtRef(r.dir, rev)
+	if err == nil {
+		t.Fatalf("LoadAtRef accepted an ignored manifest (builtin=%v)", builtin)
+	}
+	if !review.IsKind(err, review.ErrIgnoredManifest) {
+		t.Fatalf("kind = %v, want ignored_manifest", err)
+	}
+	for _, want := range []string{review.ManifestRelPath, "ignored"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error = %q, want it to mention %q", err, want)
+		}
+	}
+}
+
+// The branch that writes a repo's first manifest has it on disk and absent
+// from the base, which is indistinguishable from the ignored case by presence
+// alone. Only the ignore rule separates a mistake from this, and refusing here
+// would make adopting a manifest impossible.
+func TestLoadAtRefFallsBackForAManifestMerelyAbsentFromTheBase(t *testing.T) {
+	r := newRepo(t)
+	r.write("seed.txt", "x\n")
+	rev := r.commit("base")
+	r.write(review.ManifestRelPath, complete)
+
+	_, path, builtin, err := review.LoadAtRef(r.dir, rev)
+	if err != nil {
+		t.Fatalf("LoadAtRef: %v", err)
+	}
+	if !builtin || path != "" {
+		t.Errorf("LoadAtRef = (path %q, builtin %v), want the embedded default", path, builtin)
+	}
+}

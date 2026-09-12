@@ -101,6 +101,46 @@ func legacyManifestErr(path string) error {
 	}
 }
 
+// refuseIgnoredManifest reports a manifest in the working tree that git
+// ignores, at either path a manifest is read from.
+//
+// Absence at the base ref otherwise means the repo declares none, and the
+// branch writing a repo's first manifest is exactly that: on disk, absent
+// from the base, and legitimately reviewed under the embedded default. What
+// separates it from a mistake is the ignore rule. An ignored manifest cannot
+// reach a ref however many times it is committed, so the fallback is not a
+// one-off — the repo is reviewed under the toolkit's panels, judge and
+// approval floor for as long as the rule stands, and a posted review says
+// only `builtin`, which nobody reads as an error.
+//
+// A path that is merely untracked is left alone. It is indistinguishable from
+// the adopting branch above, and refusing would make adopting a manifest
+// impossible.
+func refuseIgnoredManifest(dir string) error {
+	for _, rel := range []string{ManifestRelPath, LegacyManifestRelPath} {
+		if _, statErr := os.Stat(filepath.Join(dir, filepath.FromSlash(rel))); statErr != nil {
+			continue
+		}
+		if ignored, ok := gitIgnores(dir, rel); !ok || !ignored {
+			continue
+		}
+		remedy := "un-ignore it and commit it"
+		if rel == LegacyManifestRelPath {
+			remedy = fmt.Sprintf(
+				"it sits in a rendered tree that is ignored wholesale, so move it (`git mv %s %s`) and commit it",
+				LegacyManifestDir, ManifestDir)
+		}
+		return &ParseError{
+			Path: rel,
+			Kind: ErrIgnoredManifest,
+			Message: fmt.Sprintf(
+				"review manifest %s is ignored by git, so no ref carries it and the review runs "+
+					"under the built-in default; %s", rel, remedy),
+		}
+	}
+	return nil
+}
+
 // LoadAtRef returns the manifest as it stands at a git ref.
 //
 // A review that posts reads its rules from the base ref, never from the tree
@@ -128,8 +168,12 @@ func LoadAtRef(dir, ref string) (m *Manifest, path string, builtin bool, err err
 		// merges into is always the older layout.
 		legacy := ref + ":" + LegacyManifestRelPath
 		if _, _, err := gitStatus(dir, "cat-file", "-e", legacy); err != nil {
-			// The ref resolves and neither path is in it: this repo declares
-			// no manifest at the base, which is the embedded default's case.
+			// The ref resolves and neither path is in it. That is the
+			// embedded default's case — unless a manifest is sitting in the
+			// working tree that git will never let into any ref.
+			if ignoredErr := refuseIgnoredManifest(dir); ignoredErr != nil {
+				return nil, "", false, ignoredErr
+			}
 			m, err = DefaultManifest()
 			return m, "", true, err
 		}

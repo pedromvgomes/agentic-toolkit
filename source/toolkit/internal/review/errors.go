@@ -39,6 +39,11 @@ const (
 	// LegacyManifestDir. Falling back to the embedded default there would
 	// review a repo under a roster it did not write, and say nothing.
 	ErrLegacyManifestDir ErrorKind = "legacy_manifest_dir"
+	// ErrIgnoredManifest is the refusal when a manifest exists in the working
+	// tree but git ignores it, so no ref can carry it. Falling back to the
+	// embedded default there reviews a repo under a roster it did not write,
+	// for as long as the ignore rule stands.
+	ErrIgnoredManifest ErrorKind = "ignored_manifest"
 )
 
 func (e *ParseError) Error() string {
