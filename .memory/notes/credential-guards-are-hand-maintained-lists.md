@@ -4,7 +4,7 @@ kind: gotcha
 description: Half the credential-surface guards are scoped to package lists a person edits, so a new package is not covered until someone adds it by name.
 anchors:
   - path: source/toolkit/internal/cli/tests/credential_surface_test.go
-    blob: 373bb2e57d34
+    blob: 8e777fd5dfaf
 confidence: verified
 ---
 
@@ -15,25 +15,25 @@ they are plain Go slices someone maintains:
 
 - `credentialSurface` (`:22`) — `source/toolkit/internal/githubapp`, `source/toolkit/internal/reviewpost`,
   `source/toolkit/internal/reviewapprove`. Walked whole by `TestTheCredentialIsNeverPutIntoTheProcessEnvironment`
-  (`:57`, bans `os.Setenv`/`os.Environ`) and `TestNoInstallationTokenIsWrittenAnywhere`
-  (`:112`, bans `os.WriteFile`/`os.Create`/`os.OpenFile` outside `registrationWriter`, the one
+  (`:78`, bans `os.Setenv`/`os.Environ`) and `TestNoInstallationTokenIsWrittenAnywhere`
+  (`:133`, bans `os.WriteFile`/`os.Create`/`os.OpenFile` outside `registrationWriter` (`:124`), the one
   file allowed to persist a registration).
-- the literal slice in `TestTheModelInvokingPackagesCannotReachTheCredential` (`:33-37`) —
+- the literal slice in `TestTheModelInvokingPackagesCannotReachTheCredential` (`:54-58`) —
   `reviewrun`, `curator`, `review`, checked with `go list -deps` against `credentialPackage`
   (`:17`).
-- the literal slice in `TestNoReviewPathCanReachTheApproval` (`:199-204`) — same four-package
+- the literal slice in `TestNoReviewPathCanReachTheApproval` (`:230-235`) — same four-package
   shape, checked against `source/toolkit/internal/reviewapprove`.
 
 Walking a package *whole* is deliberate, so files added to a listed package stay covered
-(`:108-111`). A **new sibling package** is the hole: it is not walked, and nothing fails.
+(`:129-132`). A **new sibling package** is the hole: it is not walked, and nothing fails.
 `source/toolkit/internal/reviewapprove` had to be typed into `credentialSurface` by hand to be covered, and a
 new model-invoking package would need typing into the other two slices or their property
 silently stops being checked for it.
 
 The three guards that are not list-scoped walk all of `source/toolkit/internal/`:
-`TestOnlyOnePackageNamesTheApprovalEvent` (`:159`, bans the literal `"APPROVE"` outside
-`source/toolkit/internal/reviewapprove`), `TestNothingInTheBinaryWritesToARepository` (`:244`, bans the
-`writeEndpoints` path fragments at `:223`), and the import-graph checks above are the
+`TestOnlyOnePackageNamesTheApprovalEvent` (`:190`, bans the literal `"APPROVE"` outside
+`source/toolkit/internal/reviewapprove`), `TestNothingInTheBinaryWritesToARepository` (`:275`, bans the
+`writeEndpoints` path fragments at `:254`), and the import-graph checks above are the
 load-bearing half of each pair. So: **when you add a package that touches GitHub, the
 credential, or a model, add it to the lists in this file in the same commit.**
 

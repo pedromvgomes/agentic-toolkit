@@ -4,9 +4,9 @@ kind: invariant
 description: Under --source the toolkit tree is read-only; every write goes to the working directory instead.
 anchors:
   - path: source/toolkit/internal/cli/paths.go
-    blob: d30919b87867
+    blob: f4dae56ec809
   - path: source/toolkit/internal/cli/memory.go
-    blob: 7ab84a4dc55e
+    blob: ba69103bf419
 confidence: verified
 ---
 

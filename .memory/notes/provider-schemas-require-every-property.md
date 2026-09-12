@@ -8,7 +8,7 @@ anchors:
   - path: source/toolkit/internal/reviewrun/schema_test.go
     blob: d1d2491081d1
   - path: source/toolkit/internal/reviewrun/invoke.go
-    blob: 2437e89a42e9
+    blob: ae55e9629092
 confidence: verified
 ---
 
@@ -34,7 +34,9 @@ string, which every consumer already guards on, so nothing posts the word "null"
 
 This is invisible on Claude, whose schema handling accepts either spelling. The built-in
 default roster reviews a worktree on claudecode and a pull request on codex
-(`source/toolkit/internal/review/default.yaml:59-60`), so a schema that breaks the rule passes every local
+(`source/toolkit/internal/review/default.yaml:68-70` — `worktree: quick` resolves to the
+claudecode `unified` reviewer at `:18`/`:36`, `pr: standard-codex` to the codex reviewers at
+`:23-24`/`:56`), so a schema that breaks the rule passes every local
 review and kills every posted one.
 `TestProviderSchemasRequireEveryDeclaredProperty` (`source/toolkit/internal/reviewrun/schema_test.go:55`)
 walks the decoded JSON generically rather than listing field names, so a schema that gains a

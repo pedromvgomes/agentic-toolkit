@@ -4,7 +4,7 @@ kind: gotcha
 description: A second guard, separate from the tool allowlist, can refuse a Bash command that creates a file inside the session's own working directory — so a constructed `Bash(...)` grant is necessary but not sufficient.
 anchors:
   - path: source/toolkit/internal/curator/curator.go
-    blob: 1e7fb72d46d4
+    blob: a8ac0f37cab8
 confidence: verified
 ---
 

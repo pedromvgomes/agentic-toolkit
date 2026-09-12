@@ -8,7 +8,7 @@ anchors:
   - path: source/toolkit/internal/updater/updater_test.go
     blob: 2b81c32b734a
   - path: .goreleaser.yaml
-    blob: eb5e6c9bd70a
+    blob: d1a3c2e4d8f7
 confidence: verified
 ---
 
@@ -17,9 +17,9 @@ byte-identical names. Three couplings, all implicit:
 
 | updater.go | .goreleaser.yaml |
 |---|---|
-| `fmt.Sprintf("%s_%s_%s_%s.tar.gz", binary, strings.TrimPrefix(version, "v"), goos, goarch)` (`updater.go:88`) | `name_template: "agtk_{{ .Version }}_{{ .Os }}_{{ .Arch }}"` (`:27`) + `formats: [tar.gz]` (`:28`) |
+| `fmt.Sprintf("%s_%s_%s_%s.tar.gz", binary, strings.TrimPrefix(version, "v"), goos, goarch)` (`updater.go:88`) | `name_template: "agtk_{{ .Version }}_{{ .Os }}_{{ .Arch }}"` (`:30`) + `formats: [tar.gz]` (`:31`) |
 | `binary` defaults to `"agtk"` (`updater.go:83-86`), used for the filename and for the tar entry lookup (`updater.go:112`) | `binary: agtk` (`:11`) |
-| `checksumsURL = base + "/checksums.txt"` (`updater.go:92`) | `checksum: name_template: "checksums.txt"` (`:33-34`) |
+| `checksumsURL = base + "/checksums.txt"` (`updater.go:92`) | `checksum: name_template: "checksums.txt"` (`:36-37`) |
 
 The `TrimPrefix(version, "v")` at `updater.go:88` is load-bearing: goreleaser's `.Version` is
 the tag *without* the leading `v`, while the release-download path segment
@@ -37,5 +37,11 @@ Nothing guards this. `source/toolkit/internal/updater/updater_test.go` exercises
 `Install` itself is never called in a test, and the CLI tests inject a stub `Installer`.
 `grep -rn goreleaser` finds no test or CI step that cross-checks the two.
 
-Related: `.goreleaser.yaml:15-17` builds only `darwin` and `linux`, while `Install` will
+Related: `.goreleaser.yaml:18-20` builds only `darwin` and `linux`, while `Install` will
 happily build a `windows` archive name from `runtime.GOOS`.
+
+A fourth coupling arrived with the module move: the build now needs `dir: source/toolkit`
+(`.goreleaser.yaml:14`) plus `main: ./cmd/agtk` relative to it (`:15`), while `archives.files`
+(`:32-34`) and the `before` hook `go -C source/toolkit mod tidy` (`:7`) stay relative to the
+repo root. That asymmetry is inside one file, so it is at least visible in a diff — unlike the
+three above.
