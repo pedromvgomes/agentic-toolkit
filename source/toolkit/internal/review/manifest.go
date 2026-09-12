@@ -77,6 +77,15 @@ type Manifest struct {
 	// into a review that cannot run at all — in exactly the repos with no
 	// manifest to edit, and with no way to take the advice the refusal gives.
 	Builtin bool `yaml:"-"`
+
+	// Dir is the directory this manifest was read from, and the one its
+	// repo-local prompt paths resolve against. Normally ManifestDir; it is
+	// LegacyManifestDir for a manifest read at a ref older than the move,
+	// where the prompt bodies sit beside the manifest that names them.
+	//
+	// Not a field a manifest may set: it is a fact about where the document
+	// came from, like Builtin.
+	Dir string `yaml:"-"`
 }
 
 // Approval is what this repo requires before a reviewed head may be approved.

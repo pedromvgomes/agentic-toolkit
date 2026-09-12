@@ -128,19 +128,29 @@ func TestLoadRefusesAManifestLeftAtTheLegacyPath(t *testing.T) {
 	}
 }
 
-// The same separation at a ref, where the miss is a `cat-file` failure rather
-// than a stat.
-func TestLoadAtRefRefusesAManifestLeftAtTheLegacyPath(t *testing.T) {
+// At a ref the older path is read rather than refused. A ref is history and
+// `git mv` cannot reach it, so a refusal would name a remedy that does not
+// exist — and the base of the very change that moves the manifest is always
+// the older layout, which would make that change unreviewable.
+func TestLoadAtRefReadsAManifestAtTheLegacyPath(t *testing.T) {
 	r := newRepo(t)
 	r.write(review.LegacyManifestDir+"/manifest.yaml", complete)
 	rev := r.commit("base")
 
-	_, _, builtin, err := review.LoadAtRef(r.dir, rev)
-	if err == nil {
-		t.Fatalf("LoadAtRef accepted a ref whose only manifest is at the legacy path (builtin=%v)", builtin)
+	m, path, builtin, err := review.LoadAtRef(r.dir, rev)
+	if err != nil {
+		t.Fatalf("LoadAtRef: %v", err)
 	}
-	if !review.IsKind(err, review.ErrLegacyManifestDir) {
-		t.Errorf("error kind = %v, want ErrLegacyManifestDir (%q)", err, err)
+	if builtin || m == nil {
+		t.Fatalf("LoadAtRef = (builtin %v), want the manifest the ref declares", builtin)
+	}
+	if !strings.Contains(path, review.LegacyManifestRelPath) {
+		t.Errorf("path = %q, want the legacy manifest", path)
+	}
+	// Prompt bodies sit beside the manifest that names them, so the directory
+	// travels with it.
+	if m.Dir != review.LegacyManifestDir {
+		t.Errorf("Dir = %q, want %q", m.Dir, review.LegacyManifestDir)
 	}
 }
 
@@ -170,6 +180,9 @@ func TestTheCurrentPathWinsOverALeftoverLegacyCopy(t *testing.T) {
 			}
 			if !strings.Contains(path, review.ManifestDir) {
 				t.Errorf("path = %q, want the current manifest directory", path)
+			}
+			if m.Dir != review.ManifestDir {
+				t.Errorf("Dir = %q, want %q", m.Dir, review.ManifestDir)
 			}
 		})
 	}

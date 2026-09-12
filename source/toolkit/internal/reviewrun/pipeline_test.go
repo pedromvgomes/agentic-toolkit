@@ -226,7 +226,7 @@ func (h *harness) pipeline(t *testing.T, inv invoker) *Review {
 func (h *harness) validateOnly(t *testing.T, inv invoker, candidates []Finding) ([]Finding, []RunReport) {
 	t.Helper()
 	sched := newScheduler(4, inv.Limit)
-	return runValidators(context.Background(), Options{}, inv, sched,
+	return runValidators(context.Background(), Options{}, inv, sched, h.manifest.Dir,
 		*h.manifest.Validator, h.plan.Material, assignIDs(candidates))
 }
 
