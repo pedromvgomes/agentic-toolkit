@@ -25,13 +25,42 @@ _Avoid_: preset, profile, consumer config
 **Entry manifest**:
 The **Stack** that a given `agtk` invocation starts from — the consumer's own file, or the
 one named by `--config`/`--stack`. Distinguished from stacks reached through `extends:`,
-because some settings are honoured only here.
+because some settings are honoured only here. The file half of the **Toolkit namespace**:
+`.agentic-toolkit.yaml`, beside `.agentic-toolkit/` and never inside it.
 _Avoid_: root config, top-level stack
 
 **Consumer**:
 The repo that `agtk` renders into. Owns an **Entry manifest**, a lockfile, and its own
 **Memory store**.
 _Avoid_: client, target, downstream
+
+**Toolkit namespace**:
+The configuration `agtk` reads about itself in a **Consumer** is named `.agentic-toolkit`:
+the file `.agentic-toolkit.yaml` and the directory `.agentic-toolkit/`. The prefix is what
+claims a path, not the nesting, so the file is a sibling of the directory rather than
+something missing from it. Which of the two a committed file belongs in turns on whether
+`agtk` can be told where it is:
+
+- The file is the **Entry manifest** — what `agtk` opens before anything has told it where
+  to look. A fixed name in the working directory, or the path `--config` gives, with the
+  lockfile written beside it either way. No committed file points at it; it is where the
+  pointing starts.
+- The directory holds the configuration of one part of `agtk`, under a path that part fixes
+  — `.agentic-toolkit/code-review/` for the **Review manifest**. Fixed rather than named by
+  the **Entry manifest**, because `agtk` reads such a directory at a git ref, and a branch
+  able to point it elsewhere could point it away from the rules its own change is judged
+  against. Absent, that part runs on what is built into `agtk`, and the rest of `agtk` carries
+  on; absent the **Entry manifest**, there is nothing to carry on with.
+
+Committed *content* is outside the namespace, at a path a **Stack** names rather than one
+`agtk` fixes, so a **Consumer** places it: a **Memory store** is what agents wrote rather
+than how `agtk` behaves, and a local **Definition** under `root:` is what is being
+distributed. Where `agtk`
+supplies a default for such a path, the default is `agtk`'s own and is bound by the same rule
+as every other path `agtk` fixes. A **Render**ed tree is outside the namespace and is no
+place to commit into at all: those paths belong to a **Platform**, and the ignore rule that
+covers one reaches whatever is put inside it.
+_Avoid_: config dir, dot-directory, toolkit root, the toolkit directory
 
 **Platform**:
 A target agentic-coding tool with its own on-disk layout that a **Stack**'s definitions can
@@ -112,7 +141,8 @@ One read of a **Note** through `agtk memory show`. The numerator that says wheth
 The directory holding the **Index**, `notes/` and `candidates/`, located by `memory.root` in the
 entry manifest. Committed, so notes are reviewable in PRs and travel with the branch that wrote
 them — which is why its path is one a repo chooses rather than one a **Platform**'s **Adapter**
-owns.
+owns. Content rather than configuration, so it sits outside the **Toolkit namespace** and the
+**Entry manifest** carries its path.
 _Avoid_: memory bank, knowledge base
 
 **Explorer**:
@@ -459,7 +489,9 @@ _Avoid_: summary, header, footer, marker (bare)
 **Review manifest**:
 `.agentic-toolkit/code-review/manifest.yaml`: the single declaration of **Reviewer**s, **Panel**s and the
 prompt bodies they use. Read by `agtk code-review` and by nothing else. A roster a skill also
-carried would be a second one, and the two would disagree the first time either changed.
+carried would be a second one, and the two would disagree the first time either changed. Its
+path sits in the **Toolkit namespace**'s directory and is fixed there rather than set by the
+**Entry manifest**, for the reason every path in that directory is.
 _Avoid_: panels.json, roster file, review config
 
 ### Feature flow
