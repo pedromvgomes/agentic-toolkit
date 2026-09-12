@@ -4,11 +4,20 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 
 	"github.com/pedromvgomes/agentic-toolkit/internal/definitions"
+	"github.com/pedromvgomes/agentic-toolkit/internal/memory"
 	"github.com/pedromvgomes/agentic-toolkit/internal/resolver"
+)
+
+// The settings keys the memory grants are appended under, named rather than
+// spelled out at each use so the two sites cannot drift apart.
+const (
+	permissionsKey = "permissions"
+	allowKey       = "allow"
 )
 
 // settingsPath returns the absolute target path for settings.json.
@@ -38,6 +47,9 @@ func settingsPath(roots scopeRoots) string {
 func renderSettings(plan *resolver.Plan, roots scopeRoots, opts Options) error {
 	hooks := collectHooks(plan)
 	settingFragments := collectSettingFragments(plan)
+	if err := addMemoryGrants(settingFragments, plan); err != nil {
+		return err
+	}
 
 	if len(hooks) == 0 && len(settingFragments) == 0 {
 		return clearSettingsManaged(roots, opts)
@@ -253,6 +265,67 @@ func collectHooks(plan *resolver.Plan) map[string]any {
 		out[e] = converted
 	}
 	return out
+}
+
+// addMemoryGrants appends the store-path permissions, built from the memory
+// root this consumer actually resolves to.
+//
+// They cannot be written into a settings definition. A definition is shared,
+// and `memory.root` is honoured only in the consumer's own entry manifest, so
+// a literal in the definition is correct for consumers who left the default
+// and wrong for every consumer who did not — a permission prompt on every
+// delegation, for a path agtk itself chose to move. The value a definition
+// carries is opaque to the merge, so nothing along that route can substitute
+// the root either.
+//
+// Only appended when some definition already contributes `permissions`. A
+// consumer whose stack pre-approves nothing has said what it wants, and
+// conjuring the key here would hand it grants it never asked for.
+func addMemoryGrants(fragments map[string]any, plan *resolver.Plan) error {
+	perms, ok := fragments[permissionsKey].(map[string]any)
+	if !ok {
+		return nil
+	}
+	root := ""
+	if plan.Stack != nil {
+		root = plan.Stack.MemoryRoot()
+	}
+	if root == "" {
+		root = memory.DefaultRoot
+	}
+	prefix := path.Clean(filepath.ToSlash(root)) + "/"
+	if prefix == "./" {
+		// `memory.root: .` puts the store at the project root, where a path
+		// prefix would be the empty string rather than a directory.
+		prefix = ""
+	}
+
+	existing, present := perms[allowKey]
+	allow, isList := existing.([]any)
+	if present && !isList {
+		// Silently dropping the grants here would leave the explorer
+		// prompting on a store agtk located itself, with nothing said.
+		return fmt.Errorf("claude: settings `%s.%s` is %T, want a list", permissionsKey, allowKey, existing)
+	}
+	for _, grant := range []string{
+		"Read(**/" + prefix + memory.IndexFile + ")",
+		"Write(**/" + prefix + memory.CandidatesDir + "/**)",
+	} {
+		if !containsGrant(allow, grant) {
+			allow = append(allow, grant)
+		}
+	}
+	perms[allowKey] = allow
+	return nil
+}
+
+func containsGrant(allow []any, grant string) bool {
+	for _, a := range allow {
+		if s, ok := a.(string); ok && s == grant {
+			return true
+		}
+	}
+	return false
 }
 
 // collectSettingFragments returns the union of every setting

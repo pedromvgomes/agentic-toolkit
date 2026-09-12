@@ -10,15 +10,11 @@ value:
       # Reporting only. `curate` is not pre-approved: it spends money and
       # rewrites notes/, so it stays a prompt the user answers deliberately.
       - "Bash(agtk memory candidates*)"
-      # These two are the default store location spelled out. They are
-      # literals rather than something derived from `memory.root`, because a
-      # settings definition carries an opaque value and the adapter that
-      # merges it never resolves the manifest. A consumer that sets
-      # `memory.root` therefore needs its own entries for that path —
-      # permissions are pre-approval, so the only cost of a miss is a prompt,
-      # never a block.
-      - "Read(**/.memory/INDEX.md)"
-      - "Write(**/.memory/candidates/**)"
+      # The store's own paths are absent on purpose. They depend on
+      # `memory.root`, which only the consumer's entry manifest sets, so a
+      # literal here would be right for consumers who left the default and
+      # wrong for the rest. The claude adapter appends them from the root it
+      # resolves, whenever a stack contributes `permissions` at all.
       # The code-review subcommands that start no model. `run` is absent
       # because it costs money, and `approve` because a person types that one.
       #
