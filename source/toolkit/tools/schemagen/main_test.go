@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -36,5 +37,20 @@ func TestCommittedSchemaDocsMatchTheStructs(t *testing.T) {
 				t.Errorf("%s is out of step with the structs it documents; run `go generate ./...`", doc.path)
 			}
 		})
+	}
+}
+
+// Run from outside a repository, the generator has no idea where the catalog
+// is. Walking to the filesystem root and writing the docs relative to wherever
+// it stopped would scatter them somewhere nobody reads; refusing says so.
+func TestRepoRootRefusesOutsideARepository(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	root, err := repoRoot()
+	if err == nil {
+		t.Fatalf("repoRoot returned %q with no .git above the working directory", root)
+	}
+	if !strings.Contains(err.Error(), ".git") {
+		t.Errorf("the error does not say what was looked for: %v", err)
 	}
 }
