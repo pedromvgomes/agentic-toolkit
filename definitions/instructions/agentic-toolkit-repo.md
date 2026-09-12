@@ -35,7 +35,9 @@ Requires Go 1.26+. The module lives at `source/toolkit/go.mod`, not the repo roo
 
 - `source/toolkit/` — the Go tooling, all of it, and `go.mod`/`go.sum`: the module root. The
   module path stays `github.com/pedromvgomes/agentic-toolkit`, so imports read
-  `…/agentic-toolkit/internal/…` and do not repeat the directory.
+  `…/agentic-toolkit/internal/…` and do not repeat the directory. The toolchain therefore
+  cannot fetch this module — `go install` is not an install path, and release tags stay plain
+  semver rather than carrying a `source/toolkit/` prefix.
 - `source/toolkit/cmd/agtk/` — CLI entrypoint
 - `source/toolkit/internal/` — CLI implementation (private packages): `resolver`, `lockfile`,
   `stack`, `definitions`, `sourceref`/`sourcestore` (fetch/cache), `review`/`reviewrun`/`reviewpost`/

@@ -28,6 +28,14 @@ Environment overrides:
 
 After install, `agtk update` upgrades in place from the same release archives — no `curl | sh` needed for follow-ups.
 
+These two are the whole of it: the installer and `agtk update`. `go install` is not a supported
+path and cannot work — `go.mod` lives at `source/toolkit/go.mod` while declaring the module path
+`github.com/pedromvgomes/agentic-toolkit`, and the Go toolchain fetches a module in a
+subdirectory only when the declared path is the repo root plus that subdirectory. Keeping the
+declared path short is what stops every import repeating `source/toolkit`, and `agtk` is a
+binary rather than a library, so nothing is given up: every package here is `internal/`, and
+release tags stay plain semver instead of needing a `source/toolkit/` prefix.
+
 ## What you get
 
 - **Definition catalog** under `definitions/` covering eight typed categories: `skill`, `agent`, `command`, `rule`, `instruction`, `hook`, `mcp`, `setting`. See [`definitions/SCHEMA.md`](definitions/SCHEMA.md) for shapes.

@@ -1,3 +1,10 @@
+// The declared path is the repo, not this directory, so imports read
+// …/agentic-toolkit/internal/… rather than repeating source/toolkit in every
+// one. The cost is that the Go toolchain cannot fetch this module: it resolves
+// a module in a subdirectory only when the declared path is the repo root plus
+// that subdirectory. Nothing needs it to — agtk ships as a release archive with
+// a self-updater, every package here is internal/, and a declared path ending
+// in /source/toolkit would also force release tags to carry that prefix.
 module github.com/pedromvgomes/agentic-toolkit
 
 go 1.26.6
