@@ -121,8 +121,22 @@ func refuseIgnoredManifest(dir string) error {
 		if _, statErr := os.Stat(filepath.Join(dir, filepath.FromSlash(rel))); statErr != nil {
 			continue
 		}
-		if ignored, ok := gitIgnores(dir, rel); !ok || !ignored {
+		ignored, ok := gitIgnores(dir, rel)
+		if ok && !ignored {
 			continue
+		}
+		if !ok {
+			// The same reasoning as the unresolvable ref above: an answer git
+			// could not give must not take the path that changes nothing,
+			// because that path is the silent one.
+			return &ParseError{
+				Path: rel,
+				Kind: ErrIgnoredManifest,
+				Message: fmt.Sprintf(
+					"review manifest %s is in the working tree but absent from the base ref, and git "+
+						"could not say whether it is ignored; refusing rather than reviewing under the "+
+						"built-in default", rel),
+			}
 		}
 		remedy := "un-ignore it and commit it"
 		if rel == LegacyManifestRelPath {

@@ -1,6 +1,9 @@
 package tests
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -229,4 +232,62 @@ func TestLoadAtRefFallsBackForAManifestMerelyAbsentFromTheBase(t *testing.T) {
 	if !builtin || path != "" {
 		t.Errorf("LoadAtRef = (path %q, builtin %v), want the embedded default", path, builtin)
 	}
+}
+
+// GIT_LITERAL_PATHSPECS is inherited from whoever ran agtk, and check-ignore
+// rejects it outright rather than ignoring it. A machine that exports it would
+// otherwise make every ignore check unanswerable, and the answer that costs
+// nothing to produce is the one that reviews under the wrong roster.
+func TestAnIgnoredManifestIsStillRefusedUnderLiteralPathspecs(t *testing.T) {
+	t.Setenv("GIT_LITERAL_PATHSPECS", "1")
+
+	r := newRepo(t)
+	r.write(".gitignore", "/.agentic-toolkit/\n")
+	r.write(review.ManifestRelPath, complete)
+	rev := r.commit("base")
+
+	if _, _, builtin, err := review.LoadAtRef(r.dir, rev); err == nil {
+		t.Fatalf("LoadAtRef accepted an ignored manifest (builtin=%v)", builtin)
+	}
+}
+
+// An ignore status git could not report is not "not ignored". Collapsing the
+// two puts the unknown answer on the path that stays silent, which is the
+// failure the whole check exists to close.
+func TestLoadAtRefRefusesWhenTheIgnoreStatusCannotBeDetermined(t *testing.T) {
+	r := newRepo(t)
+	r.write("seed.txt", "x\n")
+	rev := r.commit("base")
+	// Absent from the base and present on disk: the shape a branch adopting
+	// its first manifest has, which is the one case the ignore rule is what
+	// tells apart. Without an answer, it cannot be told apart.
+	r.write(review.ManifestRelPath, complete)
+
+	stubGitThatCannotAnswerCheckIgnore(t)
+
+	_, _, builtin, err := review.LoadAtRef(r.dir, rev)
+	if err == nil {
+		t.Fatalf("LoadAtRef fell back to the default on an unknown ignore status (builtin=%v)", builtin)
+	}
+	if !review.IsKind(err, review.ErrIgnoredManifest) {
+		t.Fatalf("kind = %v, want ignored_manifest", err)
+	}
+}
+
+// stubGitThatCannotAnswerCheckIgnore puts a git on PATH that fails only
+// check-ignore and delegates everything else, so the one answer under test is
+// unavailable while the rest of the loader still works.
+func stubGitThatCannotAnswerCheckIgnore(t *testing.T) {
+	t.Helper()
+	real, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("no git on PATH")
+	}
+	dir := t.TempDir()
+	stub := filepath.Join(dir, "git")
+	body := "#!/bin/sh\nif [ \"$1\" = check-ignore ]; then exit 128; fi\nexec " + real + " \"$@\"\n"
+	if err := os.WriteFile(stub, []byte(body), 0o700); err != nil { // #nosec G306 -- test stub must be executable
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 }

@@ -77,6 +77,11 @@ func gitStatus(dir string, args ...string) (stdout []byte, exitCode int, err err
 func gitIgnores(dir, rel string) (ignored, ok bool) {
 	cmd := exec.Command("git", "check-ignore", "-q", "--", rel) // #nosec G204 -- rel is a package constant
 	cmd.Dir = dir
+	// Scrubbed rather than merely unset here: the variable is inherited from
+	// whoever ran agtk, and a machine that exports it globally would make
+	// every check unanswerable — silently, since the answer this produces is
+	// the one that changes nothing.
+	cmd.Env = withoutLiteralPathspecs(os.Environ())
 	cmd.Stdout = nil
 	cmd.Stderr = nil
 	switch err := cmd.Run(); {
@@ -91,6 +96,19 @@ func gitIgnores(dir, rel string) (ignored, ok bool) {
 		}
 		return false, false
 	}
+}
+
+// withoutLiteralPathspecs returns env with GIT_LITERAL_PATHSPECS removed, in
+// any spelling of the assignment.
+func withoutLiteralPathspecs(env []string) []string {
+	out := env[:0:0]
+	for _, kv := range env {
+		if strings.HasPrefix(kv, "GIT_LITERAL_PATHSPECS=") {
+			continue
+		}
+		out = append(out, kv)
+	}
+	return out
 }
 
 // diffArgs are the options every diff command carries, so the form the
