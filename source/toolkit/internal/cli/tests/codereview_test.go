@@ -90,8 +90,8 @@ panels:
 defaults: {worktree: only, pr: only}
 `
 	work := gitProject(t, map[string]string{
-		".agents/code-review/manifest.yaml": manifest,
-		"main.go":                           "package main\n",
+		".agentic-toolkit/code-review/manifest.yaml": manifest,
+		"main.go": "package main\n",
 	})
 
 	stdout, stderr, err := runCLI(t, work, "code-review", "explain", "--base", "main")
@@ -110,7 +110,7 @@ defaults: {worktree: only, pr: only}
 // and the refusal names the field.
 func TestCodeReviewExplainRefusesABrokenManifest(t *testing.T) {
 	work := gitProject(t, map[string]string{
-		".agents/code-review/manifest.yaml": `version: 1
+		".agentic-toolkit/code-review/manifest.yaml": `version: 1
 reviewers:
   correctness: {provider: claudecode, prompt: builtin:correctness}
 judge:     {provider: claudecode, prompt: builtin:judge}
@@ -205,12 +205,12 @@ panels:
 defaults: {worktree: trusted, pr: trusted}
 `
 	work := gitProject(t, nil)
-	writeIn(t, work, ".agents/code-review/manifest.yaml", onBase)
+	writeIn(t, work, ".agentic-toolkit/code-review/manifest.yaml", onBase)
 	runGit(t, work, "add", "-A")
 	runGit(t, work, "commit", "-m", "declare the review")
 
 	// The branch rewrites the rules it will be judged by.
-	writeIn(t, work, ".agents/code-review/manifest.yaml",
+	writeIn(t, work, ".agentic-toolkit/code-review/manifest.yaml",
 		strings.ReplaceAll(onBase, "trusted", "rewritten"))
 
 	pr, _, err := runCLI(t, work, "code-review", "explain", "--context", "pr", "--base", "HEAD")
@@ -331,8 +331,8 @@ func TestCodeReviewPanelsListsTheBuiltInDefaultAndSaysSo(t *testing.T) {
 // commands drifting apart is the failure it would not see until a user did.
 func TestCodeReviewPanelsEmitsTheNamesThatPanelAccepts(t *testing.T) {
 	work := gitProject(t, map[string]string{
-		".agents/code-review/manifest.yaml": namedPanels,
-		"main.go":                           "package main\n",
+		".agentic-toolkit/code-review/manifest.yaml": namedPanels,
+		"main.go": "package main\n",
 	})
 
 	got := panelsJSON(t, work, "--base", "main")
@@ -372,8 +372,8 @@ func TestCodeReviewPanelsEmitsTheNamesThatPanelAccepts(t *testing.T) {
 // reordering that changes nothing else.
 func TestCodeReviewPanelsListsShallowestFirst(t *testing.T) {
 	work := gitProject(t, map[string]string{
-		".agents/code-review/manifest.yaml": namedPanels,
-		"main.go":                           "package main\n",
+		".agentic-toolkit/code-review/manifest.yaml": namedPanels,
+		"main.go": "package main\n",
 	})
 
 	got := panelsJSON(t, work, "--base", "main")
@@ -409,12 +409,12 @@ func TestCodeReviewPanelsListsShallowestFirst(t *testing.T) {
 // not name the reviewers that judge it.
 func TestCodeReviewPanelsReadsTheBaseRefForAPostingContext(t *testing.T) {
 	work := gitProject(t, nil)
-	writeIn(t, work, ".agents/code-review/manifest.yaml", namedPanels)
+	writeIn(t, work, ".agentic-toolkit/code-review/manifest.yaml", namedPanels)
 	runGit(t, work, "add", "-A")
 	runGit(t, work, "commit", "-m", "declare the review")
 
 	// The branch renames the panels it will be judged by.
-	writeIn(t, work, ".agents/code-review/manifest.yaml",
+	writeIn(t, work, ".agentic-toolkit/code-review/manifest.yaml",
 		strings.ReplaceAll(namedPanels, "thorough", "renamed"))
 
 	pr := panelsJSON(t, work, "--context", "pr", "--base", "HEAD")
@@ -423,7 +423,7 @@ func TestCodeReviewPanelsReadsTheBaseRefForAPostingContext(t *testing.T) {
 			t.Errorf("a posting context listed a panel the branch declared:\n%+v", pr.Panels)
 		}
 	}
-	if pr.Context != "pr" || !strings.HasSuffix(pr.Manifest, ".agents/code-review/manifest.yaml") || strings.Contains(pr.Manifest, "built-in") {
+	if pr.Context != "pr" || !strings.HasSuffix(pr.Manifest, ".agentic-toolkit/code-review/manifest.yaml") || strings.Contains(pr.Manifest, "built-in") {
 		t.Errorf("a posting context does not name the base ref's manifest: %+v", pr)
 	}
 
@@ -439,7 +439,7 @@ func TestCodeReviewPanelsReadsTheBaseRefForAPostingContext(t *testing.T) {
 
 func TestCodeReviewPanelsRefusesAManifestThatDoesNotParse(t *testing.T) {
 	work := gitProject(t, map[string]string{
-		".agents/code-review/manifest.yaml": "version: 1\npanels: [not, a, map]\n",
+		".agentic-toolkit/code-review/manifest.yaml": "version: 1\npanels: [not, a, map]\n",
 	})
 
 	_, _, err := runCLI(t, work, "code-review", "panels", "--base", "main")
@@ -538,7 +538,7 @@ func TestCodeReviewExplainJSONCarriesTheDecision(t *testing.T) {
 	// A posting context reads the manifest from the base ref, so the
 	// manifest is on it and the change is not.
 	work := gitProject(t, nil)
-	writeIn(t, work, ".agents/code-review/manifest.yaml", namedPanels)
+	writeIn(t, work, ".agentic-toolkit/code-review/manifest.yaml", namedPanels)
 	runGit(t, work, "add", "-A")
 	runGit(t, work, "commit", "-m", "declare the review")
 	writeIn(t, work, "internal/auth/token.go", "package auth\n")
@@ -550,7 +550,7 @@ func TestCodeReviewExplainJSONCarriesTheDecision(t *testing.T) {
 	if got.Range != "main...working tree" || got.Context != "pr" {
 		t.Errorf("range/context misreported: %q %q", got.Range, got.Context)
 	}
-	if !strings.HasSuffix(got.Manifest, ".agents/code-review/manifest.yaml") {
+	if !strings.HasSuffix(got.Manifest, ".agentic-toolkit/code-review/manifest.yaml") {
 		t.Errorf("the manifest read is not named: %q", got.Manifest)
 	}
 	if got.Change.Files != 1 || len(got.Change.Languages) != 1 || got.Change.Languages[0] != "go" {
@@ -584,8 +584,8 @@ func TestCodeReviewExplainJSONCarriesTheDecision(t *testing.T) {
 // and the JSON says so: the rules are still reported, and did not decide.
 func TestCodeReviewExplainJSONReportsAnOverride(t *testing.T) {
 	work := gitProject(t, map[string]string{
-		".agents/code-review/manifest.yaml": namedPanels,
-		"internal/auth/token.go":            "package auth\n",
+		".agentic-toolkit/code-review/manifest.yaml": namedPanels,
+		"internal/auth/token.go":                     "package auth\n",
 	})
 
 	got, _ := explainJSON(t, work, "--base", "main", "--panel", "fast")
@@ -676,7 +676,7 @@ func TestCodeReviewExplainJSONEmitsEmptyListsRatherThanNull(t *testing.T) {
 // a listing offered under one agtk cannot staff a review under another.
 func TestCodeReviewPanelsRefusesAManifestNoProviderCanStaff(t *testing.T) {
 	work := gitProject(t, map[string]string{
-		".agents/code-review/manifest.yaml": `version: 1
+		".agentic-toolkit/code-review/manifest.yaml": `version: 1
 reviewers:
   correctness: {provider: gemini, prompt: builtin:correctness}
 judge:     {provider: gemini, prompt: builtin:judge}
@@ -703,8 +703,8 @@ defaults: {worktree: only, pr: only}
 // listed by name and cost alone rather than under an empty line.
 func TestCodeReviewPanelsListsAPanelThatHasNoDescription(t *testing.T) {
 	work := gitProject(t, map[string]string{
-		".agents/code-review/manifest.yaml": namedPanels,
-		"main.go":                           "package main\n",
+		".agentic-toolkit/code-review/manifest.yaml": namedPanels,
+		"main.go": "package main\n",
 	})
 
 	stdout, stderr, err := runCLI(t, work, "code-review", "panels", "--base", "main")

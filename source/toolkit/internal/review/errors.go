@@ -35,6 +35,10 @@ const (
 	ErrInvalidCondition ErrorKind = "invalid_condition"
 	ErrInvalidPrompt    ErrorKind = "invalid_prompt"
 	ErrInvalidPanel     ErrorKind = "invalid_panel"
+	// ErrLegacyManifestDir is the refusal when a manifest is found only at
+	// LegacyManifestDir. Falling back to the embedded default there would
+	// review a repo under a roster it did not write, and say nothing.
+	ErrLegacyManifestDir ErrorKind = "legacy_manifest_dir"
 )
 
 func (e *ParseError) Error() string {

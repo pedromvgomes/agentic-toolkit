@@ -5,7 +5,19 @@ package review
 // manifest is configuration, not committed content a repo has an opinion
 // about placing, and `agtk` reads the whole directory at a ref rather than a
 // file it was pointed at.
-const ManifestDir = ".agents/code-review"
+//
+// It sits under the toolkit's own namespace rather than inside `.agents/`,
+// which a Platform adapter renders: a repo that ignores its rendered trees
+// wholesale would stop tracking the manifest, and an untracked manifest is
+// unreadable at a ref — which LoadAtRef cannot distinguish from a repo that
+// declares none.
+const ManifestDir = ".agentic-toolkit/code-review"
+
+// LegacyManifestDir is where the manifest lived before ManifestDir moved out
+// of the rendered `.agents/` tree. Nothing reads a manifest from here: it is
+// looked for only so a repo still holding one is refused rather than reviewed
+// under the embedded default.
+const LegacyManifestDir = ".agents/code-review"
 
 // ManifestFile is the manifest's name inside ManifestDir.
 const ManifestFile = "manifest.yaml"

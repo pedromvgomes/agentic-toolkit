@@ -67,6 +67,28 @@ func ManifestPath(projectRoot string) string {
 // root, with forward slashes on every platform.
 const ManifestRelPath = ManifestDir + "/" + ManifestFile
 
+// LegacyManifestRelPath is LegacyManifestDir's manifest as git names it.
+const LegacyManifestRelPath = LegacyManifestDir + "/" + ManifestFile
+
+// legacyManifestErr is the refusal a repo gets when its only manifest is at
+// the path ManifestDir replaced.
+//
+// Both loaders treat an absent manifest as "this repo declares none" and
+// review under the embedded default. That is right for a repo that never
+// wrote one and wrong for a repo whose manifest is sitting one directory
+// away: the panels, the judge and the approval floor would all be the
+// toolkit's rather than the repo's, and the only outward sign is a `builtin`
+// flag nobody reads as an error. So the two cases are separated here.
+func legacyManifestErr(path string) error {
+	return &ParseError{
+		Path: path,
+		Kind: ErrLegacyManifestDir,
+		Message: fmt.Sprintf(
+			"review manifest found at %s, which agtk no longer reads; move it to %s (`git mv %s %s`)",
+			LegacyManifestDir, ManifestDir, LegacyManifestDir, ManifestDir),
+	}
+}
+
 // LoadAtRef returns the manifest as it stands at a git ref.
 //
 // A review that posts reads its rules from the base ref, never from the tree
@@ -86,6 +108,10 @@ func LoadAtRef(dir, ref string) (m *Manifest, path string, builtin bool, err err
 
 	spec := ref + ":" + ManifestRelPath
 	if _, _, err := gitStatus(dir, "cat-file", "-e", spec); err != nil {
+		legacy := ref + ":" + LegacyManifestRelPath
+		if _, _, err := gitStatus(dir, "cat-file", "-e", legacy); err == nil {
+			return nil, "", false, legacyManifestErr(legacy)
+		}
 		// The ref resolves and the path is not in it: this repo declares no
 		// manifest at the base, which is the embedded default's case.
 		m, err = DefaultManifest()
@@ -112,6 +138,10 @@ func Load(projectRoot string) (m *Manifest, path string, builtin bool, err error
 	if _, statErr := os.Stat(path); statErr != nil {
 		if !os.IsNotExist(statErr) {
 			return nil, path, false, fmt.Errorf("read %s: %w", path, statErr)
+		}
+		legacy := filepath.Join(projectRoot, filepath.FromSlash(LegacyManifestRelPath))
+		if _, legacyErr := os.Stat(legacy); legacyErr == nil {
+			return nil, path, false, legacyManifestErr(legacy)
 		}
 		m, err = DefaultManifest()
 		return m, "", true, err

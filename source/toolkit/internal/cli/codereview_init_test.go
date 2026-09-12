@@ -43,7 +43,7 @@ func TestInitWritesTheBuiltInDefaultVerbatim(t *testing.T) {
 		t.Fatalf("init: %v", err)
 	}
 
-	written, err := os.ReadFile(filepath.Join(dir, ".agents", "code-review", "manifest.yaml"))
+	written, err := os.ReadFile(review.ManifestPath(dir))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +62,7 @@ func TestInitWritesTheBuiltInDefaultVerbatim(t *testing.T) {
 // go on running as though that were what somebody wanted.
 func TestInitRefusesToOverwriteAnExistingManifest(t *testing.T) {
 	dir := initRepo(t)
-	path := filepath.Join(dir, ".agents", "code-review", "manifest.yaml")
+	path := review.ManifestPath(dir)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +136,7 @@ func TestInitDryRunWritesNothing(t *testing.T) {
 	if err := runCodeReviewInit(env, false, true); err != nil {
 		t.Fatalf("init --dry-run: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, ".agents", "code-review", "manifest.yaml")); !os.IsNotExist(err) {
+	if _, err := os.Stat(review.ManifestPath(dir)); !os.IsNotExist(err) {
 		t.Error("--dry-run wrote the manifest")
 	}
 	if !strings.Contains(out.String(), "Nothing was written") {
@@ -149,7 +149,7 @@ func TestInitDryRunWritesNothing(t *testing.T) {
 // read-only question fail exactly when its answer exists.
 func TestInitDryRunReportsThePathWhenAManifestExists(t *testing.T) {
 	dir := initRepo(t)
-	path := filepath.Join(dir, ".agents", "code-review", "manifest.yaml")
+	path := review.ManifestPath(dir)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}

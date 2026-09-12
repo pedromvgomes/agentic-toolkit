@@ -27,9 +27,12 @@ platforms:
 instructions:
   - agentic-toolkit-repo
 
-# The store is already here and committed, and every deterministic memory
-# command finds it from the default `memory.root`. Only the provider needs
-# saying: curation is the one operation that spends money, so `memory.agent`
-# has no default and an unconfigured repo is refused rather than guessed at.
+# `root` names a path outside every platform's rendered tree. The default,
+# `.agents/memory`, puts committed notes inside the directory the codex
+# adapter owns, where the ignore rule covering that tree reaches them.
+#
+# `agent` has no default because curation is the one operation that spends
+# money, so an unconfigured repo is refused rather than guessed at.
 memory:
+  root: .memory
   agent: claudecode
