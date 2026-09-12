@@ -26,7 +26,8 @@ _Avoid_: preset, profile, consumer config
 The **Stack** that a given `agtk` invocation starts from — the consumer's own file, or the
 one named by `--config`/`--stack`. Distinguished from stacks reached through `extends:`,
 because some settings are honoured only here. The file half of the **Toolkit namespace**:
-`.agentic-toolkit.yaml`, beside `.agentic-toolkit/` and never inside it.
+`.agentic-toolkit.yaml` in the working directory, a sibling of `.agentic-toolkit/` rather than
+something inside it, unless `--config`/`--stack` points the invocation at a file elsewhere.
 _Avoid_: root config, top-level stack
 
 **Consumer**:
