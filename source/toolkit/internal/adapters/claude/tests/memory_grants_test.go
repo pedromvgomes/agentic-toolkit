@@ -158,7 +158,7 @@ func TestAMalformedAllowListIsRefused(t *testing.T) {
 			"permissions": map[string]any{"allow": "Bash(ls)"},
 		}, "default"),
 	}, "default")
-	plan.Stack = &stack.Stack{}
+	plan.Stack = &stack.Stack{Memory: &stack.MemoryConfig{Root: "docs/memory"}}
 
 	err := claude.Render(plan, claude.Options{
 		Scope: claude.ScopeProject, ScopeRoot: scopeRoot, ProjectRoot: tmp,
@@ -302,5 +302,58 @@ func TestNoStoreGrantIsSpelledWrite(t *testing.T) {
 				t.Errorf("memory.root %q emitted %q, which the permission check never reads", root, grant)
 			}
 		}
+	}
+}
+
+// A consumer that never adopted the store must not have its render fail over a
+// settings value nothing here was going to read. The refusal is this
+// function's to make only where it would otherwise drop a grant.
+func TestAMalformedAllowListIsToleratedWithoutTheStore(t *testing.T) {
+	tmp := t.TempDir()
+
+	err := claude.Render(makePlanWithMalformedAllow(), claude.Options{
+		Scope: claude.ScopeProject, ScopeRoot: filepath.Join(tmp, ".claude"), ProjectRoot: tmp,
+	})
+	if err != nil && strings.Contains(err.Error(), "permissions.allow") {
+		t.Errorf("a consumer with no memory store failed the render over an unrelated value: %v", err)
+	}
+}
+
+func makePlanWithMalformedAllow() *resolver.Plan {
+	plan := makePlan([]resolver.PlannedDefinition{
+		pdSetting("perms", "malformed", map[string]any{
+			"permissions": map[string]any{"allow": "Bash(ls)"},
+		}, "default"),
+	}, "default")
+	plan.Stack = &stack.Stack{}
+	return plan
+}
+
+// `agtk render --scope user` writes into ~/.claude/settings.json, shared by
+// every project on the machine. A grant built from one repo's memory.root
+// would pre-approve edits under that glob everywhere, and the staging grant is
+// an Edit rule the permission check actually reads.
+func TestUserScopeGetsNoStoreGrants(t *testing.T) {
+	tmp := t.TempDir()
+	scopeRoot := filepath.Join(tmp, ".claude")
+
+	plan := makePlan([]resolver.PlannedDefinition{
+		pdSetting("perms", "allow tests", map[string]any{
+			"permissions": map[string]any{"allow": []any{"Bash(cargo test)"}},
+		}, "default"),
+	}, "default")
+	plan.Stack = &stack.Stack{Memory: &stack.MemoryConfig{Root: "docs/memory"}}
+
+	if err := claude.Render(plan, claude.Options{
+		Scope: claude.ScopeUser, ScopeRoot: scopeRoot,
+	}); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	raw, err := os.ReadFile(filepath.Join(scopeRoot, "settings.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), memory.CandidatesDir) {
+		t.Errorf("a user-scope render pre-approved one repo's store machine-wide:\n%s", raw)
 	}
 }

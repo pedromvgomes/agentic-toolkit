@@ -50,7 +50,7 @@ func settingsPath(roots scopeRoots) string {
 func renderSettings(plan *resolver.Plan, roots scopeRoots, opts Options) error {
 	hooks := collectHooks(plan)
 	settingFragments := collectSettingFragments(plan)
-	if err := addMemoryGrants(settingFragments, plan); err != nil {
+	if err := addMemoryGrants(settingFragments, plan, roots); err != nil {
 		return err
 	}
 
@@ -284,7 +284,21 @@ func collectHooks(plan *resolver.Plan) map[string]any {
 // Only appended when some definition already contributes `permissions`. A
 // consumer whose stack pre-approves nothing has said what it wants, and
 // conjuring the key here would hand it grants it never asked for.
-func addMemoryGrants(fragments map[string]any, plan *resolver.Plan) error {
+func addMemoryGrants(fragments map[string]any, plan *resolver.Plan, roots scopeRoots) error {
+	if roots.Scope != ScopeProject {
+		// A store's location is a fact about one consumer repo. Writing a
+		// grant derived from it into ~/.claude/settings.json would pre-approve
+		// edits under that glob in every project on the machine, on the
+		// strength of whichever repo happened to run the render.
+		return nil
+	}
+	if !usesMemoryStore(plan) {
+		// Ahead of the shape check below, which is this function's to make
+		// only where it would otherwise drop a grant. A consumer that never
+		// adopted the store should not have its render fail over a settings
+		// value nothing here was going to read.
+		return nil
+	}
 	perms, ok := fragments[permissionsKey].(map[string]any)
 	if !ok {
 		return nil
@@ -302,9 +316,6 @@ func addMemoryGrants(fragments map[string]any, plan *resolver.Plan) error {
 		// Silently dropping the grants here would leave the explorer
 		// prompting on a store agtk located itself, with nothing said.
 		return fmt.Errorf("claude: settings `%s.%s` is %T, want a list", permissionsKey, allowKey, existing)
-	}
-	if !usesMemoryStore(plan) {
-		return nil
 	}
 
 	root := ""
