@@ -57,16 +57,16 @@ func TestMemoryIndexScaffoldsStore(t *testing.T) {
 	}
 
 	for _, rel := range []string{
-		".agents/memory/INDEX.md",
-		".agents/memory/notes",
-		".agents/memory/candidates/.gitkeep",
-		".agents/memory/.gitignore",
+		".memory/INDEX.md",
+		".memory/notes",
+		".memory/candidates/.gitkeep",
+		".memory/.gitignore",
 	} {
 		if _, err := os.Stat(filepath.Join(work, rel)); err != nil {
 			t.Errorf("missing %s: %v", rel, err)
 		}
 	}
-	ignore := readFile(t, filepath.Join(work, ".agents/memory/.gitignore"))
+	ignore := readFile(t, filepath.Join(work, ".memory/.gitignore"))
 	if !strings.Contains(ignore, ".hits.jsonl") {
 		t.Errorf(".gitignore does not cover the hits log: %q", ignore)
 	}
@@ -99,7 +99,7 @@ func TestMemoryStoreLivesNextToConfig(t *testing.T) {
 		t.Fatalf("memory index: %v", err)
 	}
 
-	if _, err := os.Stat(filepath.Join(worktree, ".agents/memory/INDEX.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(worktree, ".memory/INDEX.md")); err != nil {
 		t.Errorf("store not created next to the manifest: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(bare, ".agents")); err == nil {
@@ -112,7 +112,7 @@ func TestMemoryStoreLivesNextToConfig(t *testing.T) {
 // then a source edit makes `audit` fail without touching any file.
 func TestMemoryLifecycle(t *testing.T) {
 	work := memoryProject(t, "skills: []\n")
-	notePath := filepath.Join(work, ".agents/memory/notes/pins-shas.md")
+	notePath := filepath.Join(work, ".memory/notes/pins-shas.md")
 	writeFile(t, notePath, memoryNote)
 
 	stdout, _, err := runCLI(t, work, "memory", "lint")
@@ -158,7 +158,7 @@ func TestMemoryLifecycle(t *testing.T) {
 // rate, and --no-hit opts out.
 func TestMemoryShowRecordsHit(t *testing.T) {
 	work := memoryProject(t, "skills: []\n")
-	writeFile(t, filepath.Join(work, ".agents/memory/notes/pins-shas.md"), memoryNote)
+	writeFile(t, filepath.Join(work, ".memory/notes/pins-shas.md"), memoryNote)
 	if _, _, err := runCLI(t, work, "memory", "anchor", "--all"); err != nil {
 		t.Fatalf("memory anchor: %v", err)
 	}
@@ -203,7 +203,7 @@ func TestMemoryShowUnknownNote(t *testing.T) {
 // TestMemoryAuditJSON exposes the drift detail an agent re-verifies from.
 func TestMemoryAuditJSON(t *testing.T) {
 	work := memoryProject(t, "skills: []\n")
-	writeFile(t, filepath.Join(work, ".agents/memory/notes/pins-shas.md"), memoryNote)
+	writeFile(t, filepath.Join(work, ".memory/notes/pins-shas.md"), memoryNote)
 	if _, _, err := runCLI(t, work, "memory", "anchor", "--all"); err != nil {
 		t.Fatalf("memory anchor: %v", err)
 	}
@@ -262,8 +262,8 @@ func TestMemorySourceModeUsesConsumerConfig(t *testing.T) {
 // store.
 func TestMemoryWarnsOnUnreadableNote(t *testing.T) {
 	work := memoryProject(t, "skills: []\n")
-	writeFile(t, filepath.Join(work, ".agents/memory/notes/pins-shas.md"), memoryNote)
-	writeFile(t, filepath.Join(work, ".agents/memory/notes/broken.md"), "not a note\n")
+	writeFile(t, filepath.Join(work, ".memory/notes/pins-shas.md"), memoryNote)
+	writeFile(t, filepath.Join(work, ".memory/notes/broken.md"), "not a note\n")
 
 	_, stderr, err := runCLI(t, work, "memory", "index")
 	if err != nil {
@@ -288,8 +288,8 @@ func TestMemoryLintCleanWithoutStore(t *testing.T) {
 // the run continues, so the rest of the store still gets brought up to date.
 func TestMemoryAnchorContinuesPastFailure(t *testing.T) {
 	work := memoryProject(t, "skills: []\n")
-	writeFile(t, filepath.Join(work, ".agents/memory/notes/pins-shas.md"), memoryNote)
-	writeFile(t, filepath.Join(work, ".agents/memory/notes/deep.md"),
+	writeFile(t, filepath.Join(work, ".memory/notes/pins-shas.md"), memoryNote)
+	writeFile(t, filepath.Join(work, ".memory/notes/deep.md"),
 		strings.NewReplacer(
 			"name: pins-shas", "name: deep",
 			"  - path: internal/lockfile/*.go", "  - path: internal/**/*.go",
@@ -304,7 +304,7 @@ func TestMemoryAnchorContinuesPastFailure(t *testing.T) {
 	}
 
 	// The healthy note, sorted after the failing one, was still stamped.
-	if got := readFile(t, filepath.Join(work, ".agents/memory/notes/pins-shas.md")); !strings.Contains(got, "blob:") {
+	if got := readFile(t, filepath.Join(work, ".memory/notes/pins-shas.md")); !strings.Contains(got, "blob:") {
 		t.Error("a failing note prevented the rest of the store from being stamped")
 	}
 }
@@ -314,7 +314,7 @@ func TestMemoryAnchorContinuesPastFailure(t *testing.T) {
 // An unrelated `extends:` problem must not turn the memory hook red.
 func TestMemoryToleratesBrokenManifest(t *testing.T) {
 	work := memoryProject(t, "extends:\n  - \"!!! not a ref !!!\"\n")
-	writeFile(t, filepath.Join(work, ".agents/memory/notes/pins-shas.md"), memoryNote)
+	writeFile(t, filepath.Join(work, ".memory/notes/pins-shas.md"), memoryNote)
 
 	if _, _, err := runCLI(t, work, "memory", "anchor", "--all"); err != nil {
 		t.Fatalf("anchor with a broken manifest: %v", err)
@@ -336,7 +336,7 @@ func TestMemoryToleratesBrokenManifest(t *testing.T) {
 // `was`/`now` stay blob-shaped for consumers.
 func TestMemoryAuditReportsUnevaluableAnchor(t *testing.T) {
 	work := memoryProject(t, "skills: []\n")
-	writeFile(t, filepath.Join(work, ".agents/memory/notes/deep.md"),
+	writeFile(t, filepath.Join(work, ".memory/notes/deep.md"),
 		strings.NewReplacer(
 			"name: pins-shas", "name: deep",
 			"  - path: internal/lockfile/*.go", "  - path: internal/**/*.go",
@@ -407,13 +407,13 @@ func TestMemoryLintCatchesMisconfiguredRoot(t *testing.T) {
 // not leave the hits log exposed to `git add -A`.
 func TestMemoryShowScaffoldsGitignore(t *testing.T) {
 	work := memoryProject(t, "skills: []\n")
-	writeFile(t, filepath.Join(work, ".agents/memory/notes/pins-shas.md"), memoryNote)
+	writeFile(t, filepath.Join(work, ".memory/notes/pins-shas.md"), memoryNote)
 
 	if _, _, err := runCLI(t, work, "memory", "show", "pins-shas"); err != nil {
 		t.Fatalf("memory show: %v", err)
 	}
 
-	ignore := readFile(t, filepath.Join(work, ".agents/memory/.gitignore"))
+	ignore := readFile(t, filepath.Join(work, ".memory/.gitignore"))
 	if !strings.Contains(ignore, ".hits.jsonl") {
 		t.Errorf(".gitignore = %q, want it to cover the hits log", ignore)
 	}
@@ -443,7 +443,7 @@ func TestMemoryKeepsConfiguredRootWhenManifestIsBroken(t *testing.T) {
 // stdout must not read as success — a hook log often shows only stdout.
 func TestMemoryAnchorReportsNothingStampedOnStdout(t *testing.T) {
 	work := memoryProject(t, "skills: []\n")
-	writeFile(t, filepath.Join(work, ".agents/memory/notes/deep.md"),
+	writeFile(t, filepath.Join(work, ".memory/notes/deep.md"),
 		strings.NewReplacer(
 			"name: pins-shas", "name: deep",
 			"  - path: internal/lockfile/*.go", "  - path: internal/**/*.go",
@@ -498,7 +498,7 @@ func TestMemoryAnchorOnEmptyStore(t *testing.T) {
 // it is asserted field by field rather than just parsed.
 func TestMemoryShowJSON(t *testing.T) {
 	work := memoryProject(t, "skills: []\n")
-	writeFile(t, filepath.Join(work, ".agents/memory/notes/pins-shas.md"), memoryNote)
+	writeFile(t, filepath.Join(work, ".memory/notes/pins-shas.md"), memoryNote)
 	if _, _, err := runCLI(t, work, "memory", "anchor", "--all"); err != nil {
 		t.Fatalf("memory anchor: %v", err)
 	}
@@ -540,17 +540,17 @@ func TestMemoryShowJSON(t *testing.T) {
 // silently stamping nothing.
 func TestMemoryAnchorSelectsNamedNotes(t *testing.T) {
 	work := memoryProject(t, "skills: []\n")
-	writeFile(t, filepath.Join(work, ".agents/memory/notes/pins-shas.md"), memoryNote)
-	writeFile(t, filepath.Join(work, ".agents/memory/notes/other.md"),
+	writeFile(t, filepath.Join(work, ".memory/notes/pins-shas.md"), memoryNote)
+	writeFile(t, filepath.Join(work, ".memory/notes/other.md"),
 		strings.Replace(memoryNote, "name: pins-shas", "name: other", 1))
 
 	if _, _, err := runCLI(t, work, "memory", "anchor", "pins-shas"); err != nil {
 		t.Fatalf("memory anchor pins-shas: %v", err)
 	}
-	if got := readFile(t, filepath.Join(work, ".agents/memory/notes/pins-shas.md")); !strings.Contains(got, "blob:") {
+	if got := readFile(t, filepath.Join(work, ".memory/notes/pins-shas.md")); !strings.Contains(got, "blob:") {
 		t.Error("the named note was not stamped")
 	}
-	if got := readFile(t, filepath.Join(work, ".agents/memory/notes/other.md")); strings.Contains(got, "blob:") {
+	if got := readFile(t, filepath.Join(work, ".memory/notes/other.md")); strings.Contains(got, "blob:") {
 		t.Error("an unnamed note was stamped too")
 	}
 
@@ -563,7 +563,7 @@ func TestMemoryAnchorSelectsNamedNotes(t *testing.T) {
 // line that only appears once something has been read.
 func TestMemoryStatsText(t *testing.T) {
 	work := memoryProject(t, "skills: []\n")
-	writeFile(t, filepath.Join(work, ".agents/memory/notes/pins-shas.md"), memoryNote)
+	writeFile(t, filepath.Join(work, ".memory/notes/pins-shas.md"), memoryNote)
 	if _, _, err := runCLI(t, work, "memory", "anchor", "--all"); err != nil {
 		t.Fatalf("memory anchor: %v", err)
 	}
@@ -602,8 +602,8 @@ func TestMemoryStatsReportsStoreRoots(t *testing.T) {
 		t.Fatalf("memory stats: %v", err)
 	}
 	roots := decodeRoots(t, stdout)
-	if roots.Root != ".agents/memory" || roots.ProjectRoot != "." {
-		t.Errorf("default roots = %+v, want .agents/memory and .", roots)
+	if roots.Root != ".memory" || roots.ProjectRoot != "." {
+		t.Errorf("default roots = %+v, want .memory and .", roots)
 	}
 
 	// A configured root moves the store but not what anchors are relative to.
@@ -669,7 +669,7 @@ func decodeRoots(t *testing.T, stdout string) struct {
 // in a hook log, and each drift kind renders differently.
 func TestMemoryAuditTextNamesEveryDrift(t *testing.T) {
 	work := memoryProject(t, "skills: []\n")
-	writeFile(t, filepath.Join(work, ".agents/memory/notes/pins-shas.md"), memoryNote)
+	writeFile(t, filepath.Join(work, ".memory/notes/pins-shas.md"), memoryNote)
 	if _, _, err := runCLI(t, work, "memory", "anchor", "--all"); err != nil {
 		t.Fatalf("memory anchor: %v", err)
 	}
@@ -703,7 +703,7 @@ func TestMemoryAuditTextNamesEveryDrift(t *testing.T) {
 // all. That is the silent loss this command exists to surface.
 func TestMemoryCandidatesReportsAnUnreadableOne(t *testing.T) {
 	work := memoryProject(t, "skills: []\n")
-	writeFile(t, filepath.Join(work, ".agents/memory/candidates/20260905-bad.md"),
+	writeFile(t, filepath.Join(work, ".memory/candidates/20260905-bad.md"),
 		"---\nabout: broken\nbogus: x\n---\n\nbody\n")
 
 	stdout, _, err := runCLI(t, work, "memory", "candidates")
@@ -724,9 +724,9 @@ func TestMemoryCandidatesReportsAnUnreadableOne(t *testing.T) {
 // running the command they both point at would clear neither.
 func TestMemoryCandidatesCountAgreesWithStats(t *testing.T) {
 	work := memoryProject(t, "skills: []\n")
-	writeFile(t, filepath.Join(work, ".agents/memory/candidates/20260905-good.md"),
+	writeFile(t, filepath.Join(work, ".memory/candidates/20260905-good.md"),
 		"---\nabout: a finding\nsaw:\n  - x.go\n---\n\nevidence\n")
-	writeFile(t, filepath.Join(work, ".agents/memory/candidates/20260905-bad.md"),
+	writeFile(t, filepath.Join(work, ".memory/candidates/20260905-bad.md"),
 		"---\nabout: broken\nbogus: x\n---\n\nbody\n")
 
 	stdout, _, err := runCLI(t, work, "memory", "candidates")
@@ -751,7 +751,7 @@ func TestMemoryCandidatesCountAgreesWithStats(t *testing.T) {
 // could not read" will report the backlog as cleared.
 func TestMemoryCandidatesJSONSeparatesEmptyFromUnreadable(t *testing.T) {
 	work := memoryProject(t, "skills: []\n")
-	writeFile(t, filepath.Join(work, ".agents/memory/candidates/20260905-bad.md"),
+	writeFile(t, filepath.Join(work, ".memory/candidates/20260905-bad.md"),
 		"---\nabout: broken\nbogus: x\n---\n\nbody\n")
 
 	stdout, _, err := runCLI(t, work, "memory", "candidates", "--json")
@@ -875,7 +875,7 @@ func TestMemoryAnchorRefusesToStampTheWholeStoreByAccident(t *testing.T) {
 // the form the curator uses after checking one.
 func TestMemoryAnchorStampsWhatItIsGiven(t *testing.T) {
 	work := memoryProject(t, "skills: []\n")
-	writeFile(t, filepath.Join(work, ".agents/memory/notes/pins-shas.md"), memoryNote)
+	writeFile(t, filepath.Join(work, ".memory/notes/pins-shas.md"), memoryNote)
 
 	if _, stderr, err := runCLI(t, work, "memory", "anchor", "pins-shas"); err != nil {
 		t.Fatalf("anchor by name: %v\n%s", err, stderr)
@@ -891,7 +891,7 @@ func TestMemoryAnchorStampsWhatItIsGiven(t *testing.T) {
 func TestMemoryAnchorRefusesTwoDifferentInstructions(t *testing.T) {
 	work := memoryProject(t, "skills: []\n")
 
-	writeFile(t, filepath.Join(work, ".agents/memory/notes/pins-shas.md"), memoryNote)
+	writeFile(t, filepath.Join(work, ".memory/notes/pins-shas.md"), memoryNote)
 
 	if _, _, err := runCLI(t, work, "memory", "anchor", "--all", "pins-shas"); err == nil {
 		t.Fatal("anchor accepted --all alongside a named note")
@@ -904,7 +904,7 @@ func TestMemoryAnchorRefusesTwoDifferentInstructions(t *testing.T) {
 // is not visible anywhere else. Both numbers have to come out of one command.
 func TestMemoryStatsReportsBothSidesOfTheLedger(t *testing.T) {
 	work := memoryProject(t, "skills: []\n")
-	writeFile(t, filepath.Join(work, ".agents/memory/notes/pins-shas.md"), memoryNote)
+	writeFile(t, filepath.Join(work, ".memory/notes/pins-shas.md"), memoryNote)
 	if _, _, err := runCLI(t, work, "memory", "anchor", "--all"); err != nil {
 		t.Fatalf("memory anchor: %v", err)
 	}
@@ -939,7 +939,7 @@ func TestMemoryStatsReportsBothSidesOfTheLedger(t *testing.T) {
 	// Once reads reach the note count, every cold note could have been warm,
 	// so silence about one is a fact about that note rather than about the
 	// sample, and the caveat has to get out of the way while the list stays.
-	writeFile(t, filepath.Join(work, ".agents/memory/notes/never-read.md"), secondMemoryNote)
+	writeFile(t, filepath.Join(work, ".memory/notes/never-read.md"), secondMemoryNote)
 	if _, _, err := runCLI(t, work, "memory", "anchor", "--all"); err != nil {
 		t.Fatalf("memory anchor: %v", err)
 	}

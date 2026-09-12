@@ -134,7 +134,14 @@ func memoryStore(env *Env) (*memory.Store, error) {
 	if err := memory.ValidateRoot(root); err != nil {
 		return nil, err
 	}
-	return memory.New(memoryProjectRoot(env), root), nil
+	store := memory.New(memoryProjectRoot(env), root)
+	// Every memory command comes through here, so a store left at the old
+	// default is reported by whichever one the repo runs first rather than
+	// by the one that happens to scaffold over it.
+	if err := store.CheckLegacyRoot(); err != nil {
+		return nil, err
+	}
+	return store, nil
 }
 
 // loadStoreNotes is the shared prologue: locate the store, parse its notes.

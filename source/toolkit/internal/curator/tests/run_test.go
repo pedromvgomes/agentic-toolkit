@@ -183,7 +183,7 @@ func TestCheckStartsNothing(t *testing.T) {
 		Provider:      "claudecode",
 		Binary:        fake.Path(),
 		WorkDir:       t.TempDir(),
-		CandidatesDir: "/repo/.agents/memory/candidates",
+		CandidatesDir: "/repo/.memory/candidates",
 	})
 	if err != nil {
 		t.Fatalf("Check: %v", err)
@@ -209,13 +209,13 @@ func TestCheckReportsTheGrantARunWouldUse(t *testing.T) {
 		Provider:      "claudecode",
 		Binary:        fake.Path(),
 		WorkDir:       t.TempDir(),
-		NotesDir:      "/repo/.agents/memory/notes",
-		CandidatesDir: "/repo/.agents/memory/candidates",
+		NotesDir:      "/repo/.memory/notes",
+		CandidatesDir: "/repo/.memory/candidates",
 	})
 	if err != nil {
 		t.Fatalf("Check: %v", err)
 	}
-	want := curator.AllowedTools("", "/repo/.agents/memory/notes", "/repo/.agents/memory/candidates")
+	want := curator.AllowedTools("", "/repo/.memory/notes", "/repo/.memory/candidates")
 	if len(ready.Tools) != len(want) {
 		t.Fatalf("Tools = %v, want the run's grant %v", ready.Tools, want)
 	}
@@ -225,8 +225,8 @@ func TestCheckReportsTheGrantARunWouldUse(t *testing.T) {
 		if !strings.HasPrefix(tool, "Bash(rm ") {
 			continue
 		}
-		if !strings.Contains(tool, "/repo/.agents/memory/candidates/") &&
-			!strings.Contains(tool, "/repo/.agents/memory/notes/") {
+		if !strings.Contains(tool, "/repo/.memory/candidates/") &&
+			!strings.Contains(tool, "/repo/.memory/notes/") {
 			t.Errorf("check reports an unscoped deletion grant: %q", tool)
 		}
 	}
@@ -359,8 +359,8 @@ func TestTheStaleSweepMayRunTheAuditItIsToldToRun(t *testing.T) {
 // broadest entries in it.
 func TestTheWriteGrantIsScopedToTheNotesDirectory(t *testing.T) {
 	granted := grant(t, curator.Options{
-		NotesDir:      "/repo/.agents/memory/notes",
-		CandidatesDir: "/repo/.agents/memory/candidates",
+		NotesDir:      "/repo/.memory/notes",
+		CandidatesDir: "/repo/.memory/candidates",
 	})
 	for _, g := range granted {
 		if g == "Write" || g == "Edit" {
@@ -371,7 +371,7 @@ func TestTheWriteGrantIsScopedToTheNotesDirectory(t *testing.T) {
 	// An Edit rule covers every file-editing tool, Write included. A Write
 	// rule is not consulted by the file permission check, so a grant spelled
 	// that way names the right directory and constrains nothing.
-	if !strings.Contains(joined, "Edit(//repo/.agents/memory/notes/**)") {
+	if !strings.Contains(joined, "Edit(//repo/.memory/notes/**)") {
 		t.Errorf("missing the scoped Edit rule; the curator cannot author the notes it exists to author: %q", joined)
 	}
 	if strings.Contains(joined, "Write(") {
@@ -385,8 +385,8 @@ func TestTheWriteGrantIsScopedToTheNotesDirectory(t *testing.T) {
 // run exists to make.
 func TestAnAbsoluteNotesPathIsDoubledAtTheRoot(t *testing.T) {
 	granted := strings.Join(grant(t, curator.Options{
-		NotesDir:      "/repo/.agents/memory/notes",
-		CandidatesDir: "/repo/.agents/memory/candidates",
+		NotesDir:      "/repo/.memory/notes",
+		CandidatesDir: "/repo/.memory/candidates",
 	}), "\x00")
 
 	if !strings.Contains(granted, "Edit(//repo/") {
@@ -409,7 +409,7 @@ func TestThePermissionModeDoesNotWaiveTheGrant(t *testing.T) {
 // rather than holding a licence over the whole repo that nobody granted it.
 func TestNamingNoNotesDirectoryGrantsNoWrite(t *testing.T) {
 	granted := strings.Join(grant(t, curator.Options{
-		CandidatesDir: "/repo/.agents/memory/candidates",
+		CandidatesDir: "/repo/.memory/candidates",
 	}), "\x00")
 
 	if strings.Contains(granted, "Write") || strings.Contains(granted, "Edit") {
@@ -422,11 +422,11 @@ func TestNamingNoNotesDirectoryGrantsNoWrite(t *testing.T) {
 // the store asserting something false while the run reports success.
 func TestTheGrantPermitsTheRetractionThePromptInstructs(t *testing.T) {
 	granted := strings.Join(grant(t, curator.Options{
-		NotesDir:      "/repo/.agents/memory/notes",
-		CandidatesDir: "/repo/.agents/memory/candidates",
+		NotesDir:      "/repo/.memory/notes",
+		CandidatesDir: "/repo/.memory/candidates",
 	}), "\x00")
 
-	if !strings.Contains(granted, "Bash(rm /repo/.agents/memory/notes/*)") {
+	if !strings.Contains(granted, "Bash(rm /repo/.memory/notes/*)") {
 		t.Errorf("the curator cannot delete a note it rules now-false: %q", granted)
 	}
 }
@@ -436,8 +436,8 @@ func TestTheGrantPermitsTheRetractionThePromptInstructs(t *testing.T) {
 func TestADryRunCannotDeleteNotes(t *testing.T) {
 	granted := strings.Join(grant(t, curator.Options{
 		DryRun:        true,
-		NotesDir:      "/repo/.agents/memory/notes",
-		CandidatesDir: "/repo/.agents/memory/candidates",
+		NotesDir:      "/repo/.memory/notes",
+		CandidatesDir: "/repo/.memory/candidates",
 	}), "\x00")
 
 	if strings.Contains(granted, "rm ") {

@@ -70,7 +70,10 @@ type Stack struct {
 // the overlay: a stack pulled in via `extends:` must not be able to decide
 // where another repo commits its notes.
 type MemoryConfig struct {
-	Root string `yaml:"root,omitempty" agtkdoc:"Store location, relative to the directory holding the entry manifest. Defaults to \".agents/memory\"."`
+	// A struct tag cannot interpolate a constant, so the default is spelled
+	// out here as well as in memory.DefaultRoot, and the two are held
+	// together by a test rather than by the compiler.
+	Root string `yaml:"root,omitempty" agtkdoc:"Store location, relative to the directory holding the entry manifest. Defaults to \".memory\"."`
 	// Agent names the coding-agent CLI that curation drives. It is a
 	// provider, not a definition of category `agent` and not the agent
 	// running the session — see CONTEXT.md, which flags the collision.
