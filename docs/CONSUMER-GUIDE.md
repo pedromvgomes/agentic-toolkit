@@ -199,25 +199,25 @@ Three things to know before opting into `codex`:
   blocks by the exit code it returns, so there is no key for it to go
   to.
 
-Codex's skills and rules share the `.agents/` directory with the memory
-store below, when that store is left at its default root. They occupy
-different subdirectories and agtk only ever removes files it wrote, so
-neither overwrites the other — but `.gitignore` does not work per
-subdirectory the way render does, which is why the store is better kept
-outside `.agents/` entirely. See the note under **Memory store**.
+`.agents/` is agtk's output for this platform, so nothing you maintain by
+hand belongs inside it: a repo ignores a rendered root wholesale, and that
+ignore rule reaches whatever is committed underneath. The memory store's
+default sits outside it for exactly this reason — see **Toolkit namespace**
+in [CONTEXT.md](../CONTEXT.md).
 
 ## Memory store
 
 `agtk memory` manages a repo-resident store of durable notes about your
 codebase — invariants, rationale, gotchas and dead ends that cost real
-exploration to learn. It defaults to `.agents/memory/` next to your stack
-manifest, is committed, and is reviewed in PRs like any other source.
+exploration to learn. It defaults to `.memory/` next to your stack manifest,
+is committed, and is reviewed in PRs like any other source. Set
+`memory.root` to put it somewhere else; keep that somewhere outside every
+platform's rendered tree, for the reason **Toolkit namespace** gives in
+[CONTEXT.md](../CONTEXT.md).
 
-If you render for the `codex` platform, set `memory.root` to a path outside
-`.agents/`. That directory is the codex adapter's output, so it is one a repo
-ignores wholesale — and an ignore rule covering it reaches a store sitting
-inside it. Notes stop being committed, and nothing says so: the store still
-works, because `agtk` reads the working tree.
+A store scaffolded under an older `agtk`, at `.agents/memory/`, is reported
+rather than read as a repo with no notes. Move it with `git mv .agents/memory
+.memory`, or set `memory.root: .agents/memory` to leave it where it is.
 
 ```bash
 agtk memory index               # regenerate INDEX.md (scaffolds the store)
@@ -236,7 +236,7 @@ and CI.
 without re-deriving resolution from the manifest:
 
 ```json
-{ "root": ".agents/memory", "project_root": "." }
+{ "root": ".memory", "project_root": "." }
 ```
 
 `root` is where notes and candidates live — `memory.root` if the entry

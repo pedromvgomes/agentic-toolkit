@@ -39,6 +39,36 @@ func New(projectRoot, root string) *Store {
 	return &Store{Root: root, ProjectRoot: projectRoot, RootIsExplicit: explicit}
 }
 
+// CheckLegacyRoot reports a store left at the root DefaultRoot replaced.
+//
+// An absent store otherwise means "this repo has not adopted memory", and
+// every command scaffolds or reports zero notes accordingly. That is right
+// for a repo that never wrote one and wrong for a repo whose notes are
+// sitting one directory away: it would index an empty store over a full
+// one, and the only outward sign is a note count nobody reads as an error.
+//
+// Only the unconfigured store is checked. `memory.root` naming the old path
+// is a consumer's decision about its own repo, and the rule that moved this
+// default binds what agtk fixes, not what a consumer picks. For the same
+// reason the refusal offers two remedies where the review manifest's offers
+// one: a store's location is configurable, so staying put is a real answer.
+//
+// Nothing reads a store at a git ref, so unlike the review manifest there is
+// no history-shaped caller that has to read the old path instead of refusing.
+func (s *Store) CheckLegacyRoot() error {
+	if s.RootIsExplicit || s.Exists() {
+		return nil
+	}
+	legacy := filepath.Join(s.ProjectRoot, filepath.FromSlash(LegacyDefaultRoot))
+	if info, err := os.Stat(legacy); err != nil || !info.IsDir() {
+		return nil
+	}
+	return fmt.Errorf(
+		"memory store found at %s, which agtk no longer defaults to; move it to %s "+
+			"(`git mv %s %s`), or set `memory.root: %s` in the entry manifest to keep it there",
+		LegacyDefaultRoot, DefaultRoot, LegacyDefaultRoot, DefaultRoot, LegacyDefaultRoot)
+}
+
 // ValidateRoot rejects a configured `memory.root` that would put the store
 // outside the repo. The store is meant to be committed and to travel with
 // its branch; an absolute or climbing path silently defeats both, the same

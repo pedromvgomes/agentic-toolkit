@@ -86,7 +86,7 @@ func TestTheRunDoesNotWaivePermissionsWholesale(t *testing.T) {
 // instruction, so it has to reach the two commands that write to the store and
 // stop well short of a blanket shell.
 func TestTheToolGrantReachesTheStoreWritersAndNoFurther(t *testing.T) {
-	granted := curator.AllowedTools("/opt/agtk", "/repo/.agents/memory/notes", "/repo/.agents/memory/candidates")
+	granted := curator.AllowedTools("/opt/agtk", "/repo/.memory/notes", "/repo/.memory/candidates")
 
 	for _, want := range []string{"Bash(/opt/agtk memory anchor*)", "Bash(/opt/agtk memory index*)"} {
 		if !slices.Contains(granted, want) {
@@ -105,7 +105,7 @@ func TestTheToolGrantReachesTheStoreWritersAndNoFurther(t *testing.T) {
 // one agent with a constructed grant the ability to remove anything in the
 // repo — the guarantee this list exists to make, given away in its last line.
 func TestTheDeletionGrantsReachOnlyTheStore(t *testing.T) {
-	granted := curator.AllowedTools("/opt/agtk", "/repo/.agents/memory/notes", "/repo/.agents/memory/candidates")
+	granted := curator.AllowedTools("/opt/agtk", "/repo/.memory/notes", "/repo/.memory/candidates")
 
 	var deletions []string
 	for _, tool := range granted {
@@ -114,8 +114,8 @@ func TestTheDeletionGrantsReachOnlyTheStore(t *testing.T) {
 		}
 	}
 	want := []string{
-		"Bash(rm /repo/.agents/memory/candidates/*)",
-		"Bash(rm /repo/.agents/memory/notes/*)",
+		"Bash(rm /repo/.memory/candidates/*)",
+		"Bash(rm /repo/.memory/notes/*)",
 	}
 	if len(deletions) != len(want) {
 		t.Fatalf("deletion grants = %v, want %v", deletions, want)

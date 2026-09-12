@@ -27,9 +27,8 @@ platforms:
 instructions:
   - agentic-toolkit-repo
 
-# `root` names a path outside every platform's rendered tree. The default,
-# `.agents/memory`, puts committed notes inside the directory the codex
-# adapter owns, where the ignore rule covering that tree reaches them.
+# `root` is set rather than left to the default it happens to match, so this
+# repo exercises the configured path as well as shipping the default one.
 #
 # `agent` has no default because curation is the one operation that spends
 # money, so an unconfigured repo is refused rather than guessed at.

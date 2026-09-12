@@ -60,11 +60,12 @@ when they sit below it, and absolute otherwise; use them as given rather than re
 through `extends:` is deliberately ignored, so the manifest and `agtk` disagree.
 
 If the output has no `root` field, this `agtk` predates it (definitions are pinned by lockfile,
-the binary is installed separately, so the two can skew). Try `.agents/memory` — but **confirm
-it before writing to it**, by checking that `.agents/memory/INDEX.md` is really there. It is the
-default, not a guarantee: a consumer that set `memory.root` keeps its store elsewhere, and
-staging into an invented directory loses the finding silently. If it is not there, treat this
-as the "no `agtk`" case below. Either way, do not go reading the manifest instead.
+the binary is installed separately, so the two can skew). Try `.memory`, then `.agents/memory`,
+which is the root an `agtk` that old defaults to — but **confirm either before writing to it**,
+by checking that its `INDEX.md` is really there. A default is not a guarantee: a consumer that
+set `memory.root` keeps its store elsewhere, and staging into an invented directory loses the
+finding silently. If neither is there, treat this as the "no `agtk`" case below. Either way, do
+not go reading the manifest instead.
 
 If `notes` is `0` the store exists but is empty: say so once, explore normally, and still do
 Step 5 — a repo with an empty store is exactly the one that benefits most from the first

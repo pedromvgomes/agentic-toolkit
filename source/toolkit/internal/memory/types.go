@@ -24,7 +24,19 @@ import "strings"
 const (
 	// DefaultRoot is where the store lives when `memory.root` is unset,
 	// relative to the directory holding the entry stack manifest.
-	DefaultRoot = ".agents/memory"
+	//
+	// A store is committed content, so it sits outside the toolkit
+	// namespace and outside every platform's rendered tree: a rendered root
+	// is regenerated and pruned, so a repo ignores it wholesale, and the
+	// ignore rule reaches whatever is committed inside it. That binds this
+	// default as much as a path a consumer picks, because a consumer that
+	// sets nothing gets this one.
+	DefaultRoot = ".memory"
+
+	// LegacyDefaultRoot is the root DefaultRoot replaced. Nothing loads from
+	// here; callers look for it so a store scaffolded under the old default
+	// is reported rather than read as a repo that never adopted memory.
+	LegacyDefaultRoot = ".agents/memory"
 
 	IndexFile     = "INDEX.md"
 	NotesDir      = "notes"

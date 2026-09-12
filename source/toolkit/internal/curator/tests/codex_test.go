@@ -27,10 +27,10 @@ func codexOpts(t *testing.T, opts curator.Options) (curator.Options, *agentictes
 		opts.WorkDir = t.TempDir()
 	}
 	if opts.NotesDir == "" {
-		opts.NotesDir = "/repo/.agents/memory/notes"
+		opts.NotesDir = "/repo/.memory/notes"
 	}
 	if opts.CandidatesDir == "" {
-		opts.CandidatesDir = "/repo/.agents/memory/candidates"
+		opts.CandidatesDir = "/repo/.memory/candidates"
 	}
 	return opts, fake
 }

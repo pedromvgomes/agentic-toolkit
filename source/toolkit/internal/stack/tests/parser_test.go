@@ -1,11 +1,13 @@
 package tests
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 	"testing/fstest"
 
 	"github.com/pedromvgomes/agentic-toolkit/internal/definitions"
+	"github.com/pedromvgomes/agentic-toolkit/internal/memory"
 	"github.com/pedromvgomes/agentic-toolkit/internal/stack"
 )
 
@@ -303,5 +305,21 @@ func TestMemoryRootFromBytes(t *testing.T) {
 				t.Errorf("= (%q, %v), want (%q, %v)", root, ok, tc.wantRoot, tc.wantOK)
 			}
 		})
+	}
+}
+
+// TestMemoryRootDocNamesTheRealDefault: the `agtkdoc` tag on MemoryConfig.Root
+// is where the default reaches the generated CONFIG-SCHEMA.md, and a struct tag
+// cannot interpolate a constant. Without this, moving memory.DefaultRoot leaves
+// the published schema documenting a path agtk does not use, and regenerating
+// the docs reproduces the wrong value rather than catching it.
+func TestMemoryRootDocNamesTheRealDefault(t *testing.T) {
+	field, ok := reflect.TypeOf(stack.MemoryConfig{}).FieldByName("Root")
+	if !ok {
+		t.Fatal("MemoryConfig has no Root field")
+	}
+	doc := field.Tag.Get("agtkdoc")
+	if !strings.Contains(doc, `"`+memory.DefaultRoot+`"`) {
+		t.Errorf("agtkdoc does not name memory.DefaultRoot (%q):\n%s", memory.DefaultRoot, doc)
 	}
 }

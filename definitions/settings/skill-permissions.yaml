@@ -10,11 +10,15 @@ value:
       # Reporting only. `curate` is not pre-approved: it spends money and
       # rewrites notes/, so it stays a prompt the user answers deliberately.
       - "Bash(agtk memory candidates*)"
-      # These two assume the default store location. A consumer that sets
-      # `memory.root` needs its own entries for that path — permissions are
-      # pre-approval, so the only cost of a miss is a prompt, never a block.
-      - "Read(**/.agents/memory/INDEX.md)"
-      - "Write(**/.agents/memory/candidates/**)"
+      # These two are the default store location spelled out. They are
+      # literals rather than something derived from `memory.root`, because a
+      # settings definition carries an opaque value and the adapter that
+      # merges it never resolves the manifest. A consumer that sets
+      # `memory.root` therefore needs its own entries for that path —
+      # permissions are pre-approval, so the only cost of a miss is a prompt,
+      # never a block.
+      - "Read(**/.memory/INDEX.md)"
+      - "Write(**/.memory/candidates/**)"
       # The code-review subcommands that start no model. `run` is absent
       # because it costs money, and `approve` because a person types that one.
       #

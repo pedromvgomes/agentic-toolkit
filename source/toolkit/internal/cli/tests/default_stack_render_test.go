@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/pedromvgomes/agentic-toolkit/internal/memory"
 )
 
 // The default stack is the thing consumers actually get, and every part of it
@@ -113,6 +115,20 @@ func TestPreApprovedPermissionsNameCommandsThatExist(t *testing.T) {
 	} {
 		if !strings.Contains(string(settings), allowed) {
 			t.Errorf("settings.json pre-approves no %q", allowed)
+		}
+	}
+
+	// The store-path grants are literals in the settings definition: a
+	// settings value is opaque to the adapter that merges it, so nothing
+	// resolves memory.root or the default on the way through. A grant naming
+	// a root agtk does not use is a prompt on every delegation, and the
+	// render is the only place the two can be compared.
+	for _, allowed := range []string{
+		"Read(**/" + memory.DefaultRoot + "/INDEX.md)",
+		"Write(**/" + memory.DefaultRoot + "/candidates/**)",
+	} {
+		if !strings.Contains(string(settings), allowed) {
+			t.Errorf("settings.json pre-approves no %q, so the explorer prompts for the default store:\n%s", allowed, settings)
 		}
 	}
 
