@@ -7,7 +7,7 @@ A consumer repo opts into the toolkit by committing two files at the repo root:
 - `.agentic-toolkit.yaml` — entry-point **stack manifest**: declares which other stacks to extend and which definitions to layer on top. Hand-edited.
 - `.agentic-toolkit.lock.yaml` — pinned record of what the resolver actually fetched. Resolver-written; commit it.
 
-A repo that wants its own code review declares one more, optional file: `.agents/code-review/manifest.yaml`.
+A repo that wants its own code review declares one more, optional file: `.agentic-toolkit/code-review/manifest.yaml`.
 
 ## Stack manifest
 
@@ -79,7 +79,7 @@ rules:
 
 ## Review manifest
 
-**Path:** `.agents/code-review/manifest.yaml` at the repo root.
+**Path:** `.agentic-toolkit/code-review/manifest.yaml` at the repo root.
 
 Declares the reviewers `agtk code-review` can staff a panel with, the panels themselves, and the rules that raise one panel to another. A repo with no manifest is reviewed by the one built into `agtk`; a repo with one is using it **whole**, because prompt bodies stay shareable through `builtin:` references rather than through a merge algorithm.
 

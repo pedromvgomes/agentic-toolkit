@@ -52,6 +52,9 @@ func runCodeReviewInit(env *Env, force, dryRun bool) error {
 		return fmt.Errorf("locate the repository: %w", err)
 	}
 	path := review.ManifestPath(root)
+	legacy := review.LegacyManifestPath(root)
+	_, legacyErr := os.Stat(legacy)
+	hasLegacy := legacyErr == nil
 
 	// Reported before the existence check, because saying where the manifest
 	// lives is the one thing --dry-run is for, and it is most useful in the
@@ -61,8 +64,26 @@ func runCodeReviewInit(env *Env, force, dryRun bool) error {
 		if _, err := os.Stat(path); err == nil {
 			fmt.Fprintln(env.Stdout, "It exists already; writing over it needs --force.")
 		}
+		if hasLegacy {
+			fmt.Fprintf(env.Stdout, "%s holds a manifest agtk no longer reads; %s moves it.\n",
+				legacy, legacyMoveCommand())
+		}
 		fmt.Fprintln(env.Stdout, "\nNothing was written.")
 		return nil
+	}
+
+	// A manifest at the path ManifestDir replaced is a repo mid-migration, and
+	// writing here would end the migration in the worst possible way: the new
+	// path exists, so every loader stops looking at the old one and finds the
+	// built-in default instead of refusing. The repo's panels, judge and
+	// approval floor are gone with nothing saying so — which is what the
+	// refusal in `review.Load` exists to prevent, reached through the command
+	// somebody is most likely to run while moving the file.
+	if hasLegacy && !force {
+		return fmt.Errorf("%s holds this repo's review rules, at a path agtk no longer reads; %s keeps them, and --force writes the default over them instead",
+			legacy, legacyMoveCommand())
+	} else if legacyErr != nil && !os.IsNotExist(legacyErr) {
+		return fmt.Errorf("read %s: %w", legacy, legacyErr)
 	}
 
 	// Checked before writing, because a manifest is the file a repo tuned its
@@ -126,4 +147,11 @@ func reportUnrunnableRules(env *Env, root string) {
 			return
 		}
 	}
+}
+
+// legacyMoveCommand is the git invocation that moves a manifest to where agtk
+// reads it, named in both the refusal and the dry run so the remedy reads the
+// same either way.
+func legacyMoveCommand() string {
+	return "`git mv " + review.LegacyManifestDir + " " + review.ManifestDir + "`"
 }

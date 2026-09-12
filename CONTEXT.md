@@ -109,8 +109,10 @@ One read of a **Note** through `agtk memory show`. The numerator that says wheth
 **Memory store**'s cost is being repaid.
 
 **Memory store**:
-The `.agents/memory/` directory holding the **Index**, `notes/` and `candidates/`. Committed,
-so notes are reviewable in PRs and travel with the branch that wrote them.
+The directory holding the **Index**, `notes/` and `candidates/`, located by `memory.root` in the
+entry manifest. Committed, so notes are reviewable in PRs and travel with the branch that wrote
+them — which is why its path is one a repo chooses rather than one a **Platform**'s **Adapter**
+owns.
 _Avoid_: memory bank, knowledge base
 
 **Explorer**:
@@ -455,7 +457,7 @@ approval must never read as a clean review.
 _Avoid_: summary, header, footer, marker (bare)
 
 **Review manifest**:
-`.agents/code-review/manifest.yaml`: the single declaration of **Reviewer**s, **Panel**s and the
+`.agentic-toolkit/code-review/manifest.yaml`: the single declaration of **Reviewer**s, **Panel**s and the
 prompt bodies they use. Read by `agtk code-review` and by nothing else. A roster a skill also
 carried would be a second one, and the two would disagree the first time either changed.
 _Avoid_: panels.json, roster file, review config

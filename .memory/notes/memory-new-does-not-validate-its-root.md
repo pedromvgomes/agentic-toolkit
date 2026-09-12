@@ -6,9 +6,11 @@ anchors:
   - path: source/toolkit/internal/memory/store.go
     blob: 54fdd0d1f563
   - path: source/toolkit/internal/cli/memory.go
-    blob: 555cb4f35496
+    blob: 7ab84a4dc55e
   - path: source/toolkit/internal/memory/hits.go
     blob: 30d823466c1e
+  - path: source/toolkit/internal/memory/tests/index_lint_test.go
+    blob: 8e2bacfb0060
 confidence: verified
 ---
 
@@ -19,6 +21,12 @@ The confinement rule lives in `ValidateRoot` (`source/toolkit/internal/memory/st
 function that rejects an absolute root and one climbing out with `..`. The reason is stated
 at `:42-45`: the store is meant to be committed and to travel with its branch, and either
 shape silently defeats both.
+
+Nothing else about the root's shape is checked: a nested relative path is accepted as-is, so
+relocating the store (to `docs/memory`, `agent-memory/`, anywhere inside the repo) needs only
+a plain relative path with no leading `/` and no `..`. `docs/memory` is in the accepted set of
+`TestValidateRootRejectsEscapes`
+(`source/toolkit/internal/memory/tests/index_lint_test.go:296`).
 
 Exactly one caller pairs them, in the CLI: `source/toolkit/internal/cli/memory.go:134` runs
 `ValidateRoot(root)` and only then `memory.New(...)` at `:137`. Nothing in the `memory`

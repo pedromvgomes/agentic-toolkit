@@ -18,11 +18,7 @@
 /.mcp.json
 /.codex/
 /AGENTS.md
-# .agents/ is matched entry by entry: the memory store lives under
-# .agents/memory and is committed, so a blanket /.agents/ rule would
-# stop tracking it.
-/.agents/skills/
-/.agents/.agtk-manifest.json
+/.agents/
 
 # Locally built agtk, used by .gt.yaml to sync this repo with its own build.
 /.gt/

@@ -192,13 +192,13 @@ func planFor(opts Options, pm *preparedMaterial, panelOverride string) (*Plan, *
 	}
 	panel := pm.m.Panels[sel.Panel]
 	judge := pm.m.EffectiveJudge(sel.Panel)
-	judgeBody, err := runnerBody(opts.Dir, opts.Base, *judge)
+	judgeBody, err := runnerBody(opts.Dir, opts.Base, pm.m.Dir, *judge)
 	if err != nil {
 		return nil, nil, err
 	}
 	for _, name := range panel.Reviewers {
 		runner := pm.m.Reviewers[name]
-		body, err := runnerBody(opts.Dir, opts.Base, runner)
+		body, err := runnerBody(opts.Dir, opts.Base, pm.m.Dir, runner)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -442,7 +442,7 @@ func decide(ctx context.Context, opts Options, inv invoker, sched *scheduler,
 
 	if validator := m.EffectiveValidator(sel.Panel); sel.Validates && validator != nil {
 		var validatorReports []RunReport
-		candidates, validatorReports = runValidators(ctx, opts, inv, sched, *validator, material, candidates)
+		candidates, validatorReports = runValidators(ctx, opts, inv, sched, m.Dir, *validator, material, candidates)
 		out.Reports = append(out.Reports, validatorReports...)
 	}
 
@@ -475,7 +475,7 @@ func decide(ctx context.Context, opts Options, inv invoker, sched *scheduler,
 		return
 	}
 
-	judged, good, discarded, reattached, judgeReport := runJudge(ctx, opts, inv, sched, *judge, material, kept)
+	judged, good, discarded, reattached, judgeReport := runJudge(ctx, opts, inv, sched, m.Dir, *judge, material, kept)
 	out.Reports = append(out.Reports, judgeReport)
 	out.DiscardedIDs = discarded
 	out.ReattachedIDs = reattached
@@ -592,12 +592,12 @@ func reviewerJob(opts Options, inv invoker, runner review.Runner, planned Planne
 // than verifying — which is the whole of what an independent second opinion
 // adds.
 func runValidators(ctx context.Context, opts Options, inv invoker, sched *scheduler,
-	validator review.Runner, material Material, candidates []Finding) ([]Finding, []RunReport) {
+	manifestDir string, validator review.Runner, material Material, candidates []Finding) ([]Finding, []RunReport) {
 
 	if len(candidates) == 0 {
 		return candidates, nil
 	}
-	body, err := builtinPromptFor(opts, validator)
+	body, err := builtinPromptFor(opts, manifestDir, validator)
 	if err != nil {
 		// Without a body there is nothing to ask, so every candidate finding goes
 		// forward unvalidated rather than being dropped by a run that never
@@ -707,7 +707,7 @@ func validatorJob(opts Options, inv invoker, validator review.Runner, material M
 // runJudge puts the surviving candidate findings to the judge and re-attaches
 // what the judge does not return.
 func runJudge(ctx context.Context, opts Options, inv invoker, sched *scheduler,
-	judge review.Runner, material Material, candidates []Finding) ([]Finding, []string, []string, []string, RunReport) {
+	manifestDir string, judge review.Runner, material Material, candidates []Finding) ([]Finding, []string, []string, []string, RunReport) {
 
 	out := RunReport{Label: "judge", Role: RoleJudge, Provider: judge.Provider, Model: judge.Model}
 
@@ -718,7 +718,7 @@ func runJudge(ctx context.Context, opts Options, inv invoker, sched *scheduler,
 		return nil, nil, nil, nil, out
 	}
 
-	body, err := builtinPromptFor(opts, judge)
+	body, err := builtinPromptFor(opts, manifestDir, judge)
 	if err != nil {
 		out.Report = Unavailable("the judge prompt could not be read: %v", err)
 		return nil, nil, nil, nil, out
@@ -941,8 +941,8 @@ func loadManifest(opts Options) (*review.Manifest, string, bool, error) {
 }
 
 // builtinPromptFor reads a judge's or validator's body.
-func builtinPromptFor(opts Options, r review.Runner) (string, error) {
-	return runnerBody(opts.Dir, opts.Base, r)
+func builtinPromptFor(opts Options, manifestDir string, r review.Runner) (string, error) {
+	return runnerBody(opts.Dir, opts.Base, manifestDir, r)
 }
 
 // manifestLabel names which manifest was read.

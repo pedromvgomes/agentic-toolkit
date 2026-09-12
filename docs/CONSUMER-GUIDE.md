@@ -195,15 +195,24 @@ Three things to know before opting into `codex`:
   to.
 
 Codex's skills and rules share the `.agents/` directory with the memory
-store below. They occupy different subdirectories and agtk only ever
-removes files it wrote, so the two do not interfere.
+store below, when that store is left at its default root. They occupy
+different subdirectories and agtk only ever removes files it wrote, so
+neither overwrites the other — but `.gitignore` does not work per
+subdirectory the way render does, which is why the store is better kept
+outside `.agents/` entirely. See the note under **Memory store**.
 
 ## Memory store
 
 `agtk memory` manages a repo-resident store of durable notes about your
 codebase — invariants, rationale, gotchas and dead ends that cost real
-exploration to learn. It lives at `.agents/memory/` next to your stack
+exploration to learn. It defaults to `.agents/memory/` next to your stack
 manifest, is committed, and is reviewed in PRs like any other source.
+
+If you render for the `codex` platform, set `memory.root` to a path outside
+`.agents/`. That directory is the codex adapter's output, so it is one a repo
+ignores wholesale — and an ignore rule covering it reaches a store sitting
+inside it. Notes stop being committed, and nothing says so: the store still
+works, because `agtk` reads the working tree.
 
 ```bash
 agtk memory index               # regenerate INDEX.md (scaffolds the store)

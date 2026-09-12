@@ -71,11 +71,16 @@ func builtinPrompt(name string) (string, error) {
 // review: everything on the branch is written by its author, so a body read
 // from the head would let a change write the instructions that judge it. The
 // same closure LoadAtRef makes for the manifest itself. See ADR 0007.
-func runnerBody(dir, baseRef string, r review.Runner) (string, error) {
+func runnerBody(dir, baseRef, manifestDir string, r review.Runner) (string, error) {
 	if r.Prompt.IsBuiltin() {
 		return builtinPrompt(r.Prompt.Name)
 	}
-	spec := baseRef + ":" + review.ManifestDir + "/" + r.Prompt.Path
+	// Resolved against the directory the manifest itself was read from, not
+	// against ManifestDir: a base ref older than the move holds both the
+	// manifest and the bodies it names at the earlier path, and reading the
+	// manifest from one directory and its prompts from another would pair a
+	// repo's rules with bodies that are not there.
+	spec := baseRef + ":" + manifestDir + "/" + r.Prompt.Path
 	body, err := git(dir, "show", spec)
 	if err != nil {
 		return "", fmt.Errorf("read the prompt %s at the base ref: %w", r.Prompt.Raw, err)

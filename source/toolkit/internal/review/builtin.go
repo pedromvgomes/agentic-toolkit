@@ -51,6 +51,7 @@ func DefaultManifest() (*Manifest, error) {
 		return nil, err
 	}
 	m.Builtin = true
+	m.Dir = ManifestDir
 	return m, nil
 }
 
@@ -66,6 +67,39 @@ func ManifestPath(projectRoot string) string {
 // ManifestRelPath is the manifest's location as git names it, from the repo
 // root, with forward slashes on every platform.
 const ManifestRelPath = ManifestDir + "/" + ManifestFile
+
+// LegacyManifestRelPath is LegacyManifestDir's manifest as git names it.
+const LegacyManifestRelPath = LegacyManifestDir + "/" + ManifestFile
+
+// LegacyManifestPath is where a manifest sits if it was never moved out of
+// LegacyManifestDir. Nothing loads from here; callers look for it so a repo
+// mid-migration is told, rather than reviewed under the embedded default.
+func LegacyManifestPath(projectRoot string) string {
+	return filepath.Join(projectRoot, filepath.FromSlash(LegacyManifestRelPath))
+}
+
+// legacyManifestErr is the refusal a repo gets when the manifest in its
+// working tree is at the path ManifestDir replaced.
+//
+// An absent manifest otherwise means "this repo declares none" and is
+// reviewed under the embedded default. That is right for a repo that never
+// wrote one and wrong for a repo whose manifest is sitting one directory
+// away: the panels, the judge and the approval floor would all be the
+// toolkit's rather than the repo's, and the only outward sign is a `builtin`
+// flag nobody reads as an error.
+//
+// Only LoadAtRef's sibling refuses. A ref is history, and `git mv` cannot
+// reach it — so a refusal there would name a remedy that does not exist for
+// the one commit it fires on. LoadAtRef reads the older path instead.
+func legacyManifestErr(path string) error {
+	return &ParseError{
+		Path: path,
+		Kind: ErrLegacyManifestDir,
+		Message: fmt.Sprintf(
+			"review manifest found at %s, which agtk no longer reads; move it to %s (`git mv %s %s`)",
+			LegacyManifestDir, ManifestDir, LegacyManifestDir, ManifestDir),
+	}
+}
 
 // LoadAtRef returns the manifest as it stands at a git ref.
 //
@@ -85,11 +119,21 @@ func LoadAtRef(dir, ref string) (m *Manifest, path string, builtin bool, err err
 	}
 
 	spec := ref + ":" + ManifestRelPath
+	readFrom := ManifestDir
 	if _, _, err := gitStatus(dir, "cat-file", "-e", spec); err != nil {
-		// The ref resolves and the path is not in it: this repo declares no
-		// manifest at the base, which is the embedded default's case.
-		m, err = DefaultManifest()
-		return m, "", true, err
+		// A ref predating the move still declares its rules, at the path that
+		// was current when it was written. Honouring them is what reading
+		// rules from the base means (ADR 0007); refusing would make the very
+		// change that moves the manifest unreviewable, since the base it
+		// merges into is always the older layout.
+		legacy := ref + ":" + LegacyManifestRelPath
+		if _, _, err := gitStatus(dir, "cat-file", "-e", legacy); err != nil {
+			// The ref resolves and neither path is in it: this repo declares
+			// no manifest at the base, which is the embedded default's case.
+			m, err = DefaultManifest()
+			return m, "", true, err
+		}
+		spec, readFrom = legacy, LegacyManifestDir
 	}
 
 	raw, _, err := gitStatus(dir, "show", spec)
@@ -97,6 +141,9 @@ func LoadAtRef(dir, ref string) (m *Manifest, path string, builtin bool, err err
 		return nil, "", false, err
 	}
 	m, err = ParseBytes(spec, raw)
+	if m != nil {
+		m.Dir = readFrom
+	}
 	return m, spec, false, err
 }
 
@@ -113,10 +160,17 @@ func Load(projectRoot string) (m *Manifest, path string, builtin bool, err error
 		if !os.IsNotExist(statErr) {
 			return nil, path, false, fmt.Errorf("read %s: %w", path, statErr)
 		}
+		legacy := LegacyManifestPath(projectRoot)
+		if _, legacyErr := os.Stat(legacy); legacyErr == nil {
+			return nil, path, false, legacyManifestErr(legacy)
+		}
 		m, err = DefaultManifest()
 		return m, "", true, err
 	}
 	m, err = ParseFile(path)
+	if m != nil {
+		m.Dir = ManifestDir
+	}
 	return m, path, false, err
 }
 
