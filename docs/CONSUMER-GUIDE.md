@@ -219,6 +219,13 @@ A store scaffolded under an older `agtk`, at `.agents/memory/`, is reported
 rather than read as a repo with no notes. Move it with `git mv .agents/memory
 .memory`, or set `memory.root: .agents/memory` to leave it where it is.
 
+Wherever you put it, the pre-approved permissions for reading the index and
+staging candidates follow it: the `claude` adapter builds them from the root
+you configured and appends them to `permissions.allow`, so moving the store
+does not leave the explorer prompting on every delegation. They are appended
+only where your stack already pre-approves something — a deny-only
+`permissions` block is left as it is.
+
 ```bash
 agtk memory index               # regenerate INDEX.md (scaffolds the store)
 agtk memory anchor              # stamp blob hashes into note anchors
