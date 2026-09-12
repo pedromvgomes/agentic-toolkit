@@ -246,8 +246,15 @@ func TestAnIgnoredManifestIsStillRefusedUnderLiteralPathspecs(t *testing.T) {
 	r.write(review.ManifestRelPath, complete)
 	rev := r.commit("base")
 
-	if _, _, builtin, err := review.LoadAtRef(r.dir, rev); err == nil {
+	_, _, builtin, err := review.LoadAtRef(r.dir, rev)
+	if err == nil {
 		t.Fatalf("LoadAtRef accepted an ignored manifest (builtin=%v)", builtin)
+	}
+	// Both refusals carry ErrIgnoredManifest, so only the message separates
+	// "this manifest is ignored" from "git could not say" — and it is the
+	// second that an unscrubbed variable would produce here.
+	if !strings.Contains(err.Error(), "is ignored by git") {
+		t.Errorf("error = %q, want the refusal that identified the manifest as ignored", err)
 	}
 }
 
