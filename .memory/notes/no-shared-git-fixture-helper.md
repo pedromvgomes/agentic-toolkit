@@ -10,9 +10,9 @@ anchors:
   - path: source/toolkit/internal/cli/tests/codereview_run_test.go
     blob: d04a113afe92
   - path: source/toolkit/internal/cli/codereview_init_test.go
-    blob: db0c644e8f17
+    blob: 4b36a7202e2d
   - path: source/toolkit/internal/cli/codereview_pr_test.go
-    blob: d1a4f36f7fd7
+    blob: 9f5ffecbf3c0
   - path: source/toolkit/internal/sourcestore/tests/helpers_test.go
     blob: 3d68486cde48
   - path: source/toolkit/internal/review/tests/repo_test.go
@@ -20,11 +20,11 @@ anchors:
   - path: source/toolkit/internal/reviewrun/tests/repo_test.go
     blob: 1aada348013e
   - path: source/toolkit/internal/reviewrun/run_test.go
-    blob: c30c08fb3b46
+    blob: e9386add686e
   - path: source/toolkit/internal/handoff/handoff_test.go
     blob: 21c55c914f7e
   - path: source/toolkit/internal/curator/tests/run_test.go
-    blob: b7092a723cbe
+    blob: 1b23a7450517
 confidence: verified
 ---
 
@@ -65,11 +65,12 @@ the list with the grep above rather than trusting the anchors to flag a new buil
 
 Do not infer "slow package" from this list. `source/toolkit/internal/curator/tests` runs no git at all and is
 still slow: its cost is `(&agentictest.Fake{...}).Build(t)`
-(`source/toolkit/internal/curator/tests/run_test.go:27`, from `agentic-driver` at `go.mod:8`), which writes a
+(`source/toolkit/internal/curator/tests/run_test.go:27`, from `agentic-driver` at
+`source/toolkit/go.mod:15`), which writes a
 `/bin/sh` script into a `t.TempDir()` and execs it once per case.
 
 `-short` does not help — `grep -rn 'testing.Short' --include='*.go' .` has no hits anywhere in
-the repo. `make check` is `fmt vet test` (`Makefile:24`), and `go test ./...` runs packages in
+the repo. `make check` is `fmt vet test` (`Makefile:34`), and `go test ./...` runs packages in
 parallel, so the suite's wall clock is the single slowest package rather than the sum:
 speeding up any other one moves nothing. Iterate with `go test` on the package you are
 editing and keep `make check` for the end.

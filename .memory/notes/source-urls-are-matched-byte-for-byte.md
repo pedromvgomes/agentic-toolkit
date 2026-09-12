@@ -10,7 +10,7 @@ anchors:
       - path: source/toolkit/internal/sourcestore/git.go
         blob: fd93beacf3e2
       - path: source/toolkit/internal/sourcestore/provider.go
-        blob: edc68a0a6daf
+        blob: 3a0ccf040c3b
       - path: source/toolkit/internal/sourcestore/transport_test.go
         blob: 3104125a1655
       - path: source/toolkit/internal/sourcestore/url.go
@@ -18,15 +18,15 @@ anchors:
   - path: source/toolkit/internal/resolver/*.go
     matches:
       - path: source/toolkit/internal/resolver/provider.go
-        blob: 2f9acfe86042
+        blob: 008c721626cb
       - path: source/toolkit/internal/resolver/requires.go
-        blob: dfb62483aa94
+        blob: de9ff0d03dc9
       - path: source/toolkit/internal/resolver/resolver.go
-        blob: 8095f3afd96d
+        blob: 022646e73709
       - path: source/toolkit/internal/resolver/sources.go
         blob: 91aa5dda5f2e
       - path: source/toolkit/internal/resolver/types.go
-        blob: 4fd32a68d9d0
+        blob: f324cf4d5af4
   - path: source/toolkit/internal/lockfile/*.go
     matches:
       - path: source/toolkit/internal/lockfile/errors.go
@@ -74,7 +74,7 @@ path (`source/toolkit/internal/sourcestore/url.go:10-23`). There is no host list
 `github.com/o/r/skills/foo` — no `.git` — is not "repo + path"; it is a whole repo URL named
 `github.com/o/r/skills/foo`, and it fails at fetch time against the forge, not at parse time.
 Both `extends:` and per-category URL entries reject a URL with *no* in-repo path outright
-(`source/toolkit/internal/resolver/resolver.go:238-240`, `:339-341`), so the confusing case is specifically
+(`source/toolkit/internal/resolver/resolver.go:237-239`, `:339-341`), so the confusing case is specifically
 the one that *looks* like a path but never had `.git`.
 
 See also [[empty-ref-resolves-only-against-a-unique-pin]] for the other way `ErrPinNotFound`

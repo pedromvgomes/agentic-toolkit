@@ -13,10 +13,13 @@ package review
 // declares none.
 const ManifestDir = ".agentic-toolkit/code-review"
 
-// LegacyManifestDir is where the manifest lived before ManifestDir moved out
-// of the rendered `.agents/` tree. Nothing reads a manifest from here: it is
-// looked for only so a repo still holding one is refused rather than reviewed
-// under the embedded default.
+// LegacyManifestDir is the path ManifestDir replaced, inside the rendered
+// `.agents/` tree. The two loaders treat it differently, and the split is the
+// point: Load refuses a manifest found here on disk, so a repo still holding
+// one is told rather than reviewed under the embedded default, while
+// LoadAtRef reads it. A ref is history that `git mv` cannot reach, and
+// refusing there would make the very change that moves a manifest
+// unreviewable.
 const LegacyManifestDir = ".agents/code-review"
 
 // ManifestFile is the manifest's name inside ManifestDir.

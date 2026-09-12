@@ -4,7 +4,7 @@ kind: invariant
 description: A scoped stamping grant lists each note name with no trailing wildcard, because kebab-case note names nest.
 anchors:
   - path: source/toolkit/internal/curator/curator.go
-    blob: 1e7fb72d46d4
+    blob: a8ac0f37cab8
   - path: source/toolkit/internal/memory/lint.go
     blob: 55ed2c6534eb
 confidence: verified

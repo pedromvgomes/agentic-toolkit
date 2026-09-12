@@ -6,15 +6,15 @@ anchors:
   - path: source/toolkit/internal/resolver/*.go
     matches:
       - path: source/toolkit/internal/resolver/provider.go
-        blob: 2f9acfe86042
+        blob: 008c721626cb
       - path: source/toolkit/internal/resolver/requires.go
-        blob: dfb62483aa94
+        blob: de9ff0d03dc9
       - path: source/toolkit/internal/resolver/resolver.go
-        blob: 8095f3afd96d
+        blob: 022646e73709
       - path: source/toolkit/internal/resolver/sources.go
         blob: 91aa5dda5f2e
       - path: source/toolkit/internal/resolver/types.go
-        blob: 4fd32a68d9d0
+        blob: f324cf4d5af4
   - path: source/toolkit/internal/definitions/walk.go
     blob: a7f4470eb69f
 confidence: verified

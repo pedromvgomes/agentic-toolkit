@@ -4,9 +4,9 @@ kind: invariant
 description: Every extension pointer field in definitions/types.go must have a line in presentExtensions; omitting one silently disables the platform check for it.
 anchors:
   - path: source/toolkit/internal/definitions/parser.go
-    blob: c59af791af5f
+    blob: a29c6915d4ce
   - path: source/toolkit/internal/definitions/types.go
-    blob: ee984767cd43
+    blob: 1b36f7aa86a4
 confidence: verified
 ---
 
@@ -22,9 +22,9 @@ allows. It gets the set of populated blocks from `presentExtensions`
 
 The invariant: **every `*<Platform><Category>Ext` pointer field declared on an extensions
 struct in `source/toolkit/internal/definitions/types.go` must have a line in `presentExtensions`.** As of
-this reading all do — Skill/Claude (`types.go:133`), Rule/Cursor (`:156`),
-Agent/{Claude,Cursor,OpenCode} (`:207`), Command/{OpenCode,Copilot} (`:251`),
-Hook/{Claude,Cursor} (`:297`), MCPServer/{Claude,OpenCode} (`:366`); Instruction and Setting
+this reading all do — Skill/Claude (`types.go:136`), Rule/Cursor (`:159`),
+Agent/{Claude,Cursor,OpenCode} (`:210-212`), Command/{OpenCode,Copilot} (`:266-267`),
+Hook/{Claude,Cursor} (`:312-313`), MCPServer/{Claude,OpenCode} (`:391-392`); Instruction and Setting
 declare no extensions at all. The claim quantifies over the extension structs in that one
 file and is falsified by the next field added there, which is why `types.go` is anchored.
 
