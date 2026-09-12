@@ -9,7 +9,7 @@ LDFLAGS := -s -w -X github.com/pedromvgomes/agentic-toolkit/internal/version.Ver
 # read against the module directory rather than the directory make ran in.
 GO := go -C source/toolkit
 
-.PHONY: build install test fmt vet check logo
+.PHONY: build install test fmt vet check generate logo
 
 build:
 	$(GO) build -ldflags "$(LDFLAGS)" -o $(CURDIR)/bin/agtk ./cmd/agtk
@@ -22,6 +22,11 @@ test:
 
 fmt:
 	gofmt -s -w .
+
+# The generated schema docs land in definitions/, outside the module, so the
+# generator finds the repo root by .git rather than by go.mod.
+generate:
+	$(GO) generate ./...
 
 vet:
 	$(GO) vet ./...

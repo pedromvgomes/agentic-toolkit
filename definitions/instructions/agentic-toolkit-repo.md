@@ -25,6 +25,8 @@ before writing about any of those concepts. Terms there are precise and words li
 - **Install**: `make install`
 - **Test**: `make test` (`go -C source/toolkit test ./...`)
 - **Format**: `make fmt` (`gofmt -s -w .`)
+- **Regenerate the schema docs**: `make generate` — `definitions/SCHEMA.md` and
+  `definitions/CONFIG-SCHEMA.md` are generated from the structs and committed
 - **Vet**: `make vet`
 - **Full check** (fmt + vet + test + gofmt cleanliness): `make check`
 
