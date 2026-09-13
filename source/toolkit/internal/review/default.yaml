@@ -70,11 +70,20 @@ defaults:
   pr:       standard-codex
 
 # `standard` is the ceiling a rule can reach on a pull request. The branch has
-# already been through the local loop by the time it is opened, so a second
+# normally been through the local loop by the time it is opened, so a second
 # every-axis-twice reading buys a re-read of code that was read deeply an hour
 # ago. `deep-codex` stays a panel and stays `deep`'s fallback; reaching it on a
 # pull request is `--panel deep-codex`, which is a person deciding this change
 # is the exception.
+#
+# Nothing verifies that the local loop ran. It posts nothing, so the pull
+# request carries no record of it, and approval reads only what is posted here
+# — while the author, whose machine that loop runs on, is the party a review
+# exists not to trust. An author who skips it gets the shallower reading on a
+# change that would have raised to `deep` locally, and no one is told. That is
+# the price of not paying for the deepest panel twice on every branch, and it
+# is a trade rather than an oversight: raise it back by naming `deep-codex` in
+# a pull-request rule, or reach it per change with `--panel`.
 #
 # So the worktree rules and the pull-request rules are not symmetric, and
 # `context` is what keeps each on its own side. A rule carries one combinator,

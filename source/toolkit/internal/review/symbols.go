@@ -136,8 +136,6 @@ func countSymbolReferences(opts ProfileOptions, sym string, changed []ChangedFil
 	return count, true
 }
 
-// fixCommitRE is what marks a commit as a deliberate repair. Matched against
-// the subject line, where the convention that carries this information lives.
 // revertCommitRE matches the subjects worth escalating for: undoing a revert
 // or a security repair is the case where the change may be reinstating the
 // defect somebody deliberately removed.
@@ -178,6 +176,18 @@ func detectFixRevert(opts ProfileOptions, files []ChangedFile, patch string, set
 
 	budget := opts.blameBudget()
 	spent := 0
+
+	// Tracked here rather than re-read from the set each hunk, so a class
+	// already established stops being tested against every later subject.
+	//
+	// The subprocess per hunk is the floor, and it is what separating the two
+	// classes costs. A scan that stopped at the first repair of any kind could
+	// return on the first hunk, but only because it was answering a question
+	// neither signal asks: `fix-revert` is absent only once every hunk in the
+	// budget has failed to produce a revert, and nothing cheaper establishes
+	// that. Exhausting the budget leaves whichever class is still unfound
+	// undetermined, which is the honest answer rather than a cheap one.
+	revertFound, bugfixFound := false, false
 	for _, hunk := range Hunks(patch) {
 		if hunk.Length == 0 {
 			continue
@@ -190,7 +200,7 @@ func detectFixRevert(opts ProfileOptions, files []ChangedFile, patch string, set
 			reason := fmt.Sprintf("the %d-hunk history budget ran out", budget)
 			set.MarkUndetermined(SignalFixRevert, reason)
 			set.MarkUndetermined(SignalBugfixLines, reason)
-			return
+			return // a class already found stays found: MarkUndetermined defers to it
 		}
 		spent++
 
@@ -204,17 +214,18 @@ func detectFixRevert(opts ProfileOptions, files []ChangedFile, patch string, set
 			continue
 		}
 		for _, subject := range subjects {
-			if revertCommitRE.MatchString(subject) {
+			if !revertFound && revertCommitRE.MatchString(subject) {
 				set.Add(SignalFixRevert)
-			} else if bugfixCommitRE.MatchString(subject) {
+				revertFound = true
+			}
+			if !bugfixFound && bugfixCommitRE.MatchString(subject) {
 				set.Add(SignalBugfixLines)
+				bugfixFound = true
 			}
 		}
 		// Both classes found: nothing further in the history can change the
 		// answer, so the remaining budget is not worth spending.
-		fixFound, _ := set.Has(SignalFixRevert)
-		bugFound, _ := set.Has(SignalBugfixLines)
-		if fixFound && bugFound {
+		if revertFound && bugfixFound {
 			return
 		}
 	}
