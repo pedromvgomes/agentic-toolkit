@@ -1,6 +1,8 @@
 package tests
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/pedromvgomes/agentic-toolkit/internal/review"
@@ -201,5 +203,79 @@ func TestAGatingNameOnAConfigFileDoesNotFire(t *testing.T) {
 
 	if has, _ := p.Signals.Has(review.SignalAuth); has {
 		t.Errorf("auth fired on a config file's name; signals were %s", p.Signals)
+	}
+}
+
+// A gate written in a language the table does not carry is still a gate. The
+// fragment rule must fail toward firing, or the protection is missing exactly
+// where the toolkit's knowledge is and nothing reports it.
+func TestAGatingFileFiresInALanguageTheTableDoesNotKnow(t *testing.T) {
+	for _, tc := range []struct{ name, path, before, after string }{
+		{
+			name:   "elixir plug",
+			path:   "lib/auth_plug.ex",
+			before: "defmodule AuthPlug do\n  def call(conn) do\n    if conn.admin, do: conn, else: halt(conn)\n  end\nend\n",
+			after:  "defmodule AuthPlug do\n  def call(conn) do\n    conn\n  end\nend\n",
+		},
+		{
+			// Shell carries NoSymbols only because nothing reads symbols out
+			// of it. A shell script runs.
+			name:   "shell guard",
+			path:   "scripts/deploy-guard.sh",
+			before: "#!/bin/sh\nif [ \"$ROLE\" != admin ]; then\n  exit 1\nfi\n",
+			after:  "#!/bin/sh\nexit 0\n",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newRepo(t)
+			r.write(tc.path, tc.before)
+			base := r.commit("base")
+
+			r.write(tc.path, tc.after)
+			p := buildProfile(t, r, base)
+
+			if has, known := p.Signals.Has(review.SignalAuth); !has || !known {
+				t.Errorf("auth = (%v, known=%v) for a check deleted from %s; signals were %s",
+					has, known, tc.path, p.Signals)
+			}
+		})
+	}
+}
+
+// The tail cutoff: once a routine repair has answered, the search for a revert
+// runs a bounded distance further and then reports undetermined.
+//
+// Undetermined rather than absent is the whole point. A scan that stopped
+// looking and a scan that looked everywhere both produce "no revert found",
+// and only one of them licenses skipping the deeper panel.
+func TestTheRevertSearchStopsAndSaysSoRatherThanReportingAbsent(t *testing.T) {
+	const files = 60
+
+	r := newRepo(t)
+	for i := 0; i < files; i++ {
+		r.write(fmt.Sprintf("pkg/f%02d.go", i), fmt.Sprintf("package pkg\n\nvar v%02d = 1\n", i))
+	}
+	// Every line in the change traces to this one subject: a routine repair,
+	// and nowhere a revert.
+	base := r.commit("fix(pkg): correct the values")
+
+	for i := 0; i < files; i++ {
+		r.write(fmt.Sprintf("pkg/f%02d.go", i), fmt.Sprintf("package pkg\n\nvar v%02d = 2\n", i))
+	}
+	p := buildProfile(t, r, base)
+
+	if has, known := p.Signals.Has(review.SignalBugfixLines); !has || !known {
+		t.Errorf("bugfix-lines = (%v, known=%v), want present; signals were %s", has, known, p.Signals)
+	}
+
+	has, known := p.Signals.Has(review.SignalFixRevert)
+	if has {
+		t.Fatalf("fix-revert fired with no revert anywhere in the history; signals were %s", p.Signals)
+	}
+	if known {
+		t.Errorf("fix-revert reported absent after the search stopped early; a scan that stopped looking must not read as one that looked: %s", p.Signals)
+	}
+	if reason := p.Signals.Undetermined(review.SignalFixRevert); !strings.Contains(reason, "revert") {
+		t.Errorf("undetermined reason does not say the revert search stopped: %q", reason)
 	}
 }

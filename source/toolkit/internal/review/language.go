@@ -418,15 +418,28 @@ func SymbolsCountable(lang Language) bool {
 	return known && (spec.NoSymbols || len(spec.Exported) > 0)
 }
 
-// BearsCode reports whether this language is called rather than read.
+// BearsCode reports whether this file may contain something that runs.
 //
-// The separation `NoSymbols` already draws: Go and TypeScript run, YAML and
-// Markdown are configuration and prose. It is what lets a signal treat a name
-// fragment as evidence on `admin_guard.ts` and not on `guard-settings.yaml` —
-// a file named for a thing it configures is describing a gate, not being one.
+// It lets a signal treat a name fragment as evidence on `admin_guard.ts` and
+// not on `guard-settings.yaml` — a file named for a thing it configures is
+// describing a gate, not being one.
+//
+// Written as a list of formats that are read rather than a list of languages
+// that run, because the two fail in opposite directions and only one of them
+// is safe. A signal that fires is a more expensive review; a signal that stays
+// silent is a check deleted with nobody looking. Asking "is this a language I
+// know?" answers no for Elixir, Dart, Lua and every language nobody has added
+// yet, so the protection would be absent precisely where the toolkit's
+// knowledge is, and nothing would say so.
+//
+// `NoSymbols` is the wrong question for the same reason: shell carries it only
+// because no extractor reads symbols out of shell, and a shell script runs.
 func BearsCode(lang Language) bool {
-	spec, known := languages[lang]
-	return known && !spec.NoSymbols
+	switch lang {
+	case LangYAML, LangDocs:
+		return false
+	}
+	return true
 }
 
 // ExportedSymbols reads the names a line declares that other code can reach.
