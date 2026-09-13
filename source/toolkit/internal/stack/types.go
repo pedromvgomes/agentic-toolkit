@@ -16,6 +16,7 @@
 //	settings:    []EntryRef
 //	platforms:   optional; []Platform, rendering targets beyond Claude Code
 //	memory:      optional; memory-store settings, entry manifest only
+//	local:       optional; per-category scan directories, entry manifest only
 //
 // Override semantics: depth-first walk of `extends:`, post-order overlay
 // (children apply before importer's own entries), entry-point file's
@@ -64,6 +65,8 @@ type Stack struct {
 	Platforms []definitions.Platform `yaml:"platforms,omitempty" agtkdoc:"Rendering targets. Omit to render Claude Code only \u2014 today's behavior, unchanged. List additional platforms (e.g. codex) to also render their on-disk layout from the same definitions; each named platform must have a render adapter."`
 
 	Memory *MemoryConfig `yaml:"memory,omitempty" agtkdoc:"Repo-resident memory store settings. Honoured only in the entry manifest \u2014 the store's location is a fact about the consumer repo, not about a shareable stack, so a stack reached through extends: that sets it gets a diagnostic instead of silently relocating the consumer's committed notes."`
+
+	Local *LocalConfig `yaml:"local,omitempty" agtkdoc:"Per-category directories agtk scans instead of requiring every definition to be listed by name. Honoured only in the entry manifest \u2014 which directories make up the consumer's own definitions is a fact about the consumer repo, not about a shareable stack, so a stack reached through extends: that sets it fails the render outright."`
 }
 
 // MemoryConfig configures the memory store. It is deliberately not part of
@@ -78,6 +81,22 @@ type MemoryConfig struct {
 	// provider, not a definition of category `agent` and not the agent
 	// running the session — see CONTEXT.md, which flags the collision.
 	Agent string `yaml:"agent,omitempty" agtkdoc:"Coding-agent CLI that 'agtk memory curate' drives, e.g. \"claudecode\" or \"codex\". No default: curation is the one operation that spends money, so the repo names its provider or curation does not run."`
+}
+
+// LocalConfig names, per category, a directory agtk scans for definitions
+// instead of requiring each to be listed by name. It is deliberately not
+// part of the overlay: a stack pulled in via `extends:` must not be able to
+// assert which directories make up another repo's own definitions.
+type LocalConfig struct {
+	Context      string `yaml:"context,omitempty"      agtkdoc:"Path to the consumer's single top-level instruction file, relative to the directory holding the entry manifest."`
+	Skills       string `yaml:"skills,omitempty"       agtkdoc:"Directory agtk scans for skill definitions, relative to the directory holding the entry manifest."`
+	Agents       string `yaml:"agents,omitempty"       agtkdoc:"Directory agtk scans for agent definitions, relative to the directory holding the entry manifest."`
+	Rules        string `yaml:"rules,omitempty"        agtkdoc:"Directory agtk scans for rule definitions, relative to the directory holding the entry manifest."`
+	Instructions string `yaml:"instructions,omitempty" agtkdoc:"Directory agtk scans for instruction definitions, relative to the directory holding the entry manifest."`
+	Commands     string `yaml:"commands,omitempty"     agtkdoc:"Directory agtk scans for command definitions, relative to the directory holding the entry manifest."`
+	Hooks        string `yaml:"hooks,omitempty"        agtkdoc:"Directory agtk scans for hook definitions, relative to the directory holding the entry manifest."`
+	MCP          string `yaml:"mcp,omitempty"          agtkdoc:"Directory agtk scans for MCP server definitions, relative to the directory holding the entry manifest."`
+	Settings     string `yaml:"settings,omitempty"     agtkdoc:"Directory agtk scans for settings definitions, relative to the directory holding the entry manifest."`
 }
 
 // MemoryRoot returns the configured store root, or "" when the stack does

@@ -408,3 +408,37 @@ func TestResolve_MemoryConfigIgnoredInExtendedStack(t *testing.T) {
 		t.Errorf("diagnostic should explain where memory: is honoured: %q", found.Message)
 	}
 }
+
+// TestResolve_LocalConfigRefusedInExtendedStack: `local:` names which
+// directories make up the consumer's own definitions, a fact about the
+// consumer repo that a stack reached through extends: must not be able to
+// assert. Unlike `memory:`, this fails the render outright rather than
+// being ignored with a diagnostic.
+func TestResolve_LocalConfigRefusedInExtendedStack(t *testing.T) {
+	upstreamFS := makeMapFS(map[string]string{
+		"stacks/default.yaml": stackBody(nil, map[string][]string{
+			"skills": {"upstream"},
+		}) + "local:\n  skills: some/dir\n",
+		"definitions/skills/upstream/SKILL.md": validSkillBody("Upstream skill"),
+	})
+	provider := newFakeProvider().register("github.com/foo/bar.git", "main", upstreamFS)
+
+	entryFS := makeMapFS(map[string]string{
+		".agentic-toolkit.yaml": stackBody(
+			[]string{"github.com/foo/bar.git/stacks/default.yaml@main"},
+			nil,
+		),
+	})
+	st, err := stack.ParseInFS(entryFS, ".agentic-toolkit.yaml")
+	if err != nil {
+		t.Fatalf("parse stack: %v", err)
+	}
+
+	_, err = resolver.Resolve(st, entryFS, ".agentic-toolkit.yaml", provider)
+	if err == nil {
+		t.Fatal("resolve: expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "entry manifest") {
+		t.Errorf("error should explain local: is honoured only in the entry manifest: %q", err.Error())
+	}
+}

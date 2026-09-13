@@ -198,6 +198,11 @@ func (s *traversalState) loadStack(st *stack.Stack, ctx stackCtx) error {
 		})
 	}
 
+	if ctx.Identifier != "" && st.Local != nil {
+		s.errs = append(s.errs, fmt.Errorf("stack %q sets local:, which is honoured only in the entry manifest; a stack reached through extends: cannot declare the consumer's own scan directories",
+			displayID(ctx.Identifier)))
+	}
+
 	root := st.EffectiveRoot()
 	for _, cat := range definitions.AllCategories {
 		entries := st.EntriesFor(cat)
