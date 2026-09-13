@@ -4,16 +4,16 @@
 
 A consumer repo opts into the toolkit by committing two files at the repo root:
 
-- `.agentic-toolkit.yaml` — entry-point **stack manifest**: declares which other stacks to extend and which definitions to layer on top. Hand-edited.
+- `.agentic-toolkit.yaml` — the **entry manifest**: composes shared stacks and finds the rest by convention. Hand-edited.
 - `.agentic-toolkit.lock.yaml` — pinned record of what the resolver actually fetched. Resolver-written; commit it.
 
 A repo that wants its own code review declares one more, optional file: `.agentic-toolkit/code-review/manifest.yaml`.
 
 ## Stack manifest
 
-**Path:** `.agentic-toolkit.yaml` at the repo root, or any `stacks/<name>.yaml` file in any repo published for sharing.
+**Path:** any `stacks/<name>.yaml` file in a repo published for sharing.
 
-The same shape is used everywhere: the consumer's entry-point file is just a stack with no extra ceremony. There is no "preset" / "consumer config" distinction.
+A stack layers other stacks (`extends:`) and lists its own definitions by name per category. It is a different, related shape from the entry manifest below — see ADR 0016.
 
 ### Fields
 

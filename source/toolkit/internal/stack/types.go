@@ -1,5 +1,7 @@
-// Package stack models a stack manifest — the unified replacement for the
-// old `consumer config` and `preset` concepts.
+// Package stack models a stack manifest — the shareable unit published at
+// stacks/<name>.yaml in any repo — and EntryManifest, the distinct type a
+// consumer's own .agentic-toolkit.yaml parses into (see entrymanifest.go
+// and ADR 0016).
 //
 // A stack is a single YAML file with these fields:
 //
@@ -14,8 +16,6 @@
 //	hooks:       []EntryRef
 //	mcp:         []EntryRef
 //	settings:    []EntryRef
-//	platforms:   optional; []Platform, rendering targets beyond Claude Code
-//	memory:      optional; memory-store settings, entry manifest only
 //
 // Override semantics: depth-first walk of `extends:`, post-order overlay
 // (children apply before importer's own entries), entry-point file's
@@ -27,10 +27,9 @@
 //   - starts with `./` or `/` → Path ref (local to this file's repo)
 //   - otherwise → Bare name (resolved under <root>/<plural>/<name>...)
 //
-// The same shape is used for the consumer's .agentic-toolkit.yaml and for
-// shareable stacks at stacks/<name>.yaml in any repo. There is no "preset"
-// vs "consumer config" distinction: the consumer's file is just an
-// entry-point stack.
+// A stack has no `platforms:`/`memory:` — those are EntryManifest-only
+// fields, since rendering targets and the memory store's location are
+// facts about the consumer repo, not about a shareable stack.
 package stack
 
 //go:generate go run ../../tools/schemagen

@@ -358,12 +358,13 @@ func providerURLHint(raw string) string {
 // consumer config or v1 preset (uses `source:`, `presets:`, `externals:`,
 // or `definitions:` as a top-level field). Detection runs before strict
 // YAML decode so users see a migration hint rather than an unknown-field
-// error.
+// error. The message names no v2 type: both a stack and an entry manifest
+// call this, and neither is what a v1 field belongs to.
 func detectLegacyConfig(filePath string, raw []byte) error {
 	for _, key := range legacyTopLevelKeys {
 		if topLevelKeyRE(key).Match(raw) {
 			return newErr(filePath, ErrLegacyConfig,
-				"%q is a v1 schema field; this is a stack manifest (v2). See docs/MIGRATION.md to upgrade.", key)
+				"%q is a v1 schema field; this file uses the v2 schema. See docs/MIGRATION.md to upgrade.", key)
 		}
 	}
 	return nil
