@@ -338,14 +338,15 @@ func TestAnUndeterminedSignalDoesNotMaskOneThatIsPresent(t *testing.T) {
 	set.MarkUndetermined(review.SignalFixRevert, "the 200-hunk history budget ran out")
 	p := &review.Profile{ChangedFiles: 3, ChangedLines: 40, Signals: set, ReferencingFiles: review.AvailableCount(0)}
 
-	sel, err := review.Select(m, review.ContextPR, p, "")
+	// The worktree context, because that is where a signal raises to deep at
+	// all: a pull request caps at standard, having already been read locally.
+	// Which context is not what this test is about.
+	sel, err := review.Select(m, review.ContextWorktree, p, "")
 	if err != nil {
 		t.Fatalf("Select: %v", err)
 	}
-	// deep-codex rather than deep: the pull-request context escalates on the
-	// codex roster, and which roster is not what this test is about.
-	if sel.Panel != "deep-codex" {
-		t.Errorf("panel = %q, want deep-codex — concurrency is present and the rule is any/in", sel.Panel)
+	if sel.Panel != "deep" {
+		t.Errorf("panel = %q, want deep — concurrency is present and the rule is any/in", sel.Panel)
 	}
 	if len(sel.Skipped) != 0 {
 		t.Errorf("skipped = %v, want the rule evaluated rather than abandoned", sel.Skipped)
@@ -451,5 +452,77 @@ func TestTheBuiltInPanelsAreAllDescribed(t *testing.T) {
 		if strings.TrimSpace(panel.Description) == "" {
 			t.Errorf("the built-in panel %q has no description", name)
 		}
+	}
+}
+
+// A pull request caps at standard. By the time a branch is opened it has been
+// through the local loop, so an every-axis-twice reading on the pull request
+// re-reads code that was already read that way — the most expensive panel,
+// spent on the second look rather than the first.
+//
+// Reaching deep on a pull request is `--panel deep-codex`, a person deciding
+// this change is the exception. The signals below are the ones that do raise to
+// deep in a worktree, which is what makes this a ceiling rather than an absence
+// of rules.
+func TestAPullRequestNeverEscalatesPastStandard(t *testing.T) {
+	m, err := review.DefaultManifest()
+	if err != nil {
+		t.Fatalf("DefaultManifest: %v", err)
+	}
+
+	for _, signal := range []review.Signal{
+		review.SignalAuth,
+		review.SignalCrypto,
+		review.SignalConcurrency,
+		review.SignalSensitiveData,
+		review.SignalFixRevert,
+	} {
+		t.Run(string(signal), func(t *testing.T) {
+			set := review.NewSignalSet()
+			set.Add(signal)
+			p := &review.Profile{
+				ChangedFiles: 3, ChangedLines: 40, Signals: set,
+				ReferencingFiles: review.AvailableCount(0),
+			}
+
+			sel, err := review.Select(m, review.ContextPR, p, "")
+			if err != nil {
+				t.Fatalf("Select: %v", err)
+			}
+			if sel.Panel != "standard-codex" {
+				t.Errorf("panel = %q, want standard-codex — a pull request caps at standard", sel.Panel)
+			}
+
+			// The same signal in a worktree still buys the deeper reading, or
+			// the ceiling above is indistinguishable from having deleted the
+			// criterion.
+			local, err := review.Select(m, review.ContextWorktree, p, "")
+			if err != nil {
+				t.Fatalf("Select: %v", err)
+			}
+			if local.Panel != "deep" {
+				t.Errorf("worktree panel = %q, want deep — the criterion still raises before the pull request", local.Panel)
+			}
+		})
+	}
+}
+
+// Blast radius caps on a pull request the same way a signal does.
+func TestAWidelyReferencedChangeStillCapsAtStandardOnAPullRequest(t *testing.T) {
+	m, err := review.DefaultManifest()
+	if err != nil {
+		t.Fatalf("DefaultManifest: %v", err)
+	}
+	p := &review.Profile{
+		ChangedFiles: 3, ChangedLines: 40, Signals: review.NewSignalSet(),
+		ReferencingFiles: review.AvailableCount(200),
+	}
+
+	sel, err := review.Select(m, review.ContextPR, p, "")
+	if err != nil {
+		t.Fatalf("Select: %v", err)
+	}
+	if sel.Panel != "standard-codex" {
+		t.Errorf("panel = %q, want standard-codex", sel.Panel)
 	}
 }

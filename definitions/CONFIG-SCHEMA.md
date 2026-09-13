@@ -171,7 +171,8 @@ The `signals` vocabulary is closed and ships with the binary; `agtk code-review 
 | `sensitive-data` | PII handling, payment and billing code, and logging changes near either. |
 | `crypto` | Key material, hashing done for security, TLS configuration, random-token generation. |
 | `feature-flags` | Flag definitions, default flips, and the removal of a guard. |
-| `fix-revert` | Touched lines that trace back to a commit describing a fix, a security repair or a revert — the change may be undoing it. |
+| `fix-revert` | Touched lines that trace back to a revert or a security repair — the change may be undoing it. |
+| `bugfix-lines` | Touched lines that trace back to a routine bug fix. Common wherever Conventional Commits are used, so it reports breadth rather than danger. |
 
 ### Example
 
@@ -247,49 +248,53 @@ defaults:
   worktree: quick
   pr:       standard-codex
 
-# Every rule is written twice, once per roster, and `context` is what keeps each
-# copy on its own side. A rule carries one combinator, so the context guard makes
-# each rule an `all:` — which is why one criterion gets one rule rather than
-# several being grouped.
+# `standard` is the ceiling a rule can reach on a pull request. The branch has
+# already been through the local loop by the time it is opened, so a second
+# every-axis-twice reading buys a re-read of code that was read deeply an hour
+# ago. `deep-codex` stays a panel and stays `deep`'s fallback; reaching it on a
+# pull request is `--panel deep-codex`, which is a person deciding this change
+# is the exception.
 #
-# The two rules raising to `standard-codex` cannot raise the panel while that is
+# So the worktree rules and the pull-request rules are not symmetric, and
+# `context` is what keeps each on its own side. A rule carries one combinator,
+# so the context guard makes each rule an `all:` — which is why one criterion
+# gets one rule rather than several being grouped.
+#
+# The rules raising to `standard-codex` cannot raise the panel while that is
 # also the pull-request default. They still fire, and `explain` lists them. They
-# are kept so both rosters read the same, and so lowering the default does not
-# silently drop a criterion.
+# are kept so lowering the default does not silently drop a criterion.
 escalate:
   # Mistakes here are exploitable, or land on somebody who is not in the room,
-  # or are indistinguishable from correct until production.
+  # or are indistinguishable from correct until production. Worktree only: this
+  # is the reading that happens before anyone else sees the change, which is the
+  # point at which looking harder is still cheaper than being wrong.
   - to: deep
     all:
       - signals: {in: [auth, crypto, concurrency, sensitive-data, fix-revert]}
       - context: {in: [worktree]}
-  - to: deep-codex
-    all:
-      - signals: {in: [auth, crypto, concurrency, sensitive-data, fix-revert]}
-      - context: {in: [pr]}
 
   # Widely used code: the count separates a one-line change nobody depends on
-  # from a one-line change everybody does.
+  # from a one-line change everybody does. Worktree only, for the reason above.
   - to: deep
     all:
       - referencing_files: {gte: 20}
       - context: {in: [worktree]}
-  - to: deep-codex
-    all:
-      - referencing_files: {gte: 20}
-      - context: {in: [pr]}
 
   # Irreversible or wide, but the risk is not in the diff: a migration's cost is
   # the table it locks, and a pipeline's is what it can reach. The security
   # reviewer is the one with something to say, so this buys that rather than
   # every axis twice.
+  #
+  # `bugfix-lines` belongs here rather than beside `fix-revert`: touching a line
+  # a routine repair last edited is a reason to read more of the change, not a
+  # reason to read every axis of it twice.
   - to: standard
     all:
-      - signals: {in: [migrations, ci-cd, iac]}
+      - signals: {in: [migrations, ci-cd, iac, bugfix-lines]}
       - context: {in: [worktree]}
   - to: standard-codex
     all:
-      - signals: {in: [migrations, ci-cd, iac]}
+      - signals: {in: [migrations, ci-cd, iac, bugfix-lines]}
       - context: {in: [pr]}
 
   # Size alone. It raises to standard rather than deep, because bulk is a
@@ -297,11 +302,11 @@ escalate:
   # part of it.
   - to: standard
     all:
-      - changed_files: {gte: 20}
+      - changed_files: {gte: 50}
       - context: {in: [worktree]}
   - to: standard-codex
     all:
-      - changed_files: {gte: 20}
+      - changed_files: {gte: 50}
       - context: {in: [pr]}
 ```
 

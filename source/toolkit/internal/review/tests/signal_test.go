@@ -15,7 +15,9 @@ func TestEverySignalCanFire(t *testing.T) {
 		path   string
 		body   string
 	}{
-		{review.SignalAuth, "internal/auth/token.go", "package auth\n"},
+		// Content, not just the path: `auth`'s globs are the broadest in the
+		// table, so a name alone no longer establishes it.
+		{review.SignalAuth, "internal/auth/token.go", "package auth\n\nfunc Authorize() {}\n"},
 		{review.SignalMigrations, "db/migrations/0001_init.sql", "ALTER TABLE users ADD COLUMN email text;\n"},
 		{review.SignalSharedKernel, "pkg/util/util.go", "package util\n"},
 		{review.SignalPublicAPI, "api/service.proto", "message Request {}\n"},
@@ -54,7 +56,7 @@ func TestEverySignalCanFire(t *testing.T) {
 func TestFixRevertFiresOnRepairedLinesOnly(t *testing.T) {
 	r := newRepo(t)
 	r.write("pkg/lock.go", "package pkg\n\nimport \"sync\"\n\nvar mu sync.RWMutex\n")
-	base := r.commit("fix: repair the locking")
+	base := r.commit("revert: restore the locking")
 
 	t.Run("rewriting the repaired line fires", func(t *testing.T) {
 		r.write("pkg/lock.go", "package pkg\n\nimport \"sync\"\n\nvar mu sync.Mutex\n")
@@ -91,4 +93,43 @@ func TestFixRevertFiresOnRepairedLinesOnly(t *testing.T) {
 			t.Errorf("deleting locking code is a change to locking; signals were %s", p.Signals)
 		}
 	})
+}
+
+// The two history signals name different things. A revert or a security repair
+// is worth the deepest reading, because undoing one reinstates a defect
+// somebody removed on purpose. A routine `fix(scope):` is not: under
+// Conventional Commits it is a type prefix on a large share of every subject
+// line, so treating it the same would escalate nearly every branch in a mature
+// repo and distinguish nothing.
+func TestARoutineFixIsBugfixLinesAndNotFixRevert(t *testing.T) {
+	r := newRepo(t)
+	r.write("pkg/svc.go", "package pkg\n\nvar limit = 10\n")
+	base := r.commit("fix(pkg): raise the limit")
+
+	r.write("pkg/svc.go", "package pkg\n\nvar limit = 20\n")
+	p := buildProfile(t, r, base)
+
+	if has, known := p.Signals.Has(review.SignalBugfixLines); !has || !known {
+		t.Errorf("bugfix-lines = (%v, known=%v), want present; signals were %s", has, known, p.Signals)
+	}
+	if has, _ := p.Signals.Has(review.SignalFixRevert); has {
+		t.Errorf("a routine fix raised fix-revert, which escalates every branch in a repo using Conventional Commits; signals were %s", p.Signals)
+	}
+}
+
+// A filename is a claim about a file, not about the change made to it. The
+// most expensive panel must not be bought by renaming a settings file.
+func TestAnAuthPathWithoutAuthContentDoesNotFire(t *testing.T) {
+	r := newRepo(t)
+	r.write("seed.txt", "x\n")
+	base := r.commit("base")
+
+	// The path matches `**/*guard*`; nothing in the body is about gating a
+	// request. A file's name is not what the change did to it.
+	r.write("config/guard-settings.yaml", "name: guard-settings\nvalue:\n  timeout: 30\n")
+	p := buildProfile(t, r, base)
+
+	if has, _ := p.Signals.Has(review.SignalAuth); has {
+		t.Errorf("auth fired on a filename alone; signals were %s", p.Signals)
+	}
 }

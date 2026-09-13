@@ -48,9 +48,14 @@ const (
 	// SignalFeatureFlags is flag definitions, default flips, and the removal
 	// of a guard.
 	SignalFeatureFlags Signal = "feature-flags"
-	// SignalFixRevert is a change to lines that trace back to a deliberate
-	// repair — the change may be undoing it.
+	// SignalFixRevert is a change to lines that trace back to a revert or a
+	// security repair — the change may be undoing it.
 	SignalFixRevert Signal = "fix-revert"
+	// SignalBugfixLines is a change to lines that trace back to a routine bug
+	// fix. Separate from SignalFixRevert because a repo using Conventional
+	// Commits spells a third of its history `fix(scope):`, so the two together
+	// would name most lines in the tree and say nothing about any of them.
+	SignalBugfixLines Signal = "bugfix-lines"
 )
 
 // Signals are the vocabulary, in the order `agtk code-review signals` lists
@@ -68,6 +73,7 @@ var Signals = []Signal{
 	SignalCrypto,
 	SignalFeatureFlags,
 	SignalFixRevert,
+	SignalBugfixLines,
 }
 
 // signalDescriptions is what `agtk code-review signals` prints beside each
@@ -84,7 +90,8 @@ var signalDescriptions = map[Signal]string{
 	SignalSensitiveData:    "PII handling, payment and billing code, and logging changes near either.",
 	SignalCrypto:           "Key material, hashing done for security, TLS configuration, random-token generation.",
 	SignalFeatureFlags:     "Flag definitions, default flips, and the removal of a guard.",
-	SignalFixRevert:        "Touched lines that trace back to a commit describing a fix, a security repair or a revert — the change may be undoing it.",
+	SignalFixRevert:        "Touched lines that trace back to a revert or a security repair — the change may be undoing it.",
+	SignalBugfixLines:      "Touched lines that trace back to a routine bug fix. Common wherever Conventional Commits are used, so it reports breadth rather than danger.",
 }
 
 // Description is the one-line account of what s says about a change.

@@ -138,7 +138,18 @@ func countSymbolReferences(opts ProfileOptions, sym string, changed []ChangedFil
 
 // fixCommitRE is what marks a commit as a deliberate repair. Matched against
 // the subject line, where the convention that carries this information lives.
-var fixCommitRE = regexp.MustCompile(`(?i)\b(fix|bug|hotfix|revert|security|cve)\b`)
+// revertCommitRE matches the subjects worth escalating for: undoing a revert
+// or a security repair is the case where the change may be reinstating the
+// defect somebody deliberately removed.
+//
+// `fix` is deliberately absent. Under Conventional Commits it is a type prefix
+// on a large share of every subject line, so a pattern carrying it names most
+// lines in a mature tree — which is a signal that always fires and therefore
+// distinguishes nothing. Those lines are reported as SignalBugfixLines instead.
+var revertCommitRE = regexp.MustCompile(`(?i)\b(revert|reverts|hotfix|security|cve)\b`)
+
+// bugfixCommitRE matches a routine repair: breadth, not danger.
+var bugfixCommitRE = regexp.MustCompile(`(?i)\b(fix|fixes|fixed|bug|bugfix)\b`)
 
 // historyDepthPerHunk is how far back one region's history is read. A repair
 // that a change is undoing is the recent history of those exact lines; a
@@ -176,8 +187,9 @@ func detectFixRevert(opts ProfileOptions, files []ChangedFile, patch string, set
 			continue
 		}
 		if spent >= budget {
-			set.MarkUndetermined(SignalFixRevert,
-				fmt.Sprintf("the %d-hunk history budget ran out", budget))
+			reason := fmt.Sprintf("the %d-hunk history budget ran out", budget)
+			set.MarkUndetermined(SignalFixRevert, reason)
+			set.MarkUndetermined(SignalBugfixLines, reason)
 			return
 		}
 		spent++
@@ -188,13 +200,22 @@ func detectFixRevert(opts ProfileOptions, files []ChangedFile, patch string, set
 			// is not nothing either: the signal stays undetermined unless
 			// some other hunk produces real evidence.
 			set.MarkUndetermined(SignalFixRevert, "reading the history of "+path+" failed")
+			set.MarkUndetermined(SignalBugfixLines, "reading the history of "+path+" failed")
 			continue
 		}
 		for _, subject := range subjects {
-			if fixCommitRE.MatchString(subject) {
+			if revertCommitRE.MatchString(subject) {
 				set.Add(SignalFixRevert)
-				return
+			} else if bugfixCommitRE.MatchString(subject) {
+				set.Add(SignalBugfixLines)
 			}
+		}
+		// Both classes found: nothing further in the history can change the
+		// answer, so the remaining budget is not worth spending.
+		fixFound, _ := set.Has(SignalFixRevert)
+		bugFound, _ := set.Has(SignalBugfixLines)
+		if fixFound && bugFound {
+			return
 		}
 	}
 }
