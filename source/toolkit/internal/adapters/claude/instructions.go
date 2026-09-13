@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/pedromvgomes/agentic-toolkit/internal/definitions"
@@ -13,6 +14,10 @@ import (
 const (
 	instructionsBeginMarker = "<!-- BEGIN AGTK MANAGED -->"
 	instructionsEndMarker   = "<!-- END AGTK MANAGED -->"
+
+	// localContextStackName is the stack identifier the resolver gives the
+	// instruction it reads from the entry manifest's local.context.
+	localContextStackName = "local.context"
 )
 
 // instructionsPath returns the absolute target path for CLAUDE.md.
@@ -32,12 +37,12 @@ func instructionsPath(roots scopeRoots) string {
 // No-op when plan has zero instructions AND no existing managed region
 // (avoids creating empty files).
 func renderInstructions(plan *resolver.Plan, roots scopeRoots, opts Options) error {
-	var instructions []*definitions.Instruction
+	var instructions []resolver.PlannedDefinition
 	for _, d := range plan.Definitions {
 		if d.Category != definitions.CategoryInstruction {
 			continue
 		}
-		instructions = append(instructions, d.Definition.(*definitions.Instruction))
+		instructions = append(instructions, d)
 	}
 
 	target := instructionsPath(roots)
@@ -98,14 +103,13 @@ func renderInstructions(plan *resolver.Plan, roots scopeRoots, opts Options) err
 }
 
 // buildInstructionsRegion concatenates instruction bodies inside the
-// agtk managed markers. Each instruction is separated by a blank line.
-// Order matches plan.Definitions (alphabetical by name within
-// instruction category).
-func buildInstructionsRegion(instructions []*definitions.Instruction) string {
+// agtk managed markers. Each instruction is separated by a blank line,
+// in orderInstructions' order.
+func buildInstructionsRegion(instructions []resolver.PlannedDefinition) string {
 	var b strings.Builder
 	b.WriteString(instructionsBeginMarker)
 	b.WriteString("\n")
-	for i, inst := range instructions {
+	for i, inst := range orderInstructions(instructions) {
 		if i > 0 {
 			b.WriteString("\n")
 		}
@@ -118,6 +122,39 @@ func buildInstructionsRegion(instructions []*definitions.Instruction) string {
 	}
 	b.WriteString(instructionsEndMarker)
 	return b.String()
+}
+
+// orderInstructions arranges the instructions for the single file their
+// bodies are concatenated into, in three groups:
+//
+//  1. local.context, the consumer's own top-level prose, which frames
+//     everything the catalog contributes and so comes first.
+//  2. everything a stack named, in the order the resolver produced —
+//     alphabetical by (category, name).
+//  3. the consumer's local.instructions, by ScanOrder, which is the order
+//     of their filenames. Those are the consumer's ordering knob; the
+//     `name:` each file declares is not.
+func orderInstructions(defs []resolver.PlannedDefinition) []*definitions.Instruction {
+	var context, named, local []resolver.PlannedDefinition
+	for _, d := range defs {
+		switch {
+		case d.StackName == localContextStackName:
+			context = append(context, d)
+		case d.ScanOrder > 0:
+			local = append(local, d)
+		default:
+			named = append(named, d)
+		}
+	}
+	sort.SliceStable(local, func(i, j int) bool { return local[i].ScanOrder < local[j].ScanOrder })
+
+	out := make([]*definitions.Instruction, 0, len(defs))
+	for _, group := range [][]resolver.PlannedDefinition{context, named, local} {
+		for _, d := range group {
+			out = append(out, d.Definition.(*definitions.Instruction))
+		}
+	}
+	return out
 }
 
 // replaceManagedRegion swaps out the existing managed block (markers
