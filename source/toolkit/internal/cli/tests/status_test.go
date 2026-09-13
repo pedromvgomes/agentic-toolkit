@@ -15,7 +15,7 @@ func TestStatus_FullyClean(t *testing.T) {
 	work := t.TempDir()
 	cache := t.TempDir()
 
-	writeEntryStack(t, work, url, "main")
+	writeEntryManifest(t, work, url, "main")
 	writeLockfile(t, filepath.Join(work, ".agentic-toolkit.lock.yaml"), url, "main", sha)
 
 	if _, _, err := runCLI(t, work, "fetch", "--cache", cache); err != nil {
@@ -41,7 +41,7 @@ func TestStatus_MissingLockfile(t *testing.T) {
 	work := t.TempDir()
 	cache := t.TempDir()
 
-	writeEntryStack(t, work, url, "main")
+	writeEntryManifest(t, work, url, "main")
 
 	stdout, _, err := runCLI(t, work, "status", "--cache", cache)
 	if err == nil {
@@ -59,7 +59,7 @@ func TestStatus_MissingCache(t *testing.T) {
 	work := t.TempDir()
 	cache := t.TempDir()
 
-	writeEntryStack(t, work, url, "main")
+	writeEntryManifest(t, work, url, "main")
 	writeLockfile(t, filepath.Join(work, ".agentic-toolkit.lock.yaml"), url, "main", sha)
 
 	stdout, _, err := runCLI(t, work, "status", "--cache", cache)
@@ -78,7 +78,7 @@ func TestStatus_RenderDrift(t *testing.T) {
 	work := t.TempDir()
 	cache := t.TempDir()
 
-	writeEntryStack(t, work, url, "main")
+	writeEntryManifest(t, work, url, "main")
 	writeLockfile(t, filepath.Join(work, ".agentic-toolkit.lock.yaml"), url, "main", sha)
 
 	if _, _, err := runCLI(t, work, "fetch", "--cache", cache); err != nil {
@@ -109,7 +109,7 @@ func TestStatus_JSON(t *testing.T) {
 	work := t.TempDir()
 	cache := t.TempDir()
 
-	writeEntryStack(t, work, url, "main")
+	writeEntryManifest(t, work, url, "main")
 	writeLockfile(t, filepath.Join(work, ".agentic-toolkit.lock.yaml"), url, "main", sha)
 	if _, _, err := runCLI(t, work, "fetch", "--cache", cache); err != nil {
 		t.Fatalf("fetch: %v", err)

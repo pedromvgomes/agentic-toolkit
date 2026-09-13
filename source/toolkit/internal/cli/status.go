@@ -53,7 +53,7 @@ func runStatus(env *Env, cacheRoot, scopeFlag string, jsonOut bool) error {
 		return err
 	}
 
-	st, entryFS, entryName, err := loadStack(env)
+	entry, entryFS, entryName, err := loadEntryManifest(env)
 	if err != nil {
 		return err
 	}
@@ -63,7 +63,7 @@ func runStatus(env *Env, cacheRoot, scopeFlag string, jsonOut bool) error {
 		return err
 	}
 
-	bucket1 := diffStackVsLockfile(st, lock, lockErr)
+	bucket1 := diffEntryManifestVsLockfile(entry, lock, lockErr)
 
 	var (
 		bucket2 []string
@@ -79,7 +79,7 @@ func runStatus(env *Env, cacheRoot, scopeFlag string, jsonOut bool) error {
 		// Re-resolve from the cache to drive the render-state diff.
 		// Resolver errors are non-fatal here — we surface them as drift
 		// rather than aborting the status report.
-		plan, rerr := resolver.Resolve(st, entryFS, entryName, sourcestore.NewFrozenProvider(cache, lock))
+		plan, rerr := resolver.Resolve(entry, entryFS, entryName, sourcestore.NewFrozenProvider(cache, lock))
 		if rerr != nil {
 			bucket3 = []string{fmt.Sprintf("resolve: %v", rerr)}
 		} else {
@@ -147,19 +147,18 @@ func loadLockfileIfPresent(env *Env) (*lockfile.Lockfile, error) {
 	return nil, fmt.Errorf("read %s: %w", path, err)
 }
 
-// diffStackVsLockfile flags every URL referenced from the entry-point
-// stack (extends + per-category URL entries) that is missing or has a
-// divergent ref in the lockfile. Sources in the lockfile but not in the
-// stack are not flagged here — they are normal artifacts of recursive
-// extends resolution recorded at lock time.
+// diffEntryManifestVsLockfile flags every URL the entry manifest's
+// `stacks:` references that is missing or has a divergent ref in the
+// lockfile. Sources in the lockfile but not in the manifest are not flagged
+// here — they are normal artifacts of recursive extends resolution recorded
+// at lock time.
 //
-// Local-path imports and bare-name entries don't reach the network and
-// don't appear in the lockfile, so they are skipped. Recursive extends
-// inside imported stacks are also skipped: status only inspects the
-// top-level entry-point file, so a missing pin for a transitive import
-// will surface in the next bucket (lockfile vs cache) as a fetch error
-// instead.
-func diffStackVsLockfile(st *stack.Stack, lock *lockfile.Lockfile, lockErr error) []string {
+// Local-path stacks don't reach the network and don't appear in the
+// lockfile, so they are skipped. Recursive extends inside imported stacks
+// are also skipped: status only inspects the top-level entry manifest, so a
+// missing pin for a transitive import will surface in the next bucket
+// (lockfile vs cache) as a fetch error instead.
+func diffEntryManifestVsLockfile(m *stack.EntryManifest, lock *lockfile.Lockfile, lockErr error) []string {
 	if lock == nil {
 		if errors.Is(lockErr, fs.ErrNotExist) {
 			return []string{LockFileName + " missing — run `agtk lock`"}
@@ -191,39 +190,15 @@ func diffStackVsLockfile(st *stack.Stack, lock *lockfile.Lockfile, lockErr error
 		drift = append(drift, fmt.Sprintf("source %s@%s not pinned in lockfile", url, displayRef(ref)))
 	}
 
-	// extends URLs.
-	for _, ext := range st.Extends {
-		if !ext.IsExternal() {
+	for _, ref := range m.Stacks {
+		if !ref.IsExternal() {
 			continue
 		}
-		repoURL, _ := splitGitURLForStatus(ext.URL)
-		check(repoURL, ext.Ref)
-	}
-
-	// Per-category URL entries.
-	for _, entry := range allEntries(st) {
-		if !entry.IsExternal() {
-			continue
-		}
-		repoURL, _ := splitGitURLForStatus(entry.URL)
-		check(repoURL, entry.Ref)
+		repoURL, _ := splitGitURLForStatus(ref.URL)
+		check(repoURL, ref.Ref)
 	}
 
 	return drift
-}
-
-// allEntries flattens every per-category entry list into a single slice.
-func allEntries(st *stack.Stack) []stack.EntryRef {
-	var out []stack.EntryRef
-	out = append(out, st.Skills...)
-	out = append(out, st.Agents...)
-	out = append(out, st.Rules...)
-	out = append(out, st.Instructions...)
-	out = append(out, st.Commands...)
-	out = append(out, st.Hooks...)
-	out = append(out, st.MCP...)
-	out = append(out, st.Settings...)
-	return out
 }
 
 // splitGitURLForStatus mirrors resolver.splitGitURL — local copy to

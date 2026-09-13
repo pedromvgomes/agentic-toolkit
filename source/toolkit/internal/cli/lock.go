@@ -45,7 +45,7 @@ func newLockCmd(env *Env) *cobra.Command {
 }
 
 func runLock(env *Env, cacheRoot string, frozen, jsonOut bool) error {
-	st, entryFS, entryName, err := loadStack(env)
+	entry, entryFS, entryName, err := loadEntryManifest(env)
 	if err != nil {
 		return err
 	}
@@ -53,7 +53,7 @@ func runLock(env *Env, cacheRoot string, frozen, jsonOut bool) error {
 	if err != nil {
 		return err
 	}
-	plan, err := resolver.Resolve(st, entryFS, entryName, sourcestore.NewLiveProvider(cache))
+	plan, err := resolver.Resolve(entry, entryFS, entryName, sourcestore.NewLiveProvider(cache))
 	if err != nil {
 		return fmt.Errorf("resolve: %w", err)
 	}
@@ -131,22 +131,43 @@ func runLockFrozen(env *Env, path string, resolved []byte, lock *lockfile.Lockfi
 	return fmt.Errorf("--frozen: %s would change; run `agtk lock` to update", path)
 }
 
-// loadStack reads the entry-point stack file. With --config set, that's
+// loadEntryManifest reads the entry manifest. With --config set, that's
 // whatever path the user passed; otherwise it's `<WorkDir>/.agentic-
 // toolkit.yaml`. The returned fs.FS is rooted at the manifest's
-// directory so local `./...` refs in the manifest resolve from the
+// directory so its convention root and local `./...` refs resolve from the
 // right place — that's the config dir, not the apply dir.
 //
-// stack.ParseFile already returns a *ParseError whose Error() includes
-// the path; we propagate it as-is to avoid duplicating the path in the
-// rendered message.
-func loadStack(env *Env) (*stack.Stack, fs.FS, string, error) {
+// stack.ParseEntryManifestFile already returns a *ParseError whose Error()
+// includes the path; we propagate it as-is to avoid duplicating the path in
+// the rendered message.
+func loadEntryManifest(env *Env) (*stack.EntryManifest, fs.FS, string, error) {
+	if env.StackName != "" {
+		return stackAsEntryManifest(env)
+	}
 	path := configFilePath(env)
-	st, err := stack.ParseFile(path)
+	m, err := stack.ParseEntryManifestFile(path)
 	if err != nil {
 		return nil, nil, "", err
 	}
-	return st, os.DirFS(stackDir(env)), entryRelPath(env), nil
+	return m, os.DirFS(stackDir(env)), entryRelPath(env), nil
+}
+
+// stackAsEntryManifest composes the stack --stack names from a manifest that
+// exists only for this run.
+//
+// A stack manifest and an entry manifest are disjoint schemas, so reading the
+// named stack as the entry point refuses it on its first `extends:`. Composing
+// it instead is what --stack means: apply that stack to this repo.
+func stackAsEntryManifest(env *Env) (*stack.EntryManifest, fs.FS, string, error) {
+	ref, err := stack.ParseExtendsRef("./" + entryRelPath(env))
+	if err != nil {
+		return nil, nil, "", fmt.Errorf("--stack %q: %w", env.StackName, err)
+	}
+	m := &stack.EntryManifest{Stacks: []stack.ExtendsRef{ref}}
+	// The synthetic manifest sits at the source tree's root, so the stack's
+	// path resolves from there and the convention root is the source tree's
+	// own — not the stacks/ directory the named stack happens to live in.
+	return m, os.DirFS(stackDir(env)), ConfigFileName, nil
 }
 
 // buildCache resolves the cache root: explicit override wins, otherwise
@@ -167,7 +188,7 @@ func buildCache(override string) (*sourcestore.Cache, error) {
 // behaviour this replaces.
 //
 // The digest is taken here rather than in the resolver because it is over the
-// manifest's bytes on disk, and the resolver is handed a parsed stack.
+// manifest's bytes on disk, and the resolver is handed a parsed manifest.
 func marshalLock(lock *lockfile.Lockfile, configPath string) ([]byte, error) {
 	raw, err := os.ReadFile(configPath) // #nosec G304 -- reads the entry manifest at the path the invoker named
 	if err != nil {

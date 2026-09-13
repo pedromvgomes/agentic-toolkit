@@ -12,7 +12,7 @@ func TestRender_WritesScopeRoot(t *testing.T) {
 	work := t.TempDir()
 	cache := t.TempDir()
 
-	writeEntryStack(t, work, url, "main")
+	writeEntryManifest(t, work, url, "main")
 	writeLockfile(t, filepath.Join(work, ".agentic-toolkit.lock.yaml"), url, "main", sha)
 
 	_, _, err := runCLI(t, work, "render", "--cache", cache)
@@ -35,7 +35,7 @@ func TestRender_DryRunNoWrites(t *testing.T) {
 	work := t.TempDir()
 	cache := t.TempDir()
 
-	writeEntryStack(t, work, url, "main")
+	writeEntryManifest(t, work, url, "main")
 	writeLockfile(t, filepath.Join(work, ".agentic-toolkit.lock.yaml"), url, "main", sha)
 
 	stdout, _, err := runCLI(t, work, "render", "--cache", cache, "--dry-run")
@@ -58,7 +58,7 @@ func TestRender_MultiPlatform_RendersBothLayouts(t *testing.T) {
 	work := t.TempDir()
 	cache := t.TempDir()
 
-	body := "extends:\n  - " + url + "/stacks/default.yaml@main\n" +
+	body := "stacks:\n  - " + url + "/stacks/default.yaml@main\n" +
 		"platforms:\n  - claude\n  - codex\n"
 	writeFile(t, filepath.Join(work, ".agentic-toolkit.yaml"), body)
 	writeLockfile(t, filepath.Join(work, ".agentic-toolkit.lock.yaml"), url, "main", sha)
@@ -88,7 +88,7 @@ func TestRender_UnknownAdapterPlatform_ErrorsAtRenderTime(t *testing.T) {
 	work := t.TempDir()
 	cache := t.TempDir()
 
-	body := "extends:\n  - " + url + "/stacks/default.yaml@main\n" +
+	body := "stacks:\n  - " + url + "/stacks/default.yaml@main\n" +
 		"platforms:\n  - cursor\n"
 	writeFile(t, filepath.Join(work, ".agentic-toolkit.yaml"), body)
 	writeLockfile(t, filepath.Join(work, ".agentic-toolkit.lock.yaml"), url, "main", sha)

@@ -23,7 +23,7 @@ func TestLock_ConfigFlag_LockfileLandsNextToConfig(t *testing.T) {
 	if err := os.MkdirAll(worktree, 0o755); err != nil {
 		t.Fatalf("mkdir worktree: %v", err)
 	}
-	writeEntryStack(t, worktree, url, "main")
+	writeEntryManifest(t, worktree, url, "main")
 
 	cache := t.TempDir()
 	configPath := filepath.Join(worktree, ".agentic-toolkit.yaml")

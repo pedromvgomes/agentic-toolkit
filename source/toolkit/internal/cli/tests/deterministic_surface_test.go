@@ -194,7 +194,7 @@ func TestTheStorePackageCannotReachADriver(t *testing.T) {
 // refuse, and it must refuse by saying how to fix it rather than by failing
 // obscurely.
 func TestTheDeterministicSubcommandsRunWithNoProviderConfigured(t *testing.T) {
-	work := memoryProject(t, "skills: []\n")
+	work := memoryProject(t, "stacks: []\n")
 
 	for _, args := range [][]string{
 		{"memory", "index"},

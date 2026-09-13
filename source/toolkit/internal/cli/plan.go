@@ -39,7 +39,7 @@ func newPlanCmd(env *Env) *cobra.Command {
 }
 
 func runPlan(env *Env, cacheRoot string, jsonOut, quiet bool) error {
-	st, entryFS, entryName, err := loadStack(env)
+	entry, entryFS, entryName, err := loadEntryManifest(env)
 	if err != nil {
 		return err
 	}
@@ -51,7 +51,7 @@ func runPlan(env *Env, cacheRoot string, jsonOut, quiet bool) error {
 	if err != nil {
 		return err
 	}
-	plan, err := resolver.Resolve(st, entryFS, entryName, sourcestore.NewFrozenProvider(cache, lock))
+	plan, err := resolver.Resolve(entry, entryFS, entryName, sourcestore.NewFrozenProvider(cache, lock))
 	if err != nil {
 		return fmt.Errorf("resolve: %w", err)
 	}

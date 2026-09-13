@@ -179,7 +179,7 @@ func allCategoriesWorkdir(t *testing.T) (work, cache string) {
 	work = t.TempDir()
 	cache = t.TempDir()
 
-	body := "extends:\n  - " + url + "/stacks/default.yaml@main\n" +
+	body := "stacks:\n  - " + url + "/stacks/default.yaml@main\n" +
 		"platforms:\n  - claude\n  - codex\n"
 	writeFile(t, filepath.Join(work, ".agentic-toolkit.yaml"), body)
 	writeLockfile(t, filepath.Join(work, ".agentic-toolkit.lock.yaml"), url, "main", sha)

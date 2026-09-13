@@ -11,7 +11,7 @@ func TestPlan_PrintsSourcesAndDefinitions(t *testing.T) {
 	work := t.TempDir()
 	cache := t.TempDir()
 
-	writeEntryStack(t, work, url, "main")
+	writeEntryManifest(t, work, url, "main")
 	writeLockfile(t, filepath.Join(work, ".agentic-toolkit.lock.yaml"), url, "main", sha)
 
 	stdout, _, err := runCLI(t, work, "plan", "--cache", cache)
@@ -34,7 +34,7 @@ func TestPlan_MissingLockfile_Errors(t *testing.T) {
 	work := t.TempDir()
 	cache := t.TempDir()
 
-	writeEntryStack(t, work, url, "main")
+	writeEntryManifest(t, work, url, "main")
 
 	_, _, err := runCLI(t, work, "plan", "--cache", cache)
 	if err == nil {
@@ -52,7 +52,7 @@ func TestPlan_DriftedSource_NotInLockfile_Errors(t *testing.T) {
 
 	// Config points at the fixture, lockfile pins a different URL — frozen
 	// provider should refuse the unpinned source.
-	writeEntryStack(t, work, url, "main")
+	writeEntryManifest(t, work, url, "main")
 	writeLockfile(t, filepath.Join(work, ".agentic-toolkit.lock.yaml"),
 		"github.com/somewhere/else", "main", sha)
 

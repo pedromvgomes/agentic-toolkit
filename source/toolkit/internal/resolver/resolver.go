@@ -13,25 +13,24 @@ import (
 	"github.com/pedromvgomes/agentic-toolkit/internal/stack"
 )
 
-// Resolve walks an entry-point stack against the SourceProvider and
-// returns a Plan.
+// Resolve walks an entry manifest against the SourceProvider and returns
+// a Plan.
 //
-// entry is the parsed entry-point stack (typically the consumer's
-// .agentic-toolkit.yaml). entryFS is the filesystem that holds the
-// entry-point file: bare-name and ./path lookups in the entry-point
-// stack resolve against entryFS, with the entry-point file at
-// entryPathInFS within it. Tests can pass arbitrary fs.FS values; the
-// CLI passes os.DirFS(filepath.Dir(configPath)) and the basename as
-// entryPathInFS.
+// entry is the parsed entry manifest (the consumer's
+// .agentic-toolkit.yaml). entryFS is the filesystem that holds it: the
+// manifest's convention root and its `stacks:` local paths resolve
+// against entryFS, with the manifest itself at entryPathInFS within it.
+// Tests can pass arbitrary fs.FS values; the CLI passes
+// os.DirFS(filepath.Dir(configPath)) and the basename as entryPathInFS.
 //
 // On any failure during DAG traversal or definition resolution, errors
 // are joined and no Plan is returned. A failure to provide a source is
 // surfaced as an error against the entry that triggered the fetch; the
 // resolver continues with the rest of the work to give a complete
 // failure picture.
-func Resolve(entry *stack.Stack, entryFS fs.FS, entryPathInFS string, provider SourceProvider) (*Plan, error) {
+func Resolve(entry *stack.EntryManifest, entryFS fs.FS, entryPathInFS string, provider SourceProvider) (*Plan, error) {
 	if entry == nil {
-		return nil, errors.New("resolver: nil entry stack")
+		return nil, errors.New("resolver: nil entry manifest")
 	}
 	if entryFS == nil {
 		return nil, errors.New("resolver: nil entryFS")
@@ -42,7 +41,7 @@ func Resolve(entry *stack.Stack, entryFS fs.FS, entryPathInFS string, provider S
 
 	st := newTraversalState(provider)
 
-	// Entry-point stack uses the empty string as its identifier and "" for
+	// The entry manifest uses the empty string as its identifier and "" for
 	// its source URL/Ref (it lives in the consumer's local FS, not in any
 	// fetched source).
 	entryCtx := stackCtx{
@@ -52,9 +51,7 @@ func Resolve(entry *stack.Stack, entryFS fs.FS, entryPathInFS string, provider S
 		FS:           entryFS,
 		FilePathInFS: entryPathInFS,
 	}
-	if err := st.loadStack(entry, entryCtx); err != nil {
-		st.errs = append(st.errs, err)
-	}
+	st.loadEntry(entry, entryCtx)
 	st.pullInRequirements()
 
 	if len(st.errs) > 0 {
@@ -71,6 +68,7 @@ func Resolve(entry *stack.Stack, entryFS fs.FS, entryPathInFS string, provider S
 			SourceURL:  w.SourceURL,
 			SourceRef:  w.SourceRef,
 			StackName:  w.StackName,
+			IsContext:  w.IsContext,
 			EntryPath:  w.EntryPath,
 			SourceFS:   w.SourceFS,
 		})
@@ -87,7 +85,8 @@ func Resolve(entry *stack.Stack, entryFS fs.FS, entryPathInFS string, provider S
 	plannedSources := st.orderedSources()
 
 	return &Plan{
-		Stack:       entry,
+		EntryManifest: entry,
+
 		StackOrder:  st.order,
 		Sources:     plannedSources,
 		Definitions: defs,
@@ -150,6 +149,7 @@ type walkedDef struct {
 	SourceURL  string
 	SourceRef  string
 	StackName  string
+	IsContext  bool
 	EntryPath  string
 	SourceFS   fs.FS
 
@@ -188,16 +188,6 @@ func (s *traversalState) loadStack(st *stack.Stack, ctx stackCtx) error {
 		}
 	}
 
-	if ctx.Identifier != "" && st.Memory != nil {
-		s.diags = append(s.diags, Diagnostic{
-			Kind: DiagIgnoredMemoryConfig,
-			Message: fmt.Sprintf("stack %q sets memory:, which is honoured only in the entry manifest; ignoring it",
-				displayID(ctx.Identifier)),
-			SourceURL: ctx.SourceURL,
-			StackName: ctx.Identifier,
-		})
-	}
-
 	root := st.EffectiveRoot()
 	for _, cat := range definitions.AllCategories {
 		entries := st.EntriesFor(cat)
@@ -210,24 +200,31 @@ func (s *traversalState) loadStack(st *stack.Stack, ctx stackCtx) error {
 			if w == nil {
 				continue
 			}
-			key := defKey{Category: w.Category, Name: w.Name}
-			if prev, exists := s.overlay[key]; exists {
-				s.diags = append(s.diags, Diagnostic{
-					Kind: DiagOverride,
-					Message: fmt.Sprintf("%s/%s from %s was overridden by entry from stack %q",
-						w.Category.CategoryDir(), w.Name, prev.SourceURL, displayID(w.StackName)),
-					Category:  w.Category,
-					Name:      w.Name,
-					SourceURL: prev.SourceURL,
-					StackName: w.StackName,
-				})
-			}
-			s.overlay[key] = *w
+			s.merge(*w)
 		}
 	}
 
 	s.order = append(s.order, ctx.Identifier)
 	return nil
+}
+
+// merge makes w the overlay's winner for its (category, name), reporting
+// what it displaces. Every path that contributes a definition goes through
+// here, so "later wins" is one rule rather than one per contributor.
+func (s *traversalState) merge(w walkedDef) {
+	key := defKey{Category: w.Category, Name: w.Name}
+	if prev, exists := s.overlay[key]; exists {
+		s.diags = append(s.diags, Diagnostic{
+			Kind: DiagOverride,
+			Message: fmt.Sprintf("%s/%s from %s was overridden by entry from stack %q",
+				w.Category.CategoryDir(), w.Name, prev.SourceURL, displayID(w.StackName)),
+			Category:  w.Category,
+			Name:      w.Name,
+			SourceURL: prev.SourceURL,
+			StackName: w.StackName,
+		})
+	}
+	s.overlay[key] = w
 }
 
 // loadExtends resolves one extends entry (URL or path) and recurses.
