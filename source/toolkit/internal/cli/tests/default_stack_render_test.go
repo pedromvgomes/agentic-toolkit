@@ -43,6 +43,39 @@ func TestTheDefaultStackRendersEveryThingItLists(t *testing.T) {
 	}
 }
 
+// The default stack lists no `local:` directories, so its instructions render
+// in the plain alphabetical-by-name order the stack declares them in.
+func TestTheDefaultStacksInstructionsRenderInDeclaredOrder(t *testing.T) {
+	apply := renderDefaultStack(t)
+
+	body, err := os.ReadFile(filepath.Join(apply, "CLAUDE.md"))
+	if err != nil {
+		t.Fatalf("CLAUDE.md did not reach the consumer: %v", err)
+	}
+	got := string(body)
+
+	comments := strings.Index(got, "Comments describe the code, not its history")
+	git := strings.Index(got, "Interacting with Git")
+	rendered := strings.Index(got, "Instructions are rendered, not edited")
+	planApproval := strings.Index(got, "Plan approval workflow")
+	for _, missing := range []struct {
+		name string
+		pos  int
+	}{
+		{"comments-describe-code-not-its-history", comments},
+		{"git", git},
+		{"instructions-are-rendered-not-edited", rendered},
+		{"plan-approval", planApproval},
+	} {
+		if missing.pos < 0 {
+			t.Fatalf("CLAUDE.md does not carry the %s instruction:\n%s", missing.name, got)
+		}
+	}
+	if !(comments < git && git < rendered && rendered < planApproval) {
+		t.Errorf("CLAUDE.md: instructions did not render in alphabetical-by-name order: %q", got)
+	}
+}
+
 // Claude Code reads a slash command's tool allowlist from `allowed-tools`.
 // Under any other key the restriction is not rejected, it is ignored — so the
 // command runs with the session's whole tool set, and the render looks fine.
