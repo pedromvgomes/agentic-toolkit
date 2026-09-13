@@ -153,7 +153,7 @@ escalate:
 # rather than skipped.
 conventions:
   - CONTEXT.md
-  - definitions/instructions/agentic-toolkit-repo.md
+  - agentic/instructions/agentic-toolkit-repo.md
   - definitions/instructions/git.md
   - definitions/instructions/comments-describe-code-not-its-history.md
   - definitions/instructions/memory-first-exploration.md
