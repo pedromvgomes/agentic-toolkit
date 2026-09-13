@@ -129,6 +129,83 @@ skills:
   single definition's own `platforms:` field, which narrows which
   targets *that definition* applies to, not which targets the stack
   renders for.
-- The `agtk init --source` flag is now `agtk init --extends`.
+- The `agtk init --source` flag is now `agtk init --stacks`.
 - A new `agtk sync` command runs `lock` (if stale) + `fetch` + `render`
   in one step, suitable for the everyday `pull-and-update` workflow.
+
+## Migrating to the entry-manifest split
+
+`.agentic-toolkit.yaml` is no longer a stack manifest — it is an **entry
+manifest**, a distinct type with its own shape (see [ADR
+0016](adr/0016-the-entry-manifest-is-its-own-type-not-a-stack.md)). This
+does not bump the lockfile schema version or change `.agentic-toolkit.lock.yaml`;
+it only changes what the entry-point file itself may contain. A `stacks/*.yaml`
+file you publish for others to import is unaffected — that's still a stack, and
+still uses `extends:` and per-category lists exactly as described above.
+
+If your `.agentic-toolkit.yaml` uses `extends:`, rename it to `stacks:`:
+
+**Before:**
+```yaml
+extends:
+  - github.com/pedromvgomes/agentic-toolkit.git/stacks/default.yaml@main
+```
+
+**After:**
+```yaml
+stacks:
+  - github.com/pedromvgomes/agentic-toolkit.git/stacks/default.yaml@main
+```
+
+If your `.agentic-toolkit.yaml` also had per-category lists (`skills:`,
+`instructions:`, `rules:`, etc.) naming your own definitions directly, move
+that content to files under `<root>/<category>/` instead — the entry
+manifest no longer accepts per-category lists, so a bare name or path can no
+longer be listed there:
+
+**Before:**
+```yaml
+extends:
+  - github.com/pedromvgomes/agentic-toolkit.git/stacks/default.yaml@main
+skills:
+  - ./internal-skills/code-review-style
+rules:
+  - ./internal-rules/no-experimental-apis.md
+```
+
+**After:**
+```yaml
+stacks:
+  - github.com/pedromvgomes/agentic-toolkit.git/stacks/default.yaml@main
+```
+
+with the definitions themselves moved to:
+
+```
+agentic/skills/code-review-style/SKILL.md
+agentic/rules/no-experimental-apis.md
+```
+
+`root` (default `"agentic"`) is where this convention scanning looks; set it
+explicitly if your definitions already live under a different folder rather
+than moving them:
+
+```yaml
+root: ./internal-toolkit
+stacks:
+  - github.com/pedromvgomes/agentic-toolkit.git/stacks/default.yaml@main
+```
+
+If you'd rather keep a handful of externally-sourced definitions that don't
+belong to a published stack, name them in a small local stack and compose it
+under `stacks:` — see [Recipe 3 in
+CONSUMER-GUIDE.md](CONSUMER-GUIDE.md#recipe-3--add-specific-definitions-from-another-repo).
+
+`memory:` and `platforms:` need no change — they keep the same shape, and
+are simply read by the entry manifest's own type now rather than a shared
+`Stack` type, which is not something a consumer needs to act on.
+
+`agtk init` scaffolds the new shape (`stacks:`, no per-category lists, a
+comment pointing at convention scanning) — re-run it against a fresh file if
+you want a template to copy fields from, rather than editing your existing
+one from memory.

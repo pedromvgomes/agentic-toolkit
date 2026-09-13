@@ -7,34 +7,89 @@ on the roadmap).
 
 For the canonical schema reference, see
 [`definitions/SCHEMA.md`](../definitions/SCHEMA.md) (definition catalog) and
-[`definitions/CONFIG-SCHEMA.md`](../definitions/CONFIG-SCHEMA.md) (stack +
-lockfile). This guide is the practical companion — it explains *how to think
-about* the stack model, not just *what fields exist*.
+[`definitions/CONFIG-SCHEMA.md`](../definitions/CONFIG-SCHEMA.md) (entry
+manifest + stack + lockfile). This guide is the practical companion — it
+explains *how to think about* the model, not just *what fields exist*.
 
 ## TL;DR
 
 A consumer repo opts in by committing **two files at the repo root**:
 
-- `.agentic-toolkit.yaml` — entry-point **stack manifest**: hand-edited.
+- `.agentic-toolkit.yaml` — the **entry manifest**: hand-edited.
 - `.agentic-toolkit.lock.yaml` — pinned record of every git source the
   resolver fetched. Resolver-written; **commit it**.
 
 Configuration for one part of `agtk` goes under `.agentic-toolkit/` instead.
 Content you commit — a memory store, local definitions under `root:` — lives
-where your stack names it, in neither place. See **Toolkit namespace** in
-[`CONTEXT.md`](../CONTEXT.md) for which a given file is.
+where your entry manifest names it, in neither place. See **Toolkit
+namespace** in [`CONTEXT.md`](../CONTEXT.md) for which a given file is.
 
-A stack manifest layers on top of one or more imported stacks (`extends:`)
-and adds project-local definitions on top (per-category lists). The same
-shape is used everywhere — consumer file, shareable stack file, even
-nested stack files. There is no "consumer config" vs "preset"
-distinction.
+The entry manifest composes one or more shared **stacks** (`stacks:`) and
+finds the rest of your own content by convention: anything you drop under
+`<root>/<category>/` (default `root` is `agentic`) renders without being
+named in the manifest. A stack — the shareable unit published at
+`stacks/*.yaml` in any repo, including this one — is a different, related
+shape: it uses `extends:` to layer other stacks and lists definitions by
+name per category, because a stack is meant to be imported into many repos
+rather than scanned out of one repo's tree.
 
-## The four kinds of fields
+## Entry manifest fields
 
 ```yaml
-# .agentic-toolkit.yaml (or any stack file)
-description: optional, only meaningful when this stack is imported
+# .agentic-toolkit.yaml
+description: optional, only meaningful if this file is ever imported as a stack
+root: agentic                # convention root for your own content; default shown
+context: ./CONTEXT.md        # optional, one file describing this repo to tooling
+
+stacks:                       # imported stacks — applied in declared order, later wins
+  - github.com/owner/repo.git/stacks/default.yaml@ref
+  - ./internal/team-stack.yaml
+
+platforms:                    # optional, defaults to [claude]
+  - claude
+  - codex
+
+memory:                        # optional, defaults shown
+  root: .memory
+```
+
+| Field | Required | Meaning |
+|-------|----------|---------|
+| `description` | no | One-line summary, read only if this file is itself imported as a stack. |
+| `root` | no | Convention root under which your own content is scanned by category directory. Default: `agentic`. |
+| `context` | no | Path to one file of free-form repo description, surfaced to tooling that needs to describe the consumer. |
+| `stacks` | no | Shared stacks to compose into this entry manifest. Each entry is a URL (with `.git/` boundary) or a local `./path`. Bare names not allowed. |
+| `platforms` | no | Rendering targets. Defaults to `[claude]`. See **Rendering targets** below. |
+| `memory` | no | Where the repo-resident memory store lives and which agent curates it. See **Memory store** below. |
+
+There is no per-category list (`skills:`, `instructions:`, …) here — content
+you own is found by convention scanning instead.
+
+## Convention scanning
+
+Your own skills, instructions, rules, agents, commands, hooks, MCP servers
+and settings live under `<root>/<category>/` (default `root` is `agentic`),
+one directory per category: `agentic/skills/`, `agentic/instructions/`,
+`agentic/rules/`, `agentic/agents/`, `agentic/commands/`, `agentic/hooks/`,
+`agentic/mcp/`, `agentic/settings/`. Drop a bundle there and it renders — you
+never name it in `.agentic-toolkit.yaml`.
+
+This repo's own entry manifest is a worked example:
+[`.agentic-toolkit.yaml`](../.agentic-toolkit.yaml) composes shared stacks
+under `stacks:`, and
+[`agentic/instructions/agentic-toolkit-repo.md`](../agentic/instructions/agentic-toolkit-repo.md)
+renders because it sits under `agentic/instructions/`, without being listed
+anywhere.
+
+## Stack fields
+
+A stack — a file at `stacks/*.yaml` in any repo, meant to be shared through
+an entry manifest's `stacks:` or another stack's `extends:` — keeps the
+per-category-list shape:
+
+```yaml
+# stacks/my-team.yaml (or any stack file)
+description: optional, shown by tooling when this stack is imported
 root: ./definitions          # optional, default for bare-name lookups
 
 extends:                     # imported stacks — applied in declared order, later wins
@@ -63,31 +118,37 @@ settings:  [...]
 
 ## Per-entry resolution
 
-The parser disambiguates each entry string by shape:
+Entries in a stack's `extends:` and per-category lists, and in an entry
+manifest's `stacks:`, are strings the parser disambiguates by shape:
 
 - **External URL** — contains `.git/` as the boundary between repo URL
   and in-repo path. Optional `@<ref>` selects a git ref. The resolver
   fetches the repo and locates the bundle/file at the in-repo path.
   Example: `github.com/owner/repo.git/skills/foo@main`.
 - **Local path** — starts with `./` or `/`. Resolved relative to the
-  directory holding the stack file itself. Example: in a stack at
+  directory holding the file itself. Example: in a stack at
   `repo/stacks/team.yaml`, `./shared/foo` → `repo/stacks/shared/foo`.
-- **Bare name** — anything else. Resolved under
-  `<root>/<plural>/<name>...` in the stack file's source FS. The
-  default `root` is `definitions`; override per stack file.
+- **Bare name** — anything else. Only valid in a stack's per-category
+  lists, resolved under `<root>/<plural>/<name>...` in the stack file's
+  source FS. The default `root` is `definitions`; override per stack file.
 
-Bare names are not permitted in `extends:` — every extends entry must
-be either a URL or a `./path`.
+Bare names are not permitted in `extends:` or in `stacks:` — every entry
+there must be either a URL or a `./path`. An entry manifest has no
+per-category lists to resolve a bare name against; its own content is
+found by convention scanning instead (see above).
 
 ## Override semantics
 
-`extends:` is processed depth-first, post-order:
+`extends:` (and an entry manifest's `stacks:`) is processed depth-first,
+post-order:
 
-1. The deepest extends are resolved first.
+1. The deepest imports are resolved first.
 2. Each imported stack's per-category entries are layered into the
    accumulating overlay.
-3. The importing stack's own entries apply *after* its extends — so the
-   importer always wins on `(category, name)` collisions.
+3. The importing file's own entries — a stack's per-category lists, or an
+   entry manifest's convention-scanned content — apply *after* its
+   extends/stacks, so the importer always wins on `(category, name)`
+   collisions.
 4. Among siblings, later entries override earlier ones.
 
 The entry-point file's own entries always win last.
@@ -119,13 +180,13 @@ Both compose the same way `allow` does, so a stack you extend cannot
 drop the rule you added.
 
 Every other key — `model`, `env` — is still last-wins, and your
-entry-point stack still wins it.
+entry-point file still wins it.
 
 ## Workflow
 
 ```bash
-agtk init [--extends <url>]    # scaffold .agentic-toolkit.yaml
-# … edit the stack file …
+agtk init [--stacks <url>]     # scaffold .agentic-toolkit.yaml
+# … edit the entry manifest …
 agtk sync                      # lock-if-stale + fetch + render in one shot
 ```
 
@@ -144,17 +205,17 @@ Other commands:
   rendered state. Exits non-zero on any drift.
 - `agtk lock --frozen` — fail in CI if the lockfile would change.
 
-Re-run `agtk lock` (or `agtk sync`) whenever you change the stack file,
+Re-run `agtk lock` (or `agtk sync`) whenever you change the entry manifest,
 want to bump pinned refs to current heads, or pin a new ref.
 
 ## Rendering targets
 
 `agtk render` writes Claude Code's layout and nothing else unless you say
-otherwise. Add `platforms:` to your stack file to render additional
+otherwise. Add `platforms:` to your entry manifest to render additional
 targets from the same definitions:
 
 ```yaml
-extends:
+stacks:
   - https://github.com/you/your-toolkit.git/stacks/default.yaml@main
 platforms:
   - claude
@@ -172,8 +233,8 @@ rather than wiring — `instructions:`, `skills:`, `rules:`, `agents:`,
 `commands:` — are usually meant for every platform and should leave the
 field off.
 
-Omitting the stack's `platforms:` is the same as `[claude]`. This lives in the stack
-file rather than behind a `--platform` flag so that every render site —
+Omitting `platforms:` is the same as `[claude]`. This lives in the entry
+manifest rather than behind a `--platform` flag so that every render site —
 your shell, a hook, CI, a colleague's checkout — reads the same answer
 out of something committed. Naming a platform with no render adapter
 fails the render rather than writing nothing.
@@ -238,7 +299,7 @@ in [CONTEXT.md](../CONTEXT.md).
 
 `agtk memory` manages a repo-resident store of durable notes about your
 codebase — invariants, rationale, gotchas and dead ends that cost real
-exploration to learn. It defaults to `.memory/` next to your stack manifest,
+exploration to learn. It defaults to `.memory/` next to your entry manifest,
 is committed, and is reviewed in PRs like any other source. Set
 `memory.root` to put it somewhere else; keep that somewhere outside every
 platform's rendered tree, for the reason **Toolkit namespace** gives in
@@ -285,7 +346,7 @@ source tree.
 
 Both are relative to the working directory when they sit below it, and
 absolute otherwise. Do not read `memory.root` out of the manifest instead:
-a `memory.root` in a stack reached through `extends:` is deliberately
+a `memory.root` in a stack reached through `stacks:` is deliberately
 ignored, so YAML and `agtk` disagree.
 
 A note is a markdown file with frontmatter:
@@ -307,7 +368,7 @@ confidence: verified
 
 Write the `path:` entries; `agtk memory anchor` fills in the hashes and
 expands the globs. Anchor paths are relative to the directory holding your
-stack manifest, stay inside it, and are one directory level deep — `**` is
+entry manifest, stay inside it, and are one directory level deep — `**` is
 rejected rather than silently truncated.
 
 `audit` never writes: staleness is recomputed from your working tree on
@@ -322,9 +383,9 @@ memory:
   root: docs/memory
 ```
 
-Only the entry manifest is honoured. A stack pulled in through `extends:`
-that sets `memory:` is ignored with a diagnostic — where your repo commits
-its notes is not a shared stack's business.
+`memory:` is an entry-manifest field only — a stack file has no such key,
+so one that sets `memory:` fails to parse. Where your repo commits its
+notes is not a shared stack's business.
 
 ## Choosing where to apply from
 
@@ -333,7 +394,7 @@ lockfile next to it, and renders into the current directory. Two global
 flags decouple *where the stack lives* from *where output lands* (they are
 mutually exclusive):
 
-- **`--config <path>`** — point at a stack manifest elsewhere. The lockfile
+- **`--config <path>`** — point at an entry manifest elsewhere. The lockfile
   lands next to that file and local `./…` refs resolve from its directory,
   but rendered output still goes to the working directory. This is the
   bare-repo + worktree workflow: run from the bare root, point `--config`
@@ -358,89 +419,103 @@ mutually exclusive):
 
 ## Recipes
 
-### Recipe 1 — extend a single shared stack
+### Recipe 1 — compose a single shared stack
 
 You only want what a published stack already gives you:
 
 ```yaml
-extends:
+stacks:
   - github.com/pedromvgomes/agentic-toolkit.git/stacks/default.yaml@main
 ```
 
-### Recipe 2 — stack two shared stacks
+### Recipe 2 — compose two shared stacks
 
 ```yaml
-extends:
+stacks:
   - github.com/pedromvgomes/agentic-toolkit.git/stacks/default.yaml@main
   - github.com/pedromvgomes/agentic-toolkit.git/stacks/bare-repos.yaml@main
 ```
 
-Last extends wins on conflicts, so layer narrower/opinionated stacks
+Later entries win on conflicts, so layer narrower/opinionated stacks
 after broader ones.
 
-### Recipe 3 — extend + add specific definitions from another repo
+### Recipe 3 — add specific definitions from another repo
 
 You like the toolkit's `default` stack, and want to add the `use-gt`
-skill and the `worktree-per-session` rule from `pedromvgomes/gt`:
+skill and the `worktree-per-session` rule from `pedromvgomes/gt`. An entry
+manifest has no per-category lists of its own — `stacks:` only composes
+whole stacks — so name the one-off entries in a small local stack instead:
 
 ```yaml
-extends:
-  - github.com/pedromvgomes/agentic-toolkit.git/stacks/default.yaml@main
-
+# stacks/extras.yaml
 skills:
   - github.com/pedromvgomes/gt.git/agentic/skills/use-gt@main
 rules:
   - github.com/pedromvgomes/gt.git/rules/worktree-per-session.md@main
 ```
 
-No need to publish a custom stack to the toolkit repo for this: the
-entry-point file *is* a stack and can carry definitions directly.
+```yaml
+# .agentic-toolkit.yaml
+stacks:
+  - github.com/pedromvgomes/agentic-toolkit.git/stacks/default.yaml@main
+  - ./stacks/extras.yaml
+```
 
-### Recipe 4 — keep your own definitions next to the consumer file
+No need to publish `stacks/extras.yaml` anywhere else — a local `./path`
+stack is enough to carry a handful of definitions you only need in this
+repo.
 
-You have project-local skills you don't want to publish anywhere:
+### Recipe 4 — keep your own definitions in this repo
+
+You have project-local skills you don't want to publish anywhere. Drop
+them under `<root>/<category>/` (default root `agentic`) and they render
+without being listed anywhere:
+
+```
+agentic/skills/code-review-style/SKILL.md
+agentic/skills/perf-profiler/SKILL.md
+agentic/rules/no-experimental-apis.md
+```
 
 ```yaml
-extends:
+# .agentic-toolkit.yaml
+stacks:
   - github.com/pedromvgomes/agentic-toolkit.git/stacks/default.yaml@main
-
-skills:
-  - ./internal-skills/code-review-style
-  - ./internal-skills/perf-profiler
-rules:
-  - ./internal-rules/no-experimental-apis.md
 ```
 
 Local skills follow the same bundle layout as published ones
 (`<dir>/SKILL.md` with companion files alongside). You pick the folder
-— there's no `definitions/` requirement for consumer-side definitions.
+under `agentic/skills/` — there's no further naming step.
 
-If most of your local definitions live under one shared parent, set
-`root` to point at it and use bare names instead:
+If you'd rather keep your own content somewhere other than `agentic/`, set
+`root`:
 
 ```yaml
 root: ./internal-toolkit
-extends:
+stacks:
   - github.com/pedromvgomes/agentic-toolkit.git/stacks/default.yaml@main
-skills:
-  - code-review-style    # → ./internal-toolkit/skills/code-review-style/SKILL.md
-  - perf-profiler
 ```
 
-### Recipe 5 — split your own stack across files
+and drop content under `./internal-toolkit/skills/`,
+`./internal-toolkit/rules/`, and so on instead.
 
-Once your entry-point gets too big, factor parts out into local stacks:
+### Recipe 5 — compose several stacks
+
+Once you're pulling in more than one thing, list them all under `stacks:`
+— this repo does exactly this for its own definitions:
 
 ```yaml
 # .agentic-toolkit.yaml
-extends:
-  - github.com/pedromvgomes/agentic-toolkit.git/stacks/default.yaml@main
-  - ./stacks/team-style.yaml
-  - ./stacks/local-tooling.yaml
+stacks:
+  - ./stacks/default.yaml
+  - ./stacks/plannotator.yaml
+  - ./stacks/serena.yaml
+  - ./stacks/rtk.yaml
 ```
 
-Each `./stacks/*.yaml` is a stack file with the same shape. They can
-extend further, define `root`, and add their own entries.
+Each entry is a stack file with the shape described in **Stack fields**
+above — it can `extends:` further, define its own `root`, and add its own
+per-category entries.
 
 ## Common pitfalls
 
@@ -450,8 +525,9 @@ extend further, define `root`, and add their own entries.
 - **Forgetting `.git/`.** External URL entries **must** include `.git/`
   as the boundary between the repo URL and the in-repo path. Without
   it, the resolver can't locate the bundle/file.
-- **Bare name in `extends:`.** Bare names only resolve to definitions,
-  not stacks. Stack imports must use a URL or `./path`.
+- **Bare name in `extends:`/`stacks:`.** Bare names only resolve to
+  definitions inside a stack's per-category lists, not to stacks
+  themselves. Stack imports must use a URL or `./path`.
 - **Old-format config.** If you see a `legacy_config` parse error
   pointing at `source:` / `presets:` / `externals:` — that's the
   v1 schema. See [MIGRATION.md](MIGRATION.md) for the upgrade path.
