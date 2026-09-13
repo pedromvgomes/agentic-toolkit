@@ -338,6 +338,28 @@ func TestRender_InstructionOrder(t *testing.T) {
 	}
 }
 
+// TestRender_InstructionOrder_StackResolvedKeepsPlanOrder: a stack resolved
+// on its own carries no stack name, and that alone does not make its
+// instructions scanned. They keep the order plan.Definitions carries instead
+// of being re-sorted by the filenames they happen to live under.
+func TestRender_InstructionOrder_StackResolvedKeepsPlanOrder(t *testing.T) {
+	tmp := t.TempDir()
+
+	plan := makePlan([]resolver.PlannedDefinition{
+		pdStackResolvedInstruction("aaa-name", "first in plan order", "FIRST-BODY", "020-second.md"),
+		pdStackResolvedInstruction("zzz-name", "second in plan order", "SECOND-BODY", "010-first.md"),
+	})
+
+	if err := codex.Render(plan, codex.Options{Scope: codex.ScopeProject, ProjectRoot: tmp}); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+
+	got := mustRead(t, filepath.Join(tmp, "AGENTS.md"))
+	if first, second := strings.Index(got, "FIRST-BODY"), strings.Index(got, "SECOND-BODY"); first < 0 || second < 0 || first > second {
+		t.Errorf("expected plan order, got %q", got)
+	}
+}
+
 // TestRender_UserScope resolves ProjectRoot from the home directory when
 // no override is given.
 func TestRender_UserScope(t *testing.T) {

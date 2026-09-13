@@ -10,6 +10,7 @@ import (
 	"github.com/goccy/go-yaml"
 	"github.com/spf13/cobra"
 
+	"github.com/pedromvgomes/agentic-toolkit/internal/definitions"
 	"github.com/pedromvgomes/agentic-toolkit/internal/lockfile"
 	"github.com/pedromvgomes/agentic-toolkit/internal/resolver"
 	"github.com/pedromvgomes/agentic-toolkit/internal/sourcestore"
@@ -139,7 +140,7 @@ type resolveInput struct {
 	name     string // entry path within fsys
 	manifest *stack.EntryManifest
 	single   *stack.Stack
-	refs     []stack.ExtendsRef // manifest.Stacks, or the one named-stack ref — for status's diff
+	refs     []stack.ExtendsRef // manifest.Stacks, or the named stack's own external sources — for status's diff
 }
 
 // loadResolveInput reads whatever this invocation resolves against: a real
@@ -158,17 +159,41 @@ func loadResolveInput(env *Env) (*resolveInput, error) {
 		if err != nil {
 			return nil, err
 		}
-		ref, err := stack.ParseExtendsRef("./" + name)
-		if err != nil {
-			return nil, fmt.Errorf("--stack %q: %w", env.StackName, err)
-		}
-		return &resolveInput{fsys: fsys, name: name, single: st, refs: []stack.ExtendsRef{ref}}, nil
+		return &resolveInput{fsys: fsys, name: name, single: st, refs: externalRefsOf(st)}, nil
 	}
 	m, err := stack.ParseEntryManifestFile(configFilePath(env))
 	if err != nil {
 		return nil, err
 	}
 	return &resolveInput{fsys: fsys, name: name, manifest: m, refs: m.Stacks}, nil
+}
+
+// externalRefsOf flattens the external sources a stack composes: its
+// `extends:` targets plus every per-category URL entry. A stack rendered on
+// its own is the top level, so what a manifest's `stacks:` answers for is
+// answered here by the stack's own composition — the path to it is local and
+// never pinned, so checking that instead reports clean whatever drifted.
+func externalRefsOf(st *stack.Stack) []stack.ExtendsRef {
+	var refs []stack.ExtendsRef
+	for _, ext := range st.Extends {
+		if ext.IsExternal() {
+			refs = append(refs, ext)
+		}
+	}
+	for _, cat := range definitions.AllCategories {
+		for _, entry := range st.EntriesFor(cat) {
+			if !entry.IsExternal() {
+				continue
+			}
+			refs = append(refs, stack.ExtendsRef{
+				Raw:  entry.Raw,
+				Kind: stack.RefURL,
+				URL:  entry.URL,
+				Ref:  entry.Ref,
+			})
+		}
+	}
+	return refs
 }
 
 // resolve dispatches to whichever resolver entry point matches what this

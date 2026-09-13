@@ -114,6 +114,7 @@ func (s *traversalState) buildPlan(entry *stack.EntryManifest) *Plan {
 			SourceRef:  w.SourceRef,
 			StackName:  w.StackName,
 			IsContext:  w.IsContext,
+			Scanned:    w.Scanned,
 			EntryPath:  w.EntryPath,
 			SourceFS:   w.SourceFS,
 		})
@@ -193,6 +194,7 @@ type walkedDef struct {
 	SourceRef  string
 	StackName  string
 	IsContext  bool
+	Scanned    bool
 	EntryPath  string
 	SourceFS   fs.FS
 

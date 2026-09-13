@@ -84,6 +84,9 @@ func TestResolve_Scan_EachCategoryShape(t *testing.T) {
 			if d.StackName != "" {
 				t.Errorf("stack name = %q, want the entry manifest's own identifier", d.StackName)
 			}
+			if !d.Scanned {
+				t.Error("Scanned = false, want true for a definition the convention root produced")
+			}
 			if d.IsContext {
 				t.Error("a scanned definition is not the context file")
 			}

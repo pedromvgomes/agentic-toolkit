@@ -146,17 +146,17 @@ func loadLockfileIfPresent(env *Env) (*lockfile.Lockfile, error) {
 	return nil, fmt.Errorf("read %s: %w", path, err)
 }
 
-// diffSourcesVsLockfile flags every URL among the entry manifest's
-// `stacks:` refs that is missing or has a divergent ref in the
-// lockfile. Sources in the lockfile but not in the manifest are not flagged
-// here — they are normal artifacts of recursive extends resolution recorded
-// at lock time.
+// diffSourcesVsLockfile flags every URL among the top-level refs — the entry
+// manifest's `stacks:`, or the named stack's own external sources — that is
+// missing or has a divergent ref in the lockfile. Sources in the lockfile but
+// not among those refs are not flagged here — they are normal artifacts of
+// recursive extends resolution recorded at lock time.
 //
 // Local-path stacks don't reach the network and don't appear in the
 // lockfile, so they are skipped. Recursive extends inside imported stacks
-// are also skipped: status only inspects the top-level entry manifest, so a
-// missing pin for a transitive import will surface in the next bucket
-// (lockfile vs cache) as a fetch error instead.
+// are also skipped: status only inspects the top level, so a missing pin for
+// a transitive import will surface in the next bucket (lockfile vs cache) as
+// a fetch error instead.
 func diffSourcesVsLockfile(refs []stack.ExtendsRef, lock *lockfile.Lockfile, lockErr error) []string {
 	if lock == nil {
 		if errors.Is(lockErr, fs.ErrNotExist) {

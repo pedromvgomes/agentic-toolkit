@@ -38,6 +38,11 @@ func TestResolveStack_NoEntryManifest_NoConventionScan(t *testing.T) {
 	if d.Category != definitions.CategorySkill || d.Name != "tidy" {
 		t.Errorf("got (%s, %q), want (skill, \"tidy\")", d.Category, d.Name)
 	}
+	// The stack declared this entry; nothing scanned it, whatever its empty
+	// StackName says about which stack is the entry point.
+	if d.Scanned {
+		t.Error("Scanned = true, want false for an entry the stack declares")
+	}
 }
 
 // TestResolveStack_EffectivePlatforms_DefaultsToClaude covers the platforms:

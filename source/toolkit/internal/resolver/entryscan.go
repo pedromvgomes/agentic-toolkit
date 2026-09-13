@@ -107,6 +107,7 @@ func (s *traversalState) scanCategory(cat definitions.Category, dir, root string
 			errs = append(errs, fmt.Errorf("%s: %w", path.Join(f.bundleDir, f.fileName), err))
 			continue
 		}
+		w.Scanned = true
 		if prev, dup := seen[w.Name]; dup {
 			errs = append(errs, fmt.Errorf("%q and %q both declare the name %q",
 				prev, path.Join(f.bundleDir, f.fileName), w.Name))
@@ -156,6 +157,7 @@ func (s *traversalState) readContext(file, root string, ctx stackCtx) (*walkedDe
 		SourceRef:  ctx.SourceRef,
 		StackName:  ctx.Identifier,
 		IsContext:  true,
+		Scanned:    true,
 		EntryPath:  path.Base(p),
 		SourceFS:   dirFS,
 		root:       root,

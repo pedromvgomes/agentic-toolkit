@@ -118,6 +118,12 @@ type PlannedDefinition struct {
 	// other scanned definition, so this is what tells the two apart.
 	IsContext bool
 
+	// Scanned marks a definition the entry manifest's convention root
+	// produced rather than a stack entry. Only a scan sets it: an empty
+	// StackName also identifies a stack resolved on its own (ResolveStack),
+	// whose entries are declared and ordered, not found on disk.
+	Scanned bool
+
 	// EntryPath is the fs-relative path inside the source's filesystem to
 	// the entry-point file that was parsed. For local refs this is
 	// "<root>/<plural>/<name>..." in the stack's source FS. For external

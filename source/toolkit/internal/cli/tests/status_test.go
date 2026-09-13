@@ -103,6 +103,65 @@ func TestStatus_RenderDrift(t *testing.T) {
 	}
 }
 
+// TestStatus_SourceStack_ConfigVsLockfileDrift: with --stack there is no
+// entry manifest whose `stacks:` could be checked, so the named stack's own
+// external sources are — both the ones it extends and the ones its
+// per-category entries name. Either pinned to a ref the lockfile does not
+// hold is drift.
+func TestStatus_SourceStack_ConfigVsLockfileDrift(t *testing.T) {
+	url, sha := fixtureRepoFromDir(t, "testdata/primary")
+
+	cases := []struct {
+		name string
+		body string
+	}{
+		{
+			name: "extends",
+			body: "description: Extends an external stack.\nextends:\n  - " + url + "/stacks/default.yaml@main\n",
+		},
+		{
+			name: "category entry",
+			body: "description: Names an external skill.\nskills:\n  - " + url + "/definitions/skills/foo@main\n",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			source := t.TempDir()
+			if err := copyTree("testdata/primary", source); err != nil {
+				t.Fatalf("copy source tree: %v", err)
+			}
+			writeFile(t, filepath.Join(source, "stacks", "drifted.yaml"), tc.body)
+
+			work := t.TempDir()
+			cache := t.TempDir()
+			// The lockfile pins the same source at a different ref, so the
+			// stack's pin is genuinely unresolvable from it.
+			writeLockfile(t, filepath.Join(work, ".agentic-toolkit.lock.yaml"), url, "other", sha)
+
+			stdout, _, err := runCLI(t, work, "--source", source, "--stack", "drifted", "status", "--cache", cache, "--json")
+			if err == nil {
+				t.Fatal("expected non-zero exit when the named stack's source is not pinned")
+			}
+			var got map[string]any
+			if jerr := json.Unmarshal([]byte(stdout), &got); jerr != nil {
+				t.Fatalf("parse json: %v\n%s", jerr, stdout)
+			}
+			drift, ok := got["drift"].(map[string]any)
+			if !ok {
+				t.Fatalf("drift field missing or wrong type: %v", got["drift"])
+			}
+			lines, ok := drift["config_vs_lockfile"].([]any)
+			if !ok || len(lines) == 0 {
+				t.Fatalf("config_vs_lockfile = %v, want the unpinned source; output=%s", drift["config_vs_lockfile"], stdout)
+			}
+			if first, _ := lines[0].(string); !strings.Contains(first, url) || !strings.Contains(first, "not pinned") {
+				t.Errorf("drift line = %q, want the unpinned source %s", first, url)
+			}
+		})
+	}
+}
+
 // TestStatus_JSON: the --json output has the expected schema.
 func TestStatus_JSON(t *testing.T) {
 	url, sha := fixtureRepoFromDir(t, "testdata/primary")

@@ -10,24 +10,24 @@ import (
 )
 
 // orderInstructions places the entry manifest's `context:` instruction
-// first, then everything a stack named — unchanged from the order
+// first, then everything a stack declared — unchanged from the order
 // plan.Definitions already carries — then locally scanned instructions
 // last, sorted by EntryPath. A scanned file's filename decides its
 // position, not its declared `name:`, since the filesystem scan that
 // found it is itself lexicographic.
 func orderInstructions(defs []resolver.PlannedDefinition) []*definitions.Instruction {
 	var context *definitions.Instruction
-	var named []*definitions.Instruction
+	var declared []*definitions.Instruction
 	var scanned []resolver.PlannedDefinition
 
 	for _, d := range defs {
 		switch {
 		case d.IsContext:
 			context = d.Definition.(*definitions.Instruction)
-		case d.StackName != "":
-			named = append(named, d.Definition.(*definitions.Instruction))
-		default:
+		case d.Scanned:
 			scanned = append(scanned, d)
+		default:
+			declared = append(declared, d.Definition.(*definitions.Instruction))
 		}
 	}
 
@@ -37,7 +37,7 @@ func orderInstructions(defs []resolver.PlannedDefinition) []*definitions.Instruc
 	if context != nil {
 		out = append(out, context)
 	}
-	out = append(out, named...)
+	out = append(out, declared...)
 	for _, d := range scanned {
 		out = append(out, d.Definition.(*definitions.Instruction))
 	}
@@ -45,7 +45,7 @@ func orderInstructions(defs []resolver.PlannedDefinition) []*definitions.Instruc
 }
 
 // buildAgentsMD renders AGENTS.md's content: the instruction bodies, in
-// orderInstructions order (context first, then stack-named, then locally
+// orderInstructions order (context first, then stack-declared, then locally
 // scanned by filename), followed by an index of rules (description +
 // relative link to its whole-owned file) sorted by name for a stable
 // diff. Codex has no rules-discovery mechanism of its own, so this index

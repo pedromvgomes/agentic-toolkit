@@ -100,24 +100,24 @@ func renderInstructions(plan *resolver.Plan, roots scopeRoots, opts Options) err
 }
 
 // orderInstructions places the entry manifest's `context:` instruction
-// first, then everything a stack named — unchanged from the order
+// first, then everything a stack declared — unchanged from the order
 // plan.Definitions already carries — then locally scanned instructions
 // last, sorted by EntryPath. A scanned file's filename decides its
 // position, not its declared `name:`, since the filesystem scan that
 // found it is itself lexicographic.
 func orderInstructions(defs []resolver.PlannedDefinition) []*definitions.Instruction {
 	var context *definitions.Instruction
-	var named []*definitions.Instruction
+	var declared []*definitions.Instruction
 	var scanned []resolver.PlannedDefinition
 
 	for _, d := range defs {
 		switch {
 		case d.IsContext:
 			context = d.Definition.(*definitions.Instruction)
-		case d.StackName != "":
-			named = append(named, d.Definition.(*definitions.Instruction))
-		default:
+		case d.Scanned:
 			scanned = append(scanned, d)
+		default:
+			declared = append(declared, d.Definition.(*definitions.Instruction))
 		}
 	}
 
@@ -127,7 +127,7 @@ func orderInstructions(defs []resolver.PlannedDefinition) []*definitions.Instruc
 	if context != nil {
 		out = append(out, context)
 	}
-	out = append(out, named...)
+	out = append(out, declared...)
 	for _, d := range scanned {
 		out = append(out, d.Definition.(*definitions.Instruction))
 	}
@@ -137,7 +137,7 @@ func orderInstructions(defs []resolver.PlannedDefinition) []*definitions.Instruc
 // buildInstructionsRegion concatenates instruction bodies inside the
 // agtk managed markers. Each instruction is separated by a blank line.
 // Order follows orderInstructions: the entry manifest's own context
-// first, then stack-named instructions, then locally scanned ones by
+// first, then stack-declared instructions, then locally scanned ones by
 // filename.
 func buildInstructionsRegion(instructions []*definitions.Instruction) string {
 	var b strings.Builder
