@@ -31,15 +31,6 @@ The same shape is used everywhere: the consumer's entry-point file is just a sta
 | `mcp` | `[]EntryRef` | no |  |
 | `settings` | `[]EntryRef` | no |  |
 
-### `memory`
-
-Settings for the repo-resident memory store (`agtk memory ...`). Honoured **only in the entry manifest**: the store's location is a fact about the consumer repo, not about a shareable stack, so a stack reached through `extends:` that sets it is ignored with a diagnostic rather than silently relocating the consumer's committed notes.
-
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `root` | `string` | no | Store location, relative to the directory holding the entry manifest. Defaults to ".memory". |
-| `agent` | `string` | no | Coding-agent CLI that 'agtk memory curate' drives, e.g. "claudecode" or "codex". No default: curation is the one operation that spends money, so the repo names its provider or curation does not run. |
-
 ## Entry manifest
 
 **Path:** `.agentic-toolkit.yaml` at the repo root, or another file named by `--config`/`--stack`.
@@ -56,6 +47,15 @@ The entry manifest is its own type, not a Stack (see ADR 0016). Its category fie
 | `stacks` | `[]ExtendsRef` | no | Shared stacks to compose into this entry manifest. Applied in declared order; later entries override earlier ones. Each entry is an external URL (with .git/ boundary) or a local path (./...). |
 | `platforms` | `[]Platform` | no | Rendering targets. Omit to render Claude Code only — today's behavior, unchanged. List additional platforms (e.g. codex) to also render their on-disk layout from the same definitions; each named platform must have a render adapter. |
 | `memory` | `MemoryConfig` | no | Repo-resident memory store settings. The store's location is a fact about the consumer repo, not about a shareable stack. |
+
+### `memory`
+
+Settings for the repo-resident memory store (`agtk memory ...`): where the store lives and which agent manages it.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `root` | `string` | no | Store location, relative to the directory holding the entry manifest. Defaults to ".memory". |
+| `agent` | `string` | no | Coding-agent CLI that 'agtk memory curate' drives, e.g. "claudecode" or "codex". No default: curation is the one operation that spends money, so the repo names its provider or curation does not run. |
 
 ### Per-entry resolution
 

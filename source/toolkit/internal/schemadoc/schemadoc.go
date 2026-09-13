@@ -256,13 +256,6 @@ func renderConfig() ([]byte, error) {
 	writeFieldTable(&b, docForType(reflect.TypeOf(stk.Stack{})).Fields)
 	fmt.Fprintln(&b)
 
-	fmt.Fprintln(&b, "### `memory`")
-	fmt.Fprintln(&b)
-	fmt.Fprintln(&b, "Settings for the repo-resident memory store (`agtk memory ...`). Honoured **only in the entry manifest**: the store's location is a fact about the consumer repo, not about a shareable stack, so a stack reached through `extends:` that sets it is ignored with a diagnostic rather than silently relocating the consumer's committed notes.")
-	fmt.Fprintln(&b)
-	writeFieldTable(&b, docForType(reflect.TypeOf(stk.MemoryConfig{})).Fields)
-	fmt.Fprintln(&b)
-
 	fmt.Fprintln(&b, "## Entry manifest")
 	fmt.Fprintln(&b)
 	fmt.Fprintln(&b, "**Path:** `.agentic-toolkit.yaml` at the repo root, or another file named by `--config`/`--stack`.")
@@ -272,6 +265,13 @@ func renderConfig() ([]byte, error) {
 	fmt.Fprintln(&b, "### Fields")
 	fmt.Fprintln(&b)
 	writeFieldTable(&b, docForType(reflect.TypeOf(stk.EntryManifest{})).Fields)
+	fmt.Fprintln(&b)
+
+	fmt.Fprintln(&b, "### `memory`")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "Settings for the repo-resident memory store (`agtk memory ...`): where the store lives and which agent manages it.")
+	fmt.Fprintln(&b)
+	writeFieldTable(&b, docForType(reflect.TypeOf(stk.MemoryConfig{})).Fields)
 	fmt.Fprintln(&b)
 
 	fmt.Fprintln(&b, "### Per-entry resolution")
