@@ -1,20 +1,10 @@
 name: skill-permissions
-description: Pre-approve the file and shell operations the bundled skills/agents need (memory-explorer store reads and candidate writes, backlog reporting, Serena memories, panel-code-review's model-free code-review commands, read-only gh calls) so they run without permission prompts.
+description: Pre-approve the shell operations the bundled skills need (panel-code-review's model-free code-review commands, read-only gh calls) so they run without permission prompts. The memory store's own grants ship with the memory stack.
 platforms: [claude]
 value:
   permissions:
     allow:
       - "Write(./.agents/memories/**)"
-      - "Bash(agtk memory stats*)"
-      - "Bash(agtk memory show *)"
-      # Reporting only. `curate` is not pre-approved: it spends money and
-      # rewrites notes/, so it stays a prompt the user answers deliberately.
-      - "Bash(agtk memory candidates*)"
-      # The store's own paths are absent on purpose. They depend on
-      # `memory.root`, which only the consumer's entry manifest sets, so a
-      # literal here would be right for consumers who left the default and
-      # wrong for the rest. The claude adapter appends them from the root it
-      # resolves, whenever a stack contributes `permissions` at all.
       # The code-review subcommands that start no model. `run` is absent
       # because it costs money, and `approve` because a person types that one.
       #

@@ -1,11 +1,16 @@
 description: |
   Default toolkit stack — the two-stage feature flow (plan on opus, hand off, implement on
   sonnet, review in a capped loop, open the PR), the workflow-agnostic skills around it, the
-  plan-approval and memory-first instructions, the memory and session agents, the memory
-  commands and the upstream skill-creator skill.
+  plan-approval instruction, the session agents and the upstream skill-creator skill. The
+  memory store and everything that reads it come from the memory stack this extends.
 
   It sets the session's default model to sonnet, because the implementing half of the flow is
   meant to land there and only /plan-feature's own frontmatter raises a session above it.
+extends:
+  # The memory store and its tooling. Extended rather than listed so a repo can
+  # adopt memory on its own, and so the grants those definitions need travel
+  # with them instead of living in a stack that knows nothing about them.
+  - ./memory.yaml
 skills:
   - agents-md-creator
   - challenge
@@ -22,24 +27,18 @@ skills:
   - open-pr
   - github.com/anthropics/skills.git/skills/skill-creator@main
 agents:
-  - memory-explorer
   - wrap-session-reviewer
   - plan-reviewer
   - task-implementer
 commands:
-  - memory-curate
-  - memory-seed
   - plan-feature
 mcp:
   - context7
 instructions:
   - comments-describe-code-not-its-history
   - git
-  - memory-first-exploration
   - plan-approval
 hooks:
-  - memory-claude-session-end
-  - memory-claude-session-start
   - handoff-claude-session-start
 settings:
   - skill-permissions

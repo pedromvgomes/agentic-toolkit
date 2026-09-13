@@ -1,0 +1,20 @@
+description: |
+  Memory stack — the repo-resident memory store and everything that reads it: the explorer
+  agent delegations are routed to, the curate/seed commands, the instruction that does the
+  routing, and the session hooks that surface the store's digest and its candidate backlog.
+
+  Extend this on its own to adopt memory without the feature flow. `memory.root` is not set
+  here and could not be: it is honoured only in the consumer's own entry manifest, so where
+  a repo commits its notes stays the repo's decision.
+agents:
+  - memory-explorer
+commands:
+  - memory-curate
+  - memory-seed
+instructions:
+  - memory-first-exploration
+hooks:
+  - memory-claude-session-start
+  - memory-claude-session-end
+settings:
+  - memory-permissions

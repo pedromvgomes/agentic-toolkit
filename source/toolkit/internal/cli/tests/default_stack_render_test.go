@@ -148,6 +148,16 @@ func TestPreApprovedPermissionsNameCommandsThatExist(t *testing.T) {
 // test are the ones in this repo.
 func renderDefaultStack(t *testing.T) string {
 	t.Helper()
+	return renderStack(t, "default")
+}
+
+// renderStack renders the repo's own definitions/ and the named stack into a
+// throwaway consumer, and returns that consumer's directory.
+//
+// The whole stacks/ directory is copied, so a stack reached through `extends:`
+// resolves the same way it does for a consumer.
+func renderStack(t *testing.T, name string) string {
+	t.Helper()
 
 	repo := repoRoot(t)
 	source := t.TempDir()
@@ -156,11 +166,11 @@ func renderDefaultStack(t *testing.T) string {
 			t.Fatalf("copy %s: %v", dir, err)
 		}
 	}
-	dropRemoteEntries(t, filepath.Join(source, "stacks", "default.yaml"))
+	dropRemoteEntries(t, filepath.Join(source, "stacks", name+".yaml"))
 
 	apply := t.TempDir()
 	cache := t.TempDir()
-	_, stderr, err := runCLI(t, apply, "--source", source, "--stack", "default", "sync", "--cache", cache)
+	_, stderr, err := runCLI(t, apply, "--source", source, "--stack", name, "sync", "--cache", cache)
 	if err != nil {
 		t.Fatalf("sync --source: %v\nstderr:\n%s", err, stderr)
 	}
