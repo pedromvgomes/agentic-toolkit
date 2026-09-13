@@ -152,3 +152,54 @@ func TestAuthFiresOnAnAuthDirectoryWithNoAuthKeyword(t *testing.T) {
 		t.Errorf("auth = (%v, known=%v) for a check deleted under internal/auth/; signals were %s", has, known, p.Signals)
 	}
 }
+
+// The dangerous edit to a gate is the one that deletes the check, and deleting
+// a check deletes the words that name it — so a signal resting on content
+// alone goes quiet on exactly the change it exists for. Middleware and guards
+// are frequently not under an `auth/` directory, which is why the filename has
+// to carry it.
+func TestAuthFiresOnAGatingFileOutsideAnAuthDirectory(t *testing.T) {
+	for _, tc := range []struct{ name, path, before, after string }{
+		{
+			name:   "go middleware",
+			path:   "server/middleware.go",
+			before: "package server\n\nfunc Check(admin bool) error {\n\tif !admin {\n\t\treturn errForbidden\n\t}\n\treturn nil\n}\n",
+			after:  "package server\n\nfunc Check(admin bool) error {\n\treturn nil\n}\n",
+		},
+		{
+			name:   "typescript guard",
+			path:   "guards/admin_guard.ts",
+			before: "export function check(isAdmin: boolean) {\n  if (!isAdmin) {\n    throw new Error('forbidden');\n  }\n}\n",
+			after:  "export function check(isAdmin: boolean) {\n}\n",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newRepo(t)
+			r.write(tc.path, tc.before)
+			base := r.commit("base")
+
+			r.write(tc.path, tc.after)
+			p := buildProfile(t, r, base)
+
+			if has, known := p.Signals.Has(review.SignalAuth); !has || !known {
+				t.Errorf("auth = (%v, known=%v) for a check deleted from %s; signals were %s",
+					has, known, tc.path, p.Signals)
+			}
+		})
+	}
+}
+
+// The same fragment on a file that is read rather than called stays silent. A
+// file named for a thing it configures is describing a gate, not being one.
+func TestAGatingNameOnAConfigFileDoesNotFire(t *testing.T) {
+	r := newRepo(t)
+	r.write("seed.txt", "x\n")
+	base := r.commit("base")
+
+	r.write("config/guard-settings.yaml", "name: guard-settings\nvalue:\n  timeout: 30\n")
+	p := buildProfile(t, r, base)
+
+	if has, _ := p.Signals.Has(review.SignalAuth); has {
+		t.Errorf("auth fired on a config file's name; signals were %s", p.Signals)
+	}
+}

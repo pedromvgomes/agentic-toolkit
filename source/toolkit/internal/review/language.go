@@ -418,6 +418,17 @@ func SymbolsCountable(lang Language) bool {
 	return known && (spec.NoSymbols || len(spec.Exported) > 0)
 }
 
+// BearsCode reports whether this language is called rather than read.
+//
+// The separation `NoSymbols` already draws: Go and TypeScript run, YAML and
+// Markdown are configuration and prose. It is what lets a signal treat a name
+// fragment as evidence on `admin_guard.ts` and not on `guard-settings.yaml` —
+// a file named for a thing it configures is describing a gate, not being one.
+func BearsCode(lang Language) bool {
+	spec, known := languages[lang]
+	return known && !spec.NoSymbols
+}
+
 // ExportedSymbols reads the names a line declares that other code can reach.
 func ExportedSymbols(lang Language, line string) []string {
 	var out []string

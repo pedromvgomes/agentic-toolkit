@@ -633,3 +633,42 @@ func TestConfig_DryRunAnnouncesTheRemoval(t *testing.T) {
 		t.Errorf("dry run removed the file it was previewing: %v", err)
 	}
 }
+
+// Every top-level settings key resolves last-stack-wins here, `permissions`
+// included. The Claude adapter composes that one instead, and the difference
+// is deliberate: `permissions` is Claude Code's vocabulary, a fragment written
+// in it declares `platforms: [claude]`, and none reaches this adapter.
+//
+// Pinned because the two adapters' merges are otherwise the same code twice,
+// so the next person to read them will ask which one is wrong.
+func TestCodexSettingsResolveLastWinsIncludingPermissions(t *testing.T) {
+	tmp := t.TempDir()
+	var out bytes.Buffer
+
+	plan := makePlan([]resolver.PlannedDefinition{
+		pdSetting("extended", map[string]any{
+			"permissions": map[string]any{"allow": []any{"from-the-extended-stack"}},
+		}, "memory"),
+		pdSetting("extending", map[string]any{
+			"permissions": map[string]any{"allow": []any{"from-the-extending-stack"}},
+		}, "default"),
+	}, "memory", "default")
+
+	if err := codex.Render(plan, codex.Options{
+		Scope: codex.ScopeProject, ProjectRoot: tmp, Stdout: &out,
+	}); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+
+	raw, err := os.ReadFile(configPath(tmp))
+	if err != nil {
+		t.Fatalf("config.toml: %v", err)
+	}
+	body := string(raw)
+	if !strings.Contains(body, "from-the-extending-stack") {
+		t.Errorf("the later stack's permissions did not win:\n%s", body)
+	}
+	if strings.Contains(body, "from-the-extended-stack") {
+		t.Errorf("permissions composed here; this adapter resolves last-wins:\n%s", body)
+	}
+}

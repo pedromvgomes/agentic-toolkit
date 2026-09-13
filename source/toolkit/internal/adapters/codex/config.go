@@ -423,9 +423,21 @@ func collectHooks(plan *resolver.Plan) (map[string]any, []string) {
 
 // collectSettingFragments returns the union of every setting
 // definition's value, with last-stack-wins resolution at the top-level
-// key, matching the Claude adapter's resolution exactly: stack order
-// comes from plan.StackOrder (later index = applied later = wins), with
-// definition name as the tiebreak.
+// key: stack order comes from plan.StackOrder (later index = applied
+// later = wins), with definition name as the tiebreak.
+//
+// Last-wins applies to every key here, including `permissions`. The Claude
+// adapter composes that one, because `permissions` is Claude Code's
+// vocabulary and its allow list has to be shareable between the stacks that
+// contribute the definitions it covers. Codex's approval settings are a
+// different shape under different keys, and no definition targeting codex
+// contributes `permissions` at all — a settings fragment written in Claude's
+// vocabulary declares `platforms: [claude]` and never reaches this adapter.
+//
+// So the divergence is deliberate rather than an omission. What would make it
+// a defect is a codex-targeted key that needs the same sharing; the answer
+// then is to lift composition into a form both adapters call, not to teach
+// this one about `permissions`.
 func collectSettingFragments(plan *resolver.Plan) map[string]any {
 	type contribution struct {
 		StackIdx int
