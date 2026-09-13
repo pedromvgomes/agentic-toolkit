@@ -13,28 +13,28 @@ import (
 
 func newInitCmd(env *Env) *cobra.Command {
 	var (
-		extendsURL string
-		force      bool
+		stackURL string
+		force    bool
 	)
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Write a starter " + ConfigFileName + " to the working directory",
 		Long: "Write a starter " + ConfigFileName + " to the working directory.\n\n" +
 			"Refuses to overwrite an existing file unless --force is given. The\n" +
-			"--extends flag seeds the first stack import URL; if omitted, the\n" +
+			"--stacks flag seeds the first entry in the stacks list; if omitted, the\n" +
 			"scaffold is written with a placeholder the user must edit before\n" +
 			"running `agtk lock` or `agtk sync`.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runInit(env, extendsURL, force)
+			return runInit(env, stackURL, force)
 		},
 	}
-	cmd.Flags().StringVar(&extendsURL, "extends", "", "stack URL to seed in the scaffold's extends list (e.g. github.com/owner/repo.git/stacks/default.yaml@main)")
+	cmd.Flags().StringVar(&stackURL, "stacks", "", "stack URL to seed in the scaffold's stacks list (e.g. github.com/owner/repo.git/stacks/default.yaml@main)")
 	cmd.Flags().BoolVarP(&force, "force", "f", false, "overwrite an existing "+ConfigFileName)
 	return cmd
 }
 
-func runInit(env *Env, extendsURL string, force bool) error {
+func runInit(env *Env, stackURL string, force bool) error {
 	if env.SourceDir != "" {
 		return fmt.Errorf("init does not support --source; it writes a new %s in the working directory", ConfigFileName)
 	}
@@ -49,7 +49,7 @@ func runInit(env *Env, extendsURL string, force bool) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { // #nosec G301 -- 0755: the directory for agentic.yaml in the user's repo
 		return fmt.Errorf("mkdir %s: %w", filepath.Dir(path), err)
 	}
-	body := scaffold(extendsURL)
+	body := scaffold(stackURL)
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil { // #nosec G306 -- 0644: agentic.yaml in the user's repo, meant to be committed
 		return fmt.Errorf("write %s: %w", path, err)
 	}
@@ -57,29 +57,26 @@ func runInit(env *Env, extendsURL string, force bool) error {
 	return nil
 }
 
-// scaffold returns the YAML body for a fresh entry-point stack manifest.
-// When extendsURL is empty, the file carries a TODO placeholder line and
-// a comment instructing the user to edit it.
-func scaffold(extendsURL string) string {
+// scaffold returns the YAML body for a fresh entry manifest. When stackURL
+// is empty, the file carries a TODO placeholder line and a comment
+// instructing the user to edit it.
+func scaffold(stackURL string) string {
 	var b strings.Builder
-	b.WriteString("# .agentic-toolkit.yaml — entry-point stack manifest.\n")
+	b.WriteString("# .agentic-toolkit.yaml — entry manifest for this repo.\n")
 	b.WriteString("# Run `agtk sync` to fetch and render in one step, or\n")
 	b.WriteString("# `agtk lock && agtk render` for the two-pass workflow.\n\n")
-	if extendsURL == "" {
-		b.WriteString("# TODO: replace the extends entry below with a real stack URL\n")
+	if stackURL == "" {
+		b.WriteString("# TODO: replace the stacks entry below with a real stack URL\n")
 		b.WriteString("#       (e.g. github.com/your-org/agentic-toolkit.git/stacks/default.yaml@main),\n")
 		b.WriteString("#       then run `agtk lock`.\n\n")
-		b.WriteString("extends:\n")
+		b.WriteString("stacks:\n")
 		b.WriteString("  - TODO/replace-with-stack-url.git/stacks/default.yaml@main\n")
 	} else {
-		b.WriteString("extends:\n")
-		b.WriteString("  - " + extendsURL + "\n")
+		b.WriteString("stacks:\n")
+		b.WriteString("  - " + stackURL + "\n")
 	}
 	b.WriteString("\n")
-	b.WriteString("# Add definitions on top of the imported stack(s):\n")
-	b.WriteString("# skills:\n")
-	b.WriteString("#   - ./local-skills/my-skill\n")
-	b.WriteString("# rules:\n")
-	b.WriteString("#   - github.com/owner/repo.git/rules/style.md@main\n")
+	b.WriteString("# Local definitions are scanned by convention from root/<category>/\n")
+	b.WriteString("# (root defaults to \"agentic\"); see the SCHEMA docs for the layout.\n")
 	return b.String()
 }

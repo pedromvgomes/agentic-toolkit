@@ -57,7 +57,7 @@ func TestInit_ConfigFlag_WritesAtPath(t *testing.T) {
 	target := filepath.Join(root, "nested", "dir", "team-stack.yaml")
 
 	stdout, _, err := runCLI(t, root, "--config", target, "init",
-		"--extends", "github.com/foo/bar.git/stacks/default.yaml@main")
+		"--stacks", "github.com/foo/bar.git/stacks/default.yaml@main")
 	if err != nil {
 		t.Fatalf("init --config: %v", err)
 	}
@@ -69,6 +69,6 @@ func TestInit_ConfigFlag_WritesAtPath(t *testing.T) {
 		t.Fatalf("read %s: %v", target, err)
 	}
 	if !strings.Contains(string(body), "github.com/foo/bar.git/stacks/default.yaml@main") {
-		t.Errorf("scaffold should contain the extends URL, got:\n%s", body)
+		t.Errorf("scaffold should contain the stacks URL, got:\n%s", body)
 	}
 }

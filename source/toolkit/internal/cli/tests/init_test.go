@@ -4,6 +4,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/pedromvgomes/agentic-toolkit/internal/stack"
 )
 
 func TestInit_WritesScaffold(t *testing.T) {
@@ -20,24 +22,40 @@ func TestInit_WritesScaffold(t *testing.T) {
 	if !strings.Contains(body, "TODO") {
 		t.Errorf("default scaffold should carry a TODO placeholder; got:\n%s", body)
 	}
-	if !strings.Contains(body, "extends:") {
-		t.Errorf("scaffold should seed an extends list; got:\n%s", body)
+	if !strings.Contains(body, "stacks:") {
+		t.Errorf("scaffold should seed a stacks list; got:\n%s", body)
 	}
 }
 
-func TestInit_WithExtendsFlag_SeedsURL(t *testing.T) {
+func TestInit_ScaffoldParsesAsEntryManifest(t *testing.T) {
+	work := t.TempDir()
+	if _, _, err := runCLI(t, work, "init"); err != nil {
+		t.Fatalf("init: %v", err)
+	}
+	configPath := filepath.Join(work, ".agentic-toolkit.yaml")
+	body := readFile(t, configPath)
+	if _, err := stack.ParseEntryManifestBytes(configPath, []byte(body)); err != nil {
+		t.Fatalf("scaffold does not parse as an EntryManifest: %v\n%s", err, body)
+	}
+}
+
+func TestInit_WithStacksFlag_SeedsURL(t *testing.T) {
 	work := t.TempDir()
 	url := "github.com/owner/repo.git/stacks/default.yaml@main"
-	_, _, err := runCLI(t, work, "init", "--extends", url)
+	_, _, err := runCLI(t, work, "init", "--stacks", url)
 	if err != nil {
 		t.Fatalf("init: %v", err)
 	}
-	body := readFile(t, filepath.Join(work, ".agentic-toolkit.yaml"))
+	configPath := filepath.Join(work, ".agentic-toolkit.yaml")
+	body := readFile(t, configPath)
 	if !strings.Contains(body, url) {
-		t.Errorf("--extends should seed the extends entry; got:\n%s", body)
+		t.Errorf("--stacks should seed the stacks entry; got:\n%s", body)
 	}
 	if strings.Contains(body, "TODO") {
-		t.Errorf("explicit --extends should suppress TODO placeholder; got:\n%s", body)
+		t.Errorf("explicit --stacks should suppress TODO placeholder; got:\n%s", body)
+	}
+	if _, err := stack.ParseEntryManifestBytes(configPath, []byte(body)); err != nil {
+		t.Fatalf("scaffold does not parse as an EntryManifest: %v\n%s", err, body)
 	}
 }
 
@@ -65,7 +83,7 @@ func TestInit_OverwritesWithForce(t *testing.T) {
 	writeFile(t, configPath, "existing: content\n")
 
 	url := "github.com/x/y.git/stacks/default.yaml@main"
-	if _, _, err := runCLI(t, work, "init", "--force", "--extends", url); err != nil {
+	if _, _, err := runCLI(t, work, "init", "--force", "--stacks", url); err != nil {
 		t.Fatalf("init --force: %v", err)
 	}
 	body := readFile(t, configPath)
