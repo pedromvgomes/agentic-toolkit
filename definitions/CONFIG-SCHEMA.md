@@ -42,6 +42,23 @@ Settings for the repo-resident memory store (`agtk memory ...`). Honoured **only
 | `root` | `string` | no | Store location, relative to the directory holding the entry manifest. Defaults to ".memory". |
 | `agent` | `string` | no | Coding-agent CLI that 'agtk memory curate' drives, e.g. "claudecode" or "codex". No default: curation is the one operation that spends money, so the repo names its provider or curation does not run. |
 
+## Entry manifest
+
+**Path:** `.agentic-toolkit.yaml` at the repo root, or another file named by `--config`/`--stack`.
+
+The entry manifest is its own type, not a Stack (see ADR 0016). Its category fields mean "scan `root/<category>/` by convention"; `root:`, `context:`, `memory:` and `platforms:` are native to the entry manifest alone and do not exist on a Stack reached through `extends:` or `stacks:`. Composing shared content into an entry manifest uses `stacks:`, distinct from a Stack's own `extends:`.
+
+### Fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `description` | `string` | no | One-line summary of this repo's entry manifest. |
+| `root` | `string` | no | Convention root for locally-scanned definitions, relative to the repo root. Defaults to "agentic". |
+| `context` | `string` | no | Free-form context about this repo, surfaced to tooling that needs to describe the consumer. |
+| `stacks` | `[]ExtendsRef` | no | Shared stacks to compose into this entry manifest. Applied in declared order; later entries override earlier ones. Each entry is an external URL (with .git/ boundary) or a local path (./...). |
+| `platforms` | `[]Platform` | no | Rendering targets. Omit to render Claude Code only — today's behavior, unchanged. List additional platforms (e.g. codex) to also render their on-disk layout from the same definitions; each named platform must have a render adapter. |
+| `memory` | `MemoryConfig` | no | Repo-resident memory store settings. The store's location is a fact about the consumer repo, not about a shareable stack. |
+
 ### Per-entry resolution
 
 Each entry in `extends:` and in the per-category lists (`skills`, `agents`, `rules`, `instructions`, `commands`, `hooks`, `mcp`, `settings`) is a string that the parser disambiguates by shape:

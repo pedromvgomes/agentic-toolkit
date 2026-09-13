@@ -263,6 +263,17 @@ func renderConfig() ([]byte, error) {
 	writeFieldTable(&b, docForType(reflect.TypeOf(stk.MemoryConfig{})).Fields)
 	fmt.Fprintln(&b)
 
+	fmt.Fprintln(&b, "## Entry manifest")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "**Path:** `.agentic-toolkit.yaml` at the repo root, or another file named by `--config`/`--stack`.")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "The entry manifest is its own type, not a Stack (see ADR 0016). Its category fields mean \"scan `root/<category>/` by convention\"; `root:`, `context:`, `memory:` and `platforms:` are native to the entry manifest alone and do not exist on a Stack reached through `extends:` or `stacks:`. Composing shared content into an entry manifest uses `stacks:`, distinct from a Stack's own `extends:`.")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "### Fields")
+	fmt.Fprintln(&b)
+	writeFieldTable(&b, docForType(reflect.TypeOf(stk.EntryManifest{})).Fields)
+	fmt.Fprintln(&b)
+
 	fmt.Fprintln(&b, "### Per-entry resolution")
 	fmt.Fprintln(&b)
 	fmt.Fprintln(&b, "Each entry in `extends:` and in the per-category lists (`skills`, `agents`, `rules`, `instructions`, `commands`, `hooks`, `mcp`, `settings`) is a string that the parser disambiguates by shape:")
