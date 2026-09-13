@@ -39,23 +39,93 @@ func (s *traversalState) scanLocal(lc *stack.LocalConfig, root string, ctx stack
 			continue
 		}
 		ids = append(ids, localStackName(ld.cat))
-		for _, w := range found {
-			key := defKey{Category: w.Category, Name: w.Name}
-			if prev, exists := s.overlay[key]; exists {
-				s.diags = append(s.diags, Diagnostic{
-					Kind: DiagOverride,
-					Message: fmt.Sprintf("%s/%s from %s was overridden by entry from stack %q",
-						w.Category.CategoryDir(), w.Name, prev.SourceURL, displayID(w.StackName)),
-					Category:  w.Category,
-					Name:      w.Name,
-					SourceURL: prev.SourceURL,
-					StackName: w.StackName,
-				})
-			}
-			s.overlay[key] = w
+		s.mergeLocal(found)
+	}
+
+	if lc.Context != "" {
+		w, err := s.readLocalContext(lc.Context, root, ctx)
+		if err != nil {
+			// Aggregated alongside the directory failures above, for the same
+			// reason: a manifest with a wrong local.context and a wrong
+			// local.skills reports both.
+			s.errs = append(s.errs, fmt.Errorf("local.context (%q): %w", lc.Context, err))
+		} else {
+			ids = append(ids, localContextStackName)
+			s.mergeLocal([]walkedDef{*w})
 		}
 	}
 	return ids
+}
+
+// mergeLocal makes every locally scanned definition the overlay's winner,
+// reporting what it displaces.
+func (s *traversalState) mergeLocal(found []walkedDef) {
+	for _, w := range found {
+		key := defKey{Category: w.Category, Name: w.Name}
+		if prev, exists := s.overlay[key]; exists {
+			s.diags = append(s.diags, Diagnostic{
+				Kind: DiagOverride,
+				Message: fmt.Sprintf("%s/%s from %s was overridden by entry from stack %q",
+					w.Category.CategoryDir(), w.Name, prev.SourceURL, displayID(w.StackName)),
+				Category:  w.Category,
+				Name:      w.Name,
+				SourceURL: prev.SourceURL,
+				StackName: w.StackName,
+			})
+		}
+		s.overlay[key] = w
+	}
+}
+
+const (
+	// localContextName is the name the file local.context points at becomes an
+	// instruction under, whatever the file is called. A fixed name is what lets
+	// the consumer rename or move the file without the rendered output changing.
+	localContextName = "context"
+
+	// localContextStackName is the identifier local.context's instruction
+	// carries, kept distinct from local.instructions so the two are
+	// distinguishable in diagnostics.
+	localContextStackName = "local.context"
+)
+
+// readLocalContext turns the file local.context names into an instruction.
+//
+// The file is read verbatim: it is the consumer's own top-level prose, so it
+// carries no frontmatter and is not put through the definition parser, which
+// refuses a markdown definition that has none.
+func (s *traversalState) readLocalContext(file, root string, ctx stackCtx) (*walkedDef, error) {
+	p := joinFromFile(ctx.FilePathInFS, file)
+	raw, err := fs.ReadFile(ctx.FS, p)
+	if err != nil {
+		return nil, fmt.Errorf("read file: %w", err)
+	}
+
+	dirFS := ctx.FS
+	if dir := path.Dir(p); dir != "" && dir != "." {
+		sub, subErr := fs.Sub(ctx.FS, dir)
+		if subErr != nil {
+			return nil, fmt.Errorf("fs.Sub %q: %w", dir, subErr)
+		}
+		dirFS = sub
+	}
+
+	def := &definitions.Instruction{
+		Common: definitions.Common{Name: localContextName},
+		Body:   string(raw),
+	}
+	return &walkedDef{
+		Category:   definitions.CategoryInstruction,
+		Name:       localContextName,
+		Definition: def,
+		SourceURL:  ctx.SourceURL,
+		SourceRef:  ctx.SourceRef,
+		StackName:  localContextStackName,
+		EntryPath:  path.Base(p),
+		SourceFS:   dirFS,
+		root:       root,
+		ctx:        ctx,
+	}, nil
 }
 
 // localStackName is the identifier a locally scanned definition carries as its

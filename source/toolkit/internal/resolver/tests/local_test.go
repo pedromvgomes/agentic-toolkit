@@ -14,10 +14,11 @@ import (
 	"github.com/pedromvgomes/agentic-toolkit/internal/stack"
 )
 
-// localBody renders a `local:` block from category key → directory.
+// localBody renders a `local:` block from category key → directory. The
+// "context" key names a file rather than a directory.
 func localBody(dirs map[string]string) string {
 	out := "local:\n"
-	for _, key := range []string{"skills", "agents", "rules", "instructions", "commands", "hooks", "mcp", "settings"} {
+	for _, key := range []string{"context", "skills", "agents", "rules", "instructions", "commands", "hooks", "mcp", "settings"} {
 		if dir, ok := dirs[key]; ok {
 			out += "  " + key + ": " + dir + "\n"
 		}
