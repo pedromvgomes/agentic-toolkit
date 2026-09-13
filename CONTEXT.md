@@ -30,6 +30,16 @@ because some settings are honoured only here. The file half of the **Toolkit nam
 something inside it, unless `--config`/`--stack` points the invocation at a file elsewhere.
 _Avoid_: root config, top-level stack
 
+**`local:`**:
+An **Entry manifest**-only key naming, per **Category** (plus `context` for the consumer's
+single top-level instruction file), a directory `agtk` scans for **Definition**s instead of
+requiring each to be listed by name. Distinct from `root:`, which only shortens the path a
+*named* entry resolves to — `local:` replaces the naming itself. Honoured only in the Entry
+manifest for the same reason as `memory:`: which directories make up a consumer's own
+definitions is a fact about that consumer, not something a **Stack** it merely `extends:`
+should assert. A shared stack that sets `local:` fails the render rather than being ignored.
+_Avoid_: discover, auto-discovery, scan (as a field name)
+
 **Consumer**:
 The repo that `agtk` renders into. Owns an **Entry manifest**, a lockfile, and its own
 **Memory store**.
