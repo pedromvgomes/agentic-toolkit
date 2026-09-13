@@ -119,6 +119,16 @@ type PlannedDefinition struct {
 	// external file refs this is the filename basename.
 	EntryPath string
 
+	// ScanOrder is the 1-based position a locally scanned instruction held in
+	// its directory listing, which is lexicographic by filename. Zero means
+	// the definition carries no scan order: everything a stack named by hand,
+	// and every locally scanned definition outside `local.instructions`.
+	//
+	// Instructions are the one category whose definitions are concatenated
+	// into a single rendered file, so their relative order is visible in the
+	// output and the filenames are what the consumer controls it with.
+	ScanOrder int
+
 	// SourceFS is the filesystem the entry was parsed from. Adapters
 	// consume this for bundle companion-file copy: walk
 	// path.Dir(EntryPath) and copy every file except EntryPath itself.

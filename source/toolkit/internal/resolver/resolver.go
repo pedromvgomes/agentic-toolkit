@@ -73,6 +73,7 @@ func Resolve(entry *stack.Stack, entryFS fs.FS, entryPathInFS string, provider S
 			StackName:  w.StackName,
 			EntryPath:  w.EntryPath,
 			SourceFS:   w.SourceFS,
+			ScanOrder:  w.ScanOrder,
 		})
 	}
 	sort.Slice(defs, func(i, j int) bool {
@@ -152,6 +153,7 @@ type walkedDef struct {
 	StackName  string
 	EntryPath  string
 	SourceFS   fs.FS
+	ScanOrder  int
 
 	// root and ctx are what this definition was resolved through, kept so a
 	// `requires:` it declares can be looked up the same way its own entry
@@ -231,7 +233,16 @@ func (s *traversalState) loadStack(st *stack.Stack, ctx stackCtx) error {
 		}
 	}
 
+	// Local scan directories belong to the consumer, so they are read only from
+	// the entry manifest, and their identifiers land after the entry's own:
+	// last in StackOrder, winning every order-dependent merge.
+	var localIDs []string
+	if ctx.Identifier == "" && st.Local != nil {
+		localIDs = s.scanLocal(st.Local, root, ctx)
+	}
+
 	s.order = append(s.order, ctx.Identifier)
+	s.order = append(s.order, localIDs...)
 	return nil
 }
 
