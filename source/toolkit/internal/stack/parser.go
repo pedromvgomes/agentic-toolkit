@@ -82,13 +82,6 @@ func ParseBytes(filePath string, raw []byte) (*Stack, error) {
 		}
 	}
 
-	for _, p := range s.Platforms {
-		if !definitions.IsKnownPlatform(p) {
-			return nil, newErr(filePath, ErrUnknownPlatform,
-				"unknown platform %q in platforms (known: %v)", p, definitions.AllPlatforms)
-		}
-	}
-
 	return &s, nil
 }
 
