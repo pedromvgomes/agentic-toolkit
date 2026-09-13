@@ -58,9 +58,54 @@ func Resolve(entry *stack.EntryManifest, entryFS fs.FS, entryPathInFS string, pr
 		return nil, errors.Join(st.errs...)
 	}
 
-	// Collect winners → ordered Definitions.
-	defs := make([]PlannedDefinition, 0, len(st.overlay))
-	for _, w := range st.overlay {
+	return st.buildPlan(entry), nil
+}
+
+// ResolveStack walks a single stack — not an entry manifest — against the
+// SourceProvider and returns a Plan. Used for `--stack <name>`, where the
+// named stack renders on its own with no consumer entry manifest in play;
+// convention scanning is an entry-manifest-only concept a bare stack does
+// not have, so none applies here.
+func ResolveStack(st *stack.Stack, stFS fs.FS, stPathInFS string, provider SourceProvider) (*Plan, error) {
+	if st == nil {
+		return nil, errors.New("resolver: nil stack")
+	}
+	if stFS == nil {
+		return nil, errors.New("resolver: nil stFS")
+	}
+	if provider == nil {
+		return nil, errors.New("resolver: nil SourceProvider")
+	}
+
+	s := newTraversalState(provider)
+
+	// The stack being resolved is the entry point, so it carries the
+	// entry-level identity: empty identifier, no source URL/Ref.
+	ctx := stackCtx{
+		Identifier:   "",
+		SourceURL:    "",
+		SourceRef:    "",
+		FS:           stFS,
+		FilePathInFS: stPathInFS,
+	}
+	if err := s.loadStack(st, ctx); err != nil {
+		s.errs = append(s.errs, err)
+	}
+	s.pullInRequirements()
+
+	if len(s.errs) > 0 {
+		return nil, errors.Join(s.errs...)
+	}
+
+	return s.buildPlan(nil), nil
+}
+
+// buildPlan collects the traversal's winners into a Plan. entry is nil for
+// a stack-only resolve (ResolveStack) — Plan.EntryManifest is then
+// genuinely nil, not a synthetic stand-in.
+func (s *traversalState) buildPlan(entry *stack.EntryManifest) *Plan {
+	defs := make([]PlannedDefinition, 0, len(s.overlay))
+	for _, w := range s.overlay {
 		defs = append(defs, PlannedDefinition{
 			Category:   w.Category,
 			Name:       w.Name,
@@ -82,16 +127,14 @@ func Resolve(entry *stack.EntryManifest, entryFS fs.FS, entryPathInFS string, pr
 
 	// Order sources: SourceStack first (in visit order), then
 	// SourceDefinition sorted by (URL, Ref).
-	plannedSources := st.orderedSources()
-
 	return &Plan{
 		EntryManifest: entry,
 
-		StackOrder:  st.order,
-		Sources:     plannedSources,
+		StackOrder:  s.order,
+		Sources:     s.orderedSources(),
 		Definitions: defs,
-		Diagnostics: st.diags,
-	}, nil
+		Diagnostics: s.diags,
+	}
 }
 
 // ===== traversal state =====

@@ -45,7 +45,7 @@ func newLockCmd(env *Env) *cobra.Command {
 }
 
 func runLock(env *Env, cacheRoot string, frozen, jsonOut bool) error {
-	entry, entryFS, entryName, err := loadEntryManifest(env)
+	target, err := loadResolveInput(env)
 	if err != nil {
 		return err
 	}
@@ -53,7 +53,7 @@ func runLock(env *Env, cacheRoot string, frozen, jsonOut bool) error {
 	if err != nil {
 		return err
 	}
-	plan, err := resolver.Resolve(entry, entryFS, entryName, sourcestore.NewLiveProvider(cache))
+	plan, err := target.resolve(sourcestore.NewLiveProvider(cache))
 	if err != nil {
 		return fmt.Errorf("resolve: %w", err)
 	}
@@ -131,43 +131,53 @@ func runLockFrozen(env *Env, path string, resolved []byte, lock *lockfile.Lockfi
 	return fmt.Errorf("--frozen: %s would change; run `agtk lock` to update", path)
 }
 
-// loadEntryManifest reads the entry manifest. With --config set, that's
-// whatever path the user passed; otherwise it's `<WorkDir>/.agentic-
-// toolkit.yaml`. The returned fs.FS is rooted at the manifest's
-// directory so its convention root and local `./...` refs resolve from the
-// right place — that's the config dir, not the apply dir.
+// resolveInput is what one command run resolves against: either a real
+// entry manifest or a single named stack (--source --stack). Exactly one
+// of manifest/single is set.
+type resolveInput struct {
+	fsys     fs.FS
+	name     string // entry path within fsys
+	manifest *stack.EntryManifest
+	single   *stack.Stack
+	refs     []stack.ExtendsRef // manifest.Stacks, or the one named-stack ref — for status's diff
+}
+
+// loadResolveInput reads whatever this invocation resolves against: a real
+// entry manifest by default, or --source --stack's single named stack. The
+// returned fs.FS is rooted so local refs and (for a real manifest) the
+// convention root resolve from the right place — see stackDir/entryRelPath.
 //
 // stack.ParseEntryManifestFile already returns a *ParseError whose Error()
 // includes the path; we propagate it as-is to avoid duplicating the path in
 // the rendered message.
-func loadEntryManifest(env *Env) (*stack.EntryManifest, fs.FS, string, error) {
+func loadResolveInput(env *Env) (*resolveInput, error) {
+	fsys := os.DirFS(stackDir(env))
+	name := entryRelPath(env)
 	if env.StackName != "" {
-		return stackAsEntryManifest(env)
+		st, err := stack.ParseInFS(fsys, name)
+		if err != nil {
+			return nil, err
+		}
+		ref, err := stack.ParseExtendsRef("./" + name)
+		if err != nil {
+			return nil, fmt.Errorf("--stack %q: %w", env.StackName, err)
+		}
+		return &resolveInput{fsys: fsys, name: name, single: st, refs: []stack.ExtendsRef{ref}}, nil
 	}
-	path := configFilePath(env)
-	m, err := stack.ParseEntryManifestFile(path)
+	m, err := stack.ParseEntryManifestFile(configFilePath(env))
 	if err != nil {
-		return nil, nil, "", err
+		return nil, err
 	}
-	return m, os.DirFS(stackDir(env)), entryRelPath(env), nil
+	return &resolveInput{fsys: fsys, name: name, manifest: m, refs: m.Stacks}, nil
 }
 
-// stackAsEntryManifest composes the stack --stack names from a manifest that
-// exists only for this run.
-//
-// A stack manifest and an entry manifest are disjoint schemas, so reading the
-// named stack as the entry point refuses it on its first `extends:`. Composing
-// it instead is what --stack means: apply that stack to this repo.
-func stackAsEntryManifest(env *Env) (*stack.EntryManifest, fs.FS, string, error) {
-	ref, err := stack.ParseExtendsRef("./" + entryRelPath(env))
-	if err != nil {
-		return nil, nil, "", fmt.Errorf("--stack %q: %w", env.StackName, err)
+// resolve dispatches to whichever resolver entry point matches what this
+// target holds.
+func (t *resolveInput) resolve(provider resolver.SourceProvider) (*resolver.Plan, error) {
+	if t.manifest != nil {
+		return resolver.Resolve(t.manifest, t.fsys, t.name, provider)
 	}
-	m := &stack.EntryManifest{Stacks: []stack.ExtendsRef{ref}}
-	// The synthetic manifest sits at the source tree's root, so the stack's
-	// path resolves from there and the convention root is the source tree's
-	// own — not the stacks/ directory the named stack happens to live in.
-	return m, os.DirFS(stackDir(env)), ConfigFileName, nil
+	return resolver.ResolveStack(t.single, t.fsys, t.name, provider)
 }
 
 // buildCache resolves the cache root: explicit override wins, otherwise

@@ -43,7 +43,7 @@ The entry manifest is its own type, not a Stack (see ADR 0016). Its category fie
 |-------|------|----------|-------------|
 | `description` | `string` | no | One-line summary of this repo's entry manifest. |
 | `root` | `string` | no | Convention root for locally-scanned definitions, relative to the repo root. Defaults to "agentic". |
-| `context` | `string` | no | Free-form context about this repo, surfaced to tooling that needs to describe the consumer. |
+| `context` | `string` | no | Path to one file of free-form repo description, rendered first as an instruction. |
 | `stacks` | `[]ExtendsRef` | no | Shared stacks to compose into this entry manifest. Applied in declared order; later entries override earlier ones. Each entry is an external URL (with .git/ boundary) or a local path (./...). |
 | `platforms` | `[]Platform` | no | Rendering targets. Omit to render Claude Code only — today's behavior, unchanged. List additional platforms (e.g. codex) to also render their on-disk layout from the same definitions; each named platform must have a render adapter. |
 | `memory` | `MemoryConfig` | no | Repo-resident memory store settings. The store's location is a fact about the consumer repo, not about a shareable stack. |

@@ -23,7 +23,7 @@ const DefaultLocalRoot = "agentic"
 type EntryManifest struct {
 	Description string `yaml:"description,omitempty" agtkdoc:"One-line summary of this repo's entry manifest."`
 	Root        string `yaml:"root,omitempty"        agtkdoc:"Convention root for locally-scanned definitions, relative to the repo root. Defaults to \"agentic\"."`
-	Context     string `yaml:"context,omitempty"     agtkdoc:"Free-form context about this repo, surfaced to tooling that needs to describe the consumer."`
+	Context     string `yaml:"context,omitempty"     agtkdoc:"Path to one file of free-form repo description, rendered first as an instruction."`
 
 	Stacks []ExtendsRef `yaml:"stacks,omitempty" agtkdoc:"Shared stacks to compose into this entry manifest. Applied in declared order; later entries override earlier ones. Each entry is an external URL (with .git/ boundary) or a local path (./...)."`
 

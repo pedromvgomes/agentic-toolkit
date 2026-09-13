@@ -195,6 +195,16 @@ type Diagnostic struct {
 	StackName string
 }
 
+// EffectivePlatforms returns the rendering targets for this plan. A Plan
+// built by ResolveStack has no entry manifest to read platforms: from, and
+// falls back to the same Claude-only default an unset platforms: field gets.
+func (p *Plan) EffectivePlatforms() []definitions.Platform {
+	if p.EntryManifest == nil {
+		return []definitions.Platform{definitions.PlatformClaude}
+	}
+	return p.EntryManifest.EffectivePlatforms()
+}
+
 // Lockfile projects the plan to its persisted form.
 func (p *Plan) Lockfile() *lockfile.Lockfile {
 	out := &lockfile.Lockfile{Version: lockfile.Version}

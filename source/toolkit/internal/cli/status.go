@@ -12,7 +12,6 @@ import (
 
 	"github.com/pedromvgomes/agentic-toolkit/internal/adapters/claude"
 	"github.com/pedromvgomes/agentic-toolkit/internal/lockfile"
-	"github.com/pedromvgomes/agentic-toolkit/internal/resolver"
 	"github.com/pedromvgomes/agentic-toolkit/internal/sourcestore"
 	"github.com/pedromvgomes/agentic-toolkit/internal/stack"
 )
@@ -53,7 +52,7 @@ func runStatus(env *Env, cacheRoot, scopeFlag string, jsonOut bool) error {
 		return err
 	}
 
-	entry, entryFS, entryName, err := loadEntryManifest(env)
+	target, err := loadResolveInput(env)
 	if err != nil {
 		return err
 	}
@@ -63,7 +62,7 @@ func runStatus(env *Env, cacheRoot, scopeFlag string, jsonOut bool) error {
 		return err
 	}
 
-	bucket1 := diffEntryManifestVsLockfile(entry, lock, lockErr)
+	bucket1 := diffSourcesVsLockfile(target.refs, lock, lockErr)
 
 	var (
 		bucket2 []string
@@ -79,7 +78,7 @@ func runStatus(env *Env, cacheRoot, scopeFlag string, jsonOut bool) error {
 		// Re-resolve from the cache to drive the render-state diff.
 		// Resolver errors are non-fatal here — we surface them as drift
 		// rather than aborting the status report.
-		plan, rerr := resolver.Resolve(entry, entryFS, entryName, sourcestore.NewFrozenProvider(cache, lock))
+		plan, rerr := target.resolve(sourcestore.NewFrozenProvider(cache, lock))
 		if rerr != nil {
 			bucket3 = []string{fmt.Sprintf("resolve: %v", rerr)}
 		} else {
@@ -147,8 +146,8 @@ func loadLockfileIfPresent(env *Env) (*lockfile.Lockfile, error) {
 	return nil, fmt.Errorf("read %s: %w", path, err)
 }
 
-// diffEntryManifestVsLockfile flags every URL the entry manifest's
-// `stacks:` references that is missing or has a divergent ref in the
+// diffSourcesVsLockfile flags every URL among the entry manifest's
+// `stacks:` refs that is missing or has a divergent ref in the
 // lockfile. Sources in the lockfile but not in the manifest are not flagged
 // here — they are normal artifacts of recursive extends resolution recorded
 // at lock time.
@@ -158,7 +157,7 @@ func loadLockfileIfPresent(env *Env) (*lockfile.Lockfile, error) {
 // are also skipped: status only inspects the top-level entry manifest, so a
 // missing pin for a transitive import will surface in the next bucket
 // (lockfile vs cache) as a fetch error instead.
-func diffEntryManifestVsLockfile(m *stack.EntryManifest, lock *lockfile.Lockfile, lockErr error) []string {
+func diffSourcesVsLockfile(refs []stack.ExtendsRef, lock *lockfile.Lockfile, lockErr error) []string {
 	if lock == nil {
 		if errors.Is(lockErr, fs.ErrNotExist) {
 			return []string{LockFileName + " missing — run `agtk lock`"}
@@ -190,7 +189,7 @@ func diffEntryManifestVsLockfile(m *stack.EntryManifest, lock *lockfile.Lockfile
 		drift = append(drift, fmt.Sprintf("source %s@%s not pinned in lockfile", url, displayRef(ref)))
 	}
 
-	for _, ref := range m.Stacks {
+	for _, ref := range refs {
 		if !ref.IsExternal() {
 			continue
 		}
