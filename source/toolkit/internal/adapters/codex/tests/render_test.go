@@ -301,6 +301,43 @@ func TestRender_StaleCleanup_AGENTSmd(t *testing.T) {
 	}
 }
 
+// TestRender_InstructionOrder: the entry manifest's `context:` instruction
+// renders first in AGENTS.md, stack-named instructions keep the order
+// plan.Definitions already carries, and locally scanned instructions
+// render last in filename order — even when their declared `name:` fields
+// sort the opposite way.
+func TestRender_InstructionOrder(t *testing.T) {
+	tmp := t.TempDir()
+
+	plan := makePlan([]resolver.PlannedDefinition{
+		pdInstruction("stack-a", "stack a", "STACK-A-BODY", "alpha"),
+		pdInstruction("stack-b", "stack b", "STACK-B-BODY", "beta"),
+		pdScannedInstruction("zzz-name", "scanned first by filename", "SCANNED-FIRST-BODY", "010-first.md"),
+		pdScannedInstruction("aaa-name", "scanned second by filename", "SCANNED-SECOND-BODY", "020-second.md"),
+		pdContextInstruction("CONTEXT-BODY"),
+	}, "alpha", "beta")
+
+	if err := codex.Render(plan, codex.Options{Scope: codex.ScopeProject, ProjectRoot: tmp}); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+
+	got := mustRead(t, filepath.Join(tmp, "AGENTS.md"))
+	order := []string{"CONTEXT-BODY", "STACK-A-BODY", "STACK-B-BODY", "SCANNED-FIRST-BODY", "SCANNED-SECOND-BODY"}
+	var positions []int
+	for _, body := range order {
+		pos := strings.Index(got, body)
+		if pos < 0 {
+			t.Fatalf("missing body %q in %q", body, got)
+		}
+		positions = append(positions, pos)
+	}
+	for i := 1; i < len(positions); i++ {
+		if positions[i-1] >= positions[i] {
+			t.Errorf("expected %q before %q, got order %v in %q", order[i-1], order[i], positions, got)
+		}
+	}
+}
+
 // TestRender_UserScope resolves ProjectRoot from the home directory when
 // no override is given.
 func TestRender_UserScope(t *testing.T) {

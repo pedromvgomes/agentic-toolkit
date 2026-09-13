@@ -6,17 +6,54 @@ import (
 	"strings"
 
 	"github.com/pedromvgomes/agentic-toolkit/internal/definitions"
+	"github.com/pedromvgomes/agentic-toolkit/internal/resolver"
 )
 
+// orderInstructions places the entry manifest's `context:` instruction
+// first, then everything a stack named — unchanged from the order
+// plan.Definitions already carries — then locally scanned instructions
+// last, sorted by EntryPath. A scanned file's filename decides its
+// position, not its declared `name:`, since the filesystem scan that
+// found it is itself lexicographic.
+func orderInstructions(defs []resolver.PlannedDefinition) []*definitions.Instruction {
+	var context *definitions.Instruction
+	var named []*definitions.Instruction
+	var scanned []resolver.PlannedDefinition
+
+	for _, d := range defs {
+		switch {
+		case d.IsContext:
+			context = d.Definition.(*definitions.Instruction)
+		case d.StackName != "":
+			named = append(named, d.Definition.(*definitions.Instruction))
+		default:
+			scanned = append(scanned, d)
+		}
+	}
+
+	sort.Slice(scanned, func(i, j int) bool { return scanned[i].EntryPath < scanned[j].EntryPath })
+
+	out := make([]*definitions.Instruction, 0, len(defs))
+	if context != nil {
+		out = append(out, context)
+	}
+	out = append(out, named...)
+	for _, d := range scanned {
+		out = append(out, d.Definition.(*definitions.Instruction))
+	}
+	return out
+}
+
 // buildAgentsMD renders AGENTS.md's content: the instruction bodies, in
-// plan order, followed by an index of rules (description + relative
-// link to its whole-owned file) sorted by name for a stable diff. Codex
-// has no rules-discovery mechanism of its own, so this index is how a
-// rule is ever found.
-func buildAgentsMD(instructions []*definitions.Instruction, rules []*definitions.Rule) []byte {
+// orderInstructions order (context first, then stack-named, then locally
+// scanned by filename), followed by an index of rules (description +
+// relative link to its whole-owned file) sorted by name for a stable
+// diff. Codex has no rules-discovery mechanism of its own, so this index
+// is how a rule is ever found.
+func buildAgentsMD(instructions []resolver.PlannedDefinition, rules []*definitions.Rule) []byte {
 	var b strings.Builder
 	first := true
-	for _, inst := range instructions {
+	for _, inst := range orderInstructions(instructions) {
 		body := strings.TrimSpace(inst.Body)
 		if body == "" {
 			continue

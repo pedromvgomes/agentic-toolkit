@@ -31,7 +31,7 @@ var wholeOps = fsops.New("codex")
 // command still renders as a command on Claude.
 func planWholeOwned(plan *resolver.Plan, rts roots, stdout io.Writer) ([]fsops.WholeOp, error) {
 	var ops []fsops.WholeOp
-	var instructions []*definitions.Instruction
+	var instructions []resolver.PlannedDefinition
 	var rules []*definitions.Rule
 	var notes []string
 
@@ -78,7 +78,7 @@ func planWholeOwned(plan *resolver.Plan, rts roots, stdout io.Writer) ([]fsops.W
 			}
 			ops = append(ops, fsops.SingleFileOp(rts.ProjectRoot, ".codex/agents", d.Name+".toml", content))
 		case definitions.CategoryInstruction:
-			instructions = append(instructions, d.Definition.(*definitions.Instruction))
+			instructions = append(instructions, d)
 		}
 	}
 

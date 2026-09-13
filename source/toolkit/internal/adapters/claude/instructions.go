@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/pedromvgomes/agentic-toolkit/internal/definitions"
@@ -32,13 +33,14 @@ func instructionsPath(roots scopeRoots) string {
 // No-op when plan has zero instructions AND no existing managed region
 // (avoids creating empty files).
 func renderInstructions(plan *resolver.Plan, roots scopeRoots, opts Options) error {
-	var instructions []*definitions.Instruction
+	var defs []resolver.PlannedDefinition
 	for _, d := range plan.Definitions {
 		if d.Category != definitions.CategoryInstruction {
 			continue
 		}
-		instructions = append(instructions, d.Definition.(*definitions.Instruction))
+		defs = append(defs, d)
 	}
+	instructions := orderInstructions(defs)
 
 	target := instructionsPath(roots)
 	existing, existsErr := os.ReadFile(target) // #nosec G304 -- reads the CLAUDE.md agtk is about to update, under the scope root
@@ -97,10 +99,46 @@ func renderInstructions(plan *resolver.Plan, roots scopeRoots, opts Options) err
 	return nil
 }
 
+// orderInstructions places the entry manifest's `context:` instruction
+// first, then everything a stack named — unchanged from the order
+// plan.Definitions already carries — then locally scanned instructions
+// last, sorted by EntryPath. A scanned file's filename decides its
+// position, not its declared `name:`, since the filesystem scan that
+// found it is itself lexicographic.
+func orderInstructions(defs []resolver.PlannedDefinition) []*definitions.Instruction {
+	var context *definitions.Instruction
+	var named []*definitions.Instruction
+	var scanned []resolver.PlannedDefinition
+
+	for _, d := range defs {
+		switch {
+		case d.IsContext:
+			context = d.Definition.(*definitions.Instruction)
+		case d.StackName != "":
+			named = append(named, d.Definition.(*definitions.Instruction))
+		default:
+			scanned = append(scanned, d)
+		}
+	}
+
+	sort.Slice(scanned, func(i, j int) bool { return scanned[i].EntryPath < scanned[j].EntryPath })
+
+	out := make([]*definitions.Instruction, 0, len(defs))
+	if context != nil {
+		out = append(out, context)
+	}
+	out = append(out, named...)
+	for _, d := range scanned {
+		out = append(out, d.Definition.(*definitions.Instruction))
+	}
+	return out
+}
+
 // buildInstructionsRegion concatenates instruction bodies inside the
 // agtk managed markers. Each instruction is separated by a blank line.
-// Order matches plan.Definitions (alphabetical by name within
-// instruction category).
+// Order follows orderInstructions: the entry manifest's own context
+// first, then stack-named instructions, then locally scanned ones by
+// filename.
 func buildInstructionsRegion(instructions []*definitions.Instruction) string {
 	var b strings.Builder
 	b.WriteString(instructionsBeginMarker)

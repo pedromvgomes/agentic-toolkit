@@ -103,6 +103,39 @@ func pdInstruction(name, description, body, stackName string) resolver.PlannedDe
 	}
 }
 
+// pdScannedInstruction builds a PlannedDefinition for an instruction found
+// by convention under a consumer's own root rather than named by a stack:
+// StackName is empty and EntryPath carries the filename the scan found it
+// under, which is what decides its render position among other scanned
+// instructions.
+func pdScannedInstruction(name, description, body, entryPath string) resolver.PlannedDefinition {
+	i := &definitions.Instruction{
+		Common: definitions.Common{Name: name, Description: description},
+		Body:   body,
+	}
+	return resolver.PlannedDefinition{
+		Category:   definitions.CategoryInstruction,
+		Name:       name,
+		Definition: i,
+		EntryPath:  entryPath,
+	}
+}
+
+// pdContextInstruction builds a PlannedDefinition for the instruction the
+// entry manifest's `context:` file produces.
+func pdContextInstruction(body string) resolver.PlannedDefinition {
+	i := &definitions.Instruction{
+		Common: definitions.Common{Name: "context"},
+		Body:   body,
+	}
+	return resolver.PlannedDefinition{
+		Category:   definitions.CategoryInstruction,
+		Name:       "context",
+		Definition: i,
+		IsContext:  true,
+	}
+}
+
 func pdHook(name, description, event, matcher, command, stackName string) resolver.PlannedDefinition {
 	h := &definitions.Hook{
 		Common:  definitions.Common{Name: name, Description: description},
