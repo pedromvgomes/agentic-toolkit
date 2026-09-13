@@ -4,7 +4,6 @@ platforms: [claude]
 value:
   permissions:
     allow:
-      - "Write(./.agents/memories/**)"
       # The code-review subcommands that start no model. `run` is absent
       # because it costs money, and `approve` because a person types that one.
       #

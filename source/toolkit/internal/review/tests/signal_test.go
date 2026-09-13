@@ -117,19 +117,38 @@ func TestARoutineFixIsBugfixLinesAndNotFixRevert(t *testing.T) {
 	}
 }
 
-// A filename is a claim about a file, not about the change made to it. The
-// most expensive panel must not be bought by renaming a settings file.
-func TestAnAuthPathWithoutAuthContentDoesNotFire(t *testing.T) {
+// A fragment in a filename is a claim about the file, not about the change
+// made to it. The most expensive panel must not be bought by naming a settings
+// file for a thing it configures.
+func TestAnAuthNameFragmentWithoutAuthContentDoesNotFire(t *testing.T) {
 	r := newRepo(t)
 	r.write("seed.txt", "x\n")
 	base := r.commit("base")
 
-	// The path matches `**/*guard*`; nothing in the body is about gating a
-	// request. A file's name is not what the change did to it.
 	r.write("config/guard-settings.yaml", "name: guard-settings\nvalue:\n  timeout: 30\n")
 	p := buildProfile(t, r, base)
 
 	if has, _ := p.Signals.Has(review.SignalAuth); has {
-		t.Errorf("auth fired on a filename alone; signals were %s", p.Signals)
+		t.Errorf("auth fired on a name fragment alone; signals were %s", p.Signals)
+	}
+}
+
+// A directory that is what it is called is evidence on its own. The dangerous
+// edit to auth code is the one that removes a check, and removing a check
+// removes the words that name it — so a rule keyed on content alone would go
+// quiet on exactly the change it exists for.
+func TestAuthFiresOnAnAuthDirectoryWithNoAuthKeyword(t *testing.T) {
+	r := newRepo(t)
+	r.write("internal/auth/middleware.go",
+		"package auth\n\nfunc Check(admin bool) error {\n\tif !admin {\n\t\treturn errForbidden\n\t}\n\treturn nil\n}\n")
+	base := r.commit("base")
+
+	// The guard is deleted. Nothing left in the diff says "authorize".
+	r.write("internal/auth/middleware.go",
+		"package auth\n\nfunc Check(admin bool) error {\n\treturn nil\n}\n")
+	p := buildProfile(t, r, base)
+
+	if has, known := p.Signals.Has(review.SignalAuth); !has || !known {
+		t.Errorf("auth = (%v, known=%v) for a check deleted under internal/auth/; signals were %s", has, known, p.Signals)
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/pedromvgomes/agentic-toolkit/internal/memory"
@@ -102,4 +103,27 @@ func hasRule(allow []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// Serena keeps its memories at `.serena/memories/`, writes them through its MCP
+// server's own tool, and is governed by `mcp__serena__*` rules rather than
+// file-path ones. A `Write(...)` rule is not consulted by the file permission
+// check at all, so this grant named a path that does not exist, in a tree the
+// codex adapter renders and prunes, through a rule family that grants nothing.
+//
+// Its absence is the assertion: nothing in the catalog writes Serena memories
+// with Claude's file tools, so no respelling of it belongs here either.
+func TestNoGrantNamesTheRenderedAgentsTree(t *testing.T) {
+	for _, stack := range []string{"default", "memory"} {
+		t.Run(stack, func(t *testing.T) {
+			for _, rule := range allowList(t, renderStack(t, stack)) {
+				if strings.Contains(rule, ".agents/") {
+					t.Errorf("%q pre-approves a path inside a rendered tree", rule)
+				}
+				if strings.HasPrefix(rule, "Write(") {
+					t.Errorf("%q is spelled Write(...), which the file permission check does not consult", rule)
+				}
+			}
+		})
+	}
 }

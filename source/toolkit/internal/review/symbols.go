@@ -154,6 +154,18 @@ var bugfixCommitRE = regexp.MustCompile(`(?i)\b(fix|fixes|fixed|bug|bugfix)\b`)
 // commit twenty rewrites ago is not what the signal is about.
 const historyDepthPerHunk = 5
 
+// revertTailHunks is how much further the scan looks for a revert once the
+// routine-repair class has already answered.
+//
+// A `fix:` subject is common and a revert or a security repair is rare, so the
+// scan that has found the first is usually the one that will read every hunk
+// in the budget establishing the absence of the second — one `git log -L`
+// subprocess each, on a command a person is waiting for. Past this tail the
+// answer for `fix-revert` is undetermined, which is the honest report: the
+// scan stopped looking, and a caller that reads undetermined as absent is the
+// one thing SignalSet exists to prevent.
+const revertTailHunks = 25
+
 // detectFixRevert traces the regions a change deleted or rewrote back to the
 // commits that wrote them, and fires when one of those was a repair.
 //
@@ -188,6 +200,7 @@ func detectFixRevert(opts ProfileOptions, files []ChangedFile, patch string, set
 	// that. Exhausting the budget leaves whichever class is still unfound
 	// undetermined, which is the honest answer rather than a cheap one.
 	revertFound, bugfixFound := false, false
+	bugfixAt := 0
 	for _, hunk := range Hunks(patch) {
 		if hunk.Length == 0 {
 			continue
@@ -196,11 +209,17 @@ func detectFixRevert(opts ProfileOptions, files []ChangedFile, patch string, set
 		if !tracked {
 			continue
 		}
-		if spent >= budget {
-			reason := fmt.Sprintf("the %d-hunk history budget ran out", budget)
+		limit := budget
+		reason := fmt.Sprintf("the %d-hunk history budget ran out", budget)
+		if bugfixFound && bugfixAt+revertTailHunks < limit {
+			limit = bugfixAt + revertTailHunks
+			reason = fmt.Sprintf("the search for a revert stopped %d hunks after the first routine repair", revertTailHunks)
+		}
+		if spent >= limit {
+			// A class already found stays found: MarkUndetermined defers to it.
 			set.MarkUndetermined(SignalFixRevert, reason)
 			set.MarkUndetermined(SignalBugfixLines, reason)
-			return // a class already found stays found: MarkUndetermined defers to it
+			return
 		}
 		spent++
 
@@ -221,6 +240,7 @@ func detectFixRevert(opts ProfileOptions, files []ChangedFile, patch string, set
 			if !bugfixFound && bugfixCommitRE.MatchString(subject) {
 				set.Add(SignalBugfixLines)
 				bugfixFound = true
+				bugfixAt = spent
 			}
 		}
 		// Both classes found: nothing further in the history can change the

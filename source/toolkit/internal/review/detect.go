@@ -57,10 +57,20 @@ var universalContent = map[Signal][]*regexp.Regexp{
 // a one-line edit inside `db/migrations/` is a migration change however
 // ordinary the line looks.
 var signalPaths = map[Signal][]string{
+	// Directories that are what they are called. A file under `auth/` is auth
+	// code whatever the diff says, so an edit that removes a check without
+	// naming one — deleting `if !user.IsAdmin() { return ErrForbidden }` —
+	// still raises the signal.
+	//
+	// The name-fragment globs that used to sit here (`**/*permission*`,
+	// `**/*middleware*`, `**/*guard*`, `**/*auth*`) are deliberately absent.
+	// A fragment in a filename is a claim about the file, not about the change
+	// made to it, and it bought the most expensive panel for a settings file
+	// that merely says "permissions". Those files are still read by the
+	// content pass, which decides on what the change actually says.
 	SignalAuth: {
-		"**/auth/**", "**/authn/**", "**/authz/**", "**/session/**",
-		"**/sessions/**", "**/*auth*", "**/*middleware*", "**/*interceptor*",
-		"**/*guard*", "**/*permission*",
+		"**/auth/**", "**/authn/**", "**/authz/**",
+		"**/session/**", "**/sessions/**",
 	},
 	SignalMigrations: {
 		"**/migrations/**", "**/migrate/**", "**/db/migrate/**",
@@ -107,13 +117,6 @@ var signalPaths = map[Signal][]string{
 // changed line that says what the change did. They are alternatives rather
 // than a score, because a signal is a reason to look harder, and one reason is
 // enough.
-// pathNeedsContent are the signals a path glob may not establish on its own.
-//
-// The rest of the table names directories and extensions that are what they
-// are called — `**/migrations/**`, `**/*.tf` — where the path is the evidence
-// and no content pattern would add to it.
-var pathNeedsContent = map[Signal]bool{SignalAuth: true}
-
 func detectSignals(files []ChangedFile, patch string) *SignalSet {
 	set := NewSignalSet()
 
@@ -123,16 +126,6 @@ func detectSignals(files []ChangedFile, patch string) *SignalSet {
 		}
 		for sig, globs := range signalPaths {
 			if !MatchAnyGlob(globs, f.Path) {
-				continue
-			}
-			if pathNeedsContent[sig] {
-				// A filename is a claim about a file, not about the change
-				// made to it. `auth`'s globs are the broadest in the table —
-				// `**/*permission*`, `**/*middleware*`, `**/*guard*` — so a
-				// name alone fires on a typo fix in a settings file that
-				// merely says "permissions", and that is the most expensive
-				// panel bought with no evidence. The content pass below is
-				// what decides; this match only says where to look.
 				continue
 			}
 			set.Add(sig)
