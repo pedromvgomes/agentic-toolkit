@@ -145,13 +145,15 @@ func TestUntrackedFilesCount(t *testing.T) {
 }
 
 // A signal fires on either evidence: a path that says what the file is, or a
-// changed line that says what the change did.
+// changed line that says what the change did. `auth` is the exception and
+// needs the content — its globs match any file merely named for a guard or a
+// permission, which is a claim about the file rather than about the change.
 func TestSignalsFireOnPathsAndOnContent(t *testing.T) {
 	r := newRepo(t)
 	r.write("main.go", "package main\n")
 	base := r.commit("base")
 
-	r.write("internal/auth/token.go", "package auth\n")
+	r.write("internal/auth/token.go", "package auth\n\nfunc Authorize() {}\n")
 	r.write("worker.go", "package main\n\nimport \"sync\"\n\nvar mu sync.Mutex\n")
 
 	p := buildProfile(t, r, base)
@@ -261,7 +263,7 @@ func TestFixRevertTracesLinesNotFiles(t *testing.T) {
 	r.commit("feat: add the service")
 
 	r.write("svc.go", svc(" guard() ", ""))
-	base := r.commit("fix: guard the nil dereference")
+	base := r.commit("revert: guard the nil dereference")
 
 	t.Run("undoing the repaired line fires", func(t *testing.T) {
 		r.write("svc.go", svc("", ""))

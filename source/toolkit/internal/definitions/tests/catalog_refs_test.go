@@ -123,6 +123,11 @@ func TestStackManifestsResolve(t *testing.T) {
 // sees a diagnostic about it on each sync. Listing requirements keeps that
 // output quiet, and keeps a stack readable as a statement of what a consumer
 // gets rather than a starting point the resolver finishes.
+//
+// A requirement satisfied through `extends:` is satisfied: the consumer gets
+// both definitions and the resolver has nothing to report. So the stacks a
+// manifest extends by local path are read too, and the question asked of each
+// manifest is what a consumer of it actually receives.
 func TestStackManifestsCarryWhatTheirEntriesRequire(t *testing.T) {
 	root := repoRoot(t)
 	fsys := os.DirFS(root)
@@ -157,13 +162,7 @@ func TestStackManifestsCarryWhatTheirEntriesRequire(t *testing.T) {
 			}
 
 			listed := map[string]bool{}
-			for _, cat := range definitions.AllCategories {
-				for _, ref := range st.EntriesFor(cat) {
-					if ref.Kind == stack.RefBare {
-						listed[string(cat)+"s/"+ref.Name] = true
-					}
-				}
-			}
+			collect(t, path, st, listed)
 			for entry := range listed {
 				for _, req := range requiredBy[entry] {
 					if !listed[req] {
@@ -173,5 +172,37 @@ func TestStackManifestsCarryWhatTheirEntriesRequire(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// collect records every bare entry a consumer of this manifest receives,
+// following `extends:` by local path.
+//
+// URL extends are not followed: resolving one means fetching a repo at a ref,
+// which is a network call this test has no business making. A stack extending
+// another by URL is a statement about somebody else's catalog, and this test
+// is about the ones in this one.
+func collect(t *testing.T, manifestPath string, st *stack.Stack, listed map[string]bool) {
+	t.Helper()
+
+	for _, cat := range definitions.AllCategories {
+		for _, ref := range st.EntriesFor(cat) {
+			if ref.Kind == stack.RefBare {
+				listed[string(cat)+"s/"+ref.Name] = true
+			}
+		}
+	}
+	for _, ext := range st.Extends {
+		if ext.Kind != stack.RefPath {
+			continue
+		}
+		// Local extends resolve against the directory holding the stack file,
+		// the same way the resolver reads them.
+		extPath := filepath.Join(filepath.Dir(manifestPath), filepath.FromSlash(ext.Path))
+		extended, err := stack.ParseFile(extPath)
+		if err != nil {
+			t.Fatalf("parse extended stack %s: %v", extPath, err)
+		}
+		collect(t, extPath, extended, listed)
 	}
 }

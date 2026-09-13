@@ -39,7 +39,7 @@ release tags stay plain semver instead of needing a `source/toolkit/` prefix.
 ## What you get
 
 - **Definition catalog** under `definitions/` covering eight typed categories: `skill`, `agent`, `command`, `rule`, `instruction`, `hook`, `mcp`, `setting`. See [`definitions/SCHEMA.md`](definitions/SCHEMA.md) for shapes.
-- **Shareable stacks** under `stacks/` that bundle catalog definitions for consumers to extend: `default.yaml` (the feature flow, the workflow-agnostic skills, the memory-first and plan-approval instructions), and one stack per integration — `serena.yaml`, `rtk.yaml`, `plannotator.yaml`.
+- **Shareable stacks** under `stacks/` that bundle catalog definitions for consumers to extend: `default.yaml` (the feature flow, the workflow-agnostic skills and the plan-approval instruction), `memory.yaml` (the memory store, its commands and the memory-first instruction — extended by `default.yaml`, and adoptable on its own), and one stack per integration — `serena.yaml`, `rtk.yaml`, `plannotator.yaml`.
 - **`agtk` CLI** with `init`, `lock`, `fetch`, `plan`, `render`, `sync`, `status`, `memory`, `update`. Run any subcommand with `--help` for flags.
 - **Lockfile-driven workflow.** `agtk lock` resolves the entry-point stack's `extends:` graph to commit SHAs; `agtk fetch` hydrates the cache deterministically; `agtk render` writes Claude Code's expected layout under `.claude/`. `agtk sync` collapses all three into one command for the common case.
 - **Two-stage feature flow.** `/plan-feature` plans on opus without reading the codebase, has its draft reviewed by a second model, and writes a handoff; you run `/clear`; a session-start hook points the fresh sonnet session at the work, which lands one task per subagent, reviews in a capped loop and opens the PR. In `stacks/default.yaml`, which also sets the session's default model to sonnet. See [docs/FEATURE-FLOW.md](docs/FEATURE-FLOW.md).
@@ -62,6 +62,7 @@ agentic-toolkit/
     ...
   stacks/               # shareable stack manifests for consumers to extend
     default.yaml
+    memory.yaml
     serena.yaml
     ...
   install.sh            # platform-detecting installer (curl | sh entry point)

@@ -19,6 +19,12 @@ const (
 	permissionsKey = "permissions"
 	allowKey       = "allow"
 
+	// The other two list-valued members of `permissions`. Named here
+	// because composePermissions has to know which members are lists that
+	// union and which are scalars that replace.
+	denyKey = "deny"
+	askKey  = "ask"
+
 	// memoryExplorerAgent is the definition the store grants exist for.
 	memoryExplorerAgent = "memory-explorer"
 )
@@ -40,16 +46,22 @@ func settingsPath(roots scopeRoots) string {
 //   - Hook definitions own `hooks` exclusively. If a setting tries to
 //     write `hooks`, the hook definitions win (the setting's `hooks`
 //     fragment is dropped silently).
-//   - For other top-level keys touched by multiple settings, last by
-//     preset stack order wins (preset index lookup against
-//     plan.Config.Presets), with stable PlannedDefinition order as
-//     tiebreak.
+//   - `permissions` composes: its `allow`, `deny` and `ask` lists union
+//     across every settings definition that contributes them, so a stack
+//     can ship the pre-approvals for the definitions it ships without
+//     taking the key away from the stacks it is layered with.
+//   - For every other top-level key touched by multiple settings, last by
+//     stack order wins (index into plan.StackOrder), with definition name
+//     as the tiebreak.
 //
 // MCP definitions do not touch settings.json at all — see mcp.go. Claude
 // Code does not read project MCP servers from settings.json.
 func renderSettings(plan *resolver.Plan, roots scopeRoots, opts Options) error {
 	hooks := collectHooks(plan)
-	settingFragments := collectSettingFragments(plan)
+	settingFragments, err := collectSettingFragments(plan)
+	if err != nil {
+		return err
+	}
 	if err := addMemoryGrants(settingFragments, plan, roots); err != nil {
 		return err
 	}
@@ -349,9 +361,9 @@ func addMemoryGrants(fragments map[string]any, plan *resolver.Plan, roots scopeR
 // adopts memory and leaves `memory.root` at the default writes no block at
 // all — which is the common case these grants exist for. A stack that ships
 // no memory tooling and pre-approves something unrelated is the case that
-// must not pick them up: the append happens after the last-wins merge, so
-// such a consumer could not take the key back, and the only way left to
-// decline would be a deny rule saying something else.
+// must not pick them up: the append happens after the merge and `permissions`
+// composes, so such a consumer cannot take the key back by writing its own,
+// and the only way left to decline would be a deny rule saying something else.
 //
 // The agent is named here, so renaming it silently stops the grants. The
 // default-stack render test asserts they arrive, which is what fails if it is
@@ -409,10 +421,14 @@ func containsGrant(allow []any, grant string) bool {
 
 // collectSettingFragments returns the union of every setting
 // definition's value, with last-stack-wins resolution at the top-level
-// key. Stack order comes from plan.StackOrder (depth-first post-order;
-// later index = applied later = wins). Definitions in the plan are
-// sorted by name (not by stack), so we re-derive ordering here.
-func collectSettingFragments(plan *resolver.Plan) map[string]any {
+// key and composition for `permissions`. Stack order comes from
+// plan.StackOrder (depth-first post-order; later index = applied later =
+// wins). Definitions in the plan are sorted by name (not by stack), so we
+// re-derive ordering here.
+//
+// The ordering still decides `permissions` even though it composes: it is
+// what fixes the order grants appear in, so a render is reproducible.
+func collectSettingFragments(plan *resolver.Plan) (map[string]any, error) {
 	type contribution struct {
 		StackIdx int
 		DefName  string
@@ -435,7 +451,7 @@ func collectSettingFragments(plan *resolver.Plan) map[string]any {
 		contribs = append(contribs, contribution{StackIdx: idx, DefName: d.Name, Value: s.Value})
 	}
 	if len(contribs) == 0 {
-		return nil
+		return nil, nil
 	}
 	// Stable sort: lowest stack index first, name as tiebreak. Later
 	// contributions overwrite earlier at the top-level key.
@@ -448,8 +464,101 @@ func collectSettingFragments(plan *resolver.Plan) map[string]any {
 	out := map[string]any{}
 	for _, c := range contribs {
 		for k, v := range c.Value {
+			if k == permissionsKey {
+				merged, err := composePermissions(out[k], v, c.DefName)
+				if err != nil {
+					return nil, err
+				}
+				out[k] = merged
+				continue
+			}
 			out[k] = v
 		}
 	}
-	return out
+	return out, nil
+}
+
+// composePermissions unions one settings definition's `permissions` onto
+// what earlier definitions contributed, rather than replacing it.
+//
+// Every other top-level key is last-wins, and `permissions` cannot be: the
+// key is a repo's whole pre-approval surface, so one owner per render means
+// one definition has to carry every grant any stack needs. A stack that
+// bundles an agent then has nowhere to put that agent's grants — contributing
+// them replaces the grants of every stack it was layered with, and does it
+// silently, because a same-key collision between settings definitions raises
+// no diagnostic. Composing is what lets a stack ship the pre-approvals for the
+// definitions it ships.
+//
+// `allow`, `deny` and `ask` union and keep first-seen order, deduplicated on
+// the exact rule string. Union is safe in the direction that matters: Claude
+// Code resolves `deny` ahead of `allow`, so a stack that denies something
+// keeps denying it however many other stacks allow it. Any other member of
+// `permissions` is a scalar and stays last-wins.
+func composePermissions(existing, incoming any, defName string) (any, error) {
+	incomingMap, ok := incoming.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("claude: settings definition %q sets `%s` to %T, want a mapping", defName, permissionsKey, incoming)
+	}
+	if existing == nil {
+		return incomingMap, nil
+	}
+	existingMap, ok := existing.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("claude: settings `%s` is %T, want a mapping", permissionsKey, existing)
+	}
+
+	merged := map[string]any{}
+	for k, v := range existingMap {
+		merged[k] = v
+	}
+	for k, v := range incomingMap {
+		if !permissionListKeys[k] {
+			merged[k] = v
+			continue
+		}
+		incomingList, err := permissionList(defName, k, v)
+		if err != nil {
+			return nil, err
+		}
+		prior, present := merged[k]
+		if !present {
+			merged[k] = incomingList
+			continue
+		}
+		priorList, err := permissionList(defName, k, prior)
+		if err != nil {
+			return nil, err
+		}
+		for _, rule := range incomingList {
+			s, isString := rule.(string)
+			if isString && containsGrant(priorList, s) {
+				continue
+			}
+			priorList = append(priorList, rule)
+		}
+		merged[k] = priorList
+	}
+	return merged, nil
+}
+
+// permissionListKeys are the members of `permissions` that union rather than
+// replace.
+var permissionListKeys = map[string]bool{
+	allowKey: true,
+	denyKey:  true,
+	askKey:   true,
+}
+
+// permissionList asserts a `permissions` member is the list its name promises.
+//
+// Composing silently past a non-list would drop somebody's grants, which is
+// the failure this whole function exists to prevent, so it is an error that
+// names the definition that wrote it.
+func permissionList(defName, key string, value any) ([]any, error) {
+	list, ok := value.([]any)
+	if !ok {
+		return nil, fmt.Errorf("claude: settings definition %q sets `%s.%s` to %T, want a list", defName, permissionsKey, key, value)
+	}
+	return list, nil
 }

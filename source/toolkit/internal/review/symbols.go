@@ -136,14 +136,35 @@ func countSymbolReferences(opts ProfileOptions, sym string, changed []ChangedFil
 	return count, true
 }
 
-// fixCommitRE is what marks a commit as a deliberate repair. Matched against
-// the subject line, where the convention that carries this information lives.
-var fixCommitRE = regexp.MustCompile(`(?i)\b(fix|bug|hotfix|revert|security|cve)\b`)
+// revertCommitRE matches the subjects worth escalating for: undoing a revert
+// or a security repair is the case where the change may be reinstating the
+// defect somebody deliberately removed.
+//
+// `fix` is deliberately absent. Under Conventional Commits it is a type prefix
+// on a large share of every subject line, so a pattern carrying it names most
+// lines in a mature tree — which is a signal that always fires and therefore
+// distinguishes nothing. Those lines are reported as SignalBugfixLines instead.
+var revertCommitRE = regexp.MustCompile(`(?i)\b(revert|reverts|hotfix|security|cve)\b`)
+
+// bugfixCommitRE matches a routine repair: breadth, not danger.
+var bugfixCommitRE = regexp.MustCompile(`(?i)\b(fix|fixes|fixed|bug|bugfix)\b`)
 
 // historyDepthPerHunk is how far back one region's history is read. A repair
 // that a change is undoing is the recent history of those exact lines; a
 // commit twenty rewrites ago is not what the signal is about.
 const historyDepthPerHunk = 5
+
+// revertTailHunks is how much further the scan looks for a revert once the
+// routine-repair class has already answered.
+//
+// A `fix:` subject is common and a revert or a security repair is rare, so the
+// scan that has found the first is usually the one that will read every hunk
+// in the budget establishing the absence of the second — one `git log -L`
+// subprocess each, on a command a person is waiting for. Past this tail the
+// answer for `fix-revert` is undetermined, which is the honest report: the
+// scan stopped looking, and a caller that reads undetermined as absent is the
+// one thing SignalSet exists to prevent.
+const revertTailHunks = 25
 
 // detectFixRevert traces the regions a change deleted or rewrote back to the
 // commits that wrote them, and fires when one of those was a repair.
@@ -167,6 +188,19 @@ func detectFixRevert(opts ProfileOptions, files []ChangedFile, patch string, set
 
 	budget := opts.blameBudget()
 	spent := 0
+
+	// Tracked here rather than re-read from the set each hunk, so a class
+	// already established stops being tested against every later subject.
+	//
+	// The subprocess per hunk is the floor, and it is what separating the two
+	// classes costs. A scan that stopped at the first repair of any kind could
+	// return on the first hunk, but only because it was answering a question
+	// neither signal asks: `fix-revert` is absent only once every hunk in the
+	// budget has failed to produce a revert, and nothing cheaper establishes
+	// that. Exhausting the budget leaves whichever class is still unfound
+	// undetermined, which is the honest answer rather than a cheap one.
+	revertFound, bugfixFound := false, false
+	bugfixAt := 0
 	for _, hunk := range Hunks(patch) {
 		if hunk.Length == 0 {
 			continue
@@ -175,9 +209,16 @@ func detectFixRevert(opts ProfileOptions, files []ChangedFile, patch string, set
 		if !tracked {
 			continue
 		}
-		if spent >= budget {
-			set.MarkUndetermined(SignalFixRevert,
-				fmt.Sprintf("the %d-hunk history budget ran out", budget))
+		limit := budget
+		reason := fmt.Sprintf("the %d-hunk history budget ran out", budget)
+		if bugfixFound && bugfixAt+revertTailHunks < limit {
+			limit = bugfixAt + revertTailHunks
+			reason = fmt.Sprintf("the search for a revert stopped %d hunks after the first routine repair", revertTailHunks)
+		}
+		if spent >= limit {
+			// A class already found stays found: MarkUndetermined defers to it.
+			set.MarkUndetermined(SignalFixRevert, reason)
+			set.MarkUndetermined(SignalBugfixLines, reason)
 			return
 		}
 		spent++
@@ -188,13 +229,24 @@ func detectFixRevert(opts ProfileOptions, files []ChangedFile, patch string, set
 			// is not nothing either: the signal stays undetermined unless
 			// some other hunk produces real evidence.
 			set.MarkUndetermined(SignalFixRevert, "reading the history of "+path+" failed")
+			set.MarkUndetermined(SignalBugfixLines, "reading the history of "+path+" failed")
 			continue
 		}
 		for _, subject := range subjects {
-			if fixCommitRE.MatchString(subject) {
+			if !revertFound && revertCommitRE.MatchString(subject) {
 				set.Add(SignalFixRevert)
-				return
+				revertFound = true
 			}
+			if !bugfixFound && bugfixCommitRE.MatchString(subject) {
+				set.Add(SignalBugfixLines)
+				bugfixFound = true
+				bugfixAt = spent
+			}
+		}
+		// Both classes found: nothing further in the history can change the
+		// answer, so the remaining budget is not worth spending.
+		if revertFound && bugfixFound {
+			return
 		}
 	}
 }

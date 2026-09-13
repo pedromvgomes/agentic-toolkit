@@ -57,10 +57,16 @@ var universalContent = map[Signal][]*regexp.Regexp{
 // a one-line edit inside `db/migrations/` is a migration change however
 // ordinary the line looks.
 var signalPaths = map[Signal][]string{
+	// Directories that are what they are called. A file under `auth/` is auth
+	// code whatever the diff says, so an edit that removes a check without
+	// naming one — deleting `if !user.IsAdmin() { return ErrForbidden }` —
+	// still raises the signal.
+	//
+	// The request-gating fragments live in sourceOnlyPaths, which is what
+	// keeps them off a settings file that merely names one.
 	SignalAuth: {
-		"**/auth/**", "**/authn/**", "**/authz/**", "**/session/**",
-		"**/sessions/**", "**/*auth*", "**/*middleware*", "**/*interceptor*",
-		"**/*guard*", "**/*permission*",
+		"**/auth/**", "**/authn/**", "**/authz/**",
+		"**/session/**", "**/sessions/**",
 	},
 	SignalMigrations: {
 		"**/migrations/**", "**/migrate/**", "**/db/migrate/**",
@@ -107,6 +113,28 @@ var signalPaths = map[Signal][]string{
 // changed line that says what the change did. They are alternatives rather
 // than a score, because a signal is a reason to look harder, and one reason is
 // enough.
+// sourceOnlyPaths are globs that establish a signal only on a file that is
+// called rather than read.
+//
+// A fragment in a filename is weaker evidence than a directory, and how much
+// weaker depends on the file. `guards/admin_guard.ts` gates requests;
+// `config/guard-settings.yaml` configures something that does. Requiring code
+// keeps the first — which matters because the dangerous edit to a gate is the
+// one that deletes the check, and deleting a check deletes the words that name
+// it, so the content pass cannot see it.
+var sourceOnlyPaths = map[Signal][]string{
+	SignalAuth: {
+		"**/*auth*", "**/*middleware*", "**/*interceptor*", "**/*guard*",
+		// `permissions.go` is where authorization is written, and the content
+		// pass cannot stand in for this one: `\bpermission` has no word
+		// boundary inside `HasPermission`, so deleting
+		// `if !u.HasPermission(p) { return ErrForbidden }` leaves nothing for
+		// it to match. The settings file that prompted narrowing this is YAML,
+		// and BearsCode already excludes it.
+		"**/*permission*",
+	},
+}
+
 func detectSignals(files []ChangedFile, patch string) *SignalSet {
 	set := NewSignalSet()
 
@@ -115,6 +143,14 @@ func detectSignals(files []ChangedFile, patch string) *SignalSet {
 			continue
 		}
 		for sig, globs := range signalPaths {
+			if MatchAnyGlob(globs, f.Path) {
+				set.Add(sig)
+			}
+		}
+		if !BearsCode(f.Language) {
+			continue
+		}
+		for sig, globs := range sourceOnlyPaths {
 			if MatchAnyGlob(globs, f.Path) {
 				set.Add(sig)
 			}
@@ -134,7 +170,7 @@ func detectSignals(files []ChangedFile, patch string) *SignalSet {
 			return
 		}
 		for _, sig := range Signals {
-			if sig == SignalFixRevert {
+			if sig == SignalFixRevert || sig == SignalBugfixLines {
 				continue
 			}
 			if has, _ := set.Has(sig); has {
