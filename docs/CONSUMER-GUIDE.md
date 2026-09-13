@@ -107,9 +107,16 @@ Composition is what lets a stack ship the pre-approvals for the
 definitions it ships.
 
 So a settings definition of your own **adds** to the grants your stacks
-contribute; it does not take the key back. To narrow, write a `deny`
-rule: Claude Code resolves `deny` ahead of `allow`, so it wins over any
-grant a stack contributed.
+contribute; it does not take the key back. To narrow, name the rule
+again on the side you want:
+
+- `deny` refuses it outright. Claude Code resolves `deny` ahead of
+  `allow`, so it wins over any grant a stack contributed.
+- `ask` turns a stack's pre-approval back into a prompt, which is what
+  you want for something you mean to allow sometimes rather than never.
+
+Both compose the same way `allow` does, so a stack you extend cannot
+drop the rule you added.
 
 Every other key — `model`, `env` — is still last-wins, and your
 entry-point stack still wins it.

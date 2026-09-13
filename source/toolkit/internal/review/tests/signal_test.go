@@ -174,6 +174,15 @@ func TestAuthFiresOnAGatingFileOutsideAnAuthDirectory(t *testing.T) {
 			before: "export function check(isAdmin: boolean) {\n  if (!isAdmin) {\n    throw new Error('forbidden');\n  }\n}\n",
 			after:  "export function check(isAdmin: boolean) {\n}\n",
 		},
+		{
+			// The content pass cannot reach this one: `\bpermission` has no
+			// word boundary inside `HasPermission`, so the deleted check
+			// leaves it nothing to match and only the filename carries it.
+			name:   "go permissions check",
+			path:   "rbac/permissions.go",
+			before: "package rbac\n\nfunc Check(u User, p Perm) error {\n\tif !u.HasPermission(p) {\n\t\treturn errForbidden\n\t}\n\treturn nil\n}\n",
+			after:  "package rbac\n\nfunc Check(u User, p Perm) error {\n\treturn nil\n}\n",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := newRepo(t)

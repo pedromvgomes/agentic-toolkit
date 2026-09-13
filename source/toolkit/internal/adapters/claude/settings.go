@@ -361,9 +361,9 @@ func addMemoryGrants(fragments map[string]any, plan *resolver.Plan, roots scopeR
 // adopts memory and leaves `memory.root` at the default writes no block at
 // all — which is the common case these grants exist for. A stack that ships
 // no memory tooling and pre-approves something unrelated is the case that
-// must not pick them up: the append happens after the last-wins merge, so
-// such a consumer could not take the key back, and the only way left to
-// decline would be a deny rule saying something else.
+// must not pick them up: the append happens after the merge and `permissions`
+// composes, so such a consumer cannot take the key back by writing its own,
+// and the only way left to decline would be a deny rule saying something else.
 //
 // The agent is named here, so renaming it silently stops the grants. The
 // default-stack render test asserts they arrive, which is what fails if it is

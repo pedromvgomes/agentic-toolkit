@@ -62,10 +62,8 @@ var signalPaths = map[Signal][]string{
 	// naming one — deleting `if !user.IsAdmin() { return ErrForbidden }` —
 	// still raises the signal.
 	//
-	// `**/*permission*` is deliberately absent: it is the one fragment that
-	// names a thing configured as often as a thing enforced, and it bought the
-	// most expensive panel for a settings file. The request-gating fragments
-	// live in sourceOnlyPaths instead of here.
+	// The request-gating fragments live in sourceOnlyPaths, which is what
+	// keeps them off a settings file that merely names one.
 	SignalAuth: {
 		"**/auth/**", "**/authn/**", "**/authz/**",
 		"**/session/**", "**/sessions/**",
@@ -127,6 +125,13 @@ var signalPaths = map[Signal][]string{
 var sourceOnlyPaths = map[Signal][]string{
 	SignalAuth: {
 		"**/*auth*", "**/*middleware*", "**/*interceptor*", "**/*guard*",
+		// `permissions.go` is where authorization is written, and the content
+		// pass cannot stand in for this one: `\bpermission` has no word
+		// boundary inside `HasPermission`, so deleting
+		// `if !u.HasPermission(p) { return ErrForbidden }` leaves nothing for
+		// it to match. The settings file that prompted narrowing this is YAML,
+		// and BearsCode already excludes it.
+		"**/*permission*",
 	},
 }
 
