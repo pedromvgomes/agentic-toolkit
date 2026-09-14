@@ -3,7 +3,7 @@ name: implement-handoff
 description: |
   Carry out the work a handoff describes: check the pull request it waits on, read its tasks, and land them one at a time — one
   implementer subagent per task, its diff reviewed and verified before it is committed — then run the capped review loop and open
-  the pull request. Invoked by the session-start hook when a handoff is waiting. Trigger on "implement the handoff", "continue the
+  the pull request. Run as /implement-handoff in a fresh session when a handoff is waiting. Trigger on "implement the handoff", "continue the
   handoff", "pick up the handoff", "run the handoff in handoff/".
 requires:
   - agents/task-implementer
@@ -155,8 +155,10 @@ mv "<the handoff you read>" handoff/done/
 Then, if the plan names a slice after this one: invoke `write-handoff` for it, with the pull
 request just opened as its **predecessor**. The next session will wait for it to merge.
 
-Report the pull request, the posted review, and either the next handoff's path or that the plan
-is complete.
+Report the pull request, the posted review, and either that the plan is complete or the next
+handoff's path with the steps that start it: once the pull request just opened has merged, run
+`/clear`, then run `/implement-handoff`. Nothing picks the next handoff up automatically — the
+session-start hook can add a note to the new session, but it cannot begin a turn.
 
 ## What this skill never does
 
