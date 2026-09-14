@@ -17,10 +17,11 @@ So the flow is two sessions with a `/clear` between them, and a document that su
      └─ write-handoff             → handoff/20260909-1412-add-x.md
 
   ── you run /clear ───────────────────────────────────────────
+     (SessionStart hook notes handoff/*.md — a reminder, it starts nothing)
 
   ── session 2 ────────────────────────────────────────────────
-   SessionStart hook sees handoff/*.md           model: sonnet
-     └─ "invoke implement-handoff"
+   you run /implement-handoff                    model: sonnet
+     └─ implement-handoff
           ├─ predecessor merged?    → else stop
           ├─ task 1 → task-implementer  → diff + verify → commit
           ├─ task 2 → task-implementer  → diff + verify → commit
@@ -72,14 +73,22 @@ You see one final plan. Approve it, and `write-handoff` writes the first slice.
 ## The `/clear`, which you do by hand
 
 Nothing in the flow can clear a session's context, and nothing should pretend to. When
-`/plan-feature` finishes it tells you to run `/clear`, and stops.
+`/plan-feature` finishes it tells you the two steps — run `/clear`, then run
+`/implement-handoff` — and stops.
+
+Both steps are yours. After `/clear` the session sits idle until you type something; nothing
+picks the handoff up on its own.
 
 ## Stage two: the handoff
 
+You start stage two by running `/implement-handoff`. It asks `agtk handoff list` which handoffs
+are waiting, and asks you which one when there are several.
+
 A `SessionStart` hook fires on `startup` and `clear` — the two ways a session begins with no
-memory of the one before it — globs `handoff/*.md` at depth one, and injects an instruction to
-invoke `implement-handoff`. It cannot run the skill and cannot change the model. It only says
-what is waiting.
+memory of the one before it — globs `handoff/*.md` at depth one, and adds a note to the new
+session saying a handoff is waiting and to invoke `implement-handoff`. It is a reminder, most
+useful in a session started fresh in a new terminal. A hook can only add context: it cannot send
+a message, begin a turn, run the skill or change the model.
 
 `implement-handoff` coordinates **from the main session**. Subagent nesting is allowed three
 layers deep, so nothing about the platform stops it delegating the role; it does not, because the

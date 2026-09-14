@@ -332,9 +332,10 @@ func TestWriteHandoffExcludesItsFolderWithoutTouchingGitignore(t *testing.T) {
 	}
 }
 
-// The hook finds the handoff and says what to invoke. A continuation prompt
-// to paste as well would be a second way in, and the two would drift.
-func TestWriteHandoffHandsOffThroughTheHookAlone(t *testing.T) {
+// A SessionStart hook can add context but cannot begin a turn, so after /clear
+// the session is idle until the user runs /implement-handoff. A continuation
+// prompt to paste as well would be a second way in, and the two would drift.
+func TestWriteHandoffHandsOffThroughTheImplementHandoffCommand(t *testing.T) {
 	apply := renderFeatureFlowStack(t)
 
 	body, err := os.ReadFile(filepath.Join(apply, ".claude/skills/write-handoff/SKILL.md"))
@@ -345,13 +346,16 @@ func TestWriteHandoffHandsOffThroughTheHookAlone(t *testing.T) {
 	if !strings.Contains(skill, "/clear") {
 		t.Errorf("write-handoff does not name the step the user performs by hand:\n%s", skill)
 	}
+	if !strings.Contains(skill, "/implement-handoff") {
+		t.Error("write-handoff does not tell the user to run /implement-handoff, so the session sits idle after /clear")
+	}
 	if !strings.Contains(skill, "Do not paste a continuation prompt") {
-		t.Error("write-handoff offers a second way in alongside the hook")
+		t.Error("write-handoff offers a second way in alongside /implement-handoff")
 	}
 }
 
-// The hook is the only thing that reaches a session started after /clear, so
-// it has to arrive under an event and a matcher Claude Code actually fires.
+// The hook is the only thing that adds a note to a session started after /clear,
+// so it has to arrive under an event and a matcher Claude Code actually fires.
 // Under any other matcher the injection is not rejected, it simply never runs.
 func TestTheHandoffHookFiresOnAFreshSessionAndNamesTheSkill(t *testing.T) {
 	apply := renderFeatureFlowStack(t)
@@ -648,6 +652,9 @@ func TestPlanFeatureStopsAtTheHandoff(t *testing.T) {
 	}
 	if !strings.Contains(cmd, "/clear") {
 		t.Error("plan-feature does not name the step the user performs by hand")
+	}
+	if !strings.Contains(cmd, "/implement-handoff") {
+		t.Error("plan-feature does not tell the user to run /implement-handoff, so the session sits idle after /clear")
 	}
 	if !strings.Contains(cmd, "Do not start implementing") {
 		t.Error("plan-feature may start implementing on opus")
