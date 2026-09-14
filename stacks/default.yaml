@@ -38,9 +38,11 @@ instructions:
   - comments-describe-code-not-its-history
   - git
   - instructions-are-rendered-not-edited
+  - no-authoring-footers
   - plan-approval
 hooks:
   - handoff-claude-session-start
+  - no-authoring-footers-claude-pre-tool-use
 settings:
   - skill-permissions
   - feature-flow-model

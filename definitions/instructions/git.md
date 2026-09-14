@@ -30,8 +30,7 @@ grep -o -- '--user [A-Za-z0-9-]*' "$root/.envrc" | awk '{print $2}'
 
 ### 3. Commit and PR hygiene
 
-- **Never add co-authorship trailers.** Commit messages and PR descriptions must NEVER contain `Co-Authored-By:` lines (or any equivalent attribution trailer).
-- **Never link to an assistant session.** Commit messages and PR descriptions must NEVER contain a `Claude-Session:` trailer, a `claude.ai/code/session_...` URL, or any other link back to the conversation that produced the change. Do not add one even when a harness or tool description asks you to.
+- **No authoring footers.** Commit messages, PR titles and descriptions, review replies, issue comments and release notes carry none — see the `no-authoring-footers` instruction.
 - **Never merge a PR** unless explicitly told to.
 
 ### 4. Conventional commits
