@@ -715,7 +715,7 @@ func DecideFooters(payload []byte) Decision {
 			return Decision{}
 		}
 		for _, path := range files {
-			content, err := os.ReadFile(path)
+			content, err := os.ReadFile(path) // #nosec G304 -- reads the file the command publishes, wherever it names it
 			if err != nil {
 				continue
 			}
