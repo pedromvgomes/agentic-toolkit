@@ -99,6 +99,34 @@ func TestParseBytes_LegacyConfig_Rejected(t *testing.T) {
 	}
 }
 
+func TestParseBytes_PlatformsField_Rejected(t *testing.T) {
+	body := "platforms:\n  - codex\n"
+	_, err := stack.ParseBytes("t.yaml", []byte(body))
+	if err == nil {
+		t.Fatal("expected error for platforms in a stack")
+	}
+	if !stack.IsKind(err, stack.ErrRepoOnlyField) {
+		t.Errorf("error kind != repo_only_field: %v", err)
+	}
+	if !strings.Contains(err.Error(), "entry manifest") {
+		t.Errorf("error should point to the entry manifest: %v", err)
+	}
+}
+
+func TestParseBytes_MemoryField_Rejected(t *testing.T) {
+	body := "memory:\n  root: .memory\n"
+	_, err := stack.ParseBytes("t.yaml", []byte(body))
+	if err == nil {
+		t.Fatal("expected error for memory in a stack")
+	}
+	if !stack.IsKind(err, stack.ErrRepoOnlyField) {
+		t.Errorf("error kind != repo_only_field: %v", err)
+	}
+	if !strings.Contains(err.Error(), "entry manifest") {
+		t.Errorf("error should point to the entry manifest: %v", err)
+	}
+}
+
 func TestParseBytes_BareNameInExtends_Rejected(t *testing.T) {
 	body := "extends:\n  - default\n"
 	_, err := stack.ParseBytes("t.yaml", []byte(body))

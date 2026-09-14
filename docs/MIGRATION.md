@@ -201,9 +201,11 @@ belong to a published stack, name them in a small local stack and compose it
 under `stacks:` — see [Recipe 3 in
 CONSUMER-GUIDE.md](CONSUMER-GUIDE.md#recipe-3--add-specific-definitions-from-another-repo).
 
-`memory:` and `platforms:` need no change — they keep the same shape, and
-are simply read by the entry manifest's own type now rather than a shared
-`Stack` type, which is not something a consumer needs to act on.
+In the entry manifest, `memory:` and `platforms:` need no change — they keep
+the same shape. Both are repo properties — where the memory store lives,
+which platforms to render — and are accepted only in `.agentic-toolkit.yaml`.
+A `stacks/*.yaml` file setting either is refused; move the field to your
+entry manifest instead.
 
 `agtk init` scaffolds the new shape (`stacks:`, no per-category lists, a
 comment pointing at convention scanning) — re-run it against a fresh file if

@@ -42,6 +42,9 @@ func ParseBytes(filePath string, raw []byte) (*Stack, error) {
 	if err := detectLegacyConfig(filePath, raw); err != nil {
 		return nil, err
 	}
+	if err := detectRepoOnlyFields(filePath, raw); err != nil {
+		return nil, err
+	}
 
 	var s Stack
 	dec := yaml.NewDecoder(bytes.NewReader(raw), yaml.Strict())
@@ -371,6 +374,24 @@ func detectLegacyConfig(filePath string, raw []byte) error {
 }
 
 var legacyTopLevelKeys = []string{"source", "presets", "externals", "definitions"}
+
+// detectRepoOnlyFields returns a friendly error if a stack sets `platforms:`
+// or `memory:` at the top level. Both are repo properties — where to render
+// and where the memory store lives — and belong only on the entry manifest
+// (.agentic-toolkit.yaml), never on a shareable stack. Runs before strict
+// decode, alongside detectLegacyConfig, so the error names the field instead
+// of surfacing as a generic unknown-field failure.
+func detectRepoOnlyFields(filePath string, raw []byte) error {
+	for _, key := range repoOnlyTopLevelKeys {
+		if topLevelKeyRE(key).Match(raw) {
+			return newErr(filePath, ErrRepoOnlyField,
+				"%q is a repo property; set it in the entry manifest (.agentic-toolkit.yaml), not in a stack.", key)
+		}
+	}
+	return nil
+}
+
+var repoOnlyTopLevelKeys = []string{"platforms", "memory"}
 
 // topLevelKeyRE returns a regex matching `<key>:` at column zero of any
 // line, ignoring lines inside YAML block scalars is not perfect — but the
