@@ -247,7 +247,7 @@ func ghPublishedFiles(args []word, cwd string) (bool, []string) {
 	case cmd.is("release") && sub.is("create", "edit"):
 		fileFlag = "--notes-file"
 	case cmd.is("api"):
-		return true, resolvePaths(ghAPIFieldFiles(args[i+1:]), cwd)
+		return true, resolvePaths(ghAPIFiles(args[i+1:]), cwd)
 	default:
 		return false, nil
 	}
@@ -265,11 +265,15 @@ func ghPublishedFiles(args []word, cwd string) (bool, []string) {
 	return true, resolvePaths(files, cwd)
 }
 
-// ghAPIFieldFiles picks the path out of each key=@path field; a plain
-// key=value field reads no file.
-func ghAPIFieldFiles(args []word) []string {
+// ghAPIFiles picks the path out of each key=@path field and the request
+// body file an --input flag names; a plain key=value field reads no file.
+func ghAPIFiles(args []word) []string {
 	var files []string
 	for j, a := range args {
+		if p, ok := valueOf(args, j, "--input"); ok {
+			files = append(files, p)
+			continue
+		}
 		var field string
 		var ok bool
 		if a.is("-f", "-F") && j+1 < len(args) && args[j+1].known {
@@ -543,11 +547,7 @@ func splitWords(text string) ([]word, bool) {
 	if !ok {
 		return nil, false
 	}
-	words := make([]word, len(call.Args))
-	for i, w := range call.Args {
-		words[i] = resolveWord(w)
-	}
-	return words, true
+	return resolveWords(call.Args), true
 }
 
 var shells = map[string]bool{"sh": true, "bash": true, "zsh": true, "dash": true, "ksh": true}
@@ -645,33 +645,131 @@ func callPublishedFiles(args []word, cwd string) (bool, []string) {
 	return false, nil
 }
 
+func resolveWords(ws []*syntax.Word) []word {
+	words := make([]word, len(ws))
+	for i, w := range ws {
+		words[i] = resolveWord(w)
+	}
+	return words
+}
+
+// cdTargets lists, in walk order, the directory each literal `cd DIR` or
+// `pushd DIR` in a script moves to. Each target chains onto the one before
+// it, rooted at cwd, and an absolute target replaces the chain. A `cd`
+// with no directory, `cd -`, or a directory built from expansion
+// contributes nothing.
+func cdTargets(file *syntax.File, cwd string) []string {
+	var dirs []string
+	base := cwd
+	syntax.Walk(file, func(n syntax.Node) bool {
+		call, ok := n.(*syntax.CallExpr)
+		if !ok || len(call.Args) < 2 {
+			return true
+		}
+		args := resolveWords(call.Args)
+		if !args[0].is("cd", "pushd") {
+			return true
+		}
+		for _, a := range args[1:] {
+			if !a.known {
+				break
+			}
+			if strings.HasPrefix(a.val, "-") {
+				continue
+			}
+			base = joinPath(base, a.val)
+			dirs = append(dirs, base)
+			break
+		}
+		return true
+	})
+	return dirs
+}
+
 // publishedFiles walks a parsed command and reports whether any git or gh
 // call in it publishes text, along with every file those calls read text
 // from. A call counts wherever it sits: in a list, pipeline, subshell or
 // command substitution, behind a wrapper such as `sudo` or `env`, or in a
 // script handed to `bash -c` or `eval`.
+//
+// The files also include every file the script reads through a literal
+// `cat FILE` or an input redirect `< FILE`, `$(< FILE)` among them: a
+// publishing call can take its text from one by way of a variable or
+// command substitution its own words do not show.
+//
+// Relative paths resolve against cwd and against every directory a `cd` or
+// `pushd` in the script names. This over-approximates: which calls a `cd`
+// precedes, and whether a subshell scopes it, is not tracked, so a
+// same-named file in another of those directories is read as well. At
+// worst that denies a clean command, and tracking scope precisely is not
+// worth its cost in a guard.
 func publishedFiles(file *syntax.File, cwd string) (bool, []string) {
+	dirs := append([]string{cwd}, cdTargets(file, cwd)...)
 	publishes := false
-	var files []string
+	var files, reads []string
 	syntax.Walk(file, func(n syntax.Node) bool {
-		call, ok := n.(*syntax.CallExpr)
-		if !ok || len(call.Args) == 0 {
-			return true
+		switch n := n.(type) {
+		case *syntax.Redirect:
+			if w := resolveWord(n.Word); n.Op == syntax.RdrIn && w.known {
+				reads = append(reads, w.val)
+			}
+		case *syntax.CallExpr:
+			if len(n.Args) == 0 {
+				return true
+			}
+			args := resolveWords(n.Args)
+			if args[0].known && filepath.Base(args[0].val) == "cat" {
+				for _, a := range args[1:] {
+					if a.known && !strings.HasPrefix(a.val, "-") {
+						reads = append(reads, a.val)
+					}
+				}
+			}
+			for _, dir := range dirs {
+				p, f := callPublishedFiles(args, dir)
+				publishes = publishes || p
+				files = append(files, f...)
+			}
 		}
-		args := make([]word, len(call.Args))
-		for i, w := range call.Args {
-			args[i] = resolveWord(w)
-		}
-		p, f := callPublishedFiles(args, cwd)
-		publishes = publishes || p
-		files = append(files, f...)
 		return true
 	})
+	for _, dir := range dirs {
+		files = append(files, resolvePaths(reads, dir)...)
+	}
 	return publishes, files
 }
 
 func parseCommand(command string) (*syntax.File, error) {
 	return syntax.NewParser(syntax.Variant(syntax.LangBash)).Parse(strings.NewReader(command), "")
+}
+
+// fileTexts returns the texts a file contributes to matching. A file that
+// parses as JSON, such as a `gh api --input` body, contributes every string
+// value in it as well as its raw text: a footer inside a JSON string sits
+// behind an escaped newline, where the line-based patterns cannot see it.
+func fileTexts(content []byte) []string {
+	texts := []string{string(content)}
+	var v any
+	if json.Unmarshal(content, &v) == nil {
+		texts = appendJSONStrings(texts, v)
+	}
+	return texts
+}
+
+func appendJSONStrings(texts []string, v any) []string {
+	switch v := v.(type) {
+	case string:
+		texts = append(texts, v)
+	case map[string]any:
+		for _, e := range v {
+			texts = appendJSONStrings(texts, e)
+		}
+	case []any:
+		for _, e := range v {
+			texts = appendJSONStrings(texts, e)
+		}
+	}
+	return texts
 }
 
 var gitOrGhWordRe = regexp.MustCompile(`\b(?:git|gh)\b`)
@@ -719,7 +817,7 @@ func DecideFooters(payload []byte) Decision {
 			if err != nil {
 				continue
 			}
-			texts = append(texts, string(content))
+			texts = append(texts, fileTexts(content)...)
 		}
 	}
 

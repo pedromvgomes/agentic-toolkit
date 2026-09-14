@@ -470,3 +470,240 @@ func writeFile(t *testing.T, rel, content string) string {
 	}
 	return dir
 }
+
+// fileCase is a command that publishes the content of file, a path
+// relative to the hook's cwd.
+type fileCase struct {
+	command string
+	file    string
+}
+
+func assertFileCasesJudgeContent(t *testing.T, cases []fileCase) {
+	t.Helper()
+	for _, c := range cases {
+		t.Run(c.command+"/footer", func(t *testing.T) {
+			dir := writeFile(t, c.file, "subject"+coAuthoredFooter)
+			if d := guard.DecideFooters(payload(t, "Bash", c.command, dir)); !d.Deny {
+				t.Fatalf("command %q: want deny, got allow", c.command)
+			}
+		})
+		t.Run(c.command+"/clean", func(t *testing.T) {
+			dir := writeFile(t, c.file, "subject\n\nbody\n")
+			if d := guard.DecideFooters(payload(t, "Bash", c.command, dir)); d.Deny {
+				t.Fatalf("command %q: want allow, got deny on %s", c.command, d.Pattern)
+			}
+		})
+	}
+}
+
+func TestDecideFootersReadsMessageFileAfterCd(t *testing.T) {
+	assertFileCasesJudgeContent(t, []fileCase{
+		{`cd sub && git commit -F msg.txt`, filepath.Join("sub", "msg.txt")},
+		{`cd a && cd b && git commit -F m`, filepath.Join("a", "b", "m")},
+		{`cd a; cd b; git commit -F m`, filepath.Join("a", "b", "m")},
+		{`pushd sub && gh pr create --title t --body-file b.md`, filepath.Join("sub", "b.md")},
+		{`bash -c 'cd sub && git commit -F msg.txt'`, filepath.Join("sub", "msg.txt")},
+		{`eval 'cd sub && git commit -F msg.txt'`, filepath.Join("sub", "msg.txt")},
+		{`cd sub && bash -c 'cd inner && git commit -F msg.txt'`, filepath.Join("sub", "inner", "msg.txt")},
+		{`cd sub && git -C inner commit -F msg.txt`, filepath.Join("sub", "inner", "msg.txt")},
+		{`cd -P sub && git commit -F msg.txt`, filepath.Join("sub", "msg.txt")},
+		{`cd && cd - && cd "$HOME" && git commit -F msg.txt`, "msg.txt"},
+		{`cd sub && git commit -F msg.txt && cd ..`, filepath.Join("sub", "msg.txt")},
+	})
+}
+
+func TestDecideFootersReadsMessageFileAfterAbsoluteCd(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		content string
+		deny    bool
+	}{
+		{"footer", "subject" + coAuthoredFooter, true},
+		{"clean", "subject\n\nbody\n", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := writeFile(t, filepath.Join("abs", "msg.txt"), tc.content)
+			cmd := `cd other && cd '` + filepath.Join(dir, "abs") + `' && git commit -F msg.txt`
+			if d := guard.DecideFooters(payload(t, "Bash", cmd, dir)); d.Deny != tc.deny {
+				t.Fatalf("command %q: want deny=%v, got deny=%v", cmd, tc.deny, d.Deny)
+			}
+		})
+	}
+}
+
+func TestDecideFootersReadsMessageFileByAbsolutePath(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		content string
+		deny    bool
+	}{
+		{"footer", "subject" + coAuthoredFooter, true},
+		{"clean", "subject\n\nbody\n", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := writeFile(t, "msg.txt", tc.content)
+			cmd := `git commit -F '` + filepath.Join(dir, "msg.txt") + `'`
+			if d := guard.DecideFooters(payload(t, "Bash", cmd, "/")); d.Deny != tc.deny {
+				t.Fatalf("command %q: want deny=%v, got deny=%v", cmd, tc.deny, d.Deny)
+			}
+		})
+	}
+}
+
+func TestDecideFootersReadsFileAPublishingCommandTakesTextFrom(t *testing.T) {
+	assertFileCasesJudgeContent(t, []fileCase{
+		{`body=$(cat body.md); gh pr create --title t --body "$body"`, "body.md"},
+		{`gh pr create --title t --body "$(< body.md)"`, "body.md"},
+		{`git commit -m "$(cat msg.txt)"`, "msg.txt"},
+		{`git commit -m "$(cat -- msg.txt)"`, "msg.txt"},
+		{`git commit -m "$(/bin/cat "$x" msg.txt)"`, "msg.txt"},
+		{`cd sub && git commit -m "$(cat msg.txt)"`, filepath.Join("sub", "msg.txt")},
+		{`git commit -F - < msg.txt`, "msg.txt"},
+	})
+}
+
+func TestDecideFootersAllowsNonPublishingCommandReadingFooterFile(t *testing.T) {
+	cases := []string{
+		`cat notes.md | grep x`,
+		`grep x < notes.md`,
+		`git log > out.txt < notes.md`,
+	}
+	for _, cmd := range cases {
+		t.Run(cmd, func(t *testing.T) {
+			dir := writeFile(t, "notes.md", "notes"+coAuthoredFooter)
+			if d := guard.DecideFooters(payload(t, "Bash", cmd, dir)); d.Deny {
+				t.Fatalf("command %q: want allow, got deny on %s", cmd, d.Pattern)
+			}
+		})
+	}
+}
+
+func TestDecideFootersJudgesHeredocCommitMessage(t *testing.T) {
+	command := func(text string) string {
+		return "git commit -m \"$(cat <<'EOF'\nsubject" + text + "\nEOF\n)\""
+	}
+	if d := guard.DecideFooters(payload(t, "Bash", command(""), "/tmp")); d.Deny {
+		t.Fatalf("clean heredoc: want allow, got deny on %s", d.Pattern)
+	}
+	if d := guard.DecideFooters(payload(t, "Bash", command(coAuthoredFooter), "/tmp")); !d.Deny {
+		t.Fatalf("heredoc with footer: want deny, got allow")
+	}
+}
+
+func TestDecideFootersReadsGhAPIInputFile(t *testing.T) {
+	cases := []struct {
+		name    string
+		command string
+		content string
+		deny    bool
+	}{
+		{"json footer", `gh api repos/o/r/issues --input body.json`, `{"title":"t","body":"x\n\nCo-Authored-By: S <s@example.com>"}`, true},
+		{"json clean", `gh api repos/o/r/issues --input body.json`, `{"title":"t","body":"x\n\nthanks","draft":false,"n":1}`, false},
+		{"nested json footer", `gh api repos/o/r/issues --input body.json`, `{"items":[1,{"body":"x\n\nClaude-Session: abc"}]}`, true},
+		{"nested json clean", `gh api repos/o/r/issues --input body.json`, `{"items":[1,{"body":"x\n\ny"}],"x":null}`, false},
+		{"json array footer", `gh api repos/o/r/issues --input body.json`, `["x\n\n🤖 Generated with [Claude Code]"]`, true},
+		{"non-json footer", `gh api repos/o/r/issues --input body.json`, "title: t\n\nCo-Authored-By: S <s@example.com>\n", true},
+		{"non-json clean", `gh api repos/o/r/issues --input body.json`, "title: t\n\nbody\n", false},
+		{"attached footer", `gh api repos/o/r/issues --input=body.json`, `{"body":"x\n\nCo-Authored-By: S <s@example.com>"}`, true},
+		{"attached clean", `gh api repos/o/r/issues --input=body.json`, `{"body":"x"}`, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			dir := writeFile(t, "body.json", c.content)
+			if d := guard.DecideFooters(payload(t, "Bash", c.command, dir)); d.Deny != c.deny {
+				t.Fatalf("command %q with %q: want deny=%v, got deny=%v", c.command, c.content, c.deny, d.Deny)
+			}
+		})
+	}
+}
+
+func TestDecideFootersReadsMessageFileInEachFlagForm(t *testing.T) {
+	assertFileCasesJudgeContent(t, []fileCase{
+		{`git commit --file=msg.txt`, "msg.txt"},
+		{`git commit --file msg.txt`, "msg.txt"},
+		{`git commit -Fmsg.txt`, "msg.txt"},
+		{`git tag --file=msg.txt v1`, "msg.txt"},
+		{`gh pr create --title t -F body.md`, "body.md"},
+		{`gh pr create --title t --body-file=body.md`, "body.md"},
+		{`gh -R o/r pr create --title t --body-file body.md`, "body.md"},
+		{`gh --repo o/r issue comment 1 --body-file body.md`, "body.md"},
+		{`gh api repos/o/r/issues --field body=@body.md`, "body.md"},
+		{`gh api repos/o/r/issues --raw-field body=@body.md`, "body.md"},
+		{`gh api repos/o/r/issues -fbody=@body.md`, "body.md"},
+		{`gh api repos/o/r/issues -f body=@body.md`, "body.md"},
+		{`bash --rcfile rc -c 'git commit -F body.md'`, "body.md"},
+	})
+}
+
+func TestDecideFootersJudgesPublishingCallInEachForm(t *testing.T) {
+	commands := []struct {
+		name    string
+		command func(text string) string
+	}{
+		{"stdin message", func(text string) string { return `printf '%s' "x` + text + `" | git commit -F -` }},
+		{"tag --message=", func(text string) string { return `git tag --message="x` + text + `" v1` }},
+		{"tag --message", func(text string) string { return `git tag --message "x` + text + `" v1` }},
+		{"tag after unknown word", func(text string) string { return `git tag "$v" -m "x` + text + `"` }},
+		{"brace expansion word", func(text string) string { return `git commit -m "x` + text + `" -- {a,b}.txt` }},
+		{"sudo --", func(text string) string { return `sudo -- git commit -m "message` + text + `"` }},
+		{"sudo --user", func(text string) string { return `sudo --user root git commit -m "message` + text + `"` }},
+		{"sudo --user=", func(text string) string { return `sudo --user=root git commit -m "message` + text + `"` }},
+		{"env --split-string", func(text string) string {
+			return `env --split-string 'git commit' -m "message` + text + `"`
+		}},
+		{"xargs -i", func(text string) string { return `echo | xargs -i git commit -m "message` + text + `"` }},
+		{"xargs -i attached", func(text string) string { return `echo | xargs -i{} git commit -m "message` + text + `"` }},
+		{"env -S subshell", func(text string) string { return `env -S '(git commit)' -m "$x" "message` + text + `"` }},
+		{"env -S list", func(text string) string { return `env -S 'git status; git commit' -m "message` + text + `"` }},
+		{"bash --norc", func(text string) string { return `bash --norc -c 'git commit -m "message` + text + `"'` }},
+		{"bash +x", func(text string) string { return `bash +x -c 'git commit -m "message` + text + `"'` }},
+		{"eval --", func(text string) string { return `eval -- git commit -m "'message` + text + `'"` }},
+		{"gh with flags only then publish", func(text string) string {
+			return `gh --help; gh pr create --title t --body "body` + text + `"`
+		}},
+	}
+	for _, c := range commands {
+		t.Run(c.name+"/footer", func(t *testing.T) {
+			cmd := c.command(coAuthoredFooter)
+			if d := guard.DecideFooters(payload(t, "Bash", cmd, "/tmp")); !d.Deny {
+				t.Fatalf("command %q: want deny, got allow", cmd)
+			}
+		})
+		t.Run(c.name+"/clean", func(t *testing.T) {
+			cmd := c.command("")
+			if d := guard.DecideFooters(payload(t, "Bash", cmd, "/tmp")); d.Deny {
+				t.Fatalf("command %q: want allow, got deny on %s", cmd, d.Pattern)
+			}
+		})
+	}
+}
+
+func TestDecideFootersAllowsCallThatDoesNotPublish(t *testing.T) {
+	cases := []string{
+		`git --no-pager`,
+		`gh --help`,
+		`gh repo view`,
+		`gh pr view 1`,
+		`"$EDITOR" notes.md`,
+		`sudo "$x" git status`,
+		`sudo -u root`,
+		`nice`,
+		`env -S "$x" git status`,
+		`env X=1 "$y" git status`,
+		`timeout 5 "$cmd"`,
+		`bash "$x" -c 'git status'`,
+		`bash -- script.sh`,
+		`bash - script.sh`,
+		`bash -o`,
+		`eval "$x"`,
+		`sudo env -S`,
+	}
+	for _, c := range cases {
+		cmd := c + ` && echo "x` + coAuthoredFooter + `"`
+		t.Run(c, func(t *testing.T) {
+			if d := guard.DecideFooters(payload(t, "Bash", cmd, "/tmp")); d.Deny {
+				t.Fatalf("command %q: want allow, got deny on %s", cmd, d.Pattern)
+			}
+		})
+	}
+}
