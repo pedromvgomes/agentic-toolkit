@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"unicode"
 
@@ -221,9 +222,21 @@ func ghPublishedFiles(args []word, cwd string) (bool, []string) {
 		return false, nil
 	}
 	cmd := args[i]
+	// A flag may sit between the command and its action word:
+	// `gh pr -R owner/repo create`.
+	s := i + 1
+	for ; s < len(args); s++ {
+		a := args[s]
+		if !a.known || !strings.HasPrefix(a.val, "-") {
+			break
+		}
+		if a.is("-R", "--repo") {
+			s++
+		}
+	}
 	var sub word
-	if i+1 < len(args) {
-		sub = args[i+1]
+	if s < len(args) {
+		sub = args[s]
 	}
 	var fileFlag string
 	switch {
@@ -238,13 +251,15 @@ func ghPublishedFiles(args []word, cwd string) (bool, []string) {
 	default:
 		return false, nil
 	}
-	rest := args[i+2:]
+	rest := args[s+1:]
 	var files []string
 	for j := range rest {
 		if p, ok := valueOf(rest, j, fileFlag); ok {
 			files = append(files, p)
 		} else if rest[j].is("-F") && j+1 < len(rest) && rest[j+1].known {
 			files = append(files, rest[j+1].val)
+		} else if p, ok := rest[j].hasPrefix("-F"); ok && p != "" {
+			files = append(files, p)
 		}
 	}
 	return true, resolvePaths(files, cwd)
@@ -259,6 +274,10 @@ func ghAPIFieldFiles(args []word) []string {
 		var ok bool
 		if a.is("-f", "-F") && j+1 < len(args) && args[j+1].known {
 			field, ok = args[j+1].val, true
+		} else if v, attached := a.hasPrefix("-F"); attached && v != "" {
+			field, ok = v, true
+		} else if v, attached := a.hasPrefix("-f"); attached && v != "" {
+			field, ok = v, true
 		} else {
 			for _, flag := range []string{"--field", "--raw-field"} {
 				if field, ok = valueOf(args, j, flag); ok {
@@ -306,10 +325,315 @@ func resolvePaths(paths []string, dir string) []string {
 	return out
 }
 
+// optionSpec describes how a wrapper command reads its own options.
+type optionSpec struct {
+	// valued are the short options that take a value, attached (`-uroot`)
+	// or as the next word (`-u root`).
+	valued string
+	// optional are the short options that take a value only when attached.
+	optional string
+	// long are the long options that take the next word as their value
+	// when not given as `--name=value`.
+	long []string
+	// stop names the options after which reading ends, because they
+	// rewrite the words that follow.
+	stop []string
+}
+
+type option struct {
+	name  string
+	value word
+}
+
+// parseOptions reads the options that open args[i:] and returns them with
+// the index of the first word that is not one. ok is false when an option
+// position holds an unknown word: its expansion could be any number of
+// options or the command itself, so the rest of the call is undetermined.
+func parseOptions(args []word, i int, spec optionSpec) ([]option, int, bool) {
+	var opts []option
+	for ; i < len(args); i++ {
+		a := args[i]
+		if !a.known {
+			return opts, i, false
+		}
+		if a.val == "--" {
+			return opts, i + 1, true
+		}
+		if !strings.HasPrefix(a.val, "-") || a.val == "-" {
+			return opts, i, true
+		}
+		if strings.HasPrefix(a.val, "--") {
+			name, val, attached := strings.Cut(a.val, "=")
+			o := option{name: name}
+			if attached {
+				o.value = word{val: val, known: true}
+			} else if slices.Contains(spec.long, name) && i+1 < len(args) {
+				i++
+				o.value = args[i]
+			}
+			opts = append(opts, o)
+			if slices.Contains(spec.stop, name) {
+				return opts, i + 1, true
+			}
+			continue
+		}
+		cluster := a.val[1:]
+		for j, r := range cluster {
+			o := option{name: "-" + string(r)}
+			rest := cluster[j+len(string(r)):]
+			if strings.ContainsRune(spec.valued, r) {
+				if rest != "" {
+					o.value = word{val: rest, known: true}
+				} else if i+1 < len(args) {
+					i++
+					o.value = args[i]
+				}
+				opts = append(opts, o)
+				break
+			}
+			if strings.ContainsRune(spec.optional, r) {
+				o.value = word{val: rest, known: rest != ""}
+				opts = append(opts, o)
+				break
+			}
+			opts = append(opts, o)
+		}
+		if last := opts[len(opts)-1]; slices.Contains(spec.stop, last.name) {
+			return opts, i + 1, true
+		}
+	}
+	return opts, i, true
+}
+
+// wrapper describes a command that runs the command named after its own
+// options, such as `sudo` or `env`.
+type wrapper struct {
+	spec optionSpec
+	// operands counts the words the wrapper reads between its options and
+	// the command, such as timeout's duration.
+	operands int
+	// assignments is true when NAME=VALUE words may precede the command.
+	assignments bool
+	// chdir names the options whose value is the wrapped command's
+	// working directory.
+	chdir []string
+	// query names the options under which the wrapper reports on the
+	// command instead of running it, as `command -v` does.
+	query []string
+}
+
+var wrappers = map[string]wrapper{
+	"command": {query: []string{"-v", "-V"}},
+	"builtin": {},
+	"exec":    {spec: optionSpec{valued: "a"}},
+	"nohup":   {},
+	"time":    {spec: optionSpec{valued: "fo", long: []string{"--format", "--output"}}},
+	"nice":    {spec: optionSpec{valued: "n", long: []string{"--adjustment"}}},
+	"timeout": {
+		spec:     optionSpec{valued: "ks", long: []string{"--kill-after", "--signal"}},
+		operands: 1,
+	},
+	"env": {
+		spec: optionSpec{
+			valued: "uCSP",
+			long:   []string{"--unset", "--chdir", "--split-string"},
+			stop:   []string{"-S", "--split-string"},
+		},
+		assignments: true,
+		chdir:       []string{"-C", "--chdir"},
+	},
+	"sudo": {
+		spec: optionSpec{
+			valued: "aCcDghprRtTUu",
+			long: []string{
+				"--auth-type", "--close-from", "--chdir", "--group", "--host", "--login-class",
+				"--prompt", "--chroot", "--role", "--type", "--command-timeout", "--other-user", "--user",
+			},
+		},
+		assignments: true,
+		chdir:       []string{"-D", "--chdir"},
+	},
+	"doas": {spec: optionSpec{valued: "uC"}},
+	"xargs": {spec: optionSpec{
+		valued:   "adEILnPsJRS",
+		optional: "eil",
+		long:     []string{"--arg-file", "--delimiter", "--max-args", "--max-procs", "--max-chars", "--process-slot-var"},
+	}},
+}
+
+// unwrap returns the command a wrapper call runs, with the directory that
+// command runs in. ok is false when the wrapped command cannot be
+// determined or the wrapper does not run it.
+func unwrap(w wrapper, args []word, cwd string) ([]word, string, bool) {
+	i := 1
+	for {
+		opts, next, ok := parseOptions(args, i, w.spec)
+		if !ok {
+			return nil, "", false
+		}
+		i = next
+		var split *word
+		for _, o := range opts {
+			if slices.Contains(w.query, o.name) {
+				return nil, "", false
+			}
+			if slices.Contains(w.chdir, o.name) && o.value.known {
+				cwd = joinPath(cwd, o.value.val)
+			}
+			if slices.Contains(w.spec.stop, o.name) {
+				split = &o.value
+			}
+		}
+		if split == nil {
+			break
+		}
+		// env -S splits its value into words that take the option's
+		// place, options and command included.
+		if !split.known {
+			return nil, "", false
+		}
+		words, ok := splitWords(split.val)
+		if !ok {
+			return nil, "", false
+		}
+		args = append(append([]word{args[0]}, words...), args[i:]...)
+		i = 1
+	}
+	if filepath.Base(args[0].val) == "env" && i < len(args) && args[i].is("-") {
+		i++
+	}
+	i += w.operands
+	for w.assignments && i < len(args) {
+		if !args[i].known {
+			return nil, "", false
+		}
+		if !strings.Contains(args[i].val, "=") {
+			break
+		}
+		i++
+	}
+	if i >= len(args) {
+		return nil, "", false
+	}
+	return args[i:], cwd, true
+}
+
+// splitWords reads text as the words of a single simple command.
+func splitWords(text string) ([]word, bool) {
+	file, err := parseCommand(text)
+	if err != nil || len(file.Stmts) != 1 {
+		return nil, false
+	}
+	call, ok := file.Stmts[0].Cmd.(*syntax.CallExpr)
+	if !ok {
+		return nil, false
+	}
+	words := make([]word, len(call.Args))
+	for i, w := range call.Args {
+		words[i] = resolveWord(w)
+	}
+	return words, true
+}
+
+var shells = map[string]bool{"sh": true, "bash": true, "zsh": true, "dash": true, "ksh": true}
+
+// shellPublishedFiles judges a shell started with `-c STRING` on the
+// script STRING holds. A shell running a script file is not followed.
+func shellPublishedFiles(args []word, cwd string) (bool, []string) {
+	command := false
+	i := 1
+	for ; i < len(args); i++ {
+		a := args[i]
+		if !a.known {
+			return false, nil
+		}
+		if a.is("--", "-") {
+			i++
+			break
+		}
+		if strings.HasPrefix(a.val, "--") {
+			if a.is("--rcfile", "--init-file") {
+				i++
+			}
+			continue
+		}
+		if len(a.val) < 2 || (a.val[0] != '-' && a.val[0] != '+') {
+			break
+		}
+		cluster := a.val[1:]
+		if a.val[0] == '-' && strings.ContainsRune(cluster, 'c') {
+			command = true
+		}
+		if strings.ContainsAny(cluster, "oO") {
+			i++
+		}
+	}
+	if !command || i >= len(args) || !args[i].known {
+		return false, nil
+	}
+	return scriptPublishedFiles(args[i].val, cwd)
+}
+
+// evalPublishedFiles judges an eval call on the script its arguments
+// join into.
+func evalPublishedFiles(args []word, cwd string) (bool, []string) {
+	rest := args[1:]
+	if len(rest) > 0 && rest[0].is("--") {
+		rest = rest[1:]
+	}
+	parts := make([]string, len(rest))
+	for i, a := range rest {
+		if !a.known {
+			return false, nil
+		}
+		parts[i] = a.val
+	}
+	return scriptPublishedFiles(strings.Join(parts, " "), cwd)
+}
+
+// scriptPublishedFiles judges a script handed to a shell as a string. A
+// script the parser rejects is judged the way an unparseable command is:
+// naming git or gh counts as publishing.
+func scriptPublishedFiles(script, cwd string) (bool, []string) {
+	file, err := parseCommand(script)
+	if err != nil {
+		return gitOrGhWordRe.MatchString(script), nil
+	}
+	return publishedFiles(file, cwd)
+}
+
+// callPublishedFiles reports whether one call publishes text and the files
+// it reads that text from. Wrappers are looked through, nested to any
+// depth, to the command they run.
+func callPublishedFiles(args []word, cwd string) (bool, []string) {
+	for len(args) > 0 && args[0].known {
+		name := filepath.Base(args[0].val)
+		switch {
+		case name == "git":
+			return gitPublishedFiles(args, cwd)
+		case name == "gh":
+			return ghPublishedFiles(args, cwd)
+		case shells[name]:
+			return shellPublishedFiles(args, cwd)
+		case name == "eval":
+			return evalPublishedFiles(args, cwd)
+		}
+		w, ok := wrappers[name]
+		if !ok {
+			return false, nil
+		}
+		if args, cwd, ok = unwrap(w, args, cwd); !ok {
+			return false, nil
+		}
+	}
+	return false, nil
+}
+
 // publishedFiles walks a parsed command and reports whether any git or gh
 // call in it publishes text, along with every file those calls read text
 // from. A call counts wherever it sits: in a list, pipeline, subshell or
-// command substitution.
+// command substitution, behind a wrapper such as `sudo` or `env`, or in a
+// script handed to `bash -c` or `eval`.
 func publishedFiles(file *syntax.File, cwd string) (bool, []string) {
 	publishes := false
 	var files []string
@@ -322,22 +646,16 @@ func publishedFiles(file *syntax.File, cwd string) (bool, []string) {
 		for i, w := range call.Args {
 			args[i] = resolveWord(w)
 		}
-		if !args[0].known {
-			return true
-		}
-		var p bool
-		var f []string
-		switch filepath.Base(args[0].val) {
-		case "git":
-			p, f = gitPublishedFiles(args, cwd)
-		case "gh":
-			p, f = ghPublishedFiles(args, cwd)
-		}
+		p, f := callPublishedFiles(args, cwd)
 		publishes = publishes || p
 		files = append(files, f...)
 		return true
 	})
 	return publishes, files
+}
+
+func parseCommand(command string) (*syntax.File, error) {
+	return syntax.NewParser(syntax.Variant(syntax.LangBash)).Parse(strings.NewReader(command), "")
 }
 
 var gitOrGhWordRe = regexp.MustCompile(`\b(?:git|gh)\b`)
@@ -367,7 +685,7 @@ func DecideFooters(payload []byte) Decision {
 	// arguments: `echo … | git commit -F -` carries its message outside
 	// the call.
 	texts := []string{command}
-	file, err := syntax.NewParser(syntax.Variant(syntax.LangBash)).Parse(strings.NewReader(command), "")
+	file, err := parseCommand(command)
 	if err != nil {
 		// Writing the command in syntax the parser rejects, such as a
 		// zsh-only construct, is not a way past the guard: any mention of
