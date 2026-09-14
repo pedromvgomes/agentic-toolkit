@@ -171,7 +171,7 @@ func NewRootCmd(env *Env) *cobra.Command {
 	root.AddCommand(
 		newInitCmd(env), newLockCmd(env), newFetchCmd(env), newPlanCmd(env),
 		newRenderCmd(env), newSyncCmd(env), newStatusCmd(env), newUpdateCmd(env),
-		newMemoryCmd(env), newCodeReviewCmd(env), newHandoffCmd(env),
+		newMemoryCmd(env), newCodeReviewCmd(env), newHandoffCmd(env), newGuardCmd(env),
 	)
 	return root
 }
@@ -248,7 +248,18 @@ func Execute() int {
 		return 1
 	}
 	env := &Env{Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr, WorkDir: wd}
-	if err := NewRootCmd(env).Execute(); err != nil {
+	return ExecuteArgs(env, os.Args[1:])
+}
+
+// ExecuteArgs runs the CLI against an already-built Env and an explicit
+// argument list, and maps the result to an exit code — the same mapping
+// Execute uses against the process's real streams and os.Args. Exported
+// so a test can assert on the exit code a sentinel error carries
+// without spawning the built binary.
+func ExecuteArgs(env *Env, args []string) int {
+	root := NewRootCmd(env)
+	root.SetArgs(args)
+	if err := root.Execute(); err != nil {
 		// `agtk status` prints its own structured drift report and
 		// returns errStatusDrift to flip the exit code; suppress the
 		// generic error prefix in that case so users see only the
@@ -266,6 +277,12 @@ func Execute() int {
 		// error message with the generic prefix.
 		if errors.Is(err, errMemoryCurate) {
 			return 1
+		}
+		// `agtk guard footers` prints its own deny message before
+		// returning errGuardFootersDenied; the hook that invoked it reads
+		// exit code 2 as "denied" versus 1 for "the guard itself broke".
+		if errors.Is(err, errGuardFootersDenied) {
+			return GuardFootersExitCode
 		}
 		// `agtk update --check` returns updateNewerErr when newer is
 		// available; map that to UpdateCheckExitCode without the
