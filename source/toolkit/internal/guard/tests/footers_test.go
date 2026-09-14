@@ -4,7 +4,10 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"mvdan.cc/sh/v3/syntax"
 
 	"github.com/pedromvgomes/agentic-toolkit/internal/guard"
 )
@@ -210,4 +213,109 @@ func TestDecideFootersDeniesSessionLink(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDecideFootersSeesGitCommitPastGlobalOptions(t *testing.T) {
+	commands := []struct {
+		name    string
+		command func(text string) string
+	}{
+		{"-C", func(text string) string { return `git -C repo commit -m "message` + text + `"` }},
+		{"-c", func(text string) string { return `git -c user.name=x commit -m "message` + text + `"` }},
+		{"--no-pager", func(text string) string { return `git --no-pager commit -m "message` + text + `"` }},
+		{"--git-dir=", func(text string) string { return `git --git-dir=.git commit -m "message` + text + `"` }},
+		{"--git-dir", func(text string) string { return `git --git-dir .git commit -m "message` + text + `"` }},
+		{"after cd", func(text string) string { return `cd x && git commit -m "message` + text + `"` }},
+	}
+	for _, c := range commands {
+		t.Run(c.name+"/footer", func(t *testing.T) {
+			cmd := c.command(coAuthoredFooter)
+			if d := guard.DecideFooters(payload(t, "Bash", cmd, "/tmp")); !d.Deny {
+				t.Fatalf("command %q: want deny, got allow", cmd)
+			}
+		})
+		t.Run(c.name+"/clean", func(t *testing.T) {
+			cmd := c.command("")
+			if d := guard.DecideFooters(payload(t, "Bash", cmd, "/tmp")); d.Deny {
+				t.Fatalf("command %q: want allow, got deny on %s", cmd, d.Pattern)
+			}
+		})
+	}
+}
+
+func TestDecideFootersReadsFileNamesContainingSpaces(t *testing.T) {
+	cases := []struct {
+		command string
+		file    string
+	}{
+		{`git commit -F "release notes.md"`, "release notes.md"},
+		{`git commit -F release\ notes.md`, "release notes.md"},
+		{`gh pr create --title t --body-file 'pr body.md'`, "pr body.md"},
+		{`gh release create v1 --notes-file "notes file.md"`, "notes file.md"},
+		{`gh api repos/o/r/pulls/1/comments -F 'body=@my reply.md'`, "my reply.md"},
+		{`git -C sub commit -F msg.txt`, filepath.Join("sub", "msg.txt")},
+	}
+	for _, c := range cases {
+		t.Run(c.command+"/footer", func(t *testing.T) {
+			dir := writeFile(t, c.file, "subject"+coAuthoredFooter)
+			if d := guard.DecideFooters(payload(t, "Bash", c.command, dir)); !d.Deny {
+				t.Fatalf("command %q: want deny, got allow", c.command)
+			}
+		})
+		t.Run(c.command+"/clean", func(t *testing.T) {
+			dir := writeFile(t, c.file, "subject\n\nbody\n")
+			if d := guard.DecideFooters(payload(t, "Bash", c.command, dir)); d.Deny {
+				t.Fatalf("command %q: want allow, got deny on %s", c.command, d.Pattern)
+			}
+		})
+	}
+}
+
+func TestDecideFootersJudgesUnparseableCommandOnItsText(t *testing.T) {
+	cases := []struct {
+		command string
+		deny    bool
+	}{
+		{"git commit -m \"x" + coAuthoredFooter + "\" && (", true},
+		{"git commit -m \"clean message\" && (", false},
+		{"echo \"x" + coAuthoredFooter + "\" && (", false},
+	}
+	for _, c := range cases {
+		t.Run(c.command, func(t *testing.T) {
+			if _, err := syntax.NewParser(syntax.Variant(syntax.LangBash)).Parse(strings.NewReader(c.command), ""); err == nil {
+				t.Fatalf("command %q parses; the case needs a command the parser rejects", c.command)
+			}
+			if d := guard.DecideFooters(payload(t, "Bash", c.command, "/tmp")); d.Deny != c.deny {
+				t.Fatalf("command %q: want deny=%v, got deny=%v", c.command, c.deny, d.Deny)
+			}
+		})
+	}
+}
+
+func TestDecideFootersAllowsNonPublishingGitWithGlobalOptions(t *testing.T) {
+	cases := []string{
+		`git -C repo log --grep "x` + coAuthoredFooter + `"`,
+		`git -C repo tag v1 && echo "x` + coAuthoredFooter + `"`,
+	}
+	for _, cmd := range cases {
+		t.Run(cmd, func(t *testing.T) {
+			if d := guard.DecideFooters(payload(t, "Bash", cmd, "/tmp")); d.Deny {
+				t.Fatalf("command %q: want allow, got deny on %s", cmd, d.Pattern)
+			}
+		})
+	}
+}
+
+// writeFile writes content to rel under a fresh temp dir and returns the dir.
+func writeFile(t *testing.T, rel, content string) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, rel)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write %s: %v", rel, err)
+	}
+	return dir
 }

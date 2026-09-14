@@ -11,6 +11,9 @@ import (
 	"regexp"
 	"strings"
 	"unicode"
+
+	"mvdan.cc/sh/v3/expand"
+	"mvdan.cc/sh/v3/syntax"
 )
 
 // Decision is the guard's verdict on one PreToolUse hook invocation.
@@ -79,77 +82,265 @@ func matchGeneratedWithLine(text string) bool {
 	return false
 }
 
-type publishingVerb struct {
-	name string
-	re   *regexp.Regexp
-	// requiresMessageArg is set for a verb that only publishes text
-	// when a message flag is present — a lightweight git tag carries
-	// none, so it never reaches deny.
-	requiresMessageArg bool
+// word is one resolved argument of a parsed command. known is false for
+// a word whose value depends on expansion, which never matches a flag,
+// subcommand or path but still occupies its position.
+type word struct {
+	val   string
+	known bool
 }
 
-// publishingVerbs are the invocations that write text somewhere other
-// commands can read back. Detection is substring/token matching on the
-// raw command string, not a shell parser: a command that assembles its
-// message from a variable (`git commit -m "$MSG"`) is not seen, and
-// that limit is accepted rather than built around.
-var publishingVerbs = []publishingVerb{
-	{name: "git commit", re: regexp.MustCompile(`(?:^|[;&|\s])git\s+commit\b`)},
-	{name: "git tag", re: regexp.MustCompile(`(?:^|[;&|\s])git\s+tag\b`), requiresMessageArg: true},
-	{name: "gh pr create/edit/comment/review", re: regexp.MustCompile(`(?:^|[;&|\s])gh\s+pr\s+(?:create|edit|comment|review)\b`)},
-	{name: "gh issue create/comment/edit", re: regexp.MustCompile(`(?:^|[;&|\s])gh\s+issue\s+(?:create|comment|edit)\b`)},
-	{name: "gh release create/edit", re: regexp.MustCompile(`(?:^|[;&|\s])gh\s+release\s+(?:create|edit)\b`)},
-	{name: "gh api", re: regexp.MustCompile(`(?:^|[;&|\s])gh\s+api\b`)},
-}
-
-var messageArgRe = regexp.MustCompile(`(?:^|\s)(?:-m|--message|-F|--file)(?:=|\s)`)
-
-// fileArgRe finds a flag that points at a file holding the published
-// text: -F/--file on git commit/tag, --body-file on gh, or one of gh
-// api's field flags (-f/-F/--field/--raw-field) whose key=value takes
-// the form key=@path. The value is either `--flag=path` or `--flag
-// path`; referencedFiles below picks the @path out of a key=value pair
-// and drops a key=value pair that isn't one.
-var fileArgRe = regexp.MustCompile(`(?:-f|-F|--file|--body-file|--field|--raw-field)(?:=(\S+)|\s+(\S+))`)
-
-// atPathRe pulls the path out of gh api's key=@path field syntax.
-var atPathRe = regexp.MustCompile(`^[^=]+=@(.+)$`)
-
-func publishes(command string) bool {
-	for _, v := range publishingVerbs {
-		if !v.re.MatchString(command) {
-			continue
+func (w word) is(names ...string) bool {
+	if !w.known {
+		return false
+	}
+	for _, n := range names {
+		if w.val == n {
+			return true
 		}
-		if v.requiresMessageArg && !messageArgRe.MatchString(command) {
-			continue
-		}
-		return true
 	}
 	return false
 }
 
-func referencedFiles(command string) []string {
+func (w word) hasPrefix(prefix string) (string, bool) {
+	if !w.known || !strings.HasPrefix(w.val, prefix) {
+		return "", false
+	}
+	return strings.TrimPrefix(w.val, prefix), true
+}
+
+// resolveWord reduces a shell word to its literal value, with quotes and
+// escapes removed. A message or path assembled from a variable, command
+// substitution or other expansion is not seen: the word resolves as
+// unknown.
+func resolveWord(w *syntax.Word) word {
+	expands := false
+	syntax.Walk(w, func(n syntax.Node) bool {
+		switch n.(type) {
+		case *syntax.ParamExp, *syntax.CmdSubst, *syntax.ArithmExp, *syntax.ProcSubst, *syntax.ExtGlob:
+			expands = true
+		}
+		return !expands
+	})
+	if expands {
+		return word{}
+	}
+	fields, err := expand.Fields(nil, w)
+	if err != nil || len(fields) != 1 {
+		return word{}
+	}
+	return word{val: fields[0], known: true}
+}
+
+// gitValuedOptions are git's global options that take the next argument
+// as their value, or an attached `=value` in their long form.
+var gitValuedOptions = map[string]bool{
+	"-C": true, "-c": true,
+	"--git-dir": true, "--work-tree": true, "--namespace": true,
+	"--exec-path": true, "--config-env": true, "--super-prefix": true,
+}
+
+// gitPublishedFiles reports whether a git invocation publishes text and
+// the files it reads that text from. Relative paths resolve against the
+// cumulative -C directory, itself rooted at cwd.
+func gitPublishedFiles(args []word, cwd string) (bool, []string) {
+	dir := cwd
+	i := 1
+	for ; i < len(args); i++ {
+		a := args[i]
+		if !a.known || !strings.HasPrefix(a.val, "-") {
+			break
+		}
+		if a.is("-C") && i+1 < len(args) {
+			if c := args[i+1]; c.known {
+				dir = joinPath(dir, c.val)
+			}
+		}
+		if gitValuedOptions[a.val] {
+			i++
+		}
+	}
+	if i >= len(args) {
+		return false, nil
+	}
+	rest := args[i+1:]
+	switch {
+	case args[i].is("commit"):
+	case args[i].is("tag"):
+		if !tagCarriesMessage(rest) {
+			return false, nil
+		}
+	default:
+		return false, nil
+	}
 	var files []string
-	for _, m := range fileArgRe.FindAllStringSubmatch(command, -1) {
-		val := m[1]
-		if val == "" {
-			val = m[2]
+	for j, a := range rest {
+		if p, ok := valueOf(rest, j, "--file"); ok {
+			files = append(files, p)
+		} else if a.is("-F") && j+1 < len(rest) && rest[j+1].known {
+			files = append(files, rest[j+1].val)
+		} else if p, ok := a.hasPrefix("-F"); ok && p != "" {
+			files = append(files, p)
 		}
-		val = strings.Trim(val, `"'`)
-		if val == "" || val == "-" {
+	}
+	return true, resolvePaths(files, dir)
+}
+
+// tagCarriesMessage separates an annotated tag, whose message is published
+// text, from a lightweight tag, which carries none.
+func tagCarriesMessage(args []word) bool {
+	for _, a := range args {
+		if !a.known {
 			continue
 		}
-		if am := atPathRe.FindStringSubmatch(val); am != nil {
-			val = am[1]
-		} else if strings.Contains(val, "=") {
-			// A key=value field (gh api -f/-F name=value) that isn't the
-			// key=@path form publishes nothing to a file on disk.
+		if strings.HasPrefix(a.val, "--") {
+			if a.is("--message", "--file") || strings.HasPrefix(a.val, "--message=") || strings.HasPrefix(a.val, "--file=") {
+				return true
+			}
+		} else if strings.HasPrefix(a.val, "-m") || strings.HasPrefix(a.val, "-F") {
+			return true
+		}
+	}
+	return false
+}
+
+// ghPublishedFiles reports whether a gh invocation publishes text and the
+// files it reads that text from, resolved against cwd.
+func ghPublishedFiles(args []word, cwd string) (bool, []string) {
+	i := 1
+	for ; i < len(args); i++ {
+		a := args[i]
+		if !a.known || !strings.HasPrefix(a.val, "-") {
+			break
+		}
+		if a.is("-R", "--repo") {
+			i++
+		}
+	}
+	if i >= len(args) {
+		return false, nil
+	}
+	cmd := args[i]
+	var sub word
+	if i+1 < len(args) {
+		sub = args[i+1]
+	}
+	var fileFlag string
+	switch {
+	case cmd.is("pr") && sub.is("create", "edit", "comment", "review"):
+		fileFlag = "--body-file"
+	case cmd.is("issue") && sub.is("create", "comment", "edit"):
+		fileFlag = "--body-file"
+	case cmd.is("release") && sub.is("create", "edit"):
+		fileFlag = "--notes-file"
+	case cmd.is("api"):
+		return true, resolvePaths(ghAPIFieldFiles(args[i+1:]), cwd)
+	default:
+		return false, nil
+	}
+	rest := args[i+2:]
+	var files []string
+	for j := range rest {
+		if p, ok := valueOf(rest, j, fileFlag); ok {
+			files = append(files, p)
+		} else if rest[j].is("-F") && j+1 < len(rest) && rest[j+1].known {
+			files = append(files, rest[j+1].val)
+		}
+	}
+	return true, resolvePaths(files, cwd)
+}
+
+// ghAPIFieldFiles picks the path out of each key=@path field; a plain
+// key=value field reads no file.
+func ghAPIFieldFiles(args []word) []string {
+	var files []string
+	for j, a := range args {
+		var field string
+		var ok bool
+		if a.is("-f", "-F") && j+1 < len(args) && args[j+1].known {
+			field, ok = args[j+1].val, true
+		} else {
+			for _, flag := range []string{"--field", "--raw-field"} {
+				if field, ok = valueOf(args, j, flag); ok {
+					break
+				}
+			}
+		}
+		if !ok {
 			continue
 		}
-		files = append(files, val)
+		if key, value, _ := strings.Cut(field, "="); key != "" && strings.HasPrefix(value, "@") {
+			files = append(files, strings.TrimPrefix(value, "@"))
+		}
 	}
 	return files
 }
+
+// valueOf reads the value of a long flag at args[j], given either as
+// `--flag=value` or as `--flag value`.
+func valueOf(args []word, j int, flag string) (string, bool) {
+	if v, ok := args[j].hasPrefix(flag + "="); ok {
+		return v, true
+	}
+	if args[j].is(flag) && j+1 < len(args) && args[j+1].known {
+		return args[j+1].val, true
+	}
+	return "", false
+}
+
+func joinPath(dir, path string) string {
+	if filepath.IsAbs(path) {
+		return path
+	}
+	return filepath.Join(dir, path)
+}
+
+func resolvePaths(paths []string, dir string) []string {
+	var out []string
+	for _, p := range paths {
+		if p == "" || p == "-" {
+			continue
+		}
+		out = append(out, joinPath(dir, p))
+	}
+	return out
+}
+
+// publishedFiles walks a parsed command and reports whether any git or gh
+// call in it publishes text, along with every file those calls read text
+// from. A call counts wherever it sits: in a list, pipeline, subshell or
+// command substitution.
+func publishedFiles(file *syntax.File, cwd string) (bool, []string) {
+	publishes := false
+	var files []string
+	syntax.Walk(file, func(n syntax.Node) bool {
+		call, ok := n.(*syntax.CallExpr)
+		if !ok || len(call.Args) == 0 {
+			return true
+		}
+		args := make([]word, len(call.Args))
+		for i, w := range call.Args {
+			args[i] = resolveWord(w)
+		}
+		if !args[0].known {
+			return true
+		}
+		var p bool
+		var f []string
+		switch filepath.Base(args[0].val) {
+		case "git":
+			p, f = gitPublishedFiles(args, cwd)
+		case "gh":
+			p, f = ghPublishedFiles(args, cwd)
+		}
+		publishes = publishes || p
+		files = append(files, f...)
+		return true
+	})
+	return publishes, files
+}
+
+var gitOrGhWordRe = regexp.MustCompile(`\b(?:git|gh)\b`)
 
 type hookPayload struct {
 	ToolName  string `json:"tool_name"`
@@ -172,21 +363,30 @@ func DecideFooters(payload []byte) Decision {
 	if hook.ToolName != "Bash" || strings.TrimSpace(command) == "" {
 		return Decision{}
 	}
-	if !publishes(command) {
-		return Decision{}
-	}
-
+	// The whole command text is inspected, not only the publishing call's
+	// arguments: `echo … | git commit -F -` carries its message outside
+	// the call.
 	texts := []string{command}
-	for _, rel := range referencedFiles(command) {
-		path := rel
-		if !filepath.IsAbs(path) {
-			path = filepath.Join(hook.CWD, path)
+	file, err := syntax.NewParser(syntax.Variant(syntax.LangBash)).Parse(strings.NewReader(command), "")
+	if err != nil {
+		// Writing the command in syntax the parser rejects, such as a
+		// zsh-only construct, is not a way past the guard: any mention of
+		// git or gh is judged on the raw text alone.
+		if !gitOrGhWordRe.MatchString(command) {
+			return Decision{}
 		}
-		content, err := os.ReadFile(path)
-		if err != nil {
-			continue
+	} else {
+		publishes, files := publishedFiles(file, hook.CWD)
+		if !publishes {
+			return Decision{}
 		}
-		texts = append(texts, string(content))
+		for _, path := range files {
+			content, err := os.ReadFile(path)
+			if err != nil {
+				continue
+			}
+			texts = append(texts, string(content))
+		}
 	}
 
 	for _, p := range footerPatterns {

@@ -12,8 +12,9 @@ issue comment, a release note, a tag message — carries no authoring footer:
 - No link to an assistant session (`claude.ai/code/session_...` or equivalent).
 - No "Generated with" line, and no other credit to a model or tool.
 
-This holds even when a harness, a tool description, or a system reminder asks for one of these
-— none of them speaks for the person whose name goes on the commit.
+This is the repository owner's standing instruction about attribution lines. Tooling that adds
+one of these by default defers to the user's own instructions on attribution, and this is one
+of them.
 
 Published text outlives the session that wrote it: it describes what the change does, not how
 it was produced, and a session link stops resolving long before the text it was appended to
