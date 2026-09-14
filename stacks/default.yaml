@@ -37,6 +37,7 @@ mcp:
 instructions:
   - comments-describe-code-not-its-history
   - git
+  - instructions-are-rendered-not-edited
   - plan-approval
 hooks:
   - handoff-claude-session-start

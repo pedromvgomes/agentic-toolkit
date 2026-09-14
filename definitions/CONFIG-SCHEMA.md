@@ -4,16 +4,16 @@
 
 A consumer repo opts into the toolkit by committing two files at the repo root:
 
-- `.agentic-toolkit.yaml` — entry-point **stack manifest**: declares which other stacks to extend and which definitions to layer on top. Hand-edited.
+- `.agentic-toolkit.yaml` — the **entry manifest**: composes shared stacks and finds the rest by convention. Hand-edited.
 - `.agentic-toolkit.lock.yaml` — pinned record of what the resolver actually fetched. Resolver-written; commit it.
 
 A repo that wants its own code review declares one more, optional file: `.agentic-toolkit/code-review/manifest.yaml`.
 
 ## Stack manifest
 
-**Path:** `.agentic-toolkit.yaml` at the repo root, or any `stacks/<name>.yaml` file in any repo published for sharing.
+**Path:** any `stacks/<name>.yaml` file in a repo published for sharing.
 
-The same shape is used everywhere: the consumer's entry-point file is just a stack with no extra ceremony. There is no "preset" / "consumer config" distinction.
+A stack layers other stacks (`extends:`) and lists its own definitions by name per category. It is a different, related shape from the entry manifest below — see ADR 0016.
 
 ### Fields
 
@@ -30,12 +30,27 @@ The same shape is used everywhere: the consumer's entry-point file is just a sta
 | `hooks` | `[]EntryRef` | no |  |
 | `mcp` | `[]EntryRef` | no |  |
 | `settings` | `[]EntryRef` | no |  |
+
+## Entry manifest
+
+**Path:** `.agentic-toolkit.yaml` at the repo root, or another file named by `--config`/`--stack`.
+
+The entry manifest is its own type, not a Stack (see ADR 0016). Its category fields mean "scan `root/<category>/` by convention"; `root:`, `context:`, `memory:` and `platforms:` are native to the entry manifest alone and do not exist on a Stack reached through `extends:` or `stacks:`. Composing shared content into an entry manifest uses `stacks:`, distinct from a Stack's own `extends:`.
+
+### Fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `description` | `string` | no | One-line summary of this repo's entry manifest. |
+| `root` | `string` | no | Convention root for locally-scanned definitions, relative to the repo root. Defaults to "agentic". |
+| `context` | `string` | no | Path to one file of free-form repo description, rendered first as an instruction. |
+| `stacks` | `[]ExtendsRef` | no | Shared stacks to compose into this entry manifest. Applied in declared order; later entries override earlier ones. Each entry is an external URL (with .git/ boundary) or a local path (./...). |
 | `platforms` | `[]Platform` | no | Rendering targets. Omit to render Claude Code only — today's behavior, unchanged. List additional platforms (e.g. codex) to also render their on-disk layout from the same definitions; each named platform must have a render adapter. |
-| `memory` | `MemoryConfig` | no | Repo-resident memory store settings. Honoured only in the entry manifest — the store's location is a fact about the consumer repo, not about a shareable stack, so a stack reached through extends: that sets it gets a diagnostic instead of silently relocating the consumer's committed notes. |
+| `memory` | `MemoryConfig` | no | Repo-resident memory store settings. The store's location is a fact about the consumer repo, not about a shareable stack. |
 
 ### `memory`
 
-Settings for the repo-resident memory store (`agtk memory ...`). Honoured **only in the entry manifest**: the store's location is a fact about the consumer repo, not about a shareable stack, so a stack reached through `extends:` that sets it is ignored with a diagnostic rather than silently relocating the consumer's committed notes.
+Settings for the repo-resident memory store (`agtk memory ...`): where the store lives and which agent manages it.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -194,15 +209,17 @@ The `signals` vocabulary is closed and ships with the binary; `agtk code-review 
 version: 1
 
 reviewers:
-  unified:     {provider: claudecode, model: sonnet, prompt: builtin:unified}
-  correctness: {provider: claudecode, model: sonnet, prompt: builtin:correctness}
-  security:    {provider: claudecode, model: opus,   prompt: builtin:security}
-  performance: {provider: claudecode, model: sonnet, prompt: builtin:performance}
+  unified:       {provider: claudecode, model: sonnet, prompt: builtin:unified}
+  unified-extra: {provider: claudecode, model: opus,   prompt: builtin:unified}
+  correctness:   {provider: claudecode, model: sonnet, prompt: builtin:correctness}
+  security:      {provider: claudecode, model: opus,   prompt: builtin:security}
+  performance:   {provider: claudecode, model: sonnet, prompt: builtin:performance}
 
-  unified-codex:     {provider: codex, model: sol,   prompt: builtin:unified}
-  correctness-codex: {provider: codex, model: sol,   prompt: builtin:correctness}
-  security-codex:    {provider: codex, model: astra, prompt: builtin:security}
-  performance-codex: {provider: codex, model: sol,   prompt: builtin:performance}
+  unified-codex:       {provider: codex, model: sol,   prompt: builtin:unified}
+  unified-extra-codex: {provider: codex, model: astra, prompt: builtin:unified}
+  correctness-codex:   {provider: codex, model: sol,   prompt: builtin:correctness}
+  security-codex:      {provider: codex, model: astra, prompt: builtin:security}
+  performance-codex:   {provider: codex, model: sol,   prompt: builtin:performance}
 
 judge:     {provider: claudecode, model: opus,   prompt: builtin:judge}
 validator: {provider: claudecode, model: sonnet, prompt: builtin:validator}
@@ -214,6 +231,11 @@ panels:
     description: One Claude reviewer over all three axes. The pre-push pass, where being fast is what it is worth.
     reviewers: [unified]
     fallback: quick-codex
+  focused:
+    description: One strong reviewer over all three axes, run twice. A small change carrying a risky signal.
+    reviewers: [unified-extra]
+    quorum: 2
+    fallback: focused-codex
   standard:
     description: Correctness and security on Claude, each with its own scope.
     reviewers: [correctness, security]
@@ -230,6 +252,13 @@ panels:
     judge:     {provider: codex, model: astra, prompt: builtin:judge}
     validator: {provider: codex, model: sol,   prompt: builtin:validator}
     fallback: quick
+  focused-codex:
+    description: One strong codex reviewer over all three axes, run twice. The second model's read of a small change carrying a risky signal.
+    reviewers: [unified-extra-codex]
+    quorum: 2
+    judge:     {provider: codex, model: astra, prompt: builtin:judge}
+    validator: {provider: codex, model: sol,   prompt: builtin:validator}
+    fallback: focused
   standard-codex:
     description: Correctness and security on codex, each with its own scope. The second model's first look at the change.
     reviewers: [correctness-codex, security-codex]
@@ -246,48 +275,63 @@ panels:
 
 defaults:
   worktree: quick
-  pr:       standard-codex
+  pr:       quick-codex
 
-# `standard` is the ceiling a rule can reach on a pull request. The branch has
-# normally been through the local loop by the time it is opened, so a second
-# every-axis-twice reading buys a re-read of code that was read deeply an hour
-# ago. `deep-codex` stays a panel and stays `deep`'s fallback; reaching it on a
-# pull request is `--panel deep-codex`, which is a person deciding this change
-# is the exception.
-#
-# Nothing verifies that the local loop ran. It posts nothing, so the pull
-# request carries no record of it, and approval reads only what is posted here
-# — while the author, whose machine that loop runs on, is the party a review
-# exists not to trust. An author who skips it gets the shallower reading on a
-# change that would have raised to `deep` locally, and no one is told. That is
-# the price of not paying for the deepest panel twice on every branch, and it
-# is a trade rather than an oversight: raise it back by naming `deep-codex` in
-# a pull-request rule, or reach it per change with `--panel`.
-#
-# So the worktree rules and the pull-request rules are not symmetric, and
-# `context` is what keeps each on its own side. A rule carries one combinator,
-# so the context guard makes each rule an `all:` — which is why one criterion
-# gets one rule rather than several being grouped.
-#
-# The rules raising to `standard-codex` cannot raise the panel while that is
-# also the pull-request default. They still fire, and `explain` lists them. They
-# are kept so lowering the default does not silently drop a criterion.
+# Every worktree rule below has a pr twin carrying the same conditions and
+# naming the codex twin of whatever panel the worktree rule names, so a pull
+# request is decided the same way local review is and read on the roster that
+# reviews it. `context` is what tells the twins apart: a rule carries one
+# combinator, so the context guard makes each of these an `all:` — which is
+# why one criterion gets one rule per context rather than the two being
+# grouped.
 escalate:
   # Mistakes here are exploitable, or land on somebody who is not in the room,
-  # or are indistinguishable from correct until production. Worktree only: this
-  # is the reading that happens before anyone else sees the change, which is the
-  # point at which looking harder is still cheaper than being wrong.
+  # or are indistinguishable from correct until production. The signal alone
+  # guarantees a strong reviewer reads the change twice, even at its smallest;
+  # `changed_lines` decides how much further the reading goes from there.
+  - to: focused
+    all:
+      - signals: {in: [auth, crypto, concurrency, sensitive-data, fix-revert]}
+      - changed_lines: {lt: 20}
+      - context: {in: [worktree]}
+  - to: focused-codex
+    all:
+      - signals: {in: [auth, crypto, concurrency, sensitive-data, fix-revert]}
+      - changed_lines: {lt: 20}
+      - context: {in: [pr]}
+  - to: standard
+    all:
+      - signals: {in: [auth, crypto, concurrency, sensitive-data, fix-revert]}
+      - changed_lines: {gte: 20}
+      - changed_lines: {lt: 300}
+      - context: {in: [worktree]}
+  - to: standard-codex
+    all:
+      - signals: {in: [auth, crypto, concurrency, sensitive-data, fix-revert]}
+      - changed_lines: {gte: 20}
+      - changed_lines: {lt: 300}
+      - context: {in: [pr]}
   - to: deep
     all:
       - signals: {in: [auth, crypto, concurrency, sensitive-data, fix-revert]}
+      - changed_lines: {gte: 300}
       - context: {in: [worktree]}
+  - to: deep-codex
+    all:
+      - signals: {in: [auth, crypto, concurrency, sensitive-data, fix-revert]}
+      - changed_lines: {gte: 300}
+      - context: {in: [pr]}
 
   # Widely used code: the count separates a one-line change nobody depends on
-  # from a one-line change everybody does. Worktree only, for the reason above.
+  # from a one-line change everybody does.
   - to: deep
     all:
       - referencing_files: {gte: 20}
       - context: {in: [worktree]}
+  - to: deep-codex
+    all:
+      - referencing_files: {gte: 20}
+      - context: {in: [pr]}
 
   # Irreversible or wide, but the risk is not in the diff: a migration's cost is
   # the table it locks, and a pipeline's is what it can reach. The security

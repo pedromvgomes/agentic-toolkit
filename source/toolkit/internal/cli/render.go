@@ -12,7 +12,6 @@ import (
 	"github.com/pedromvgomes/agentic-toolkit/internal/definitions"
 	"github.com/pedromvgomes/agentic-toolkit/internal/resolver"
 	"github.com/pedromvgomes/agentic-toolkit/internal/sourcestore"
-	"github.com/pedromvgomes/agentic-toolkit/internal/stack"
 )
 
 func newRenderCmd(env *Env) *cobra.Command {
@@ -27,7 +26,7 @@ func newRenderCmd(env *Env) *cobra.Command {
 		Short: "Render the resolved plan to disk under .claude/",
 		Long: "Reads " + ConfigFileName + " and " + LockFileName + ", resolves the plan\n" +
 			"against the cache (frozen-lockfile mode), and writes each platform\n" +
-			"named in the stack's platforms: (Claude Code only, when omitted) its\n" +
+			"named in the manifest's platforms: (Claude Code only, when omitted) its\n" +
 			"expected layout under the chosen scope:\n" +
 			"  - project (default): <workdir>/.claude/ + <workdir>/CLAUDE.md, and\n" +
 			"    (when codex is opted in) <workdir>/.agents/ + <workdir>/.codex/\n" +
@@ -56,7 +55,7 @@ func runRender(env *Env, cacheRoot, scopeFlag string, dryRun, force bool) error 
 	if err != nil {
 		return err
 	}
-	st, entryFS, entryName, err := loadStack(env)
+	target, err := loadResolveInput(env)
 	if err != nil {
 		return err
 	}
@@ -68,23 +67,23 @@ func runRender(env *Env, cacheRoot, scopeFlag string, dryRun, force bool) error 
 	if err != nil {
 		return err
 	}
-	plan, err := resolver.Resolve(st, entryFS, entryName, sourcestore.NewFrozenProvider(cache, lock))
+	plan, err := target.resolve(sourcestore.NewFrozenProvider(cache, lock))
 	if err != nil {
 		return fmt.Errorf("resolve: %w", err)
 	}
 
-	return renderPlatforms(st, plan, env, scope, dryRun, force)
+	return renderPlatforms(plan, env, scope, dryRun, force)
 }
 
-// renderPlatforms dispatches plan to each of st.EffectivePlatforms()'s
-// adapters, joining every failure the way each adapter already joins its
-// own internal ones. A platform with no adapter here is a clear error,
+// renderPlatforms dispatches plan to the adapter of each platform the entry
+// manifest names, joining every failure the way each adapter already joins
+// its own internal ones. A platform with no adapter here is a clear error,
 // not a silent no-op — it may be a perfectly valid narrowing value on a
 // definition's own platforms: allowlist, just not one this render dispatch
 // recognizes as a target.
-func renderPlatforms(st *stack.Stack, plan *resolver.Plan, env *Env, scope claude.Scope, dryRun, force bool) error {
+func renderPlatforms(plan *resolver.Plan, env *Env, scope claude.Scope, dryRun, force bool) error {
 	var errs []error
-	for _, p := range st.EffectivePlatforms() {
+	for _, p := range plan.EffectivePlatforms() {
 		plan := narrowToPlatform(plan, p)
 		switch p {
 		case definitions.PlatformClaude:

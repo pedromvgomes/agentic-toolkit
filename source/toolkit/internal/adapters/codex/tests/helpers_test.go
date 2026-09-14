@@ -71,6 +71,57 @@ func pdInstruction(name, description, body, stackName string) resolver.PlannedDe
 	}
 }
 
+// pdScannedInstruction builds a PlannedDefinition for an instruction found
+// by convention under a consumer's own root rather than named by a stack:
+// Scanned is set, StackName is empty, and EntryPath carries the filename the
+// scan found it under, which is what decides its render position among other
+// scanned instructions.
+func pdScannedInstruction(name, description, body, entryPath string) resolver.PlannedDefinition {
+	i := &definitions.Instruction{
+		Common: definitions.Common{Name: name, Description: description},
+		Body:   body,
+	}
+	return resolver.PlannedDefinition{
+		Category:   definitions.CategoryInstruction,
+		Name:       name,
+		Definition: i,
+		Scanned:    true,
+		EntryPath:  entryPath,
+	}
+}
+
+// pdStackResolvedInstruction builds a PlannedDefinition for an instruction a
+// stack resolved on its own (`--stack`) declared: the stack is the entry
+// point, so StackName is empty like a scanned definition's, and EntryPath is
+// populated like every resolved definition's — but nothing was scanned.
+func pdStackResolvedInstruction(name, description, body, entryPath string) resolver.PlannedDefinition {
+	i := &definitions.Instruction{
+		Common: definitions.Common{Name: name, Description: description},
+		Body:   body,
+	}
+	return resolver.PlannedDefinition{
+		Category:   definitions.CategoryInstruction,
+		Name:       name,
+		Definition: i,
+		EntryPath:  entryPath,
+	}
+}
+
+// pdContextInstruction builds a PlannedDefinition for the instruction the
+// entry manifest's `context:` file produces.
+func pdContextInstruction(body string) resolver.PlannedDefinition {
+	i := &definitions.Instruction{
+		Common: definitions.Common{Name: "context"},
+		Body:   body,
+	}
+	return resolver.PlannedDefinition{
+		Category:   definitions.CategoryInstruction,
+		Name:       "context",
+		Definition: i,
+		IsContext:  true,
+	}
+}
+
 // pdAgent builds a PlannedDefinition for a subagent. ext is nil when the
 // test doesn't need any Codex-specific override.
 func pdAgent(name, description, body, model, stackName string, ext *definitions.CodexAgentExt) resolver.PlannedDefinition {

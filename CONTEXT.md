@@ -18,17 +18,29 @@ _Avoid_: type, group
 
 **Stack**:
 A single YAML manifest listing **Definition** entries per **Category**, optionally layering
-other stacks under it via `extends:`. Both a shareable stack and a consumer's own
-`.agentic-toolkit.yaml` are stacks; there is no separate "preset" or "consumer config" concept.
+other stacks under it via `extends:`. Shareable: published under `stacks/*.yaml`, pulled in by
+name or URL from another **Stack** or from an **Entry manifest**'s `stacks:` field. Distinct
+from an **Entry manifest** since ADR 0016 — nothing composes *into* a Stack the way `stacks:`
+composes shared content into an Entry manifest, and a Stack has none of the Entry manifest's
+own fields (`root:`-convention scanning, `context:`, `memory:`, `platforms:`).
 _Avoid_: preset, profile, consumer config
 
 **Entry manifest**:
-The **Stack** that a given `agtk` invocation starts from — the consumer's own file, or the
-one named by `--config`/`--stack`. Distinguished from stacks reached through `extends:`,
-because some settings are honoured only here. The file half of the **Toolkit namespace**:
-`.agentic-toolkit.yaml` in the working directory, a sibling of `.agentic-toolkit/` rather than
-something inside it, unless `--config`/`--stack` points the invocation at a file elsewhere.
-_Avoid_: root config, top-level stack
+The document naming a **Consumer**'s own content and composing shared content in — its own
+type, not a **Stack** (ADR 0016 reverses an earlier decision that treated them as the same
+type). The file half of the **Toolkit namespace**: `.agentic-toolkit.yaml` in the working
+directory, a sibling of `.agentic-toolkit/` rather than something inside it, unless
+`--config`/`--stack` points the invocation at a file elsewhere.
+
+Its own `root:` (default `"agentic"`) names a directory `agtk` scans by fixed per-**Category**
+convention (`root/skills/`, `root/instructions/`, ...) for **Definition**s the consumer doesn't
+list by name; an absent per-category subdirectory just means none, not an error. `context:`
+names one optional file — read raw, rendered first, no **Category** shape of its own. `memory:`
+and `platforms:` are honoured only here, as native fields, never on a **Stack**. `stacks:`
+composes shared **Stack** content in, the way `extends:` composes one Stack into another —
+distinct fields on distinct types, because nothing composes *into* an Entry manifest the way
+`extends:`/`stacks:` compose into whatever names them.
+_Avoid_: root config, top-level stack, consumer config, local (as a field name)
 
 **Consumer**:
 The repo that `agtk` renders into. Owns an **Entry manifest**, a lockfile, and its own
@@ -53,10 +65,10 @@ something missing from it. Which of the two a committed file belongs in turns on
   against. Absent, that part runs on what is built into `agtk`, and the rest of `agtk` carries
   on; absent the **Entry manifest**, there is nothing to carry on with.
 
-Committed *content* is outside the namespace, at a path a **Stack** names rather than one
-`agtk` fixes, so a **Consumer** places it: a **Memory store** is what agents wrote rather
-than how `agtk` behaves, and a local **Definition** under `root:` is what is being
-distributed. Where `agtk`
+Committed *content* is outside the namespace, at a path a **Stack** or an **Entry manifest**
+names rather than one `agtk` fixes, so a **Consumer** places it: a **Memory store** is what
+agents wrote rather than how `agtk` behaves, and a locally-scanned **Definition** under an
+Entry manifest's `root:` is what is being distributed. Where `agtk`
 supplies a default for such a path, the default is `agtk`'s own and is bound by the same rule
 as every other path `agtk` fixes. A **Render**ed tree is outside the namespace and is no
 place to commit into at all: those paths belong to a **Platform**, and the ignore rule that
@@ -601,8 +613,10 @@ field. Resolution: **Stale** is mechanical and derived from blob hashes; **Confi
 (`suspect`) is a curator's judgment. `agtk memory audit` reports the first and never writes
 the second.
 
-**"Root"** — `root:` in a **Stack** is the convention root for bare-name **Definition** lookups;
-`memory.root` is the **Memory store** location. Unrelated; always qualify which.
+**"Root"** — three unrelated meanings, always qualify which: `root:` in a **Stack** is the
+convention root for bare-name **Definition** lookups; `root:` in an **Entry manifest** is the
+convention root for locally-scanned **Definition**s (default `"agentic"`); `memory.root` is the
+**Memory store** location.
 
 **"Agent"** — a **Definition** **Category**, and also the thing that runs one. `memory.agent`
 is neither: it names which coding-agent CLI `agtk` drives when it **Curate**s. Say "provider"

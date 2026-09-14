@@ -29,9 +29,9 @@ func renderWithMemoryRoot(t *testing.T, root string) []string {
 			"definitions/agents/memory-explorer", "default",
 			makeFS(map[string]string{"definitions/agents/memory-explorer/AGENT.md": "body\n"})),
 	}, "default")
-	plan.Stack = &stack.Stack{}
+	plan.EntryManifest = &stack.EntryManifest{}
 	if root != "" {
-		plan.Stack.Memory = &stack.MemoryConfig{Root: root}
+		plan.EntryManifest.Memory = &stack.MemoryConfig{Root: root}
 	}
 
 	if err := claude.Render(plan, claude.Options{
@@ -131,7 +131,7 @@ func TestADenyOnlyStackGainsNoAllowList(t *testing.T) {
 			"permissions": map[string]any{"deny": []any{"Bash(rm -rf:*)"}},
 		}, "default"),
 	}, "default")
-	plan.Stack = &stack.Stack{}
+	plan.EntryManifest = &stack.EntryManifest{}
 
 	if err := claude.Render(plan, claude.Options{
 		Scope: claude.ScopeProject, ScopeRoot: scopeRoot, ProjectRoot: tmp,
@@ -158,7 +158,7 @@ func TestAMalformedAllowListIsRefused(t *testing.T) {
 			"permissions": map[string]any{"allow": "Bash(ls)"},
 		}, "default"),
 	}, "default")
-	plan.Stack = &stack.Stack{Memory: &stack.MemoryConfig{Root: "docs/memory"}}
+	plan.EntryManifest = &stack.EntryManifest{Memory: &stack.MemoryConfig{Root: "docs/memory"}}
 
 	err := claude.Render(plan, claude.Options{
 		Scope: claude.ScopeProject, ScopeRoot: scopeRoot, ProjectRoot: tmp,
@@ -191,7 +191,7 @@ func TestNoPermissionsKeyMeansNoMemoryGrants(t *testing.T) {
 	plan := makePlan([]resolver.PlannedDefinition{
 		pdSetting("model", "pick a model", map[string]any{"model": "opus"}, "default"),
 	}, "default")
-	plan.Stack = &stack.Stack{}
+	plan.EntryManifest = &stack.EntryManifest{}
 
 	if err := claude.Render(plan, claude.Options{
 		Scope: claude.ScopeProject, ScopeRoot: scopeRoot, ProjectRoot: tmp,
@@ -221,7 +221,7 @@ func TestAStackWithoutMemoryToolingGetsNoStoreGrants(t *testing.T) {
 			"permissions": map[string]any{"allow": []any{"Bash(cargo test)"}},
 		}, "default"),
 	}, "default")
-	plan.Stack = &stack.Stack{}
+	plan.EntryManifest = &stack.EntryManifest{}
 
 	if err := claude.Render(plan, claude.Options{
 		Scope: claude.ScopeProject, ScopeRoot: scopeRoot, ProjectRoot: tmp,
@@ -248,7 +248,7 @@ func TestAConfiguredMemoryBlockIsAdoptionEnough(t *testing.T) {
 			"permissions": map[string]any{"allow": []any{"Bash(cargo test)"}},
 		}, "default"),
 	}, "default")
-	plan.Stack = &stack.Stack{Memory: &stack.MemoryConfig{Root: "docs/memory"}}
+	plan.EntryManifest = &stack.EntryManifest{Memory: &stack.MemoryConfig{Root: "docs/memory"}}
 
 	if err := claude.Render(plan, claude.Options{
 		Scope: claude.ScopeProject, ScopeRoot: scopeRoot, ProjectRoot: tmp,
@@ -275,7 +275,7 @@ func TestARootTheMemoryCommandsRefuseFailsTheRender(t *testing.T) {
 					"permissions": map[string]any{"allow": []any{"Bash(cargo test)"}},
 				}, "default"),
 			}, "default")
-			plan.Stack = &stack.Stack{Memory: &stack.MemoryConfig{Root: bad}}
+			plan.EntryManifest = &stack.EntryManifest{Memory: &stack.MemoryConfig{Root: bad}}
 
 			err := claude.Render(plan, claude.Options{
 				Scope: claude.ScopeProject, ScopeRoot: filepath.Join(tmp, ".claude"), ProjectRoot: tmp,
@@ -325,7 +325,7 @@ func makePlanWithMalformedAllow() *resolver.Plan {
 			"permissions": map[string]any{"allow": "Bash(ls)"},
 		}, "default"),
 	}, "default")
-	plan.Stack = &stack.Stack{}
+	plan.EntryManifest = &stack.EntryManifest{}
 	return plan
 }
 
@@ -342,7 +342,7 @@ func TestUserScopeGetsNoStoreGrants(t *testing.T) {
 			"permissions": map[string]any{"allow": []any{"Bash(cargo test)"}},
 		}, "default"),
 	}, "default")
-	plan.Stack = &stack.Stack{Memory: &stack.MemoryConfig{Root: "docs/memory"}}
+	plan.EntryManifest = &stack.EntryManifest{Memory: &stack.MemoryConfig{Root: "docs/memory"}}
 
 	if err := claude.Render(plan, claude.Options{
 		Scope: claude.ScopeUser, ScopeRoot: scopeRoot,

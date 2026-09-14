@@ -99,6 +99,34 @@ func TestParseBytes_LegacyConfig_Rejected(t *testing.T) {
 	}
 }
 
+func TestParseBytes_PlatformsField_Rejected(t *testing.T) {
+	body := "platforms:\n  - codex\n"
+	_, err := stack.ParseBytes("t.yaml", []byte(body))
+	if err == nil {
+		t.Fatal("expected error for platforms in a stack")
+	}
+	if !stack.IsKind(err, stack.ErrRepoOnlyField) {
+		t.Errorf("error kind != repo_only_field: %v", err)
+	}
+	if !strings.Contains(err.Error(), "entry manifest") {
+		t.Errorf("error should point to the entry manifest: %v", err)
+	}
+}
+
+func TestParseBytes_MemoryField_Rejected(t *testing.T) {
+	body := "memory:\n  root: .memory\n"
+	_, err := stack.ParseBytes("t.yaml", []byte(body))
+	if err == nil {
+		t.Fatal("expected error for memory in a stack")
+	}
+	if !stack.IsKind(err, stack.ErrRepoOnlyField) {
+		t.Errorf("error kind != repo_only_field: %v", err)
+	}
+	if !strings.Contains(err.Error(), "entry manifest") {
+		t.Errorf("error should point to the entry manifest: %v", err)
+	}
+}
+
 func TestParseBytes_BareNameInExtends_Rejected(t *testing.T) {
 	body := "extends:\n  - default\n"
 	_, err := stack.ParseBytes("t.yaml", []byte(body))
@@ -261,26 +289,6 @@ func TestEntriesFor(t *testing.T) {
 	}
 	if len(s.EntriesFor(definitions.CategoryAgent)) != 0 {
 		t.Errorf("EntriesFor(agent) should be empty")
-	}
-}
-
-// TestParse_MemoryConfig decodes the memory block; MemoryRoot reports "" when
-// it is absent so callers apply the default without a nil check.
-func TestParse_MemoryConfig(t *testing.T) {
-	with, err := stack.ParseBytes("s.yaml", []byte("skills: []\nmemory:\n  root: docs/memory\n"))
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	if got := with.MemoryRoot(); got != "docs/memory" {
-		t.Errorf("MemoryRoot = %q, want docs/memory", got)
-	}
-
-	without, err := stack.ParseBytes("s.yaml", []byte("skills: []\n"))
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	if got := without.MemoryRoot(); got != "" {
-		t.Errorf("MemoryRoot = %q, want empty", got)
 	}
 }
 

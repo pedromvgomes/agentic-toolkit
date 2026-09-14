@@ -49,6 +49,64 @@ func TestSync_SourceFlag_RendersFromSourceIntoApplyDir(t *testing.T) {
 	}
 }
 
+// --stack renders exactly the named stack. The source tree's own convention
+// root belongs to its entry manifest, which --stack does not read, so nothing
+// under it reaches the apply dir.
+func TestSync_SourceStack_SkipsSourceConventionRoot(t *testing.T) {
+	source := t.TempDir()
+	if err := copyTree("testdata/primary", source); err != nil {
+		t.Fatalf("copy source tree: %v", err)
+	}
+	scanned := filepath.Join(source, "agentic", "instructions", "house-style.md")
+	if err := os.MkdirAll(filepath.Dir(scanned), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	body := "---\ndescription: An instruction scoped to the source repo itself.\n---\n\nOnly the source repo wants this.\n"
+	if err := os.WriteFile(scanned, []byte(body), 0o644); err != nil {
+		t.Fatalf("write instruction: %v", err)
+	}
+
+	apply := t.TempDir()
+	cache := t.TempDir()
+
+	_, stderr, err := runCLI(t, apply, "--source", source, "--stack", "default", "sync", "--cache", cache)
+	if err != nil {
+		t.Fatalf("sync --source --stack: %v\nstderr:\n%s", err, stderr)
+	}
+
+	// The named stack's own entry still renders.
+	if _, err := os.Stat(filepath.Join(apply, ".claude", "skills", "foo", "SKILL.md")); err != nil {
+		t.Errorf("expected the named stack's skill to render: %v", err)
+	}
+	if found := grepTree(t, apply, "Only the source repo wants this."); found != "" {
+		t.Errorf("convention-scanned instruction leaked into %s", found)
+	}
+}
+
+// grepTree returns the first file under root whose contents hold needle, or
+// "" when none does.
+func grepTree(t *testing.T, root, needle string) string {
+	t.Helper()
+	var hit string
+	err := filepath.Walk(root, func(p string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() || hit != "" {
+			return err
+		}
+		body, rerr := os.ReadFile(p) // #nosec G304 -- walks a test temp dir
+		if rerr != nil {
+			return rerr
+		}
+		if strings.Contains(string(body), needle) {
+			hit = p
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk %s: %v", root, err)
+	}
+	return hit
+}
+
 // --source and --config cannot be combined.
 func TestSource_ConflictsWithConfig(t *testing.T) {
 	dir := t.TempDir()

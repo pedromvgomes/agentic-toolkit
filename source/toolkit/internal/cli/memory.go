@@ -98,10 +98,10 @@ func memoryManifestPath(env *Env) string {
 // cache, no network and no lockfile.
 func memoryStore(env *Env) (*memory.Store, error) {
 	root := ""
-	st, err := stack.ParseFile(memoryManifestPath(env))
+	m, err := stack.ParseEntryManifestFile(memoryManifestPath(env))
 	switch {
 	case err == nil:
-		root = st.MemoryRoot()
+		root = m.MemoryRoot()
 	case errors.Is(err, fs.ErrNotExist):
 		// No manifest: the store still works, at its default location.
 	default:
@@ -891,7 +891,7 @@ func selfPath(env *Env) string {
 // memoryAgent reads `memory.agent` from the entry manifest, the same way and
 // from the same file memoryStore reads `memory.root`.
 func memoryAgent(env *Env) (string, error) {
-	st, err := stack.ParseFile(memoryManifestPath(env))
+	m, err := stack.ParseEntryManifestFile(memoryManifestPath(env))
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			// No manifest is the same state as a manifest naming no
@@ -902,7 +902,7 @@ func memoryAgent(env *Env) (string, error) {
 		}
 		return "", err
 	}
-	return st.MemoryAgent(), nil
+	return m.MemoryAgent(), nil
 }
 
 // ===== shared helpers =====

@@ -9,7 +9,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/pedromvgomes/agentic-toolkit/internal/lockfile"
-	"github.com/pedromvgomes/agentic-toolkit/internal/resolver"
 	"github.com/pedromvgomes/agentic-toolkit/internal/sourcestore"
 )
 
@@ -52,7 +51,7 @@ func runSync(env *Env, cacheRoot, scopeFlag string, dryRun, force bool) error {
 	if err != nil {
 		return err
 	}
-	st, entryFS, entryName, err := loadStack(env)
+	target, err := loadResolveInput(env)
 	if err != nil {
 		return err
 	}
@@ -70,7 +69,7 @@ func runSync(env *Env, cacheRoot, scopeFlag string, dryRun, force bool) error {
 
 	if stale {
 		fmt.Fprintln(env.Stdout, "sync: locking against the network")
-		plan, err := resolver.Resolve(st, entryFS, entryName, sourcestore.NewLiveProvider(cache))
+		plan, err := target.resolve(sourcestore.NewLiveProvider(cache))
 		if err != nil {
 			return fmt.Errorf("lock: %w", err)
 		}
@@ -95,12 +94,12 @@ func runSync(env *Env, cacheRoot, scopeFlag string, dryRun, force bool) error {
 		return fmt.Errorf("fetch: %w", err)
 	}
 
-	plan, err := resolver.Resolve(st, entryFS, entryName, provider)
+	plan, err := target.resolve(provider)
 	if err != nil {
 		return fmt.Errorf("resolve: %w", err)
 	}
 
-	return renderPlatforms(st, plan, env, scope, dryRun, force)
+	return renderPlatforms(plan, env, scope, dryRun, force)
 }
 
 // lockIsStale returns true when the lockfile is missing, records no manifest

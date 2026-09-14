@@ -17,7 +17,7 @@ func TestSync_FromCleanState_LocksFetchesRenders(t *testing.T) {
 	work := t.TempDir()
 	cache := t.TempDir()
 
-	writeEntryStack(t, work, url, "main")
+	writeEntryManifest(t, work, url, "main")
 
 	if _, _, err := runCLI(t, work, "sync", "--cache", cache); err != nil {
 		t.Fatalf("sync: %v", err)
@@ -40,7 +40,7 @@ func TestSync_FreshLockfile_NoRelock(t *testing.T) {
 	work := t.TempDir()
 	cache := t.TempDir()
 
-	writeEntryStack(t, work, url, "main")
+	writeEntryManifest(t, work, url, "main")
 	if _, _, err := runCLI(t, work, "sync", "--cache", cache); err != nil {
 		t.Fatalf("first sync: %v", err)
 	}
@@ -61,7 +61,7 @@ func TestSync_EditedConfig_Relocks(t *testing.T) {
 	work := t.TempDir()
 	cache := t.TempDir()
 
-	writeEntryStack(t, work, url, "main")
+	writeEntryManifest(t, work, url, "main")
 	if _, _, err := runCLI(t, work, "sync", "--cache", cache); err != nil {
 		t.Fatalf("first sync: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestSync_TouchedConfig_DoesNotRelock(t *testing.T) {
 	work := t.TempDir()
 	cache := t.TempDir()
 
-	writeEntryStack(t, work, url, "main")
+	writeEntryManifest(t, work, url, "main")
 	if _, _, err := runCLI(t, work, "sync", "--cache", cache); err != nil {
 		t.Fatalf("first sync: %v", err)
 	}

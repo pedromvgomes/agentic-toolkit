@@ -29,6 +29,7 @@ func TestTheDefaultStackRendersEveryThingItLists(t *testing.T) {
 		{".claude/agents/wrap-session-reviewer/AGENT.md", "wrap-session-reviewer"},
 		{".claude/commands/memory-curate.md", "agtk memory curate"},
 		{".claude/commands/memory-seed.md", "memory-explorer"},
+		{"CLAUDE.md", "Instructions are rendered, not edited"},
 		{".claude/skills/wrap-session/SKILL.md", "wrap-session-reviewer"},
 		{".claude/settings.json", "agtk memory candidates"},
 	} {

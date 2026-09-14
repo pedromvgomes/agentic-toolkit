@@ -6,24 +6,20 @@ import (
 
 	"github.com/pedromvgomes/agentic-toolkit/internal/definitions"
 	"github.com/pedromvgomes/agentic-toolkit/internal/resolver"
-	"github.com/pedromvgomes/agentic-toolkit/internal/stack"
 )
 
 // ===== bare-name resolution =====
 
-func TestResolve_BareSkillFromEntry(t *testing.T) {
+func TestResolve_BareSkillFromStack(t *testing.T) {
 	entryFS := makeMapFS(map[string]string{
-		".agentic-toolkit.yaml": stackBody(nil, map[string][]string{
+		".agentic-toolkit.yaml": entryBody([]string{"./stack.yaml"}, ""),
+		"stack.yaml": stackBody(nil, map[string][]string{
 			"skills": {"challenge"},
 		}),
 		"definitions/skills/challenge/SKILL.md": validSkillBody("Challenge skill"),
 	})
-	st, err := stack.ParseInFS(entryFS, ".agentic-toolkit.yaml")
-	if err != nil {
-		t.Fatalf("parse stack: %v", err)
-	}
 
-	plan, err := resolver.Resolve(st, entryFS, ".agentic-toolkit.yaml", newFakeProvider())
+	plan, err := resolveEntry(t, entryFS, newFakeProvider())
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
@@ -37,24 +33,21 @@ func TestResolve_BareSkillFromEntry(t *testing.T) {
 	if d.Name != "challenge" {
 		t.Errorf("name = %q, want challenge", d.Name)
 	}
-	if d.StackName != "" {
-		t.Errorf("stack = %q, want \"\" (entry-point)", d.StackName)
+	if d.StackName != "local:stack.yaml" {
+		t.Errorf("stack = %q, want the stack that listed it", d.StackName)
 	}
 }
 
 func TestResolve_BareWithCustomRoot(t *testing.T) {
 	entryFS := makeMapFS(map[string]string{
-		".agentic-toolkit.yaml": "root: ./agentic\n" + stackBody(nil, map[string][]string{
+		".agentic-toolkit.yaml": entryBody([]string{"./stack.yaml"}, ""),
+		"stack.yaml": "root: ./catalog\n" + stackBody(nil, map[string][]string{
 			"skills": {"foo"},
 		}),
-		"agentic/skills/foo/SKILL.md": validSkillBody("Foo skill"),
+		"catalog/skills/foo/SKILL.md": validSkillBody("Foo skill"),
 	})
-	st, err := stack.ParseInFS(entryFS, ".agentic-toolkit.yaml")
-	if err != nil {
-		t.Fatalf("parse stack: %v", err)
-	}
 
-	plan, err := resolver.Resolve(st, entryFS, ".agentic-toolkit.yaml", newFakeProvider())
+	plan, err := resolveEntry(t, entryFS, newFakeProvider())
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
@@ -67,17 +60,14 @@ func TestResolve_BareWithCustomRoot(t *testing.T) {
 
 func TestResolve_PathSkill(t *testing.T) {
 	entryFS := makeMapFS(map[string]string{
-		".agentic-toolkit.yaml": stackBody(nil, map[string][]string{
+		".agentic-toolkit.yaml": entryBody([]string{"./stack.yaml"}, ""),
+		"stack.yaml": stackBody(nil, map[string][]string{
 			"skills": {"./elsewhere/foo"},
 		}),
 		"elsewhere/foo/SKILL.md": validSkillBody("Foo skill"),
 	})
-	st, err := stack.ParseInFS(entryFS, ".agentic-toolkit.yaml")
-	if err != nil {
-		t.Fatalf("parse stack: %v", err)
-	}
 
-	plan, err := resolver.Resolve(st, entryFS, ".agentic-toolkit.yaml", newFakeProvider())
+	plan, err := resolveEntry(t, entryFS, newFakeProvider())
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
@@ -88,17 +78,14 @@ func TestResolve_PathSkill(t *testing.T) {
 
 func TestResolve_PathRule(t *testing.T) {
 	entryFS := makeMapFS(map[string]string{
-		".agentic-toolkit.yaml": stackBody(nil, map[string][]string{
+		".agentic-toolkit.yaml": entryBody([]string{"./stack.yaml"}, ""),
+		"stack.yaml": stackBody(nil, map[string][]string{
 			"rules": {"./team/style.md"},
 		}),
 		"team/style.md": validRuleBody("Team style"),
 	})
-	st, err := stack.ParseInFS(entryFS, ".agentic-toolkit.yaml")
-	if err != nil {
-		t.Fatalf("parse stack: %v", err)
-	}
 
-	plan, err := resolver.Resolve(st, entryFS, ".agentic-toolkit.yaml", newFakeProvider())
+	plan, err := resolveEntry(t, entryFS, newFakeProvider())
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
@@ -116,16 +103,13 @@ func TestResolve_URLSkillBundle(t *testing.T) {
 	provider := newFakeProvider().register("github.com/foo/bar.git", "main", repoFS)
 
 	entryFS := makeMapFS(map[string]string{
-		".agentic-toolkit.yaml": stackBody(nil, map[string][]string{
+		".agentic-toolkit.yaml": entryBody([]string{"./stack.yaml"}, ""),
+		"stack.yaml": stackBody(nil, map[string][]string{
 			"skills": {"github.com/foo/bar.git/skills/upstream@main"},
 		}),
 	})
-	st, err := stack.ParseInFS(entryFS, ".agentic-toolkit.yaml")
-	if err != nil {
-		t.Fatalf("parse stack: %v", err)
-	}
 
-	plan, err := resolver.Resolve(st, entryFS, ".agentic-toolkit.yaml", provider)
+	plan, err := resolveEntry(t, entryFS, provider)
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
@@ -147,16 +131,13 @@ func TestResolve_URLRuleFile(t *testing.T) {
 	provider := newFakeProvider().register("github.com/foo/bar.git", "v1", repoFS)
 
 	entryFS := makeMapFS(map[string]string{
-		".agentic-toolkit.yaml": stackBody(nil, map[string][]string{
+		".agentic-toolkit.yaml": entryBody([]string{"./stack.yaml"}, ""),
+		"stack.yaml": stackBody(nil, map[string][]string{
 			"rules": {"github.com/foo/bar.git/rules/style.md@v1"},
 		}),
 	})
-	st, err := stack.ParseInFS(entryFS, ".agentic-toolkit.yaml")
-	if err != nil {
-		t.Fatalf("parse stack: %v", err)
-	}
 
-	plan, err := resolver.Resolve(st, entryFS, ".agentic-toolkit.yaml", provider)
+	plan, err := resolveEntry(t, entryFS, provider)
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
@@ -165,9 +146,9 @@ func TestResolve_URLRuleFile(t *testing.T) {
 	}
 }
 
-// ===== extends DAG =====
+// ===== stacks: DAG =====
 
-func TestResolve_ExtendsExternalStack(t *testing.T) {
+func TestResolve_ComposesExternalStack(t *testing.T) {
 	upstreamFS := makeMapFS(map[string]string{
 		"stacks/default.yaml": stackBody(nil, map[string][]string{
 			"skills": {"upstream"},
@@ -177,31 +158,24 @@ func TestResolve_ExtendsExternalStack(t *testing.T) {
 	provider := newFakeProvider().register("github.com/foo/bar.git", "main", upstreamFS)
 
 	entryFS := makeMapFS(map[string]string{
-		".agentic-toolkit.yaml": stackBody(
-			[]string{"github.com/foo/bar.git/stacks/default.yaml@main"},
-			nil,
-		),
+		".agentic-toolkit.yaml": entryBody([]string{"github.com/foo/bar.git/stacks/default.yaml@main"}, ""),
 	})
-	st, err := stack.ParseInFS(entryFS, ".agentic-toolkit.yaml")
-	if err != nil {
-		t.Fatalf("parse stack: %v", err)
-	}
 
-	plan, err := resolver.Resolve(st, entryFS, ".agentic-toolkit.yaml", provider)
+	plan, err := resolveEntry(t, entryFS, provider)
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
 	if len(plan.Definitions) != 1 || plan.Definitions[0].Name != "upstream" {
 		t.Fatalf("definitions = %+v", plan.Definitions)
 	}
-	// Stack order: child first, entry-point last.
+	// Stack order: composed stack first, entry manifest last.
 	if len(plan.StackOrder) != 2 {
 		t.Fatalf("stack order = %+v", plan.StackOrder)
 	}
 	if plan.StackOrder[1] != "" {
-		t.Errorf("entry-point should be last in stack order, got %v", plan.StackOrder)
+		t.Errorf("the entry manifest should be last in stack order, got %v", plan.StackOrder)
 	}
-	// Sources include the imported stack source.
+	// Sources include the composed stack's source.
 	if len(plan.Sources) != 1 || plan.Sources[0].URL != "github.com/foo/bar.git" {
 		t.Errorf("sources = %+v", plan.Sources)
 	}
@@ -210,23 +184,16 @@ func TestResolve_ExtendsExternalStack(t *testing.T) {
 	}
 }
 
-func TestResolve_ExtendsLocalStack(t *testing.T) {
+func TestResolve_ComposesLocalStack(t *testing.T) {
 	entryFS := makeMapFS(map[string]string{
-		".agentic-toolkit.yaml": stackBody(
-			[]string{"./stacks/team.yaml"},
-			nil,
-		),
+		".agentic-toolkit.yaml": entryBody([]string{"./stacks/team.yaml"}, ""),
 		"stacks/team.yaml": stackBody(nil, map[string][]string{
 			"skills": {"team-skill"},
 		}),
 		"definitions/skills/team-skill/SKILL.md": validSkillBody("Team skill"),
 	})
-	st, err := stack.ParseInFS(entryFS, ".agentic-toolkit.yaml")
-	if err != nil {
-		t.Fatalf("parse stack: %v", err)
-	}
 
-	plan, err := resolver.Resolve(st, entryFS, ".agentic-toolkit.yaml", newFakeProvider())
+	plan, err := resolveEntry(t, entryFS, newFakeProvider())
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
@@ -235,53 +202,34 @@ func TestResolve_ExtendsLocalStack(t *testing.T) {
 	}
 }
 
-// ===== override semantics =====
-
-func TestResolve_EntryPointWinsOverExtends(t *testing.T) {
-	upstreamFS := makeMapFS(map[string]string{
-		"stacks/default.yaml": stackBody(nil, map[string][]string{
-			"skills": {"upstream"},
-		}),
-		"definitions/skills/upstream/SKILL.md": validSkillBody("Upstream version"),
-	})
-	provider := newFakeProvider().register("github.com/foo/bar.git", "main", upstreamFS)
-
-	// Entry-point overrides "upstream" with its own local definition.
+// A stack composed by the entry manifest brings its own `extends:` with it,
+// and those apply before it does.
+func TestResolve_ComposedStackBringsItsOwnExtends(t *testing.T) {
 	entryFS := makeMapFS(map[string]string{
-		".agentic-toolkit.yaml": stackBody(
-			[]string{"github.com/foo/bar.git/stacks/default.yaml@main"},
-			map[string][]string{"skills": {"upstream"}},
-		),
-		"definitions/skills/upstream/SKILL.md": validSkillBody("Override version"),
+		".agentic-toolkit.yaml": entryBody([]string{"./stacks/team.yaml"}, ""),
+		"stacks/team.yaml":      stackBody([]string{"./base.yaml"}, nil),
+		"stacks/base.yaml": stackBody(nil, map[string][]string{
+			"skills": {"base-skill"},
+		}),
+		"definitions/skills/base-skill/SKILL.md": validSkillBody("Base skill"),
 	})
-	st, err := stack.ParseInFS(entryFS, ".agentic-toolkit.yaml")
-	if err != nil {
-		t.Fatalf("parse stack: %v", err)
-	}
 
-	plan, err := resolver.Resolve(st, entryFS, ".agentic-toolkit.yaml", provider)
+	plan, err := resolveEntry(t, entryFS, newFakeProvider())
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
-	if len(plan.Definitions) != 1 {
+	if len(plan.Definitions) != 1 || plan.Definitions[0].Name != "base-skill" {
 		t.Fatalf("definitions = %+v", plan.Definitions)
 	}
-	skill := plan.Definitions[0].Definition.(*definitions.Skill)
-	if skill.Description != "Override version" {
-		t.Errorf("description = %q, want \"Override version\"", skill.Description)
+	want := []string{"local:stacks/base.yaml", "local:stacks/team.yaml", ""}
+	if len(plan.StackOrder) != len(want) {
+		t.Fatalf("stack order = %v, want %v", plan.StackOrder, want)
 	}
-	if plan.Definitions[0].StackName != "" {
-		t.Errorf("winner should be from entry-point, got stack %q", plan.Definitions[0].StackName)
-	}
-	// One DiagOverride is expected.
-	overrideCount := 0
-	for _, d := range plan.Diagnostics {
-		if d.Kind == resolver.DiagOverride {
-			overrideCount++
+	for i, id := range want {
+		if plan.StackOrder[i] != id {
+			t.Errorf("stack order = %v, want %v", plan.StackOrder, want)
+			break
 		}
-	}
-	if overrideCount != 1 {
-		t.Errorf("override diagnostics = %d, want 1", overrideCount)
 	}
 }
 
@@ -306,17 +254,10 @@ func TestResolve_CycleInExtends(t *testing.T) {
 		register("github.com/repo/b.git", "main", repoBFS)
 
 	entryFS := makeMapFS(map[string]string{
-		".agentic-toolkit.yaml": stackBody(
-			[]string{"github.com/repo/a.git/stacks/a.yaml@main"},
-			nil,
-		),
+		".agentic-toolkit.yaml": entryBody([]string{"github.com/repo/a.git/stacks/a.yaml@main"}, ""),
 	})
-	st, err := stack.ParseInFS(entryFS, ".agentic-toolkit.yaml")
-	if err != nil {
-		t.Fatalf("parse stack: %v", err)
-	}
 
-	_, err = resolver.Resolve(st, entryFS, ".agentic-toolkit.yaml", provider)
+	_, err := resolveEntry(t, entryFS, provider)
 	if err == nil {
 		t.Fatal("expected cycle error, got nil")
 	}
@@ -341,17 +282,10 @@ func TestResolve_SourcesOrderedStacksFirst(t *testing.T) {
 		register("github.com/defs/x.git", "main", defsRepoFS)
 
 	entryFS := makeMapFS(map[string]string{
-		".agentic-toolkit.yaml": stackBody(
-			[]string{"github.com/stk/repo.git/stacks/default.yaml@main"},
-			nil,
-		),
+		".agentic-toolkit.yaml": entryBody([]string{"github.com/stk/repo.git/stacks/default.yaml@main"}, ""),
 	})
-	st, err := stack.ParseInFS(entryFS, ".agentic-toolkit.yaml")
-	if err != nil {
-		t.Fatalf("parse stack: %v", err)
-	}
 
-	plan, err := resolver.Resolve(st, entryFS, ".agentic-toolkit.yaml", provider)
+	plan, err := resolveEntry(t, entryFS, provider)
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
@@ -363,48 +297,5 @@ func TestResolve_SourcesOrderedStacksFirst(t *testing.T) {
 	}
 	if plan.Sources[1].Kind != resolver.SourceDefinition {
 		t.Errorf("second source should be definition, got %v", plan.Sources[1].Kind)
-	}
-}
-
-// TestResolve_MemoryConfigIgnoredInExtendedStack: `memory:` is a fact about
-// the consumer repo, so a stack reached through extends: must not relocate
-// the consumer's committed notes. Ignoring it is reported as a diagnostic
-// rather than a hard error, because failing here would break the consumer's
-// build over a field in someone else's stack.
-func TestResolve_MemoryConfigIgnoredInExtendedStack(t *testing.T) {
-	upstreamFS := makeMapFS(map[string]string{
-		"stacks/default.yaml": stackBody(nil, map[string][]string{
-			"skills": {"upstream"},
-		}) + "memory:\n  root: somewhere/else\n",
-		"definitions/skills/upstream/SKILL.md": validSkillBody("Upstream skill"),
-	})
-	provider := newFakeProvider().register("github.com/foo/bar.git", "main", upstreamFS)
-
-	entryFS := makeMapFS(map[string]string{
-		".agentic-toolkit.yaml": stackBody(
-			[]string{"github.com/foo/bar.git/stacks/default.yaml@main"},
-			nil,
-		),
-	})
-	st, err := stack.ParseInFS(entryFS, ".agentic-toolkit.yaml")
-	if err != nil {
-		t.Fatalf("parse stack: %v", err)
-	}
-
-	plan, err := resolver.Resolve(st, entryFS, ".agentic-toolkit.yaml", provider)
-	if err != nil {
-		t.Fatalf("resolve: %v", err)
-	}
-	var found *resolver.Diagnostic
-	for i, d := range plan.Diagnostics {
-		if d.Kind == resolver.DiagIgnoredMemoryConfig {
-			found = &plan.Diagnostics[i]
-		}
-	}
-	if found == nil {
-		t.Fatalf("no ignored-memory-config diagnostic in %+v", plan.Diagnostics)
-	}
-	if !strings.Contains(found.Message, "entry manifest") {
-		t.Errorf("diagnostic should explain where memory: is honoured: %q", found.Message)
 	}
 }

@@ -5,24 +5,27 @@ import (
 	"path/filepath"
 )
 
-// There are three ways a command can locate the entry stack manifest and
+// There are three ways a command can locate the manifest to parse and
 // decide where the lockfile + rendered output land:
 //
-//   - default:  manifest at <WorkDir>/.agentic-toolkit.yaml; lockfile next
-//     to it; output and FS root both at WorkDir.
-//   - --config: manifest at the given path; lockfile next to it; FS root at
-//     the manifest's directory; output still at WorkDir (bare-repo/worktree).
+//   - default:  manifest at <WorkDir>/.agentic-toolkit.yaml (the entry
+//     manifest); lockfile next to it; output and FS root both at WorkDir.
+//   - --config: manifest at the given path (the entry manifest); lockfile
+//     next to it; FS root at the manifest's directory; output still at
+//     WorkDir (bare-repo/worktree).
 //   - --source: apply from the toolkit tree at SourceDir exactly as if
-//     agtk were run there — the entry manifest is <SourceDir>/.agentic-
-//     toolkit.yaml by default, or <SourceDir>/stacks/<stack>.yaml when the
-//     optional --stack names one. FS root at SourceDir (so bare-name
+//     agtk were run there — the manifest is <SourceDir>/.agentic-
+//     toolkit.yaml (the entry manifest) by default, or the named stack file
+//     at <SourceDir>/stacks/<stack>.yaml when --stack is given (there is no
+//     entry manifest in that mode). FS root at SourceDir (so bare-name
 //     definitions resolve against the source's definitions/); lockfile and
 //     output at WorkDir, keeping the shared/read-only source tree clean.
 //
 // --source and --config are mutually exclusive (enforced in PersistentPreRunE).
 
-// configFilePath returns the absolute path to the entry stack manifest on
-// disk (used by `agtk init` to write, and by loadStack to parse).
+// configFilePath returns the absolute path to the manifest on disk: the
+// entry manifest normally, or the named stack file under --source --stack.
+// Used by `agtk init` to write, and by loadResolveInput to parse.
 func configFilePath(env *Env) string {
 	if env.SourceDir != "" {
 		return filepath.Join(env.SourceDir, entryRelPath(env))
@@ -47,8 +50,9 @@ func stackDir(env *Env) string {
 	return env.WorkDir
 }
 
-// entryRelPath returns the entry manifest's path relative to stackDir,
-// i.e. the entry-point name within the resolver's fs.FS rooted at stackDir.
+// entryRelPath returns the manifest's path relative to stackDir, i.e. the
+// entry-point name within the resolver's fs.FS rooted at stackDir: the
+// entry manifest normally, or the named stack file under --source --stack.
 // In --source mode this is `stacks/<stack>.yaml` when --stack is given, else
 // the default ConfigFileName (apply the source folder as if run there);
 // otherwise the manifest's basename (ConfigFileName, or the --config basename).

@@ -10,6 +10,7 @@ import (
 	"github.com/goccy/go-yaml"
 	"github.com/spf13/cobra"
 
+	"github.com/pedromvgomes/agentic-toolkit/internal/definitions"
 	"github.com/pedromvgomes/agentic-toolkit/internal/lockfile"
 	"github.com/pedromvgomes/agentic-toolkit/internal/resolver"
 	"github.com/pedromvgomes/agentic-toolkit/internal/sourcestore"
@@ -45,7 +46,7 @@ func newLockCmd(env *Env) *cobra.Command {
 }
 
 func runLock(env *Env, cacheRoot string, frozen, jsonOut bool) error {
-	st, entryFS, entryName, err := loadStack(env)
+	target, err := loadResolveInput(env)
 	if err != nil {
 		return err
 	}
@@ -53,7 +54,7 @@ func runLock(env *Env, cacheRoot string, frozen, jsonOut bool) error {
 	if err != nil {
 		return err
 	}
-	plan, err := resolver.Resolve(st, entryFS, entryName, sourcestore.NewLiveProvider(cache))
+	plan, err := target.resolve(sourcestore.NewLiveProvider(cache))
 	if err != nil {
 		return fmt.Errorf("resolve: %w", err)
 	}
@@ -131,22 +132,77 @@ func runLockFrozen(env *Env, path string, resolved []byte, lock *lockfile.Lockfi
 	return fmt.Errorf("--frozen: %s would change; run `agtk lock` to update", path)
 }
 
-// loadStack reads the entry-point stack file. With --config set, that's
-// whatever path the user passed; otherwise it's `<WorkDir>/.agentic-
-// toolkit.yaml`. The returned fs.FS is rooted at the manifest's
-// directory so local `./...` refs in the manifest resolve from the
-// right place — that's the config dir, not the apply dir.
+// resolveInput is what one command run resolves against: either a real
+// entry manifest or a single named stack (--source --stack). Exactly one
+// of manifest/single is set.
+type resolveInput struct {
+	fsys     fs.FS
+	name     string // entry path within fsys
+	manifest *stack.EntryManifest
+	single   *stack.Stack
+	refs     []stack.ExtendsRef // manifest.Stacks, or the named stack's own external sources — for status's diff
+}
+
+// loadResolveInput reads whatever this invocation resolves against: a real
+// entry manifest by default, or --source --stack's single named stack. The
+// returned fs.FS is rooted so local refs and (for a real manifest) the
+// convention root resolve from the right place — see stackDir/entryRelPath.
 //
-// stack.ParseFile already returns a *ParseError whose Error() includes
-// the path; we propagate it as-is to avoid duplicating the path in the
-// rendered message.
-func loadStack(env *Env) (*stack.Stack, fs.FS, string, error) {
-	path := configFilePath(env)
-	st, err := stack.ParseFile(path)
-	if err != nil {
-		return nil, nil, "", err
+// stack.ParseEntryManifestFile already returns a *ParseError whose Error()
+// includes the path; we propagate it as-is to avoid duplicating the path in
+// the rendered message.
+func loadResolveInput(env *Env) (*resolveInput, error) {
+	fsys := os.DirFS(stackDir(env))
+	name := entryRelPath(env)
+	if env.StackName != "" {
+		st, err := stack.ParseInFS(fsys, name)
+		if err != nil {
+			return nil, err
+		}
+		return &resolveInput{fsys: fsys, name: name, single: st, refs: externalRefsOf(st)}, nil
 	}
-	return st, os.DirFS(stackDir(env)), entryRelPath(env), nil
+	m, err := stack.ParseEntryManifestFile(configFilePath(env))
+	if err != nil {
+		return nil, err
+	}
+	return &resolveInput{fsys: fsys, name: name, manifest: m, refs: m.Stacks}, nil
+}
+
+// externalRefsOf flattens the external sources a stack composes: its
+// `extends:` targets plus every per-category URL entry. A stack rendered on
+// its own is the top level, so what a manifest's `stacks:` answers for is
+// answered here by the stack's own composition — the path to it is local and
+// never pinned, so checking that instead reports clean whatever drifted.
+func externalRefsOf(st *stack.Stack) []stack.ExtendsRef {
+	var refs []stack.ExtendsRef
+	for _, ext := range st.Extends {
+		if ext.IsExternal() {
+			refs = append(refs, ext)
+		}
+	}
+	for _, cat := range definitions.AllCategories {
+		for _, entry := range st.EntriesFor(cat) {
+			if !entry.IsExternal() {
+				continue
+			}
+			refs = append(refs, stack.ExtendsRef{
+				Raw:  entry.Raw,
+				Kind: stack.RefURL,
+				URL:  entry.URL,
+				Ref:  entry.Ref,
+			})
+		}
+	}
+	return refs
+}
+
+// resolve dispatches to whichever resolver entry point matches what this
+// target holds.
+func (t *resolveInput) resolve(provider resolver.SourceProvider) (*resolver.Plan, error) {
+	if t.manifest != nil {
+		return resolver.Resolve(t.manifest, t.fsys, t.name, provider)
+	}
+	return resolver.ResolveStack(t.single, t.fsys, t.name, provider)
 }
 
 // buildCache resolves the cache root: explicit override wins, otherwise
@@ -167,7 +223,7 @@ func buildCache(override string) (*sourcestore.Cache, error) {
 // behaviour this replaces.
 //
 // The digest is taken here rather than in the resolver because it is over the
-// manifest's bytes on disk, and the resolver is handed a parsed stack.
+// manifest's bytes on disk, and the resolver is handed a parsed manifest.
 func marshalLock(lock *lockfile.Lockfile, configPath string) ([]byte, error) {
 	raw, err := os.ReadFile(configPath) // #nosec G304 -- reads the entry manifest at the path the invoker named
 	if err != nil {

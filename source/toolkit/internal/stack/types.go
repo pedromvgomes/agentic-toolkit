@@ -1,5 +1,7 @@
-// Package stack models a stack manifest — the unified replacement for the
-// old `consumer config` and `preset` concepts.
+// Package stack models a stack manifest — the shareable unit published at
+// stacks/<name>.yaml in any repo — and EntryManifest, the distinct type a
+// consumer's own .agentic-toolkit.yaml parses into (see entrymanifest.go
+// and ADR 0016).
 //
 // A stack is a single YAML file with these fields:
 //
@@ -14,8 +16,6 @@
 //	hooks:       []EntryRef
 //	mcp:         []EntryRef
 //	settings:    []EntryRef
-//	platforms:   optional; []Platform, rendering targets beyond Claude Code
-//	memory:      optional; memory-store settings, entry manifest only
 //
 // Override semantics: depth-first walk of `extends:`, post-order overlay
 // (children apply before importer's own entries), entry-point file's
@@ -27,10 +27,9 @@
 //   - starts with `./` or `/` → Path ref (local to this file's repo)
 //   - otherwise → Bare name (resolved under <root>/<plural>/<name>...)
 //
-// The same shape is used for the consumer's .agentic-toolkit.yaml and for
-// shareable stacks at stacks/<name>.yaml in any repo. There is no "preset"
-// vs "consumer config" distinction: the consumer's file is just an
-// entry-point stack.
+// A stack has no `platforms:`/`memory:` — those are EntryManifest-only
+// fields, since rendering targets and the memory store's location are
+// facts about the consumer repo, not about a shareable stack.
 package stack
 
 //go:generate go run ../../tools/schemagen
@@ -60,10 +59,6 @@ type Stack struct {
 	Hooks        []EntryRef `yaml:"hooks,omitempty"`
 	MCP          []EntryRef `yaml:"mcp,omitempty"`
 	Settings     []EntryRef `yaml:"settings,omitempty"`
-
-	Platforms []definitions.Platform `yaml:"platforms,omitempty" agtkdoc:"Rendering targets. Omit to render Claude Code only \u2014 today's behavior, unchanged. List additional platforms (e.g. codex) to also render their on-disk layout from the same definitions; each named platform must have a render adapter."`
-
-	Memory *MemoryConfig `yaml:"memory,omitempty" agtkdoc:"Repo-resident memory store settings. Honoured only in the entry manifest \u2014 the store's location is a fact about the consumer repo, not about a shareable stack, so a stack reached through extends: that sets it gets a diagnostic instead of silently relocating the consumer's committed notes."`
 }
 
 // MemoryConfig configures the memory store. It is deliberately not part of
@@ -80,45 +75,12 @@ type MemoryConfig struct {
 	Agent string `yaml:"agent,omitempty" agtkdoc:"Coding-agent CLI that 'agtk memory curate' drives, e.g. \"claudecode\" or \"codex\". No default: curation is the one operation that spends money, so the repo names its provider or curation does not run."`
 }
 
-// MemoryRoot returns the configured store root, or "" when the stack does
-// not set one (the caller then applies the default).
-func (s *Stack) MemoryRoot() string {
-	if s.Memory == nil {
-		return ""
-	}
-	return s.Memory.Root
-}
-
-// MemoryAgent returns the configured curation provider, or "" when the stack
-// names none.
-//
-// There is deliberately no default. Every other memory command is
-// deterministic and free; this is the one that spends money and calls out to
-// a CLI, so a repo that has not chosen a provider gets a refusal rather than
-// a guess about which one it meant.
-func (s *Stack) MemoryAgent() string {
-	if s.Memory == nil {
-		return ""
-	}
-	return s.Memory.Agent
-}
-
 // EffectiveRoot returns Root if set, else DefaultRoot.
 func (s *Stack) EffectiveRoot() string {
 	if s.Root == "" {
 		return DefaultRoot
 	}
 	return s.Root
-}
-
-// EffectivePlatforms returns Platforms if set, else a single-element slice
-// naming Claude Code — omitting platforms: renders exactly what agtk has
-// always rendered, with no behavior change for a stack that never sets it.
-func (s *Stack) EffectivePlatforms() []definitions.Platform {
-	if len(s.Platforms) == 0 {
-		return []definitions.Platform{definitions.PlatformClaude}
-	}
-	return s.Platforms
 }
 
 // EntriesFor returns the EntryRef slice for cat. Returns nil for unknown

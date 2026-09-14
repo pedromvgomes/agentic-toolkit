@@ -3,10 +3,10 @@ package tests
 import (
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/pedromvgomes/agentic-toolkit/internal/definitions"
 	"github.com/pedromvgomes/agentic-toolkit/internal/resolver"
-	"github.com/pedromvgomes/agentic-toolkit/internal/stack"
 )
 
 // bodyRequiring is a definition body that declares cross-references.
@@ -21,16 +21,20 @@ func bodyRequiring(description string, requires ...string) string {
 func resolvePlan(t *testing.T, files map[string]string) *resolver.Plan {
 	t.Helper()
 
-	entryFS := makeMapFS(files)
-	st, err := stack.ParseInFS(entryFS, ".agentic-toolkit.yaml")
-	if err != nil {
-		t.Fatalf("parse stack: %v", err)
-	}
-	plan, err := resolver.Resolve(st, entryFS, ".agentic-toolkit.yaml", newFakeProvider())
+	plan, err := resolveEntry(t, withEntryManifest(files), newFakeProvider())
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
 	return plan
+}
+
+// withEntryManifest adds the entry manifest that composes a fixture's
+// "stack.yaml". These tests are about what a stack's entries resolve to; the
+// manifest exists only to reach the stack.
+func withEntryManifest(files map[string]string) fstest.MapFS {
+	out := makeMapFS(files)
+	out[entryManifestPath] = &fstest.MapFile{Data: []byte(entryBody([]string{"./stack.yaml"}, ""))}
+	return out
 }
 
 func planHas(plan *resolver.Plan, cat definitions.Category, name string) bool {
@@ -58,7 +62,7 @@ func diagKinds(plan *resolver.Plan, kind resolver.DiagnosticKind) []string {
 // moment it delegates.
 func TestARequiredDefinitionIsPulledInWhenNoStackListsIt(t *testing.T) {
 	plan := resolvePlan(t, map[string]string{
-		".agentic-toolkit.yaml": stackBody(nil, map[string][]string{
+		"stack.yaml": stackBody(nil, map[string][]string{
 			"skills": {"wrap-session"},
 		}),
 		"definitions/skills/wrap-session/SKILL.md":          bodyRequiring("Wraps a session", "agents/wrap-session-reviewer"),
@@ -78,7 +82,7 @@ func TestARequiredDefinitionIsPulledInWhenNoStackListsIt(t *testing.T) {
 // nothing said about it.
 func TestRequirementsAreFollowedTransitively(t *testing.T) {
 	plan := resolvePlan(t, map[string]string{
-		".agentic-toolkit.yaml": stackBody(nil, map[string][]string{
+		"stack.yaml": stackBody(nil, map[string][]string{
 			"skills": {"wrap-session"},
 		}),
 		"definitions/skills/wrap-session/SKILL.md":          bodyRequiring("Wraps a session", "agents/wrap-session-reviewer"),
@@ -104,7 +108,7 @@ func TestRequirementsAreFollowedTransitively(t *testing.T) {
 // well-formed stack starts reporting diagnostics about itself.
 func TestAStackThatListsItsRequirementsIsUnchanged(t *testing.T) {
 	plan := resolvePlan(t, map[string]string{
-		".agentic-toolkit.yaml": stackBody(nil, map[string][]string{
+		"stack.yaml": stackBody(nil, map[string][]string{
 			"skills": {"wrap-session"},
 			"agents": {"wrap-session-reviewer"},
 		}),
@@ -126,7 +130,7 @@ func TestAStackThatListsItsRequirementsIsUnchanged(t *testing.T) {
 // in silence.
 func TestAnUnresolvableRequirementIsReportedAndNotFatal(t *testing.T) {
 	plan := resolvePlan(t, map[string]string{
-		".agentic-toolkit.yaml": stackBody(nil, map[string][]string{
+		"stack.yaml": stackBody(nil, map[string][]string{
 			"skills": {"wrap-session"},
 		}),
 		"definitions/skills/wrap-session/SKILL.md": bodyRequiring("Wraps a session", "agents/does-not-exist"),
@@ -149,7 +153,7 @@ func TestAnUnresolvableRequirementIsReportedAndNotFatal(t *testing.T) {
 // declared dependency is absent either way, and only the diagnostic says so.
 func TestAMalformedRequirementIsReported(t *testing.T) {
 	plan := resolvePlan(t, map[string]string{
-		".agentic-toolkit.yaml": stackBody(nil, map[string][]string{
+		"stack.yaml": stackBody(nil, map[string][]string{
 			"skills": {"wrap-session"},
 		}),
 		"definitions/skills/wrap-session/SKILL.md": bodyRequiring("Wraps a session", "wrap-session-reviewer"),
@@ -164,7 +168,7 @@ func TestAMalformedRequirementIsReported(t *testing.T) {
 // would make the diagnostics read as though something were wrong.
 func TestARequirementSharedByTwoDefinitionsIsAnnouncedOnce(t *testing.T) {
 	plan := resolvePlan(t, map[string]string{
-		".agentic-toolkit.yaml": stackBody(nil, map[string][]string{
+		"stack.yaml": stackBody(nil, map[string][]string{
 			"skills": {"one", "two"},
 		}),
 		"definitions/skills/one/SKILL.md":    bodyRequiring("One", "agents/shared"),
@@ -181,7 +185,7 @@ func TestARequirementSharedByTwoDefinitionsIsAnnouncedOnce(t *testing.T) {
 // rather than pull forever.
 func TestARequirementCycleSettles(t *testing.T) {
 	plan := resolvePlan(t, map[string]string{
-		".agentic-toolkit.yaml": stackBody(nil, map[string][]string{
+		"stack.yaml": stackBody(nil, map[string][]string{
 			"skills": {"a"},
 		}),
 		"definitions/skills/a/SKILL.md": bodyRequiring("A", "skills/b"),
@@ -206,21 +210,17 @@ func TestARemoteDefinitionsRequirementResolvesInsideItsOwnSource(t *testing.T) {
 		"skills/wrap-session/SKILL.md":          bodyRequiring("Wraps a session", "agents/wrap-session-reviewer"),
 		"agents/wrap-session-reviewer/AGENT.md": validAgentBody("Reviews a session"),
 	})
-	entryFS := makeMapFS(map[string]string{
-		".agentic-toolkit.yaml": stackBody(nil, map[string][]string{
+	entryFS := withEntryManifest(map[string]string{
+		"stack.yaml": stackBody(nil, map[string][]string{
 			"skills": {"github.com/o/r.git/skills/wrap-session"},
 		}),
 		// A same-named agent in the consumer's own tree. Resolving the remote
 		// definition's requirement here would find this one.
 		"definitions/agents/wrap-session-reviewer/AGENT.md": validAgentBody("The consumer's own agent"),
 	})
-	st, err := stack.ParseInFS(entryFS, ".agentic-toolkit.yaml")
-	if err != nil {
-		t.Fatalf("parse stack: %v", err)
-	}
 	provider := newFakeProvider().register("github.com/o/r.git", "", remote)
 
-	plan, err := resolver.Resolve(st, entryFS, ".agentic-toolkit.yaml", provider)
+	plan, err := resolveEntry(t, entryFS, provider)
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
@@ -255,7 +255,7 @@ func TestARequirementCannotEscapeTheConventionRoot(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			plan := resolvePlan(t, map[string]string{
-				".agentic-toolkit.yaml": stackBody(nil, map[string][]string{
+				"stack.yaml": stackBody(nil, map[string][]string{
 					"skills": {"wrap-session"},
 				}),
 				"definitions/skills/wrap-session/SKILL.md": bodyRequiring("Wraps a session", req),
@@ -279,7 +279,7 @@ func TestARequirementCannotEscapeTheConventionRoot(t *testing.T) {
 // problems.
 func TestASharedUnresolvableRequirementIsReportedOnce(t *testing.T) {
 	plan := resolvePlan(t, map[string]string{
-		".agentic-toolkit.yaml": stackBody(nil, map[string][]string{
+		"stack.yaml": stackBody(nil, map[string][]string{
 			"skills": {"one", "two"},
 		}),
 		"definitions/skills/one/SKILL.md": bodyRequiring("One", "agents/missing"),
@@ -299,20 +299,16 @@ func TestARequirementOneDefinitionCannotResolveIsStillSatisfiedByAnother(t *test
 	remote := makeMapFS(map[string]string{
 		"skills/needs-it/SKILL.md": bodyRequiring("Needs it", "agents/shared"),
 	})
-	entryFS := makeMapFS(map[string]string{
-		".agentic-toolkit.yaml": stackBody(nil, map[string][]string{
+	entryFS := withEntryManifest(map[string]string{
+		"stack.yaml": stackBody(nil, map[string][]string{
 			"skills": {"github.com/o/r.git/skills/needs-it", "local-needs-it"},
 		}),
 		"definitions/skills/local-needs-it/SKILL.md": bodyRequiring("Also needs it", "agents/shared"),
 		"definitions/agents/shared/AGENT.md":         validAgentBody("Shared"),
 	})
-	st, err := stack.ParseInFS(entryFS, ".agentic-toolkit.yaml")
-	if err != nil {
-		t.Fatalf("parse stack: %v", err)
-	}
 	provider := newFakeProvider().register("github.com/o/r.git", "", remote)
 
-	plan, err := resolver.Resolve(st, entryFS, ".agentic-toolkit.yaml", provider)
+	plan, err := resolveEntry(t, entryFS, provider)
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
@@ -337,7 +333,7 @@ func TestARequirementOneDefinitionCannotResolveIsStillSatisfiedByAnother(t *test
 // same definition land twice.
 func TestAPulledDefinitionIsKeyedByItsOwnName(t *testing.T) {
 	plan := resolvePlan(t, map[string]string{
-		".agentic-toolkit.yaml": stackBody(nil, map[string][]string{
+		"stack.yaml": stackBody(nil, map[string][]string{
 			"skills":       {"one"},
 			"instructions": {"renamed"},
 		}),

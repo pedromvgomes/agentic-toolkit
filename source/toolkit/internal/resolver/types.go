@@ -1,11 +1,12 @@
-// Package resolver walks a parsed stack manifest's extends DAG against a
+// Package resolver walks a parsed entry manifest's stack DAG against a
 // SourceProvider and produces a Plan: every source that was touched, every
 // definition that resolved, and any diagnostics worth surfacing.
 //
-// Stack model:
+// Model:
 //
-//   - The entry-point file is a stack manifest (.agentic-toolkit.yaml in a
-//     consumer repo, or any stack file passed to the resolver in tests).
+//   - The entry-point file is an entry manifest (.agentic-toolkit.yaml in a
+//     consumer repo). It composes stacks through `stacks:` and contributes
+//     its own definitions by convention, from <root>/<category-dir>/.
 //   - Each stack has an `extends:` list of other stacks (URL or local path),
 //     applied in declared order; depth-first post-order overlay means
 //     children's entries apply before the importing stack's own entries.
@@ -13,12 +14,12 @@
 //     shapes: bare name (resolved under <root>/<plural>/<name>... in the
 //     stack file's source), local path (./… relative to that source), and
 //     external URL (with `.git/` boundary).
-//   - Override semantics: same (category, name) pair = later wins. The
-//     entry-point's own entries always win last.
+//   - Override semantics: same (category, name) pair = later wins. What the
+//     entry manifest's own root holds always wins last.
 //
 // The lockfile pins every URL the resolver touched: stack files reached
-// via `extends:` and external definition sources reached via per-category
-// URL entries.
+// via `stacks:`/`extends:` and external definition sources reached via
+// per-category URL entries.
 package resolver
 
 import (
@@ -32,10 +33,11 @@ import (
 // Plan is the resolver's primary output. It is in-memory only — see
 // Plan.Lockfile for the persisted projection.
 type Plan struct {
-	// Stack is the entry-point stack manifest that produced this plan.
-	// Adapters that need ordering information consume StackOrder; Stack
-	// itself is exposed mostly for diagnostics and round-trip use.
-	Stack *stack.Stack
+	// EntryManifest is the entry manifest that produced this plan.
+	// Adapters that need ordering information consume StackOrder; the
+	// manifest itself is exposed for the fields only it carries (memory:,
+	// platforms:) and for round-trip use.
+	EntryManifest *stack.EntryManifest
 
 	// StackOrder is the depth-first post-order list of stack identifiers
 	// the resolver visited. Index 0 is the deepest-first child; the last
@@ -107,9 +109,20 @@ type PlannedDefinition struct {
 
 	// StackName identifies the stack whose entry caused this definition
 	// to win the dedupe pass. For external stacks, this is the URL+ref
-	// (matching an entry in Plan.StackOrder); for the entry-point file,
-	// it is the empty string.
+	// (matching an entry in Plan.StackOrder); for the entry manifest —
+	// including everything scanned under its root — it is the empty string.
 	StackName string
+
+	// IsContext marks the instruction the entry manifest's `context:` file
+	// produced. It carries the entry manifest's own StackName like every
+	// other scanned definition, so this is what tells the two apart.
+	IsContext bool
+
+	// Scanned marks a definition the entry manifest's convention root
+	// produced rather than a stack entry. Only a scan sets it: an empty
+	// StackName also identifies a stack resolved on its own (ResolveStack),
+	// whose entries are declared and ordered, not found on disk.
+	Scanned bool
 
 	// EntryPath is the fs-relative path inside the source's filesystem to
 	// the entry-point file that was parsed. For local refs this is
@@ -139,11 +152,6 @@ const (
 	// stack's own source. The implicit source is locked like any other;
 	// the diagnostic is purely informational.
 	DiagImplicitSource
-	// DiagIgnoredMemoryConfig: a stack reached through extends: set
-	// `memory:`, which only the entry manifest may do. Ignoring it is
-	// deliberate; a remote stack must not relocate a consumer's committed
-	// notes, and it must not hard-fail the consumer's build either.
-	DiagIgnoredMemoryConfig
 	// DiagPulledRequirement: a definition declared a `requires:` that no
 	// stack listed, so the resolver added it. Informational, like
 	// DiagImplicitSource — the same relationship one level down, and
@@ -162,8 +170,6 @@ func (k DiagnosticKind) String() string {
 		return "override"
 	case DiagImplicitSource:
 		return "implicit_source"
-	case DiagIgnoredMemoryConfig:
-		return "ignored_memory_config"
 	case DiagPulledRequirement:
 		return "pulled_requirement"
 	case DiagUnresolvedRequirement:
@@ -193,6 +199,16 @@ type Diagnostic struct {
 
 	// StackName is the stack whose entry generated this diagnostic.
 	StackName string
+}
+
+// EffectivePlatforms returns the rendering targets for this plan. A Plan
+// built by ResolveStack has no entry manifest to read platforms: from, and
+// falls back to the same Claude-only default an unset platforms: field gets.
+func (p *Plan) EffectivePlatforms() []definitions.Platform {
+	if p.EntryManifest == nil {
+		return []definitions.Platform{definitions.PlatformClaude}
+	}
+	return p.EntryManifest.EffectivePlatforms()
 }
 
 // Lockfile projects the plan to its persisted form.
