@@ -32,7 +32,7 @@ type footerPattern struct {
 var footerPatterns = []footerPattern{
 	{name: "a Co-Authored-By: line", match: matchLinePrefix("co-authored-by:")},
 	{name: "a Claude-Session: line", match: matchLinePrefix("claude-session:")},
-	{name: "a claude.ai/code/session URL", match: matchSubstring("claude.ai/code/session")},
+	{name: "a claude.ai/code/session link", match: matchSessionLink},
 	{name: `a "Generated with" attribution line`, match: matchGeneratedWithLine},
 }
 
@@ -48,11 +48,15 @@ func matchLinePrefix(prefix string) func(string) bool {
 	}
 }
 
-func matchSubstring(sub string) func(string) bool {
-	sub = strings.ToLower(sub)
-	return func(text string) bool {
-		return strings.Contains(strings.ToLower(text), sub)
-	}
+// sessionLinkRe matches an actual link to an assistant session rather than
+// prose that merely names the pattern ("no claude.ai/code/session link
+// here"): the host, the fixed "code/session_" path segment, and at least
+// one non-space character identifying the session, with an optional
+// scheme.
+var sessionLinkRe = regexp.MustCompile(`(?i)(?:https?://)?claude\.ai/code/session_\S+`)
+
+func matchSessionLink(text string) bool {
+	return sessionLinkRe.MatchString(text)
 }
 
 // matchGeneratedWithLine denies a line whose own text opens with

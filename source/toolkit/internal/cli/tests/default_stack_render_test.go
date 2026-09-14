@@ -99,6 +99,40 @@ func TestTheMemoryHooksReachTheConsumerUnderTheirEvents(t *testing.T) {
 	}
 }
 
+// A hook that only lands under the wrong event never fires, and a settings
+// merge that dropped its matcher would let the guarded command through.
+func TestTheNoAuthoringFootersHookReachesPreToolUse(t *testing.T) {
+	apply := renderDefaultStack(t)
+
+	settings, err := os.ReadFile(filepath.Join(apply, ".claude/settings.json"))
+	if err != nil {
+		t.Fatalf("settings did not reach the consumer: %v", err)
+	}
+	if !strings.Contains(string(settings), "PreToolUse") {
+		t.Fatalf("settings.json carries no PreToolUse hook:\n%s", settings)
+	}
+	if !strings.Contains(string(settings), "\"Bash\"") {
+		t.Errorf("settings.json's PreToolUse hook carries no Bash matcher:\n%s", settings)
+	}
+	if !strings.Contains(string(settings), "agtk guard footers") {
+		t.Error("settings.json's PreToolUse hook does not invoke `agtk guard footers`")
+	}
+}
+
+// The instruction is what tells a session why the hook exists and what to do
+// when it refuses a command; without it in CLAUDE.md the refusal is unexplained.
+func TestTheNoAuthoringFootersInstructionReachesClaudeMD(t *testing.T) {
+	apply := renderDefaultStack(t)
+
+	body, err := os.ReadFile(filepath.Join(apply, "CLAUDE.md"))
+	if err != nil {
+		t.Fatalf("CLAUDE.md did not reach the consumer: %v", err)
+	}
+	if !strings.Contains(string(body), "No authoring footers") {
+		t.Errorf("CLAUDE.md does not carry the no-authoring-footers instruction:\n%s", body)
+	}
+}
+
 // A pre-approved permission for a command no agent can run is dead config, and
 // one the agent needs but nobody approved is a prompt on every delegation.
 // Both are only visible once the settings are actually rendered.

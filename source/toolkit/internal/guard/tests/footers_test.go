@@ -188,3 +188,26 @@ func TestDecideFootersAllowsMalformedJSON(t *testing.T) {
 		t.Fatalf("malformed payload should allow, got deny on %s", d.Pattern)
 	}
 }
+
+func TestDecideFootersAllowsSessionLinkProse(t *testing.T) {
+	cmd := `git commit -m "docs: mention there is no claude.ai/code/session link here"`
+	d := guard.DecideFooters(payload(t, "Bash", cmd, "/tmp"))
+	if d.Deny {
+		t.Fatalf("command %q: want allow, got deny on %s", cmd, d.Pattern)
+	}
+}
+
+func TestDecideFootersDeniesSessionLink(t *testing.T) {
+	cases := []string{
+		`git commit -m "see https://claude.ai/code/session_01ABC for context"`,
+		`git commit -m "see claude.ai/code/session_01ABC for context"`,
+	}
+	for _, cmd := range cases {
+		t.Run(cmd, func(t *testing.T) {
+			d := guard.DecideFooters(payload(t, "Bash", cmd, "/tmp"))
+			if !d.Deny {
+				t.Fatalf("command %q: want deny, got allow", cmd)
+			}
+		})
+	}
+}
