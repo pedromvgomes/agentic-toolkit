@@ -463,19 +463,22 @@ var wrappers = map[string]wrapper{
 
 // unwrap returns the command a wrapper call runs, with the directory that
 // command runs in. ok is false when the wrapped command cannot be
-// determined or the wrapper does not run it.
-func unwrap(w wrapper, args []word, cwd string) ([]word, string, bool) {
+// determined or the wrapper does not run it. When env -S's split string is
+// known but cannot be read as a single command, text holds the split
+// string and any arguments that would have followed it, for the caller to
+// judge on their text instead.
+func unwrap(w wrapper, args []word, cwd string) ([]word, string, string, bool) {
 	i := 1
 	for {
 		opts, next, ok := parseOptions(args, i, w.spec)
 		if !ok {
-			return nil, "", false
+			return nil, "", "", false
 		}
 		i = next
 		var split *word
 		for _, o := range opts {
 			if slices.Contains(w.query, o.name) {
-				return nil, "", false
+				return nil, "", "", false
 			}
 			if slices.Contains(w.chdir, o.name) && o.value.known {
 				cwd = joinPath(cwd, o.value.val)
@@ -490,11 +493,11 @@ func unwrap(w wrapper, args []word, cwd string) ([]word, string, bool) {
 		// env -S splits its value into words that take the option's
 		// place, options and command included.
 		if !split.known {
-			return nil, "", false
+			return nil, "", "", false
 		}
 		words, ok := splitWords(split.val)
 		if !ok {
-			return nil, "", false
+			return nil, "", joinKnownWords(split.val, args[i:]), false
 		}
 		args = append(append([]word{args[0]}, words...), args[i:]...)
 		i = 1
@@ -505,7 +508,7 @@ func unwrap(w wrapper, args []word, cwd string) ([]word, string, bool) {
 	i += w.operands
 	for w.assignments && i < len(args) {
 		if !args[i].known {
-			return nil, "", false
+			return nil, "", "", false
 		}
 		if !strings.Contains(args[i].val, "=") {
 			break
@@ -513,9 +516,21 @@ func unwrap(w wrapper, args []word, cwd string) ([]word, string, bool) {
 		i++
 	}
 	if i >= len(args) {
-		return nil, "", false
+		return nil, "", "", false
 	}
-	return args[i:], cwd, true
+	return args[i:], cwd, "", true
+}
+
+// joinKnownWords joins text with the known words of args, for judging on
+// text when the words cannot be read as a command.
+func joinKnownWords(text string, args []word) string {
+	parts := []string{text}
+	for _, a := range args {
+		if a.known {
+			parts = append(parts, a.val)
+		}
+	}
+	return strings.Join(parts, " ")
 }
 
 // splitWords reads text as the words of a single simple command.
@@ -622,8 +637,9 @@ func callPublishedFiles(args []word, cwd string) (bool, []string) {
 		if !ok {
 			return false, nil
 		}
-		if args, cwd, ok = unwrap(w, args, cwd); !ok {
-			return false, nil
+		var text string
+		if args, cwd, text, ok = unwrap(w, args, cwd); !ok {
+			return gitOrGhWordRe.MatchString(text), nil
 		}
 	}
 	return false, nil

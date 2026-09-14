@@ -417,6 +417,28 @@ func TestDecideFootersJudgesUnparseableShellStringOnItsText(t *testing.T) {
 	}
 }
 
+func TestDecideFootersJudgesUnsplittableEnvStringOnItsText(t *testing.T) {
+	cases := []struct {
+		script string
+		deny   bool
+	}{
+		{"git commit -m \"x" + coAuthoredFooter + "\" && (", true},
+		{"git commit -m \"clean message\" && (", false},
+		{"echo \"x" + coAuthoredFooter + "\" && (", false},
+	}
+	for _, c := range cases {
+		t.Run(c.script, func(t *testing.T) {
+			if _, err := syntax.NewParser(syntax.Variant(syntax.LangBash)).Parse(strings.NewReader(c.script), ""); err == nil {
+				t.Fatalf("script %q parses; the case needs a script splitWords cannot read as a single command", c.script)
+			}
+			cmd := `env -S '` + c.script + `'`
+			if d := guard.DecideFooters(payload(t, "Bash", cmd, "/tmp")); d.Deny != c.deny {
+				t.Fatalf("command %q: want deny=%v, got deny=%v", cmd, c.deny, d.Deny)
+			}
+		})
+	}
+}
+
 func TestDecideFootersAllowsWrappedNonPublishingCall(t *testing.T) {
 	cases := []string{
 		`env X=1 git log --grep "x` + coAuthoredFooter + `"`,
