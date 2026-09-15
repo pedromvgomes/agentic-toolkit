@@ -215,7 +215,7 @@ func (r *Review) Unanswered() []RunReport {
 // is still a real gap and keeps the full treatment.
 func (r *Review) Superseded() (superseded, missing []RunReport) {
 	for _, run := range r.Unanswered() {
-		if r.FallbackFrom != "" && run.Panel == r.FallbackFrom && run.Report.Blocked {
+		if r.Available && r.FallbackFrom != "" && run.Panel == r.FallbackFrom && run.Report.Blocked {
 			superseded = append(superseded, run)
 			continue
 		}

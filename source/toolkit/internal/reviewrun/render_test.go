@@ -148,6 +148,26 @@ func TestARunMissingOnTheFallbackPanelItselfStillReadsAsAGap(t *testing.T) {
 	}
 }
 
+// A fallback panel that reaches no verdict at all — one of its own runs
+// blocked, another failing for an ordinary reason — answered for nothing.
+// The run the original panel's block replaced is still a real gap here: it
+// is superseded only once the fallback panel it moved to actually answers.
+func TestABlockOnAPanelThatNeverFellBackToAVerdictIsStillAGap(t *testing.T) {
+	out := render(&Review{
+		Panel: "quick", FallbackFrom: "quick-codex", Available: false,
+		Reason: "the judge could not be run",
+		Reports: []RunReport{
+			{Label: "unified-codex", Role: RoleReviewer, Panel: "quick-codex", Report: Blocked("the credential was exhausted")},
+			{Label: "judge", Role: RoleJudge, Panel: "quick", Report: Unavailable("the judge timed out")},
+		},
+	})
+	for _, want := range []string{"Could not answer (2)", "unified-codex", "judge"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("a block on a fallback that never reached a verdict is not reported as a gap: %q missing from:\n%s", want, out)
+		}
+	}
+}
+
 func TestTheDiscardedJudgeIDsAreReported(t *testing.T) {
 	out := render(&Review{Available: true, Panel: "quick", DiscardedIDs: []string{"f99"}})
 	if !strings.Contains(out, "f99") || !strings.Contains(out, "did not issue") {
