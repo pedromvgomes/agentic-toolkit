@@ -160,6 +160,13 @@ type RunReport struct {
 	Report Report
 	// CostUSD is what the run spent.
 	CostUSD float64
+	// Panel is the name of the panel this run was scheduled under. A
+	// fallback's Reports holds runs from two different panels — the one it
+	// replaced and its own — and Superseded needs to tell which is which:
+	// a block on the panel that got replaced is the reason the fallback ran,
+	// but a block on the fallback panel's own attempt is a gap in it, however
+	// the two got merged into one slice.
+	Panel string
 }
 
 // Roles a run is made in.
@@ -169,16 +176,18 @@ const (
 	RoleJudge     = "judge"
 )
 
-// Partial reports whether any run could not answer. A review that reached a
-// verdict on three reviewers out of four is still a verdict, and the person
-// reading it has to be told which quarter is missing.
+// Partial reports whether a real gap remains: some run neither answered nor
+// was covered by a successful fallback. A review that reached a verdict on
+// three reviewers out of four is still a verdict, and the person reading it
+// has to be told which quarter is missing — but a fallback a manifest
+// declared is the operator saying the substitute is acceptable, so the panel
+// that actually answered is what completeness is measured against, not the
+// one it replaced. Defined in terms of Superseded rather than alongside it,
+// so there is exactly one place that decides what counts as a gap: this is
+// what reviewMarker's Complete and the JSON `partial` field both read.
 func (r *Review) Partial() bool {
-	for _, run := range r.Reports {
-		if !run.Report.Available {
-			return true
-		}
-	}
-	return false
+	_, missing := r.Superseded()
+	return len(missing) > 0
 }
 
 // Unanswered lists the runs that could not answer.
@@ -190,6 +199,29 @@ func (r *Review) Unanswered() []RunReport {
 		}
 	}
 	return out
+}
+
+// Superseded lists the blocked runs a fallback already answered for, and
+// Missing lists whatever is unanswered beyond that.
+//
+// A block that triggered FallbackFrom was, by construction, every run on the
+// panel it replaced (Run's onlyBlocked check) — so once the fallback panel
+// itself has a verdict, those blocked runs are not a gap in this review, they
+// are the reason it ran on a different panel. Presenting them with the same
+// "this review is partial" alarm as a run that is still actually missing
+// would say the retry did not work when it did; a reader that saw that once
+// is a reader who no longer trusts the review ran at all. A run left
+// unanswered for an ordinary reason, or on the fallback panel's own attempt,
+// is still a real gap and keeps the full treatment.
+func (r *Review) Superseded() (superseded, missing []RunReport) {
+	for _, run := range r.Unanswered() {
+		if r.Available && r.FallbackFrom != "" && run.Panel == r.FallbackFrom && run.Report.Blocked {
+			superseded = append(superseded, run)
+			continue
+		}
+		missing = append(missing, run)
+	}
+	return superseded, missing
 }
 
 // Silent lists the reviewers that answered and had no opinion.
@@ -225,8 +257,12 @@ func (r *Review) runsMade() int { return len(r.Reports) }
 func (r *Review) Record() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "panel %s, %d runs", r.Panel, r.runsMade())
-	if n := len(r.Unanswered()); n > 0 {
+	superseded, missing := r.Superseded()
+	if n := len(missing); n > 0 {
 		fmt.Fprintf(&b, ", %d could not answer", n)
+	}
+	if n := len(superseded); n > 0 {
+		fmt.Fprintf(&b, ", %d blocked and answered by the fallback", n)
 	}
 	if r.DroppedByValidator > 0 {
 		fmt.Fprintf(&b, ", %d dropped by a validator", r.DroppedByValidator)

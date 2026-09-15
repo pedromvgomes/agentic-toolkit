@@ -276,6 +276,7 @@ func Run(ctx context.Context, opts Options) (*Review, error) {
 	if err != nil {
 		return nil, err
 	}
+	tagPanel(out.Reports, out.Panel)
 	if out.Available || !onlyBlocked(out.Reports) {
 		return out, nil
 	}
@@ -290,6 +291,7 @@ func Run(ctx context.Context, opts Options) (*Review, error) {
 	if err != nil {
 		return nil, err
 	}
+	tagPanel(alt.Reports, alt.Panel)
 	alt.FallbackFrom = out.Panel
 	// The first attempt's runs and spend are not lost with its Review: every
 	// run actually made belongs in the record and in the total, whichever
@@ -314,6 +316,14 @@ func Run(ctx context.Context, opts Options) (*Review, error) {
 		alt.Blocked = true
 	}
 	return alt, nil
+}
+
+// tagPanel stamps every report with the panel it was scheduled under, so a
+// fallback's merged Reports still says which run belongs to which attempt.
+func tagPanel(reports []RunReport, panel string) {
+	for i := range reports {
+		reports[i].Panel = panel
+	}
 }
 
 // onlyBlocked reports whether every run in reports that did not answer was

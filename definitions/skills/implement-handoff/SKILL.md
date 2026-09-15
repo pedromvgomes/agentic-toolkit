@@ -141,9 +141,27 @@ Clean: invoke `open-pr`, with the handoff's PR title. That skill updates the doc
 stages what the work taught into the memory store, pushes, opens the pull request and puts it
 through a posted review.
 
-## 7 — Close the handoff out
+## 7 — Confirm it can land
 
-Only now, and only on a clean run:
+A posted review is not a mergeable pull request. Check the checks:
+
+```bash
+gh pr checks <N>
+```
+
+A check already reported as failing — a build, a coverage gate, a lint job — is something the
+branch needs to act on, not something the handoff closes out behind. **Stop.** Report which
+check failed and what it said, and leave the handoff exactly where it is: the pull request is
+open and the work is not done until that check passes, so nothing here should read as done
+either.
+
+A check still queued or running is not a failure — proceed. This step reads what the checks say
+right now; it does not wait for a check that has not finished.
+
+## 8 — Close the handoff out
+
+Only now, and only on a clean run — review-implementation came back clean, and no check reported
+failing:
 
 ```bash
 mkdir -p handoff/done
