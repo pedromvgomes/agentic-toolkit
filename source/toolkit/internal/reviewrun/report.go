@@ -257,8 +257,12 @@ func (r *Review) runsMade() int { return len(r.Reports) }
 func (r *Review) Record() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "panel %s, %d runs", r.Panel, r.runsMade())
-	if n := len(r.Unanswered()); n > 0 {
+	superseded, missing := r.Superseded()
+	if n := len(missing); n > 0 {
 		fmt.Fprintf(&b, ", %d could not answer", n)
+	}
+	if n := len(superseded); n > 0 {
+		fmt.Fprintf(&b, ", %d blocked and answered by the fallback", n)
 	}
 	if r.DroppedByValidator > 0 {
 		fmt.Fprintf(&b, ", %d dropped by a validator", r.DroppedByValidator)
