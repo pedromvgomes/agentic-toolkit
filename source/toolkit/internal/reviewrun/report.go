@@ -160,6 +160,13 @@ type RunReport struct {
 	Report Report
 	// CostUSD is what the run spent.
 	CostUSD float64
+	// Panel is the name of the panel this run was scheduled under. A
+	// fallback's Reports holds runs from two different panels — the one it
+	// replaced and its own — and Superseded needs to tell which is which:
+	// a block on the panel that got replaced is the reason the fallback ran,
+	// but a block on the fallback panel's own attempt is a gap in it, however
+	// the two got merged into one slice.
+	Panel string
 }
 
 // Roles a run is made in.
@@ -169,16 +176,18 @@ const (
 	RoleJudge     = "judge"
 )
 
-// Partial reports whether any run could not answer. A review that reached a
-// verdict on three reviewers out of four is still a verdict, and the person
-// reading it has to be told which quarter is missing.
+// Partial reports whether a real gap remains: some run neither answered nor
+// was covered by a successful fallback. A review that reached a verdict on
+// three reviewers out of four is still a verdict, and the person reading it
+// has to be told which quarter is missing — but a fallback a manifest
+// declared is the operator saying the substitute is acceptable, so the panel
+// that actually answered is what completeness is measured against, not the
+// one it replaced. Defined in terms of Superseded rather than alongside it,
+// so there is exactly one place that decides what counts as a gap: this is
+// what reviewMarker's Complete and the JSON `partial` field both read.
 func (r *Review) Partial() bool {
-	for _, run := range r.Reports {
-		if !run.Report.Available {
-			return true
-		}
-	}
-	return false
+	_, missing := r.Superseded()
+	return len(missing) > 0
 }
 
 // Unanswered lists the runs that could not answer.
@@ -206,7 +215,7 @@ func (r *Review) Unanswered() []RunReport {
 // is still a real gap and keeps the full treatment.
 func (r *Review) Superseded() (superseded, missing []RunReport) {
 	for _, run := range r.Unanswered() {
-		if r.FallbackFrom != "" && run.Report.Blocked {
+		if r.FallbackFrom != "" && run.Panel == r.FallbackFrom && run.Report.Blocked {
 			superseded = append(superseded, run)
 			continue
 		}

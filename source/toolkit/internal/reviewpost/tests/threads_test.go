@@ -128,8 +128,8 @@ func TestTheBodyDoesNotAlarmOverABlockTheFallbackAlreadyAnsweredFor(t *testing.T
 	r.Panel = "standard"
 	r.FallbackFrom = "standard-codex"
 	r.Reports = []reviewrun.RunReport{
-		{Label: "correctness-codex", Role: reviewrun.RoleReviewer, Report: reviewrun.Blocked("the credential was exhausted")},
-		{Label: "correctness", Role: reviewrun.RoleReviewer, Report: reviewrun.Answered(nil)},
+		{Label: "correctness-codex", Role: reviewrun.RoleReviewer, Panel: "standard-codex", Report: reviewrun.Blocked("the credential was exhausted")},
+		{Label: "correctness", Role: reviewrun.RoleReviewer, Panel: "standard", Report: reviewrun.Answered(nil)},
 	}
 	_, place := reviewpost.Build(r, pr, added)
 

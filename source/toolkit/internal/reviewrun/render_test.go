@@ -119,8 +119,8 @@ func TestABlockedRunTheFallbackAnsweredForIsNotReportedAsAGap(t *testing.T) {
 	out := render(&Review{
 		Panel: "quick", FallbackFrom: "quick-codex", Available: true,
 		Reports: []RunReport{
-			{Label: "unified-codex", Role: RoleReviewer, Report: Blocked("the credential was exhausted")},
-			{Label: "unified", Role: RoleReviewer, Report: Answered(nil)},
+			{Label: "unified-codex", Role: RoleReviewer, Panel: "quick-codex", Report: Blocked("the credential was exhausted")},
+			{Label: "unified", Role: RoleReviewer, Panel: "quick", Report: Answered(nil)},
 		},
 	})
 	if strings.Contains(out, "Could not answer") {
@@ -134,8 +134,8 @@ func TestARunMissingOnTheFallbackPanelItselfStillReadsAsAGap(t *testing.T) {
 	out := render(&Review{
 		Panel: "quick", FallbackFrom: "quick-codex", Available: true,
 		Reports: []RunReport{
-			{Label: "unified-codex", Role: RoleReviewer, Report: Blocked("the credential was exhausted")},
-			{Label: "judge", Role: RoleJudge, Report: Unavailable("the judge timed out")},
+			{Label: "unified-codex", Role: RoleReviewer, Panel: "quick-codex", Report: Blocked("the credential was exhausted")},
+			{Label: "judge", Role: RoleJudge, Panel: "quick", Report: Unavailable("the judge timed out")},
 		},
 	})
 	for _, want := range []string{"Could not answer (1)", "judge", "the judge timed out"} {
