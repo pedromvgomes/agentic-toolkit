@@ -118,6 +118,30 @@ func TestTheBodySaysNothingAboutThreadsWhenNoneWereSought(t *testing.T) {
 	}
 }
 
+// A block the fallback line already names is not a gap this review left open:
+// it is the reason the review ran on a different panel, and the panel that
+// did run answered. Posting it under "Could not answer" too would tell a
+// reader the retry did not work when it did — and a reader who believes that
+// once no longer trusts a review that says it ran clean.
+func TestTheBodyDoesNotAlarmOverABlockTheFallbackAlreadyAnsweredFor(t *testing.T) {
+	r := reviewWith()
+	r.Panel = "standard"
+	r.FallbackFrom = "standard-codex"
+	r.Reports = []reviewrun.RunReport{
+		{Label: "correctness-codex", Role: reviewrun.RoleReviewer, Report: reviewrun.Blocked("the credential was exhausted")},
+		{Label: "correctness", Role: reviewrun.RoleReviewer, Report: reviewrun.Answered(nil)},
+	}
+	_, place := reviewpost.Build(r, pr, added)
+
+	body := reviewpost.Body(r, pr, place)
+	if !strings.Contains(body, "Retried here after every run on `standard-codex` was blocked") {
+		t.Errorf("the body does not name the fallback:\n%s", body)
+	}
+	if strings.Contains(body, "Could not answer") || strings.Contains(body, "is partial") {
+		t.Errorf("a block the fallback already answered for still reads as an unresolved gap:\n%s", body)
+	}
+}
+
 // What a review withheld is stated, so a reader can tell a quiet pull request
 // from one whose findings are all already on it.
 func TestTheBodyNamesWhatWasAlreadyOnThePullRequest(t *testing.T) {

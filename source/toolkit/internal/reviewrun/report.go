@@ -192,6 +192,29 @@ func (r *Review) Unanswered() []RunReport {
 	return out
 }
 
+// Superseded lists the blocked runs a fallback already answered for, and
+// Missing lists whatever is unanswered beyond that.
+//
+// A block that triggered FallbackFrom was, by construction, every run on the
+// panel it replaced (Run's onlyBlocked check) — so once the fallback panel
+// itself has a verdict, those blocked runs are not a gap in this review, they
+// are the reason it ran on a different panel. Presenting them with the same
+// "this review is partial" alarm as a run that is still actually missing
+// would say the retry did not work when it did; a reader that saw that once
+// is a reader who no longer trusts the review ran at all. A run left
+// unanswered for an ordinary reason, or on the fallback panel's own attempt,
+// is still a real gap and keeps the full treatment.
+func (r *Review) Superseded() (superseded, missing []RunReport) {
+	for _, run := range r.Unanswered() {
+		if r.FallbackFrom != "" && run.Report.Blocked {
+			superseded = append(superseded, run)
+			continue
+		}
+		missing = append(missing, run)
+	}
+	return superseded, missing
+}
+
 // Silent lists the reviewers that answered and had no opinion.
 //
 // They get their own line in the report rather than being absent from it: a

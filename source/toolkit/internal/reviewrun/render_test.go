@@ -111,6 +111,43 @@ func TestARegularReviewNamesNoFallback(t *testing.T) {
 	}
 }
 
+// A block the fallback line already names is not a gap in this review: it is
+// the reason the review ran on a different panel, and the retry answered.
+// Presenting it under "Could not answer" too would say the retry did not
+// work when it did.
+func TestABlockedRunTheFallbackAnsweredForIsNotReportedAsAGap(t *testing.T) {
+	out := render(&Review{
+		Panel: "quick", FallbackFrom: "quick-codex", Available: true,
+		Reports: []RunReport{
+			{Label: "unified-codex", Role: RoleReviewer, Report: Blocked("the credential was exhausted")},
+			{Label: "unified", Role: RoleReviewer, Report: Answered(nil)},
+		},
+	})
+	if strings.Contains(out, "Could not answer") {
+		t.Errorf("a block the fallback already answered for still reads as a gap:\n%s", out)
+	}
+}
+
+// A run left unanswered on the fallback panel's own attempt is still a real
+// gap, fallback or not.
+func TestARunMissingOnTheFallbackPanelItselfStillReadsAsAGap(t *testing.T) {
+	out := render(&Review{
+		Panel: "quick", FallbackFrom: "quick-codex", Available: true,
+		Reports: []RunReport{
+			{Label: "unified-codex", Role: RoleReviewer, Report: Blocked("the credential was exhausted")},
+			{Label: "judge", Role: RoleJudge, Report: Unavailable("the judge timed out")},
+		},
+	})
+	for _, want := range []string{"Could not answer (1)", "judge", "the judge timed out"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("a run still missing after the fallback is not reported: %q missing from:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "unified-codex") {
+		t.Errorf("the block the fallback answered for is reported alongside the real gap:\n%s", out)
+	}
+}
+
 func TestTheDiscardedJudgeIDsAreReported(t *testing.T) {
 	out := render(&Review{Available: true, Panel: "quick", DiscardedIDs: []string{"f99"}})
 	if !strings.Contains(out, "f99") || !strings.Contains(out, "did not issue") {

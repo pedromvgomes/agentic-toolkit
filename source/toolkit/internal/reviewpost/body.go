@@ -20,6 +20,11 @@ func Body(r *reviewrun.Review, pr githubapp.PullRequest, place Placement) string
 
 	fmt.Fprintf(&b, "## Review by `agtk` — panel `%s`\n\n", r.Panel)
 
+	if r.FallbackFrom != "" {
+		fmt.Fprintf(&b, "_Retried here after every run on `%s` was blocked; what follows is from `%s`._\n\n",
+			r.FallbackFrom, r.Panel)
+	}
+
 	if !r.Available {
 		fmt.Fprintf(&b, "**This review did not reach a verdict:** %s\n\n", r.Reason)
 		writeRuns(&b, r)
@@ -183,9 +188,10 @@ func location(f reviewrun.Finding) string {
 // be able to tell "nobody found anything" from "a quarter of the panel never
 // ran".
 func writeRuns(b *strings.Builder, r *reviewrun.Review) {
-	if unanswered := r.Unanswered(); len(unanswered) > 0 {
-		fmt.Fprintf(b, "### Could not answer (%d)\n\n", len(unanswered))
-		for _, run := range unanswered {
+	_, missing := r.Superseded()
+	if len(missing) > 0 {
+		fmt.Fprintf(b, "### Could not answer (%d)\n\n", len(missing))
+		for _, run := range missing {
 			fmt.Fprintf(b, "- `%s`: %s\n", run.Label, run.Report.Reason)
 		}
 		b.WriteString("\nThis review is partial: what these would have found is unknown, not absent.\n\n")
