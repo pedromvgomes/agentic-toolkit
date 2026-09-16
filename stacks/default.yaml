@@ -41,6 +41,7 @@ instructions:
   - instructions-are-rendered-not-edited
   - no-authoring-footers
   - plan-approval
+  - rendered-output-stays-out-of-git
 hooks:
   - handoff-claude-session-start
   - no-authoring-footers-claude-pre-tool-use
