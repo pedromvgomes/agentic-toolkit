@@ -60,8 +60,15 @@ as the first step. Read the policy off the repo, in this order, and stop at the 
 ### Keeping ignored output fresh
 
 A repo on the default policy has no rendered output after a fresh clone until something runs
-`agtk sync`. A `SessionStart` hook in the **user-level** `~/.claude/settings.json` can do that
+`agtk render`. A `SessionStart` hook in the **user-level** `~/.claude/settings.json` can do that
 on every session start, which keeps every such repo current without any per-repo setup.
+
+Run `agtk render`, not `agtk sync`, from that hook. `.agentic-toolkit.lock.yaml` is committed
+under the default policy, so `render` has everything it needs and never resolves a ref over the
+network; `sync` relocks whenever the lockfile looks stale, which means a hook wired to it
+resolves mutable refs like `@main` live and writes whatever hooks and MCP servers they point to
+into `.claude/settings.json` and `.mcp.json` — in *every* repo the hook fires in, not just ones
+whose manifest you reviewed. A user-level hook has no per-repo scope to limit that to.
 
 It has to be user-level. A per-repo hook is configured inside `.claude/`, which is exactly the
 gitignored tree the hook would need to exist in order to bootstrap — after a fresh clone there
