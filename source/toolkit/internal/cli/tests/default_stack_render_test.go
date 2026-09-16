@@ -133,6 +133,35 @@ func TestTheNoAuthoringFootersInstructionReachesClaudeMD(t *testing.T) {
 	}
 }
 
+// A skill's companion files sit beside SKILL.md on disk, and an adapter that
+// only copies the entrypoint would leave a skill's reference material missing
+// with nothing failing until a session tries to read it.
+func TestASkillsCompanionFileIsRenderedAlongsideIt(t *testing.T) {
+	apply := renderDefaultStack(t)
+
+	if _, err := os.Stat(filepath.Join(apply, ".claude/skills/using-agentic-toolkit/SKILL.md")); err != nil {
+		t.Fatalf("using-agentic-toolkit did not reach the consumer: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(apply, ".claude/skills/using-agentic-toolkit/REFERENCE.md")); err != nil {
+		t.Errorf("using-agentic-toolkit's REFERENCE.md, a companion file, never rendered: %v", err)
+	}
+}
+
+// The instruction is what tells a session the default policy and where to
+// read it off a repo; without it in CLAUDE.md a session has no way to know
+// whether to commit or ignore what it renders.
+func TestTheRenderedOutputStaysOutOfGitInstructionReachesClaudeMD(t *testing.T) {
+	apply := renderDefaultStack(t)
+
+	body, err := os.ReadFile(filepath.Join(apply, "CLAUDE.md"))
+	if err != nil {
+		t.Fatalf("CLAUDE.md did not reach the consumer: %v", err)
+	}
+	if !strings.Contains(string(body), "Rendered output stays out of git") {
+		t.Errorf("CLAUDE.md does not carry the rendered-output-stays-out-of-git instruction:\n%s", body)
+	}
+}
+
 // A pre-approved permission for a command no agent can run is dead config, and
 // one the agent needs but nobody approved is a prompt on every delegation.
 // Both are only visible once the settings are actually rendered.
