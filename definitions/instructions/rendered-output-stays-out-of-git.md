@@ -66,9 +66,17 @@ on every session start, which keeps every such repo current without any per-repo
 Run `agtk render`, not `agtk sync`, from that hook. `.agentic-toolkit.lock.yaml` is committed
 under the default policy, so `render` has everything it needs and never resolves a ref over the
 network; `sync` relocks whenever the lockfile looks stale, which means a hook wired to it
-resolves mutable refs like `@main` live and writes whatever hooks and MCP servers they point to
-into `.claude/settings.json` and `.mcp.json` — in *every* repo the hook fires in, not just ones
-whose manifest you reviewed. A user-level hook has no per-repo scope to limit that to.
+resolves mutable refs like `@main` live and writes whatever hooks and MCP servers *that ref
+currently points to* into `.claude/settings.json` and `.mcp.json`, without anyone having looked
+at what changed since the lockfile was last updated.
+
+Choosing `render` over `sync` removes only that live-resolution step. It does not make an
+unreviewed repo safe to open: `render` still writes whatever hooks and MCP servers the repo's
+own committed manifest, lockfile and `agentic/hooks/`/`agentic/mcp/` name, verbatim, into
+`.claude/settings.json` and `.mcp.json` — a user-level hook fires in every repo it opens, and
+neither command distinguishes a repo you have reviewed from one you have not. Trusting a repo's
+committed automation is a separate decision, one the platform's own workspace-trust prompt is
+for, not something this hook choice settles.
 
 It has to be user-level. A per-repo hook is configured inside `.claude/`, which is exactly the
 gitignored tree the hook would need to exist in order to bootstrap — after a fresh clone there
