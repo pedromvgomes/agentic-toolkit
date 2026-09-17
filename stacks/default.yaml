@@ -17,6 +17,7 @@ skills:
   - panel-code-review
   - pr-review-resolver
   - tdd-bugfix
+  - using-agentic-toolkit
   - wrap-session
   # The feature flow. Each is usable on its own — a handoff written by hand, a
   # review loop over any branch, shipping any finished branch — so they are
@@ -40,6 +41,7 @@ instructions:
   - instructions-are-rendered-not-edited
   - no-authoring-footers
   - plan-approval
+  - rendered-output-stays-out-of-git
 hooks:
   - handoff-claude-session-start
   - no-authoring-footers-claude-pre-tool-use

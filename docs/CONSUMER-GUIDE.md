@@ -81,6 +81,12 @@ under `stacks:`, and
 renders because it sits under `agentic/instructions/`, without being listed
 anywhere.
 
+The `using-agentic-toolkit` skill
+(`definitions/skills/using-agentic-toolkit/`) covers the same ground —
+adding local definitions, importing definitions from other repos, authoring
+local stacks — packaged for an agent working inside a consumer repo to
+consult inline rather than for a human reading this guide.
+
 ## Stack fields
 
 A stack — a file at `stacks/*.yaml` in any repo, meant to be shared through
