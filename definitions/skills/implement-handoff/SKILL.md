@@ -98,6 +98,11 @@ For each task, in order:
 verification command. Pass `model: opus` when the task is rated `intricate`; a `routine` task
 takes the agent's own model.
 
+**A sentence announcing a dispatch is not a dispatch.** "Dispatching task 2" is true only once
+the tool call that starts it is in the same turn — say it and stop there, without making the
+call, and the task never started while the transcript reads as if it did. If a task is not yet
+dispatched, do not describe it as underway; make the call first, then report it.
+
 **Never two at once.** Two implementers write into one working tree, and the second reads a
 tree the first is still changing. Their diffs then cannot be reviewed apart, which is the thing
 that makes each one reviewable at all.
