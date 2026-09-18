@@ -215,6 +215,29 @@ func TestTheReviewSkillsFixPathRendersAlongsideIt(t *testing.T) {
 	}
 }
 
+// A review comment is answered on its own thread. gh has no subcommand for
+// that, so a skill that only says "reply" leaves the agent to reach for
+// `gh pr comment`, which posts to the pull request's conversation where the
+// thread never shows it — or to skip the reply, when nothing checks for it.
+func TestPRReviewResolverRepliesOnTheReviewThread(t *testing.T) {
+	apply := renderFeatureFlowStack(t)
+
+	body, err := os.ReadFile(filepath.Join(apply, ".claude/skills/pr-review-resolver/SKILL.md"))
+	if err != nil {
+		t.Fatalf("pr-review-resolver did not reach the consumer: %v", err)
+	}
+	skill := string(body)
+	if !strings.Contains(skill, "pulls/{number}/comments/{comment_id}/replies") {
+		t.Error("pr-review-resolver names no endpoint that replies on a thread, so the reply lands wherever the agent guesses")
+	}
+	if !strings.Contains(skill, "Never answer an inline comment with `gh pr comment`") {
+		t.Error("pr-review-resolver does not rule out the command that posts the reply to the conversation instead of the thread")
+	}
+	if !strings.Contains(skill, "Verify every reply landed") {
+		t.Error("pr-review-resolver does not check the replies it owes, so a skipped reply goes unnoticed")
+	}
+}
+
 // The plan-shaped half of the format is optional. A handoff written by hand
 // halfway through something carries no task list, no slices and no PR title,
 // and a format demanding them serves planning only — which abandons the case
