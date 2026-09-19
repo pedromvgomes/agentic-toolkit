@@ -48,6 +48,15 @@ type Options struct {
 	BaseLabel string
 	// Head is the ref the change ends at, or "" for the working tree.
 	Head string
+	// Since narrows the diff to Since..Head, for a pull request re-review
+	// that reads on from an earlier complete review of Since. Empty reads the
+	// whole change from Base.
+	//
+	// Only the diff moves. The manifest, the prompts and the convention
+	// documents are still read at Base: Since is a commit on the branch under
+	// review, and reading the rules there would let a change write the rules
+	// it is judged by — ADR 0007.
+	Since string
 	// Context is what the review runs against.
 	Context review.Context
 	// Panel overrides the panel the rules would choose.
@@ -125,7 +134,7 @@ func prepareMaterial(opts Options) (*preparedMaterial, error) {
 
 	profile, err := review.BuildProfile(review.ProfileOptions{
 		Dir:     opts.Dir,
-		Base:    opts.Base,
+		Base:    opts.diffBase(),
 		Head:    opts.Head,
 		Exclude: m.Exclude,
 	})
@@ -149,7 +158,7 @@ func prepareMaterial(opts Options) (*preparedMaterial, error) {
 	for _, f := range reviewable {
 		names = append(names, f.Path)
 	}
-	patch, err := review.Patch(opts.Dir, opts.Base, opts.Head, reviewable)
+	patch, err := review.Patch(opts.Dir, opts.diffBase(), opts.Head, reviewable)
 	if err != nil {
 		_ = root.Close()
 		return nil, err
@@ -166,7 +175,7 @@ func prepareMaterial(opts Options) (*preparedMaterial, error) {
 		Patch:        patch,
 		Conventions:  conventions,
 		Root:         root,
-		Range:        rangeLabel(opts.baseLabel(), opts.Head),
+		Range:        opts.rangeLabel(),
 	}
 	return &preparedMaterial{
 		m: m, manifestLbl: manifestLbl, profile: profile, root: root,
@@ -400,6 +409,7 @@ func runPanel(ctx context.Context, opts Options, pm *preparedMaterial, panelOver
 		Panel:              plan.Panel,
 		Manifest:           plan.Manifest,
 		Range:              plan.Range,
+		Since:              opts.Since,
 		Skipped:            pm.root.Skipped,
 		Conventions:        plan.Material.ConventionPaths(),
 		MissingConventions: plan.MissingConventions,
@@ -970,6 +980,24 @@ func (o Options) baseLabel() string {
 		return o.BaseLabel
 	}
 	return o.Base
+}
+
+// diffBase is the commit the diff is measured from.
+func (o Options) diffBase() string {
+	if o.Since != "" {
+		return o.Since
+	}
+	return o.Base
+}
+
+// rangeLabel renders what this review reads. A narrowed review names the
+// commit it reads on from rather than the base, because a reader of the range
+// is being told which lines were read.
+func (o Options) rangeLabel() string {
+	if o.Since != "" {
+		return rangeLabel(o.Since, o.Head)
+	}
+	return rangeLabel(o.baseLabel(), o.Head)
 }
 
 // rangeLabel renders what the change was measured over.

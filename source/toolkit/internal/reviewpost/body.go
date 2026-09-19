@@ -20,6 +20,12 @@ func Body(r *reviewrun.Review, pr githubapp.PullRequest, place Placement) string
 
 	fmt.Fprintf(&b, "## Review by `agtk` — panel `%s`\n\n", r.Panel)
 
+	if r.Since != "" {
+		fmt.Fprintf(&b, "_Reads only what changed since `%s`, the last commit a review by this installation "+
+			"reached a verdict on. Findings from that review stand on their own threads and are not repeated here._\n\n",
+			r.Since)
+	}
+
 	if r.FallbackFrom != "" {
 		fmt.Fprintf(&b, "_Retried here after every run on `%s` was blocked; what follows is from `%s`._\n\n",
 			r.FallbackFrom, r.Panel)
@@ -77,7 +83,8 @@ func writeDeadlock(b *strings.Builder, place Placement) {
 // be written.
 func reviewMarker(r *reviewrun.Review, pr githubapp.PullRequest, place Placement) string {
 	marker := reviewrun.ReviewMarker{
-		Head: pr.HeadSHA,
+		Head:  pr.HeadSHA,
+		Since: r.Since,
 		// A verdict is the judge answering, every reviewer answering, and the
 		// pull request's threads being readable. A run missing any of those
 		// found less than it would have, and "found nothing" is the one thing

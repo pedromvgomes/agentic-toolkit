@@ -299,6 +299,15 @@ func MergeBase(dir, base, head string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
+// IsAncestor reports whether ancestor is reachable from head.
+//
+// Any failure reads as "no". The one caller asks whether a narrower review is
+// safe, and a question git could not answer is not a yes.
+func IsAncestor(dir, ancestor, head string) bool {
+	_, err := git(dir, "merge-base", "--is-ancestor", ancestor, head)
+	return err == nil
+}
+
 // baseCandidates are the refs a change is measured against when nobody named
 // one, in the order they are tried.
 //

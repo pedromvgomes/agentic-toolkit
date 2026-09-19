@@ -633,6 +633,23 @@ type explainOutJSON struct {
 	// other field here: a consumer reading it must not have to tell a missing
 	// key apart from a review that validates for no stated reason.
 	ValidationReason string `json:"validation_reason"`
+	// Scope is how much of a pull request a review would read. Absent for a
+	// local target, which always reads the range it was given.
+	Scope *scopeJSON `json:"scope,omitempty"`
+}
+
+// scopeJSON is how much of a pull request a review reads.
+type scopeJSON struct {
+	// Kind is "delta" or "full".
+	Kind string `json:"kind"`
+	// Since is the head of the review a delta reads on from.
+	Since string `json:"since,omitempty"`
+	// Reason says why the whole change is read, and is empty for a delta.
+	Reason string `json:"reason,omitempty"`
+}
+
+func scopeRow(s reviewScope) *scopeJSON {
+	return &scopeJSON{Kind: s.kind(), Since: s.since, Reason: s.reason}
 }
 
 // changeJSON is the change's profile: what selection was decided on.
@@ -765,6 +782,9 @@ type pullRequestJSON struct {
 	Draft    bool   `json:"draft"`
 	State    string `json:"state"`
 	Reviewed string `json:"reviewed_range"`
+	// Scope says whether Reviewed is the whole change or what changed since
+	// an earlier complete review, and why.
+	Scope *scopeJSON `json:"scope"`
 }
 
 type reviewPRPlanJSON struct {
@@ -997,6 +1017,7 @@ func pullRequestRow(t *pullRequestTarget) pullRequestJSON {
 		HeadSHA:  t.pr.HeadSHA,
 		Draft:    t.pr.Draft,
 		State:    t.pr.State,
-		Reviewed: t.mergeBase + ".." + t.pr.HeadSHA,
+		Reviewed: t.diffBase() + ".." + t.pr.HeadSHA,
+		Scope:    scopeRow(t.scope),
 	}
 }

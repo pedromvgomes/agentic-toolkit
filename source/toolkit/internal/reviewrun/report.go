@@ -82,6 +82,11 @@ type Review struct {
 	Manifest string
 	// Range is what the change was measured over.
 	Range string
+	// Since is the head of the earlier complete review a pull request
+	// re-review read on from, and is empty when the review read the whole
+	// change. It is what the posted marker records, so approval can walk back
+	// to the review that read the rest.
+	Since string
 
 	// Findings are what survived the judge, in report order.
 	Findings []Finding

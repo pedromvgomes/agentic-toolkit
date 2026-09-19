@@ -79,6 +79,9 @@ const ReviewMarkerPrefix = "<!-- agtk:review"
 const (
 	// markerHeadKey names the commit the review was made against.
 	markerHeadKey = "head"
+	// markerSinceKey names the commit a delta review read from: the head of
+	// the earlier complete review whose findings this one carries forward.
+	markerSinceKey = "since"
 	// markerVerdictKey says whether the run reached one.
 	markerVerdictKey = "verdict"
 	// markerUnanswerableKey lists the findings agtk could give nobody a thread
@@ -110,6 +113,11 @@ const (
 type ReviewMarker struct {
 	// Head is the commit reviewed.
 	Head string
+	// Since is the head of the earlier complete review this one read on from,
+	// and is empty for a review that read the whole change. A review with a
+	// Since saw only Since..Head, so it speaks for the whole change only
+	// together with the review of Since — which is what approval walks.
+	Since string
 	// Complete reports whether the run reached a verdict.
 	Complete bool
 	// Findings are the surviving findings, by fingerprint, in report order.
@@ -140,6 +148,9 @@ func (m ReviewMarker) Render() string {
 		FingerprintVersion,
 		markerHeadKey + "=" + m.Head,
 		markerVerdictKey + "=" + verdict,
+	}
+	if m.Since != "" {
+		fields = append(fields, markerSinceKey+"="+m.Since)
 	}
 	var unanswerable, deadlocked []string
 	for _, f := range m.Findings {
@@ -225,6 +236,11 @@ func parseMarkerFields(fields []string) (ReviewMarker, bool) {
 		switch key {
 		case markerHeadKey:
 			marker.Head = value
+		case markerSinceKey:
+			if value == "" {
+				return ReviewMarker{}, false
+			}
+			marker.Since = value
 		case markerVerdictKey:
 			switch value {
 			case VerdictComplete:

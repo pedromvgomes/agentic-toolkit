@@ -247,9 +247,14 @@ func explainPullRequest(cmd *cobra.Command, env *Env, target reviewTarget, asJSO
 		return err
 	}
 
+	// The scope a plain run would choose, so the panel explained is the one
+	// that run would get: a re-review is sized from the narrower diff.
+	reviews, reviewsErr := t.client.ReadSubmittedReviews(cmd.Context(), t.pr.Number)
+	t.scope = chooseScope(root, t, reviews, reviewsErr, false)
+
 	profile, err := review.BuildProfile(review.ProfileOptions{
 		Dir:     root,
-		Base:    t.mergeBase,
+		Base:    t.diffBase(),
 		Head:    t.pr.HeadSHA,
 		Exclude: m.Exclude,
 	})
@@ -262,7 +267,17 @@ func explainPullRequest(cmd *cobra.Command, env *Env, target reviewTarget, asJSO
 		return err
 	}
 
-	return writeExplain(env, asJSON, label, rangeLabel(t.pr.BaseRef, t.pr.HeadSHA), m, profile, sel)
+	rng := rangeLabel(t.pr.BaseRef, t.pr.HeadSHA)
+	if t.scope.since != "" {
+		rng = rangeLabel(t.scope.since, t.pr.HeadSHA)
+	}
+	if asJSON {
+		out := explainJSON(label, rng, m, profile, sel)
+		out.Scope = scopeRow(t.scope)
+		return writeJSON(env, out)
+	}
+	fmt.Fprintf(env.Stdout, "scope:    %s\n", t.scope.describe())
+	return writeExplain(env, false, label, rng, m, profile, sel)
 }
 
 // writeExplain reports a selection in whichever form the caller asked for, so
