@@ -14,6 +14,36 @@ description: |
 Analyze PR review comments, present a structured assessment to the user, implement approved fixes, and close
 the feedback loop by responding to reviewers.
 
+## Unattended mode
+
+Invoked with `--unattended`, the skill runs with nobody at the keyboard. A loop such as
+`review-pull-request` passes it, and a person asking to address comments never gets it by
+default. The phases below still apply, with these differences:
+
+- **Every unresolved thread is handled**: agtk's, bots', and people's. A thread whose latest
+  comment is already a reply from this session's `gh` user has been answered, and is skipped.
+- **Phase 2 asks nothing.** Assess every finding as usual, then act on the assessment yourself:
+  - `Valid concern` or `Partially valid`: fix it.
+  - `Not applicable`: reply with why. On a thread `agtk code-review` opened, the reply starts
+    with the line `agtk: false positive: <reason>`.
+  - `Already addressed`: reply naming the commit that addressed it.
+  - A person's question gets a direct answer.
+  - A request you cannot carry out inside this change gets a reply saying so and why.
+- **Phase 3 is skipped.** Do not enter plan mode and do not wait for approval. The handoff that
+  started this work was the approved plan, and a loop that blocks on a person every pass is not
+  a loop.
+- **Phase 4** runs the project's own checks before anything is committed. A fix that breaks
+  them is dropped, not pushed, and its thread gets a reply saying the fix was attempted and
+  what failed.
+- **Phase 5**: one commit, a push, a reply on every thread handled, and every reply verified
+  (5.4). Then **stop**:
+  - Never resolve a thread. Resolving is a person's act, and it is what approval waits for.
+  - Skip 5.5: the loop's next pass is the re-review.
+
+End with the Phase 5.4 table, and a separate list of every `agtk: false positive` marking you
+posted, with its reason. Whoever resolves those threads is agreeing with you, so they need to
+see each one.
+
 ## Workflow
 
 ### Phase 1: Gather Review Comments
@@ -192,8 +222,17 @@ Once the plan is approved:
    or conversation), and the reply's `html_url`. A finding with no URL in that table has not
    been answered, and you must say so rather than report the job done.
 
-5. **Request re-review** — request a new review from the reviewers who left comments,
-   so they can verify the fixes. Use `gh pr edit` or the GitHub API to re-request reviews.
+5. **Request re-review** — request a new review from the **people** who left comments on
+   this pull request, so they can verify the fixes:
+
+   ```bash
+   gh pr edit <PR> --add-reviewer <login>
+   ```
+
+   Only logins that appear as a comment author in the Phase 1 threads. Never a bot:
+   `agtk-code-review`, `copilot`, anything ending in `[bot]`. A bot re-reviews when it is run
+   again, not when it is asked. Never a reviewer who did not comment: guessing a name
+   requests a review nobody asked for. If no person commented, skip this step and say so.
 
 ## Edge Cases
 

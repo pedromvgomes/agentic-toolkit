@@ -152,7 +152,8 @@ thread leaves the pull request no better off than before.
 - `--no-fix`: stop here.
 - `--auto-fix`: invoke `pr-review-resolver` for this PR without asking. It still shows its own
   plan and waits for approval before writing code; `--auto-fix` answers the question about
-  *whether* to fix, not the one about *what* to change.
+  *whether* to fix, not the one about *what* to change. Fixing with nobody at the keyboard,
+  pass after pass, is `review-pull-request`'s, which runs the resolver with `--unattended`.
 - otherwise: ask whether to run `pr-review-resolver` on the PR now, and invoke it on yes.
 
 **Local target.** There are no threads and nothing posted, so fix here.

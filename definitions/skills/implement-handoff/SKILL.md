@@ -2,13 +2,14 @@
 name: implement-handoff
 description: |
   Carry out the work a handoff describes: check the pull request it waits on, read its tasks, and land them one at a time — one
-  implementer subagent per task, its diff reviewed and verified before it is committed — then run the capped review loop and open
-  the pull request. Run as /implement-handoff in a fresh session when a handoff is waiting. Trigger on "implement the handoff", "continue the
+  implementer subagent per task, its diff reviewed and verified before it is committed — then run the capped review loop, open
+  the pull request, converge its review, and wait for its checks. Run as /implement-handoff in a fresh session when a handoff is waiting. Trigger on "implement the handoff", "continue the
   handoff", "pick up the handoff", "run the handoff in handoff/".
 requires:
   - agents/task-implementer
   - skills/review-implementation
   - skills/open-pr
+  - skills/review-pull-request
   - skills/write-handoff
   - instructions/git
 ---
@@ -143,30 +144,43 @@ lets the work be picked up again rather than restarted.
 ## 6 — Ship it
 
 Clean: invoke `open-pr`, with the handoff's PR title. That skill updates the documentation,
-stages what the work taught into the memory store, pushes, opens the pull request and puts it
-through a posted review.
+stages what the work taught into the memory store, pushes, opens the pull request, posts a
+review, and runs `review-pull-request` on it until every thread is answered.
 
-## 7 — Confirm it can land
+If that loop comes back anything but clean (stalled, capped, no verdict), **stop**. The pull
+request is open and not ready: report what is still waiting and leave the handoff where it is,
+as step 5 does.
 
-A posted review is not a mergeable pull request. Check the checks:
+## 7 — Wait for the checks
+
+A reviewed pull request is not a mergeable one. Wait for its checks:
 
 ```bash
-gh pr checks <N>
+gh pr checks <N> --watch --fail-fast
 ```
 
-A check already reported as failing — a build, a coverage gate, a lint job — is something the
-branch needs to act on, not something the handoff closes out behind. **Stop.** Report which
-check failed and what it said, and leave the handoff exactly where it is: the pull request is
-open and the work is not done until that check passes, so nothing here should read as done
-either.
+The command returns **as soon as** every check has finished, or at the first one that fails.
+Bound it at **30 minutes**. That is a ceiling for a pipeline still running at that point, not a
+wait that always runs its length. Run it in the background so the harness does not cut the call
+off sooner, and read its result when it finishes. If it is still running at 30 minutes, stop it
+and treat that as the ceiling being reached. `timeout 1800` does the same where it exists, but
+macOS ships without it, so do not rely on it.
 
-A check still queued or running is not a failure — proceed. This step reads what the checks say
-right now; it does not wait for a check that has not finished.
+Straight after a push, the pull request may report no checks at all, because CI has not
+registered them yet. Wait a minute and ask again. A repository whose pull request still reports
+none has no CI to wait for, so say so and continue.
+
+- **A check failed** (a build, a coverage gate, a lint job, a scan) → **stop**. Report which
+  check and what it said. Leave the handoff exactly where it is, and do not write the next
+  one. The branch has something to fix, and nothing here should read as done.
+- **Still running at the ceiling** → **stop** the same way, and say which checks were still
+  pending. A check nobody saw finish has not passed.
+- **Every check passed** → continue.
 
 ## 8 — Close the handoff out
 
-Only now, and only on a clean run — review-implementation came back clean, and no check reported
-failing:
+Only now, and only on a clean run: review-implementation came back clean, review-pull-request
+came back clean, and every check passed.
 
 ```bash
 mkdir -p handoff/done
@@ -178,7 +192,9 @@ mv "<the handoff you read>" handoff/done/
 Then, if the plan names a slice after this one: invoke `write-handoff` for it, with the pull
 request just opened as its **predecessor**. The next session will wait for it to merge.
 
-Report the pull request, the posted review, and either that the plan is complete or the next
+Report the pull request, the review loop's passes and what they cost, every false-positive
+marking the agent posted, **the threads waiting for you to resolve** (approval needs them, and
+nothing in this flow resolves a thread), and either that the plan is complete or the next
 handoff's path with the steps that start it: once the pull request just opened has merged, run
 `/clear`, then run `/implement-handoff`. Nothing picks the next handoff up automatically — the
 session-start hook can add a note to the new session, but it cannot begin a turn.

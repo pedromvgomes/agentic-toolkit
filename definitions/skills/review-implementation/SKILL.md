@@ -116,6 +116,6 @@ reported.
 
 It never reviews a pull request. `panel-code-review` does that, and posts when it does; this
 loop exists on the other side of that line, and a flag that crossed it would make every pass
-publish.
+publish. The loop on the published side is `review-pull-request`.
 
 It never approves anything, and never resolves a **Comment thread**.
