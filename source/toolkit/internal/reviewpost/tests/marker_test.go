@@ -151,3 +151,19 @@ func TestAFindingsProseCannotOpenASecondMarker(t *testing.T) {
 		t.Errorf("a finding's prose replaced the review's own marker: head=%q", marker.Head)
 	}
 }
+
+// A narrowed review says so to the people reading the pull request, and
+// records what it read on from for approval to walk back through.
+func TestANarrowedReviewSaysWhatItReadOnFrom(t *testing.T) {
+	since := "fedcba9876543210fedcba9876543210fedcba98"
+	r := reviewWith(finding("a.go", at(10), at(10), "correctness"))
+	r.Since = since
+
+	payload, _ := reviewpost.Build(r, pr, added)
+	if !strings.Contains(payload.Body, "Reads only what changed since `"+since+"`") {
+		t.Errorf("the body does not tell a reader the review was narrowed:\n%s", payload.Body)
+	}
+	if marker := markerOf(t, r); marker.Since != since {
+		t.Errorf("the marker reads on from %q, want %q", marker.Since, since)
+	}
+}

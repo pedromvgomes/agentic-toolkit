@@ -108,7 +108,9 @@ func body(opts Options) string {
 	b.WriteString("## Approved by `agtk`\n\n")
 	fmt.Fprintf(&b, "`%s` carries a review by this installation that reached a verdict. ", opts.Head)
 	fmt.Fprintf(&b, "Every finding it reports at or above %s is marked a false positive on its thread by an "+
-		"account that can push, and every comment thread on this pull request is resolved.\n\n", opts.Floor)
+		"account that can push. Where that review read only what changed since an earlier one, every finding "+
+		"the earlier reviews made is marked a false positive, or answered by an account that can push and resolved. "+
+		"Every comment thread on this pull request is resolved.\n\n", opts.Floor)
 	b.WriteString("A person typed this. No review run can reach it, and nothing overrides it: " +
 		"a finding is cleared by changing the code or by a written statement on its thread, and by nothing else.\n")
 	return b.String()

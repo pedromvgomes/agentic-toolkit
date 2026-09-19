@@ -26,7 +26,91 @@ type pullRequestTarget struct {
 	// change is measured from.
 	mergeBase string
 	// added is which lines of the diff a comment may be attached to.
+	//
+	// Always the whole change, however much of it a review reads: GitHub
+	// places a comment against the pull request's own diff, so a finding from
+	// a narrowed review lands on the same lines one from a full review would.
 	added reviewpost.AddedLines
+	// scope is how much of the change this review reads. The zero value is
+	// the whole of it.
+	scope reviewScope
+}
+
+// reviewScope is how much of a pull request a review reads.
+//
+// A re-review after a push reads on from the last review this installation
+// posted that reached a verdict, when that is safe, and the whole change
+// otherwise. The earlier review's findings stand on their own threads and
+// approval walks back to it through the marker — ADR 0018.
+type reviewScope struct {
+	// since is the head of the review this one reads on from, and is empty
+	// when the review reads the whole change.
+	since string
+	// reason says why the whole change is read, and is empty when it is not.
+	reason string
+}
+
+// describe says what a review in this scope reads, for a line of output.
+func (s reviewScope) describe() string {
+	if s.since != "" {
+		return fmt.Sprintf("delta since %s, the last head a review by this installation reached a verdict on", s.since)
+	}
+	return fmt.Sprintf("full change (%s)", s.reason)
+}
+
+// kind names the scope for a JSON consumer branching on it.
+func (s reviewScope) kind() string {
+	if s.since != "" {
+		return "delta"
+	}
+	return "full"
+}
+
+// chooseScope decides how much of the pull request this review reads.
+//
+// Narrowing is the exception, taken only when every condition that makes it
+// safe holds; any doubt reads the whole change. Each condition closes a way the
+// earlier review could stop describing the code:
+//
+//   - its head must be an ancestor of this one, or the branch was rewritten
+//     and what it read is no longer part of the change;
+//   - the base must not have been merged in since, or Since..Head carries the
+//     base branch's commits and the review reads code nobody on this branch
+//     wrote.
+func chooseScope(root string, t *pullRequestTarget, reviews []githubapp.SubmittedReview, reviewsErr error, full bool) reviewScope {
+	if full {
+		return reviewScope{reason: "--full was passed"}
+	}
+	if reviewsErr != nil {
+		return reviewScope{reason: "the reviews on this pull request could not be read"}
+	}
+	previous, found := reviewapprove.LastCompleteReview(reviews)
+	if !found {
+		return reviewScope{reason: "no earlier review by this installation reached a verdict"}
+	}
+	since := previous.Head
+	if since == t.pr.HeadSHA {
+		return reviewScope{reason: "the last complete review is of this head"}
+	}
+	if err := review.FetchCommit(root, since); err != nil {
+		return reviewScope{reason: fmt.Sprintf("%s, the last reviewed head, is not in the repository", since)}
+	}
+	if !review.IsAncestor(root, since, t.pr.HeadSHA) {
+		return reviewScope{reason: fmt.Sprintf("%s, the last reviewed head, is not an ancestor of this one: the branch was rewritten", since)}
+	}
+	mergeBase, err := review.MergeBase(root, t.pr.BaseSHA, since)
+	if err != nil || mergeBase != t.mergeBase {
+		return reviewScope{reason: "the base branch was merged in since the last complete review"}
+	}
+	return reviewScope{since: since}
+}
+
+// diffBase is the commit this review's diff starts at.
+func (t *pullRequestTarget) diffBase() string {
+	if t.scope.since != "" {
+		return t.scope.since
+	}
+	return t.mergeBase
 }
 
 // clientSeam is where the registration and the network come from.
@@ -180,6 +264,7 @@ func (t *pullRequestTarget) options(root string, target reviewTarget, flags runF
 		Base:        t.mergeBase,
 		BaseLabel:   t.pr.BaseRef,
 		Head:        t.pr.HeadSHA,
+		Since:       t.scope.since,
 		Context:     review.ContextPR,
 		Panel:       target.panel,
 		Timeout:     flags.timeout,
@@ -309,6 +394,7 @@ func runCodeReviewPR(cmd *cobra.Command, env *Env, target reviewTarget, flags ru
 	if !flags.dryRun && !flags.force && reviewsErr == nil && carriesAVerdictFor(reviews, t.pr.HeadSHA) {
 		return reportUnchangedHead(env, t, flags.json)
 	}
+	t.scope = chooseScope(root, t, reviews, reviewsErr, flags.full)
 	opts := t.options(root, target, flags, priorThreads(cmd.Context(), t, reviewsErr))
 
 	if flags.dryRun {
@@ -321,6 +407,7 @@ func runCodeReviewPR(cmd *cobra.Command, env *Env, target reviewTarget, flags ru
 		if flags.json {
 			return writeJSON(env, pullRequestPlanJSON(t, plan, opts.Threads))
 		}
+		fmt.Fprintf(env.Stdout, "scope:    %s\n", t.scope.describe())
 		reviewrun.RenderPlan(env.Stdout, plan)
 		renderEnvelope(env.Stdout, t, opts.Threads)
 		return nil
@@ -425,6 +512,7 @@ func reportReview(env *Env, t *pullRequestTarget, result *reviewrun.Review,
 	if asJSON {
 		return writeJSON(env, pullRequestPostJSON(t, result, payload, place, posted, failures))
 	}
+	fmt.Fprintf(env.Stdout, "scope:    %s\n", t.scope.describe())
 	reviewrun.Render(env.Stdout, result)
 	if posted == nil {
 		renderPayload(env.Stdout, t, payload, place)

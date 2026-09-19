@@ -73,6 +73,9 @@ func Check(in Inputs) []Refusal {
 	}
 	refusals = append(refusals, deadlocks(marker)...)
 	refusals = append(refusals, unanswered(in, marker)...)
+	if marker.Since != "" {
+		refusals = append(refusals, carried(in, marker)...)
+	}
 	refusals = append(refusals, unresolved(in.Threads)...)
 	return refusals
 }
@@ -129,6 +132,152 @@ func LastReview(reviews []githubapp.SubmittedReview, head string) (reviewrun.Rev
 		found, anyYet = marker, true
 	}
 	return found, anyYet
+}
+
+// LastCompleteReview finds the newest review this installation posted that
+// reached a verdict, on any head.
+//
+// It is what a pull request re-review reads on from. The same three checks
+// LastReview makes apply — this installation's own, a marker that parses, and
+// a marker naming the commit GitHub attached the review to — because a review
+// read on from is one whose findings the next review does not repeat, and a
+// review somebody else wrote must not be able to take findings off the table.
+func LastCompleteReview(reviews []githubapp.SubmittedReview) (reviewrun.ReviewMarker, bool) {
+	var (
+		found  reviewrun.ReviewMarker
+		anyYet bool
+	)
+	for _, r := range reviews {
+		if !r.ByViewer {
+			continue
+		}
+		marker, ok := reviewrun.ParseReviewMarker(r.Body)
+		if !ok || marker.Head != r.CommitSHA || !marker.Complete {
+			continue
+		}
+		found, anyYet = marker, true
+	}
+	return found, anyYet
+}
+
+// ReviewChain walks from the review of head back to a review that read the
+// whole change, through each review's Since.
+//
+// A review that read only Since..Head speaks for the whole change only together
+// with the review it read on from, so approval reads the chain and not only its
+// newest link. Every link after the first must be a complete review of exactly
+// the commit the link before it names: a Since pointing at a review that did
+// not reach a verdict, or at none at all, leaves part of the change read by
+// nobody, and the chain is reported broken rather than cut short.
+//
+// The chain is returned newest first, the review of head included. It is
+// intact only when it ends at a review with no Since.
+func ReviewChain(reviews []githubapp.SubmittedReview, head string) ([]reviewrun.ReviewMarker, bool) {
+	marker, found := LastReview(reviews, head)
+	if !found {
+		return nil, false
+	}
+	chain := []reviewrun.ReviewMarker{marker}
+	seen := map[string]bool{head: true}
+	for marker.Since != "" {
+		// A cycle cannot come from agtk, whose Since is always an ancestor of
+		// its Head, and is refused rather than followed.
+		if seen[marker.Since] {
+			return chain, false
+		}
+		seen[marker.Since] = true
+		previous, found := LastReview(reviews, marker.Since)
+		if !found || !previous.Complete {
+			return chain, false
+		}
+		chain = append(chain, previous)
+		marker = previous
+	}
+	return chain, true
+}
+
+// carried reports the findings earlier reviews in the chain made that the
+// review of head, reading only what changed since, did not repeat.
+//
+// A finding the review of head did not repeat is not thereby fixed: that review
+// never read the code it points at unless the code changed. So a carried
+// finding is cleared by a statement on its thread and never by its absence —
+// marked a false positive, or answered by somebody who can push and then
+// resolved. The answer says what was done about it; resolving says the
+// conversation it opened is over. A thread resolved with no answer, or
+// answered and left open, is neither.
+//
+// A carried finding that reached no thread blocks nothing, as it did when it
+// was reported — unless it quotes an instruction addressed at the reviewer.
+// That one is a deadlock that only a review of the whole change can lift,
+// because no delta review reads the code it names unless that code changed.
+func carried(in Inputs, head reviewrun.ReviewMarker) []Refusal {
+	chain, intact := ReviewChain(in.Reviews, in.Head)
+	if !intact {
+		return []Refusal{{
+			Missing: fmt.Sprintf("%s was reviewed only from %s, and no complete review covers the change up to that commit, "+
+				"so part of it was read by nobody", in.Head, head.Since),
+			Remedy: fmt.Sprintf("agtk code-review run --pr %d --full", in.Number),
+		}}
+	}
+
+	reported := map[string]bool{}
+	for _, f := range head.Findings {
+		reported[f.Fingerprint] = true
+	}
+	byFingerprint := agtkThreads(in.Threads)
+	var refusals []Refusal
+	for _, earlier := range chain[1:] {
+		for _, f := range earlier.Findings {
+			if reported[f.Fingerprint] {
+				continue
+			}
+			reported[f.Fingerprint] = true
+			if f.Injected && !f.Answerable {
+				refusals = append(refusals, Refusal{
+					Missing: fmt.Sprintf("%s, carried from the review of %s, quotes an instruction addressed at the reviewer "+
+						"and names no path a comment can hang off", f.Fingerprint, earlier.Head),
+					Remedy: fmt.Sprintf("remove the text, then agtk code-review run --pr %d --full", in.Number),
+				})
+				continue
+			}
+			if !f.Answerable || !f.Severity.AtOrAbove(in.Floor) {
+				continue
+			}
+			thread, found := byFingerprint[f.Fingerprint]
+			if !found {
+				refusals = append(refusals, Refusal{
+					Missing: fmt.Sprintf("%s %s, carried from the review of %s, carries no thread on this pull request",
+						f.Severity, f.Fingerprint, earlier.Head),
+					Remedy: fmt.Sprintf("agtk code-review run --pr %d --full", in.Number),
+				})
+				continue
+			}
+			if _, cleared := clearedBy(thread); cleared {
+				continue
+			}
+			if thread.Resolved && answeredByWriter(thread) {
+				continue
+			}
+			refusals = append(refusals, Refusal{
+				Missing: fmt.Sprintf("%s %s on %s, carried from the review of %s, is neither marked a false positive "+
+					"nor answered and resolved", f.Severity, f.Fingerprint, threadLocation(thread), earlier.Head),
+				Remedy: fmt.Sprintf("reply on that thread saying what was done, from an account that can push, and resolve it; "+
+					"or reply with %q and a reason", Marking),
+			})
+		}
+	}
+	return refusals
+}
+
+// answeredByWriter reports whether anybody who can push replied on a thread.
+func answeredByWriter(thread githubapp.AnsweredThread) bool {
+	for _, reply := range thread.Replies {
+		if reply.CanWrite() {
+			return true
+		}
+	}
+	return false
 }
 
 // deadlocks reports the prompt-injection findings agtk could give nobody a

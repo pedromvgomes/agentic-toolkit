@@ -765,3 +765,103 @@ func TestTheLoopReadsEveryLineOnceAndNoLineTwiceForTheSameReason(t *testing.T) {
 		t.Error("every pass re-reads the whole branch, so a converging loop costs its first pass five times")
 	}
 }
+
+// readRendered reads one rendered file of the default stack, failing the test
+// when the definition never reached the consumer.
+func readRendered(t *testing.T, apply, rel string) string {
+	t.Helper()
+	body, err := os.ReadFile(filepath.Join(apply, rel))
+	if err != nil {
+		t.Fatalf("%s did not reach the consumer: %v", rel, err)
+	}
+	return string(body)
+}
+
+// The pull request loop drives the resolver unattended. A loop that invoked it
+// in its default mode would stop at the first plan approval, with nobody there
+// to give it.
+func TestReviewPullRequestDrivesTheResolverUnattended(t *testing.T) {
+	apply := renderFeatureFlowStack(t)
+
+	skill := readRendered(t, apply, ".claude/skills/review-pull-request/SKILL.md")
+	if !strings.Contains(skill, "pr-review-resolver <N> --unattended") {
+		t.Errorf("the loop does not run the resolver unattended:\n%s", skill)
+	}
+	if _, err := os.Stat(filepath.Join(apply, ".claude/skills/pr-review-resolver/SKILL.md")); err != nil {
+		t.Errorf("review-pull-request drives pr-review-resolver, which never rendered: %v", err)
+	}
+	for _, exit := range []string{"**No verdict.**", "**Clean.**", "**Stalled.**", "**Capped.**"} {
+		if !strings.Contains(skill, exit) {
+			t.Errorf("the loop has no %s exit", exit)
+		}
+	}
+}
+
+// Resolving a thread is where a person agrees with the agent's fix or its
+// false-positive call, and approval waits for it. A loop that resolved its own
+// answers would approve its own work in all but name.
+func TestThePullRequestLoopNeverResolvesAThread(t *testing.T) {
+	apply := renderFeatureFlowStack(t)
+
+	loop := readRendered(t, apply, ".claude/skills/review-pull-request/SKILL.md")
+	if !strings.Contains(loop, "never resolves a comment thread") {
+		t.Error("review-pull-request does not rule out resolving the threads it answered")
+	}
+	resolver := readRendered(t, apply, ".claude/skills/pr-review-resolver/SKILL.md")
+	if !strings.Contains(resolver, "Never resolve a thread") {
+		t.Error("pr-review-resolver's unattended mode does not rule out resolving threads")
+	}
+	if !strings.Contains(resolver, "Do not enter plan mode") {
+		t.Error("pr-review-resolver's unattended mode still waits on a plan approval nobody is there to give")
+	}
+}
+
+// Re-review is requested from people who commented. A bot re-reviews when it
+// is run again, and a guessed login requests a review nobody asked for.
+func TestPRReviewResolverNeverRequestsABotOrAGuessedReviewer(t *testing.T) {
+	apply := renderFeatureFlowStack(t)
+
+	resolver := readRendered(t, apply, ".claude/skills/pr-review-resolver/SKILL.md")
+	if !strings.Contains(resolver, "Never a bot") {
+		t.Error("pr-review-resolver may request re-review from a bot")
+	}
+	if !strings.Contains(resolver, "Never a reviewer who did not comment") {
+		t.Error("pr-review-resolver may request re-review from somebody it guessed")
+	}
+}
+
+// open-pr posts a review and hands it to the loop. Stopping after the post
+// leaves the findings it just published unanswered, and a posted review asking
+// whether to fix stalls a run nobody is attending.
+func TestOpenPRHandsItsReviewToThePullRequestLoop(t *testing.T) {
+	apply := renderFeatureFlowStack(t)
+
+	skill := readRendered(t, apply, ".claude/skills/open-pr/SKILL.md")
+	if !strings.Contains(skill, "review-pull-request <N>") {
+		t.Errorf("open-pr stops at the posted review:\n%s", skill)
+	}
+	if !strings.Contains(skill, "`--no-fix`") {
+		t.Error("open-pr's posted review can stop to ask whether to fix")
+	}
+	if _, err := os.Stat(filepath.Join(apply, ".claude/skills/review-pull-request/SKILL.md")); err != nil {
+		t.Errorf("open-pr invokes review-pull-request, which never rendered: %v", err)
+	}
+}
+
+// A handoff is closed out only when the pull request's review converged and
+// its checks finished green. A single look at the checks reads a pending one
+// as a pass, which is how a failing scan ships behind a closed handoff.
+func TestImplementHandoffClosesOutOnlyOnAConvergedGreenPullRequest(t *testing.T) {
+	apply := renderFeatureFlowStack(t)
+
+	skill := readRendered(t, apply, ".claude/skills/implement-handoff/SKILL.md")
+	if !strings.Contains(skill, "gh pr checks <N> --watch --fail-fast") {
+		t.Error("implement-handoff looks at the checks once instead of waiting for them")
+	}
+	if !strings.Contains(skill, "**as soon as**") || !strings.Contains(skill, "30 minutes") {
+		t.Error("implement-handoff does not bound the wait, or reads the bound as a fixed delay")
+	}
+	if !strings.Contains(skill, "review-pull-request\ncame back clean") && !strings.Contains(skill, "review-pull-request came back clean") {
+		t.Error("implement-handoff closes out without the pull request's review having converged")
+	}
+}

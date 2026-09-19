@@ -25,9 +25,11 @@ So the flow is two sessions with a `/clear` between them, and a document that su
           ├─ predecessor merged?    → else stop
           ├─ task 1 → task-implementer  → diff + verify → commit
           ├─ task 2 → task-implementer  → diff + verify → commit
-          ├─ review-implementation      → loop until clean
+          ├─ review-implementation      → loop until clean        (local, ≤5 passes)
           ├─ open-pr                    → docs, candidates, PR, posted review
-          ├─ handoff → handoff/done/
+          │    └─ review-pull-request   → answer, push, re-review (PR, ≤5 passes)
+          ├─ wait for the PR's checks   → ≤30 min, returns when they finish
+          ├─ handoff → handoff/done/    → only if all of the above came back clean
           └─ next slice? → write-handoff, predecessor = the PR just opened
 ```
 
@@ -114,6 +116,22 @@ Then `open-pr`: documentation for the modules touched, durable findings staged i
 store's `candidates/`, push, `gh pr create` with the handoff's conventional title, and a second
 review posted to the pull request — which the review manifest puts on a different panel, so the
 change is read by a model that has not seen it.
+
+That review is the first pass of `review-pull-request`, the published-side counterpart of the
+local loop. Each pass, `pr-review-resolver --unattended` works through every open thread:
+agtk's, bots', and people's. It fixes what it judges valid, and replies on each thread with the
+commit that fixed it, with `agtk: false positive: <reason>`, or with a direct answer. Then it
+pushes, and the next pass reviews only what that push changed (ADR 0018). The loop stops when
+nothing is waiting for an answer, when the pull request stops moving, or at the fifth pass.
+
+**The loop never resolves a thread. You do.** Resolving is where you agree with the agent's
+fix or with its false-positive call, and `agtk code-review approve` refuses until you have. The
+closing report lists every marking the agent made, and every thread waiting for you.
+
+Then the coordinator waits for the pull request's checks. The wait ends as soon as they finish
+or one fails; 30 minutes is only the ceiling. A failing check, a check still running at the
+ceiling, or a PR review loop that did not come back clean all leave the handoff where it is: the
+pull request is open, and the work is not done.
 
 ## Several pull requests
 

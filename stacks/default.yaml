@@ -1,8 +1,9 @@
 description: |
   Default toolkit stack — the two-stage feature flow (plan on opus, hand off, implement on
-  sonnet, review in a capped loop, open the PR), the workflow-agnostic skills around it, the
-  plan-approval instruction, the session agents and the upstream skill-creator skill. The
-  memory store and everything that reads it come from the memory stack this extends.
+  sonnet, review in a capped loop, open the PR and loop its review too), the workflow-agnostic
+  skills around it, the plan-approval instruction, the session agents and the upstream
+  skill-creator skill. The memory store and everything that reads it come from the memory stack
+  this extends.
 
   It sets the session's default model to sonnet, because the implementing half of the flow is
   meant to land there and only /plan-feature's own frontmatter raises a session above it.
@@ -25,6 +26,7 @@ skills:
   - write-handoff
   - implement-handoff
   - review-implementation
+  - review-pull-request
   - open-pr
   - github.com/anthropics/skills.git/skills/skill-creator@main
 agents:

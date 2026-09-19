@@ -353,7 +353,11 @@ repository contents is what makes an approval an approval rather than a decorati
 
 Granted only when a **Review** exists for the PR's current head commit and reached a verdict,
 every **Finding** it reports at or above the **Severity** floor is marked a **False positive**,
-and no **Comment thread** on the PR is unresolved. Nothing overrides any of it. A defect is
+and no **Comment thread** on the PR is unresolved. A **Review** that read only what changed since
+an earlier one speaks for the whole change together with it, back to one that read everything; a
+**Finding** from an earlier one that the head's did not repeat is cleared by a **False positive**
+marking, or by an answer from somebody with write access on a thread that is then resolved —
+never by its absence, since the head's **Review** did not read that code. See ADR 0018. Nothing overrides any of it. A defect is
 cleared by changing the code, and a wrong **Finding** by saying so on the PR, and those are the
 only two ways: there is no flag that approves anyway, because one would make the whole of this
 a checklist rather than a control.
@@ -372,6 +376,9 @@ quotes the same evidence.
 A reply rather than resolution, because the two are different claims. Resolving says the
 conversation is finished; it does not say the defect was never there, and a **Severity** at or
 above the floor is a defect until somebody writes down that it is not.
+
+An agent acting for somebody with write access may write the marking; only a person resolves
+the thread. Resolution is where the person stands between an author's claim and **Approval**.
 
 Write access rather than anyone who can comment, because the author of a change is the party a
 review does not trust. A **Finding** its own author could dismiss is one an injected
@@ -484,8 +491,8 @@ suppressor that removed it first would open that hole from the other side.
 _Avoid_: dedupe, skip, filter, squelch
 
 **Review marker**:
-The HTML comment a posted **Review**'s body carries, naming the commit reviewed, whether the
-run reached a verdict, every surviving **Finding** by **Fingerprint** and **Severity**, and
+The HTML comment a posted **Review**'s body carries, naming the commit reviewed, the earlier
+commit it read on from when it read only what changed since, whether the run reached a verdict, every surviving **Finding** by **Fingerprint** and **Severity**, and
 which of them `agtk` could give no **Comment thread** to. It is how **Approval** learns what the
 last review found, since nothing is persisted and the pull request is the only record.
 
