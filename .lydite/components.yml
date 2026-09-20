@@ -1,0 +1,14 @@
+# What lydite builds, tests and scans in this repository.
+#
+# One component, because there is one Go module. Its go.mod declares
+# `github.com/pedromvgomes/agentic-toolkit` — the repo path, not
+# `.../source/toolkit` — deliberately, so imports read `internal/...` rather
+# than repeating `source/toolkit` in every one; `dir` still has to name the
+# module's own root, because `go list -m` run inside a module answers with the
+# enclosing module regardless of what its declared path says, and a `dir`
+# anywhere else would re-key every coverage entry under the wrong prefix.
+components:
+  - name: toolkit
+    dir: source/toolkit
+    runner: go-test
+    args: ["./..."]
