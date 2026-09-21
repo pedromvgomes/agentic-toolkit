@@ -3,7 +3,7 @@ name: implement-handoff
 description: |
   Carry out the work a handoff describes: check the pull request it waits on, read its tasks, and land them one at a time — one
   implementer subagent per task, its diff reviewed and verified before it is committed — then run the capped review loop, open
-  the pull request, converge its review, and wait for its checks. Run as /implement-handoff in a fresh session when a handoff is waiting. Trigger on "implement the handoff", "continue the
+  the pull request, converge its review, and get its checks, lydite verdict and merge conditions to passing. Run as /implement-handoff in a fresh session when a handoff is waiting. Trigger on "implement the handoff", "continue the
   handoff", "pick up the handoff", "run the handoff in handoff/".
 requires:
   - agents/task-implementer
@@ -151,7 +151,7 @@ If that loop comes back anything but clean (stalled, capped, no verdict), **stop
 request is open and not ready: report what is still waiting and leave the handoff where it is,
 as step 5 does.
 
-## 7 — Wait for the checks
+## 7 — Make the pull request mergeable
 
 A reviewed pull request is not a mergeable one. Wait for its checks:
 
@@ -170,17 +170,65 @@ Straight after a push, the pull request may report no checks at all, because CI 
 registered them yet. Wait a minute and ask again. A repository whose pull request still reports
 none has no CI to wait for, so say so and continue.
 
-- **A check failed** (a build, a coverage gate, a lint job, a scan) → **stop**. Report which
-  check and what it said. Leave the handoff exactly where it is, and do not write the next
-  one. The branch has something to fix, and nothing here should read as done.
-- **Still running at the ceiling** → **stop** the same way, and say which checks were still
-  pending. A check nobody saw finish has not passed.
-- **Every check passed** → continue.
+- **A check failed** (a build, a coverage gate, a lint job, a scan) → read its log, fix the
+  cause on the branch, commit it conventionally and push. Then wait again. Fix only what the
+  failure names; a failure with no cause on this branch (an outage, a flaky runner) is
+  something to report, not to paper over.
+- **Still running at the ceiling** → **stop**, and say which checks were still pending. A
+  check nobody saw finish has not passed.
+- **Every check passed** → go on to the lydite verdict and the merge conditions below.
+
+Fixing and re-waiting is capped at **three rounds**. A pull request that is still failing after
+that has a problem this session is not solving: **stop**, report what still fails and what was
+tried, and leave the handoff where it is.
+
+### The lydite verdict
+
+If the repository has a `.lydite/` directory it uses lydite, and the pull request carries a
+comment starting `<!-- lydite:results -->`. Read the latest one:
+
+```bash
+gh pr view <N> --comments
+```
+
+Its heading is the verdict and each section (`test`, `scan`, `referral`, …) carries its own
+row per check:
+
+- **✅ / all green** → done.
+- **🟡 referral** → acceptable. A referral asks a human to clear the change and is not
+  something to fix. List every referred row in the report, and say the human clears it by
+  commenting `/lydite clear`. A referral row that names something this branch's own diff
+  introduced (a `#nosec`, a dropped test) gets one look first: if it is not justified, remove
+  it; if it is, leave it and report it.
+- **❌ failure / red** → not done, even when the repository does not make lydite a required
+  check. Fix every finding it lists: a failed test, a scan finding, a coverage drop. Do not add
+  a suppression such as `#nosec`, and do not delete a test, to make a row go away: lydite
+  reports both as referrals, and they hide the finding rather than answer it. Push, wait for
+  the checks, and read the comment again; it is rewritten on each push, so a comment for an
+  older head says nothing about this one.
+
+While the verdict is 🟡, lydite's `lydite/referral` status stays `pending` until a human
+clears it. That pending status is expected: it is not a check still running, and neither
+`gh pr checks --watch` nor the ceiling should wait on it. Judge every other check as usual.
+
+No lydite comment yet means lydite has not finished: wait a minute and ask again, within the
+same ceiling. `lydite scan --diff-base auto` reproduces the scan locally when a finding needs
+iterating on before a push.
+
+### Mergeable, not just green
+
+Delivering a mergeable pull request means meeting whatever the repository requires of one
+beyond its checks. Read `gh pr view <N> --json mergeable,mergeStateStatus,reviewDecision` and
+the repository's contribution docs. A branch that is behind or conflicting with its base, where
+the repository requires it current, is rebased or merged onto the base — the way the
+repository's docs say — and pushed, and the checks are waited on again. A requirement that
+only a human can meet (an approval, a thread to resolve) is reported, never worked around.
 
 ## 8 — Close the handoff out
 
 Only now, and only on a clean run: review-implementation came back clean, review-pull-request
-came back clean, and every check passed.
+came back clean, every check passed, lydite (where the repository uses it) is green or a
+referral, and the pull request is mergeable but for what only a human can do.
 
 ```bash
 mkdir -p handoff/done

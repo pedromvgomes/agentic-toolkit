@@ -28,7 +28,7 @@ So the flow is two sessions with a `/clear` between them, and a document that su
           ├─ review-implementation      → loop until clean        (local, ≤5 passes)
           ├─ open-pr                    → docs, candidates, PR, posted review
           │    └─ review-pull-request   → answer, push, re-review (PR, ≤5 passes)
-          ├─ wait for the PR's checks   → ≤30 min, returns when they finish
+          ├─ make the PR mergeable      → fix failed checks, lydite not red, rebase if required
           ├─ handoff → handoff/done/    → only if all of the above came back clean
           └─ next slice? → write-handoff, predecessor = the PR just opened
 ```
@@ -128,10 +128,13 @@ nothing is waiting for an answer, when the pull request stops moving, or at the 
 fix or with its false-positive call, and `agtk code-review approve` refuses until you have. The
 closing report lists every marking the agent made, and every thread waiting for you.
 
-Then the coordinator waits for the pull request's checks. The wait ends as soon as they finish
-or one fails; 30 minutes is only the ceiling. A failing check, a check still running at the
-ceiling, or a PR review loop that did not come back clean all leave the handoff where it is: the
-pull request is open, and the work is not done.
+Then the coordinator makes the pull request mergeable. It waits for the checks (the wait ends as
+soon as they finish or one fails; 30 minutes is only the ceiling) and fixes a failed one on the
+branch, for up to three rounds. In a repository with a `.lydite/` directory it also reads lydite's
+verdict comment: green or a referral is done, red is fixed even where lydite is not a required
+check. It rebases when the repository requires a current branch. A check still running at the
+ceiling, a failure that survives three rounds, or a PR review loop that did not come back clean
+leaves the handoff where it is: the pull request is open, and the work is not done.
 
 ## Several pull requests
 
