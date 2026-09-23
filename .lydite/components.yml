@@ -12,3 +12,9 @@ components:
     dir: source/toolkit
     runner: go-test
     args: ["./..."]
+
+# The installer that ships with every release. It is exercised by the
+# workflow that invokes it, not by a suite, and declaring a component over it
+# would have lydite try to build a Go module that isn't one.
+excludes:
+  - "install.sh"
