@@ -13,3 +13,8 @@ instructions directory — `agentic/instructions/` when `root:` is left at its d
 `agtk render`. `render` is enough because a locally-authored file needs no network fetch;
 reach for `agtk sync` only when a remote source reached through `stacks:` or `extends:` also
 needs refreshing. The new file has no effect until it's rendered.
+
+The same holds for the repo's own description. When the entry manifest names a `context:`
+file, that file is rendered first into the managed region, so a change to the repository's
+existing instructions — its commands, layout, boundaries — is an edit to that file, followed
+by `agtk render`, not to the text it produced.
