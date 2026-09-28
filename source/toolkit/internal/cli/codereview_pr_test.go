@@ -917,3 +917,34 @@ func TestATokenThatCannotSeeTheRepositoryIsNotReportedAsAMissingRegistration(t *
 		t.Errorf("a token without access is reported as a registration problem: %v", err)
 	}
 }
+
+// A zero-value clientSeam is what production code builds: getenv reads the
+// real environment, and options carries no transport override, so both
+// fall through to what a live process actually has.
+func TestAZeroValueClientSeamReadsTheRealEnvironmentAndTransport(t *testing.T) {
+	t.Setenv("GH_TOKEN", "")
+	t.Setenv("GITHUB_TOKEN", "ghp_from_the_real_environment")
+	token, variable := (clientSeam{}).token()
+	if token != "ghp_from_the_real_environment" || variable != "GITHUB_TOKEN" {
+		t.Errorf("a zero-value seam read %q from %q, want ghp_from_the_real_environment from GITHUB_TOKEN", token, variable)
+	}
+
+	if opts := (clientSeam{}).options(); opts != nil {
+		t.Errorf("a zero-value seam's options is %v, want nil", opts)
+	}
+}
+
+// A repository readPullRequest cannot even name is refused before any network
+// call, the same way resolvePullRequest is.
+func TestReadPullRequestFailsBeforeAnythingWithNoRemote(t *testing.T) {
+	work := t.TempDir()
+	doer := &bearerDoer{next: stubDoer{}}
+	_, err := readPullRequest(context.Background(), work, 7,
+		clientSeam{dir: unregistered(t), doer: doer, getenv: environment(nil)})
+	if err == nil {
+		t.Fatal("readPullRequest succeeded with no git repository to name a remote from")
+	}
+	if len(doer.calls) > 0 {
+		t.Errorf("a repository that cannot be identified still reached GitHub: %v", doer.calls)
+	}
+}

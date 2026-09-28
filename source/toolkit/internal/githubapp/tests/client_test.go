@@ -488,3 +488,22 @@ func TestAReadClientClearsByViewerOnThreadsAndReviews(t *testing.T) {
 		t.Errorf("a token client read a review as ByViewer: %+v", gotReviews)
 	}
 }
+
+// A ReadClient's methods pass a transport failure through rather than hiding
+// it behind an empty result the caller would read as "no threads" or "no
+// reviews".
+func TestAReadClientPassesThroughAReadFailure(t *testing.T) {
+	threads, net := readClient(t, exchange{method: http.MethodPost, path: graphqlPath,
+		err: errors.New("connection reset by peer")})
+	if _, err := threads.ReadReviewThreads(context.Background(), 7); err == nil {
+		t.Fatal("a transport failure reading threads was swallowed")
+	}
+	net.done()
+
+	reviews, net2 := readClient(t, exchange{method: http.MethodPost, path: graphqlPath,
+		err: errors.New("connection reset by peer")})
+	if _, err := reviews.ReadSubmittedReviews(context.Background(), 7); err == nil {
+		t.Fatal("a transport failure reading reviews was swallowed")
+	}
+	net2.done()
+}
