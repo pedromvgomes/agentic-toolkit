@@ -27,13 +27,16 @@ every other agent pointed at AGENTS.md (directly or via the import) read the sam
 
 ## Workflow
 
-**First, check whether agtk renders this repo.** When the repo root holds `.agentic-toolkit.yaml`, the root `AGENTS.md`, the
-managed region of the root `CLAUDE.md`, and everything under the root `.agents/`, `.claude/` and `.codex/` are output of
-`agtk render`, and an edit to any of them is overwritten by the next render. For the repo root, write the content this skill
-describes into the manifest's `context:` file — or, when it sets none, a file under `<root>/instructions/` (`root:` from the
-manifest, `agentic` by default) with a one-line `description:` frontmatter — then run `agtk render`. Skip steps 4 and 5 for the
-root: the render writes `CLAUDE.md` and the rules index itself, and rules are authored in `<root>/rules/`, not `.agents/rules/`.
-A module-level AGENTS.md in a subdirectory is not rendered, and follows the workflow below unchanged.
+**First, check whether agtk manages this repo.** When the repo root holds `.agentic-toolkit.yaml`, agtk owns every `AGENTS.md`
+and `CLAUDE.md` in the repository — at the root and in every subdirectory — and this skill does not hand-write any of them. Say so,
+and send the content where agtk reads it instead:
+
+- Repo-wide guidance (commands, layout, boundaries, conventions) goes into the manifest's `context:` file, or, when it sets none, a
+  file under `<root>/instructions/` (`root:` from the manifest, `agentic` by default) with a one-line `description:` frontmatter.
+- Prescriptive rules, and anything true of one module rather than the whole repo, go in `<root>/rules/`, one rule per file with a
+  one-line `description:` frontmatter, the module's path named in its `## Applies to`.
+
+Then run `agtk render`. The workflow below applies only to repos agtk does not manage.
 
 1. **Analyze the codebase** — Before writing anything, explore the repository to understand its structure,
    tech stack, conventions, and existing documentation (README, CONTRIBUTING, etc.)
