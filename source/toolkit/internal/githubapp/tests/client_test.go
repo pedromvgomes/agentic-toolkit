@@ -421,3 +421,70 @@ func TestTheOnlyEventAReviewRunPostsIsComment(t *testing.T) {
 		t.Fatalf("a review run posts %q", githubapp.EventComment)
 	}
 }
+
+// readClient builds a ReadClient scripted against exchanges and nothing else:
+// no installation lookup, no token mint, because bearer() spends the token it
+// was built with rather than an App credential.
+func readClient(t *testing.T, exchanges ...exchange) (*githubapp.ReadClient, *scripted) {
+	t.Helper()
+	net := &scripted{t: t, exchanges: exchanges}
+	c, err := githubapp.NewReadClient("ghp_scripted", "acme/widgets",
+		githubapp.WithHTTP(net), githubapp.WithBaseURL("https://api.test"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c, net
+}
+
+// A blank token, or one that is only whitespace, is not a token to read with.
+func TestAReadClientRefusesAnEmptyToken(t *testing.T) {
+	for _, token := range []string{"", "   ", "\n"} {
+		if _, err := githubapp.NewReadClient(token, "acme/widgets"); err == nil {
+			t.Errorf("token %q built a read client", token)
+		}
+	}
+}
+
+// The token a ReadClient holds is spent as-is; nothing looks up an
+// installation id or mints an installation token to use in its place.
+func TestAReadClientNeverMintsAnInstallationToken(t *testing.T) {
+	c, net := readClient(t, exchange{method: http.MethodGet, path: pullPath, status: 200, body: pullBody})
+	if _, err := c.ReadPullRequest(context.Background(), 7); err != nil {
+		t.Fatal(err)
+	}
+	net.done()
+	if len(net.seen) != 1 || net.seen[0].Header.Get("Authorization") != "Bearer ghp_scripted" {
+		t.Fatalf("the request did not carry the scripted token: %+v", net.seen)
+	}
+}
+
+// ByViewer means the App's installation wrote the comment or review. A
+// ReadClient's viewer is whoever owns its token, never the App, so every
+// thread and review it reads back must read as somebody else's regardless of
+// what GitHub itself reports.
+func TestAReadClientClearsByViewerOnThreadsAndReviews(t *testing.T) {
+	threads, net := readClient(t, query(threadsPage(
+		threadNode("a.go", false, false, true, "looks like the app"), false, "")))
+	got, err := threads.ReadReviewThreads(context.Background(), 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	net.done()
+	if len(got) != 1 || got[0].ByViewer {
+		t.Errorf("a token client read a thread as ByViewer: %+v", got)
+	}
+
+	page := `{"data":{"repository":{"pullRequest":{"reviews":{` +
+		`"pageInfo":{"hasNextPage":false,"endCursor":""},"nodes":[` +
+		`{"body":"looks like the app","commit":{"oid":"abc"},"viewerDidAuthor":true}` +
+		`]}}}}}`
+	reviews, net2 := readClient(t, query(page))
+	gotReviews, err := reviews.ReadSubmittedReviews(context.Background(), 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	net2.done()
+	if len(gotReviews) != 1 || gotReviews[0].ByViewer {
+		t.Errorf("a token client read a review as ByViewer: %+v", gotReviews)
+	}
+}
