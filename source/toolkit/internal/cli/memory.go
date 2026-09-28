@@ -758,6 +758,7 @@ func newMemoryCurateCmd(env *Env) *cobra.Command {
 		check   bool
 		dryRun  bool
 		timeout time.Duration
+		limit   int
 	)
 	cmd := &cobra.Command{
 		Use:   "curate [note...]",
@@ -783,6 +784,13 @@ func newMemoryCurateCmd(env *Env) *cobra.Command {
 			"default: this is the only memory command that costs anything.",
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if limit > 0 && len(args) > 0 {
+				return errors.New("--limit narrows the backlog by count; naming notes already narrows it by name")
+			}
+			if limit > 0 && stale {
+				return errors.New("--limit narrows the backlog by count; --stale already narrows it to the stale list")
+			}
+
 			store, err := memoryStore(env)
 			if err != nil {
 				return err
@@ -806,6 +814,7 @@ func newMemoryCurateCmd(env *Env) *cobra.Command {
 					AgtkPath:      selfPath(env),
 					DryRun:        dryRun,
 					Notes:         args,
+					Limit:         limit,
 				})
 				if err != nil {
 					return err
@@ -844,6 +853,7 @@ func newMemoryCurateCmd(env *Env) *cobra.Command {
 				DryRun:   dryRun,
 				Notes:    args,
 				Timeout:  timeout,
+				Limit:    limit,
 			})
 			if err != nil {
 				return err
@@ -874,6 +884,9 @@ func newMemoryCurateCmd(env *Env) *cobra.Command {
 	cmd.Flags().BoolVar(&check, "check", false, "report what a run would use and start nothing")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "report what the curator would do, under a grant with no writing tools")
 	cmd.Flags().DurationVar(&timeout, "timeout", 0, "bound the curation run (default 20m)")
+	cmd.Flags().IntVar(&limit, "limit", 0, "point the non-stale backlog job at the oldest N staged candidates by id, "+
+		"instead of the whole backlog; only shapes the job description — the model's tool grants are not "+
+		"narrowed, so a run that goes beyond N is possible and is not itself an error")
 	return cmd
 }
 

@@ -927,6 +927,35 @@ func TestMemoryCurateCheckRefusesWithNoProviderConfigured(t *testing.T) {
 	}
 }
 
+// TestMemoryCurateLimitRefusesWithNamedNotes: --limit narrows the backlog by
+// count, and naming notes already narrows it by name — honouring both would
+// leave one of the two silently ignored.
+func TestMemoryCurateLimitRefusesWithNamedNotes(t *testing.T) {
+	work := memoryProject(t, "stacks: []\n")
+
+	_, _, err := runCLI(t, work, "memory", "curate", "--limit", "2", "some-note")
+	if err == nil {
+		t.Fatal("--limit was accepted alongside a named note")
+	}
+	if !strings.Contains(err.Error(), "--limit") {
+		t.Errorf("the refusal does not name --limit: %v", err)
+	}
+}
+
+// TestMemoryCurateLimitRefusesWithStale: --limit shapes the non-stale backlog
+// job, so combining it with --stale asks for two different jobs at once.
+func TestMemoryCurateLimitRefusesWithStale(t *testing.T) {
+	work := memoryProject(t, "stacks: []\n")
+
+	_, _, err := runCLI(t, work, "memory", "curate", "--limit", "2", "--stale")
+	if err == nil {
+		t.Fatal("--limit was accepted alongside --stale")
+	}
+	if !strings.Contains(err.Error(), "--limit") || !strings.Contains(err.Error(), "--stale") {
+		t.Errorf("the refusal does not name both conflicting flags: %v", err)
+	}
+}
+
 // TestMemoryAnchorRefusesToStampTheWholeStoreByAccident: stamping does not only
 // record hashes, it clears the staleness signal — the one thing telling the next
 // reader that nobody has checked a claim. A bare `anchor` after a refactor would

@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -194,6 +195,15 @@ type Options struct {
 	// different store than the grant's NotesDir and CandidatesDir sit in
 	// verifies a store the run never touched.
 	StoreRoot string
+	// Limit narrows the non-stale backlog job description to the oldest N
+	// staged candidates by id, so the model is pointed at exactly those rather
+	// than at the whole backlog. It is a soft boundary, unlike Notes: it shapes
+	// only the prose job description, never the tool grant, so a run that goes
+	// beyond the N candidates named is possible and is not itself an error.
+	// Zero means unset — the job names the whole backlog, as it always has.
+	// Ignored under Stale, whose job names the stale list rather than the
+	// candidate backlog.
+	Limit int
 }
 
 // scope is the narrowing this run's grant gets.
@@ -532,7 +542,7 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	}
 
 	res, err := driver.Run(ctx, agentic.Request{
-		Prompt:          task(opts),
+		Prompt:          task(opts, store),
 		AllowedTools:    b.tools,
 		DisallowedTools: denied,
 		PermissionMode:  b.mode,
@@ -591,7 +601,10 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 // name would be denied by its own grant, and — worse — the `agtk` on PATH may
 // predate the memory subsystem entirely, so the reach would fail even if it
 // were allowed.
-func task(opts Options) string {
+//
+// store is read only to resolve Limit to the ids it names — the job text names
+// them explicitly rather than pointing the model at the backlog generically.
+func task(opts Options, store *memory.Store) string {
 	agtk := opts.AgtkPath
 	if agtk == "" {
 		agtk = "agtk"
@@ -602,11 +615,16 @@ func task(opts Options) string {
 		"resolve to an older build without the `memory` subcommand and is not in your tool grant. "
 
 	var job string
-	if opts.Stale {
+	switch {
+	case opts.Stale:
 		job = "Sweep the memory store's stale notes: run `" + agtk +
 			" memory audit --json` for the list, then re-check each stale note's claim against " +
 			"the code its pointers name and update, re-stamp or reject it. "
-	} else {
+	case opts.Limit > 0:
+		ids := limitedCandidateIDs(store, opts.Limit)
+		job = "Curate exactly these " + strconv.Itoa(len(ids)) + " staged candidates, the oldest in the " +
+			"backlog: " + strings.Join(ids, ", ") + ". Leave every other candidate alone. "
+	default:
 		job = "Curate the memory store's staged candidates: run `" + agtk +
 			" memory candidates --json` for the backlog. "
 	}
@@ -628,6 +646,24 @@ func task(opts Options) string {
 	}
 
 	return preamble + job
+}
+
+// limitedCandidateIDs names the oldest at most n staged candidates by id,
+// ascending by filename — the store's candidate filenames are date-prefixed,
+// so filename order is age order. A candidate that fails to parse is dropped
+// rather than named: LoadCandidates already excludes it, the same as it does
+// for every other reader of the backlog. Fewer than n staged candidates names
+// however many exist; it never pads and never errors.
+func limitedCandidateIDs(store *memory.Store, n int) []string {
+	candidates, _ := store.LoadCandidates()
+	if n > len(candidates) {
+		n = len(candidates)
+	}
+	ids := make([]string, 0, n)
+	for _, c := range candidates[:n] {
+		ids = append(ids, c.Stem())
+	}
+	return ids
 }
 
 // newProvider resolves `memory.agent` to a provider, naming the setting in its
