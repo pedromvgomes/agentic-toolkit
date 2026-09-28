@@ -1165,6 +1165,25 @@ func TestARegisteredMachineNeverRelaysWhateverTheEnvironmentHolds(t *testing.T) 
 	}
 }
 
+// A flag the relay does not carry is refused only where a run would relay. On
+// a registered machine --full posts as the App with a relay named, and here
+// reaches the no-op on a head that already carries a review.
+func TestARegisteredMachineTakesAFlagTheRelayDoesNotCarry(t *testing.T) {
+	work, baseSHA, headSHA := prRepo(t)
+	net := &relayNet{conclusion: "success", next: prDoer(baseSHA, headSHA, reviewedBy(headSHA, true), noThreads)}
+	out, err := postPR(t, work, reviewTarget{pr: 7}, runFlags{full: true},
+		clientSeam{dir: registration(t), doer: net, getenv: environment(relayed())})
+	if err != nil {
+		t.Fatalf("--full on a registered machine with a relay named: %v", err)
+	}
+	if !strings.Contains(out, "already carries a") {
+		t.Errorf("--full on a registered machine did not reach the reviewed head's no-op:\n%s", out)
+	}
+	if calls := net.relayCalls(); len(calls) > 0 {
+		t.Errorf("--full on a registered machine reached the relay: %v", calls)
+	}
+}
+
 // A registration somebody started and never finished is answered by finishing
 // it, whatever relay the environment names. Relaying around it would hide the
 // breakage exactly as reading around it with a token would.
@@ -1275,11 +1294,51 @@ func TestARelayIsNotUsedUnderJSON(t *testing.T) {
 	}
 }
 
+// A relay is handed the pull request and its panel alone, so a flag that
+// changes what the run posts is refused before anything is sent, rather than
+// dropped from a relayed run that would still report success. The refusal
+// names the flag, the relay and both ways out.
+func TestARelayIsNotUsedUnderAFlagItDoesNotCarry(t *testing.T) {
+	for _, tc := range []struct {
+		flags        runFlags
+		named, unset []string
+	}{
+		{runFlags{force: true}, []string{"--force"}, []string{"--full"}},
+		{runFlags{full: true}, []string{"--full"}, []string{"--force"}},
+		{runFlags{force: true, full: true}, []string{"--force and --full"}, nil},
+	} {
+		work, _, _ := prRepo(t)
+		net := &relayNet{conclusion: "success"}
+		out, err := postPR(t, work, reviewTarget{pr: 7, panel: "deep"}, tc.flags,
+			clientSeam{dir: unregistered(t), doer: net, getenv: environment(relayed())})
+		if err == nil {
+			t.Fatalf("%+v was relayed without what it asks for:\n%s", tc.flags, out)
+		}
+		for _, want := range append([]string{"acme/relay", "AGTK_CODE_REVIEW_RELAY", "code-review register"}, tc.named...) {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("the refusal of %+v does not name %q: %v", tc.flags, want, err)
+			}
+		}
+		for _, unwanted := range tc.unset {
+			if strings.Contains(err.Error(), unwanted) {
+				t.Errorf("the refusal of %+v names %s, which was not passed: %v", tc.flags, unwanted, err)
+			}
+		}
+		if len(net.calls) > 0 || out != "" {
+			t.Errorf("a refused relay under %+v still sent %v and wrote %q", tc.flags, net.calls, out)
+		}
+	}
+}
+
 // A run that posts nothing has no post to relay. --dry-run and --no-post read
 // through the token as they do with no relay named, and without a token they
-// are refused as they are with no relay named.
+// are refused as they are with no relay named, whether or not a flag the
+// relay does not carry is also set.
 func TestARunThatPostsNothingNeverRelays(t *testing.T) {
-	for _, flags := range []runFlags{{dryRun: true}, {noPost: true}} {
+	for _, flags := range []runFlags{
+		{dryRun: true}, {noPost: true},
+		{dryRun: true, force: true, full: true}, {noPost: true, force: true, full: true},
+	} {
 		work, _, _ := prRepo(t)
 		net := &relayNet{conclusion: "success"}
 		_, err := postPR(t, work, reviewTarget{pr: 7}, flags, clientSeam{
@@ -1297,20 +1356,22 @@ func TestARunThatPostsNothingNeverRelays(t *testing.T) {
 		}
 	}
 
-	work, baseSHA, headSHA := prRepo(t)
-	net := &relayNet{conclusion: "success", next: prDoer(baseSHA, headSHA, reviewsOf(), noThreads)}
-	out, err := postPR(t, work, reviewTarget{pr: 7}, runFlags{dryRun: true},
-		clientSeam{dir: unregistered(t), doer: net, getenv: environment(relayed())})
-	if err != nil {
-		t.Fatalf("--dry-run with a token and a relay: %v", err)
-	}
-	if !strings.Contains(out, "Nothing was spent and nothing was posted.") {
-		t.Errorf("--dry-run did not preview the review:\n%s", out)
-	}
-	if calls := net.relayCalls(); len(calls) > 0 {
-		t.Errorf("--dry-run reached the relay: %v", calls)
-	}
-	if len(net.calls) == 0 {
-		t.Error("--dry-run read nothing with the token")
+	for _, flags := range []runFlags{{dryRun: true}, {dryRun: true, force: true, full: true}} {
+		work, baseSHA, headSHA := prRepo(t)
+		net := &relayNet{conclusion: "success", next: prDoer(baseSHA, headSHA, reviewsOf(), noThreads)}
+		out, err := postPR(t, work, reviewTarget{pr: 7}, flags,
+			clientSeam{dir: unregistered(t), doer: net, getenv: environment(relayed())})
+		if err != nil {
+			t.Fatalf("%+v with a token and a relay: %v", flags, err)
+		}
+		if !strings.Contains(out, "Nothing was spent and nothing was posted.") {
+			t.Errorf("%+v did not preview the review:\n%s", flags, out)
+		}
+		if calls := net.relayCalls(); len(calls) > 0 {
+			t.Errorf("%+v reached the relay: %v", flags, calls)
+		}
+		if len(net.calls) == 0 {
+			t.Errorf("%+v read nothing with the token", flags)
+		}
 	}
 }

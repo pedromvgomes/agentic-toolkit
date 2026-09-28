@@ -305,6 +305,22 @@ var relayNouns = map[string]string{
 	relay.ActionApprove: "approval",
 }
 
+// unforwarded names the flags set on a run that change what it posts and that
+// a relay does not carry, in the order the refusal names them. --timeout and
+// --max-parallel are absent because they tune a panel on this machine, and a
+// relayed run spends none here: its runner runs the panel with its own
+// defaults, as any registered machine would.
+func (f runFlags) unforwarded() []string {
+	var names []string
+	if f.force {
+		names = append(names, "--force")
+	}
+	if f.full {
+		names = append(names, "--full")
+	}
+	return names
+}
+
 // relayOrRefuse answers a posting command that resolvePullRequest refused,
 // and returns what the command reports: nil once a relay has run and
 // succeeded, and otherwise the error the command fails with.
@@ -323,8 +339,13 @@ var relayNouns = map[string]string{
 // token only starts the run and reads how it ended. What the run posted is on
 // the pull request and in the run's log, which this process never sees, so
 // only the run's conclusion and address are reported.
+//
+// unforwarded names the flags the command was given that change what it posts
+// and that a relay.Request cannot carry. Any one of them refuses the relay: a
+// relayed run without it would still report success for a post that is not
+// the one asked for.
 func relayOrRefuse(ctx context.Context, env *Env, root string, number int, action, panel string, asJSON bool,
-	seam clientSeam, refusal error,
+	unforwarded []string, seam clientSeam, refusal error,
 ) error {
 	if !githubapp.Unregistered(refusal) {
 		return refusal
@@ -347,6 +368,17 @@ func relayOrRefuse(ctx context.Context, env *Env, root string, number int, actio
 	if asJSON {
 		return fmt.Errorf("%w; %s names %s, but a relayed review reports only how the relay's run ended, "+
 			"which is not the review --json describes: drop --json to relay it", refusal, relayFrom, relayRepo)
+	}
+	// The relay is dispatched with the pull request and its panel alone, and
+	// its runner reviews with its own defaults. Relaying --force would end in
+	// the relay's no-op on a head that already carries a review, and --full in
+	// a review of only the delta since the last reviewed head, each reported
+	// here as a run that succeeded.
+	if len(unforwarded) > 0 {
+		dropped := strings.Join(unforwarded, " and ")
+		return fmt.Errorf("%w; %s names %s, but a relay is handed only the pull request and its panel, "+
+			"so relaying it would drop %s: run this on a machine holding the registration, or drop %s to relay it",
+			refusal, relayFrom, relayRepo, dropped, dropped)
 	}
 	token, tokenFrom := seam.token()
 	if token == "" {
@@ -615,7 +647,8 @@ func runCodeReviewPR(cmd *cobra.Command, env *Env, target reviewTarget, flags ru
 	t, err := resolve(cmd.Context(), root, target.pr, seam)
 	if err != nil {
 		if posts {
-			return relayOrRefuse(cmd.Context(), env, root, target.pr, relay.ActionRun, target.panel, flags.json, seam, err)
+			return relayOrRefuse(cmd.Context(), env, root, target.pr, relay.ActionRun, target.panel, flags.json,
+				flags.unforwarded(), seam, err)
 		}
 		return err
 	}

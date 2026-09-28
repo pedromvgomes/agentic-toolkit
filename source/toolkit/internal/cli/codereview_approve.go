@@ -51,7 +51,7 @@ func runCodeReviewApprove(cmd *cobra.Command, env *Env, number int, seam clientS
 	}
 	t, err := resolvePullRequest(cmd.Context(), root, number, seam)
 	if err != nil {
-		return relayOrRefuse(cmd.Context(), env, root, number, relay.ActionApprove, "", false, seam, err)
+		return relayOrRefuse(cmd.Context(), env, root, number, relay.ActionApprove, "", false, nil, seam, err)
 	}
 	// The floor is read from the manifest at the base ref, like every other
 	// rule a pull request is judged by. A floor read from the head would let a
