@@ -9,7 +9,7 @@
 // The curator has no agent definition. A scripted run refuses to load settings
 // files, which is what closes apiKeyHelper and also what puts a consumer's
 // rendered .claude/agents/ out of reach — so the prompt below is embedded and
-// handed to the provider as a roster, and the tool grant is constructed here
+// inlined into the request itself, and the tool grant is constructed here
 // rather than instructed in prose. See docs/adr/0004.
 package curator
 
@@ -32,10 +32,6 @@ import (
 //
 //go:embed prompt.md
 var prompt string
-
-// AgentName is what the run delegates by. It is the roster key and the name
-// the prompt refers to itself as.
-const AgentName = "memory-curator"
 
 // defaultTimeout bounds a curation run. Generous: the curator reads the store,
 // verifies pointers against real files and writes notes, and a run killed
@@ -65,8 +61,8 @@ var ErrNoProvider = fmt.Errorf(
 //
 // Exported so a test can assert the embed is populated and still says the
 // things that live nowhere else now that the curator is not a definition. An
-// empty embed would produce a roster entry with no instructions, and a run
-// that answers instead of refusing.
+// empty embed would hand the run no instructions, and a run that answers
+// instead of refusing.
 func Prompt() string { return prompt }
 
 // AllowedTools is the grant a curation run is given.
@@ -94,6 +90,11 @@ type Ready struct {
 	Tools []string
 	// Mode is the permission mode the run would use.
 	Mode string
+	// DisallowedTools is the deny list a run would apply on top of Tools, to
+	// close off delegation. Empty on a provider with no vocabulary for it —
+	// which for anything but a dry run, Check refuses before this is ever
+	// returned.
+	DisallowedTools []string
 }
 
 // Check resolves everything a curation run depends on and starts nothing.
@@ -130,11 +131,16 @@ func Check(opts Options) (Ready, error) {
 	if err != nil {
 		return Ready{}, err
 	}
+	denied, err := disallow(provider, opts.DryRun)
+	if err != nil {
+		return Ready{}, err
+	}
 	return Ready{
-		Provider: driver.Descriptor().ID,
-		Binary:   driver.Binary(),
-		Tools:    b.tools,
-		Mode:     b.mode,
+		Provider:        driver.Descriptor().ID,
+		Binary:          driver.Binary(),
+		Tools:           b.tools,
+		Mode:            b.mode,
+		DisallowedTools: denied,
 	}, nil
 }
 
@@ -371,16 +377,34 @@ func confine(p agentic.Provider, tools []string, dryRun bool) (bound, error) {
 	return bound{mode: sandboxReadOnly}, nil
 }
 
-// roster is the curator's agent definition, or nil for a provider that cannot
-// define one. A nil roster means the policy travels in the prompt instead —
-// see task.
-func roster(p agentic.Provider) map[string]agentic.Agent {
-	if _, ok := p.(agentic.AgentDefiner); !ok {
-		return nil
+// disallowedDelegationTools closes delegation on a provider that can deny
+// tools outright. AllowedTools alone cannot reach this: a subagent tool needs
+// no permission of its own to be spawned, so a curator run with no roster and
+// no instruction to delegate is bounded only by whether the child ever gets
+// the chance.
+var disallowedDelegationTools = []string{"Agent", "Task"}
+
+// disallow works out whether this run may deny delegation tools, in the same
+// shape confine works out whether it may grant them: the vocabulary is
+// discovered by asking, never by switching on the provider's ID.
+//
+// A dropped denial fails in the dangerous direction, the same as a dropped
+// AllowedTools — the run proceeds with delegation open rather than closed —
+// so a real run on a provider with no such vocabulary is refused outright
+// rather than let the field silently disappear. A dry run proceeds without
+// it: nothing it does reaches a subagent either way, so there is nothing for
+// the denial to close.
+func disallow(p agentic.Provider, dryRun bool) ([]string, error) {
+	if _, ok := p.(agentic.Disallower); !ok {
+		if !dryRun {
+			return nil, fmt.Errorf(
+				"%s cannot deny individual tools, so a curation run cannot be closed against delegating to another agent; "+
+					"re-run with --dry-run, or point memory.agent at a provider that can deny tools",
+				p.Descriptor().ID)
+		}
+		return nil, nil
 	}
-	return map[string]agentic.Agent{
-		AgentName: {Description: agentDescription, Prompt: prompt},
-	}
+	return disallowedDelegationTools, nil
 }
 
 // permissionMode is empty, which passes no mode and leaves the CLI's own
@@ -427,14 +451,17 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	agents := roster(provider)
+	denied, err := disallow(provider, opts.DryRun)
+	if err != nil {
+		return Result{}, err
+	}
 
 	res, err := driver.Run(ctx, agentic.Request{
-		Prompt:         task(opts, agents != nil),
-		Agents:         agents,
-		AllowedTools:   b.tools,
-		PermissionMode: b.mode,
-		WorkDir:        opts.WorkDir,
+		Prompt:          task(opts),
+		AllowedTools:    b.tools,
+		DisallowedTools: denied,
+		PermissionMode:  b.mode,
+		WorkDir:         opts.WorkDir,
 	})
 	if err != nil {
 		return Result{}, err
@@ -447,34 +474,24 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	}, nil
 }
 
-// agentDescription is what the delegating model reads when deciding to use the
-// roster entry, so it says when — not what.
-const agentDescription = "Promotes, merges and rejects findings staged in the repo's memory store, and re-checks notes whose anchors have moved. The only author of notes."
-
 // task is the instruction the run itself receives. It says which of the two
-// jobs to do and which binary to do it with; where the curator's content policy
-// travels depends on whether this provider has a roster.
-//
-// With a roster the policy is the roster entry and this delegates to it. Without
-// one, the policy is prepended here instead. It cannot simply be dropped: a run
-// given the job and none of the rules would promote candidates without the
-// quality bar, the anchoring rule or the single-writer discipline that make it
-// curation rather than filing.
+// jobs to do and which binary to do it with, and carries the curator's whole
+// content policy: the embedded prompt is prepended ahead of the job on every
+// provider. It cannot simply be dropped: a run given the job and none of the
+// rules would promote candidates without the quality bar, the anchoring rule
+// or the single-writer discipline that make it curation rather than filing.
 //
 // The path is spelled out because the prompt speaks of `agtk` generically while
 // the grant permits exactly one executable. A curator that reached for the bare
 // name would be denied by its own grant, and — worse — the `agtk` on PATH may
 // predate the memory subsystem entirely, so the reach would fail even if it
 // were allowed.
-func task(opts Options, delegates bool) string {
+func task(opts Options) string {
 	agtk := opts.AgtkPath
 	if agtk == "" {
 		agtk = "agtk"
 	}
-	preamble := "Delegate to the " + AgentName + " agent. "
-	if !delegates {
-		preamble = prompt + "\n\n---\n\nThose are your instructions. "
-	}
+	preamble := prompt + "\n\n---\n\nThose are your instructions. "
 	preamble += "Use `" + agtk +
 		"` for every agtk command — that exact path, never the bare name `agtk`, which may " +
 		"resolve to an older build without the `memory` subcommand and is not in your tool grant. "
@@ -505,7 +522,7 @@ func task(opts Options, delegates bool) string {
 			"Do not stamp anchors, regenerate the index or delete candidates. "
 	}
 
-	return preamble + job + "Report exactly what the agent reports."
+	return preamble + job
 }
 
 // newProvider resolves `memory.agent` to a provider, naming the setting in its

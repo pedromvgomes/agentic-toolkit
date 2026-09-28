@@ -74,7 +74,7 @@ func TestACuratorsOwnFailureCarriesItsReport(t *testing.T) {
 // The grant is constructed here and passed on the command line, which is what
 // makes the single-writer rule enforcement rather than instruction. If it
 // stopped reaching the child, nothing else would notice.
-func TestTheGrantAndTheRosterReachTheChild(t *testing.T) {
+func TestTheGrantReachesTheChild(t *testing.T) {
 	fake, _, err := run(t, curatedEnvelope, curator.Options{})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -82,8 +82,6 @@ func TestTheGrantAndTheRosterReachTheChild(t *testing.T) {
 
 	argv := strings.Join(fake.Recorded(t).Args, "\x00")
 	for _, want := range []string{
-		"--agents",
-		curator.AgentName,
 		"--allowedTools",
 		"Bash(agtk memory anchor*)",
 	} {
@@ -107,6 +105,33 @@ func TestTheGrantAndTheRosterReachTheChild(t *testing.T) {
 	}
 }
 
+// The curator has no roster and is never told to delegate; the deny list is
+// what closes delegation instead, on every shape of run this package makes —
+// the default backlog run, the stale sweep, and a preview that writes
+// nothing.
+func TestNoRosterReachesTheChildAndTheDenyListAlwaysDoes(t *testing.T) {
+	for name, opts := range map[string]curator.Options{
+		"backlog run": {},
+		"stale sweep": {Stale: true},
+		"dry run":     {DryRun: true, CandidatesDir: "/repo/candidates"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			fake, _, err := run(t, curatedEnvelope, opts)
+			if err != nil {
+				t.Fatalf("Run: %v", err)
+			}
+			argv := strings.Join(fake.Recorded(t).Args, "\x00")
+
+			if strings.Contains(argv, "--agents") {
+				t.Errorf("the child was given a roster it was never told to delegate to: %q", argv)
+			}
+			if !strings.Contains(argv, "--disallowedTools\x00Agent,Task") {
+				t.Errorf("the child was not denied delegation: %q", argv)
+			}
+		})
+	}
+}
+
 // --stale is its own command rather than a flag on audit, and the two ask for
 // different work. A flag that reached the child identically would mean the
 // sweep never happened.
@@ -120,6 +145,8 @@ func TestTheStaleSweepAsksForDifferentWork(t *testing.T) {
 		t.Fatalf("Run --stale: %v", err)
 	}
 
+	// The prompt goes on stdin, never argv, so that is where the job the run
+	// was given has to be read from.
 	backlogPrompt := backlog.Stdin(t)
 	sweepPrompt := sweep.Stdin(t)
 	if backlogPrompt == sweepPrompt {

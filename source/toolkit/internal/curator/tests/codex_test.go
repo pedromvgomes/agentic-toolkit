@@ -88,29 +88,36 @@ func TestADryRunIsBoundedBySandboxWhenThereIsNoAllowlist(t *testing.T) {
 	if len(ready.Tools) != 0 {
 		t.Errorf("Tools = %v, want none — this provider has no allowlist to grant", ready.Tools)
 	}
+	if len(ready.DisallowedTools) != 0 {
+		t.Errorf("DisallowedTools = %v, want none — this provider has no deny-list to apply", ready.DisallowedTools)
+	}
 }
 
-// The curator's content policy travels in the roster entry, which a provider
-// that cannot define agents never receives. Sending it anyway fails the run
-// outright; dropping it silently would run the curator without the rules that
-// make it a curator, so the policy moves into the prompt itself.
+// The curator's content policy is inlined into the prompt for every provider,
+// so a provider with no roster dialect receives it exactly as one that has
+// one would. Dropping it silently would run the curator without the rules
+// that make it a curator.
 func TestThePolicyIsInlinedForAProviderThatCannotDefineAgents(t *testing.T) {
 	opts, fake := codexOpts(t, curator.Options{DryRun: true})
 
 	if _, err := curator.Run(context.Background(), opts); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	argv := strings.Join(fake.Recorded(t).Args, "\x00")
-	stdin := fake.Stdin(t)
+	// The prompt goes on stdin, never argv, so the policy document has to be
+	// read from there. prompt.md's own heading appears nowhere else. The
+	// curator has no roster and is never told to delegate at all — there is
+	// no agent name left to check for.
+	if !strings.Contains(fake.Stdin(t), "# Memory Curator") {
+		t.Errorf("the curator's policy did not reach the run: %q", fake.Stdin(t))
+	}
 
-	if strings.Contains(stdin, "Delegate to the "+curator.AgentName) {
-		t.Error("the run was told to delegate to an agent this provider cannot define")
-	}
-	// prompt.md's own heading, which appears nowhere else.
-	if !strings.Contains(stdin, "# Memory Curator") {
-		t.Errorf("the curator's policy did not reach the run: %q", stdin)
-	}
+	argv := strings.Join(fake.Recorded(t).Args, "\x00")
 	if !strings.Contains(argv, "-s\x00read-only") {
 		t.Errorf("the dry run was not sandboxed: %q", argv)
+	}
+	// This provider has no vocabulary for denying a tool outright, and a dry
+	// run proceeds without one rather than being refused for lacking it.
+	if strings.Contains(argv, "disallowedTools") {
+		t.Errorf("a provider with no deny-list vocabulary was sent one: %q", argv)
 	}
 }
