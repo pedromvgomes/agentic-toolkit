@@ -424,11 +424,15 @@ _Avoid_: id, key, hash
 
 **App registration**:
 The GitHub App id and private key one machine holds, in agtk's own config directory. What a
-**Review** is posted as. Registered once per machine rather than once per repository, and
-never written into a repository — a fork, a clone or a leaked secret scan has nothing to
-find. The key is readable by its owner alone, and one any other account can read is refused
-rather than used: the blast radius of an App key is one machine, and a key a second account
-can read makes that untrue.
+**Review** is posted as, and what posting or approving one always requires — no environment
+variable substitutes for it there. A read that only needs to see GitHub state, such as
+`explain --pr` or `run --pr` with `--dry-run`/`--no-post`, does not: on a machine holding no
+registration at all it falls back to a token in `GH_TOKEN` or `GITHUB_TOKEN`, while a broken
+or half-written registration still refuses rather than being read around. Registered once per
+machine rather than once per repository, and never written into a repository — a fork, a clone
+or a leaked secret scan has nothing to find. The key is readable by its owner alone, and one
+any other account can read is refused rather than used: the blast radius of an App key is one
+machine, and a key a second account can read makes that untrue.
 
 The short-lived installation token minted from it is held in memory for one run and written
 nowhere. It reaches every repository the App is installed on, so it never enters a model's
