@@ -2,15 +2,19 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/pedromvgomes/agentic-toolkit/internal/githubapp"
+	"github.com/pedromvgomes/agentic-toolkit/internal/relay"
 	"github.com/pedromvgomes/agentic-toolkit/internal/review"
 	"github.com/pedromvgomes/agentic-toolkit/internal/reviewapprove"
 	"github.com/pedromvgomes/agentic-toolkit/internal/reviewpost"
@@ -164,6 +168,35 @@ func (s clientSeam) token() (token, variable string) {
 	return "", ""
 }
 
+// relayVariable names the relay repository a posting command on a machine
+// holding no registration hands its post to.
+const relayVariable = "AGTK_CODE_REVIEW_RELAY"
+
+// relay returns the relay repository relayVariable names, and the name of the
+// variable it came from. Both are empty when it holds only whitespace.
+func (s clientSeam) relay() (repo, variable string) {
+	getenv := s.getenv
+	if getenv == nil {
+		getenv = os.Getenv
+	}
+	if value := strings.TrimSpace(getenv(relayVariable)); value != "" {
+		return value, relayVariable
+	}
+	return "", ""
+}
+
+// relayDoer is the transport this seam names, for reaching the relay.
+//
+// With no transport named it is a client holding the same per-request bound
+// githubapp's own client does, so a relay that stops answering fails one
+// request rather than hanging the wait.
+func (s clientSeam) relayDoer() relay.Doer {
+	if s.doer == nil {
+		return &http.Client{Timeout: 30 * time.Second}
+	}
+	return s.doer
+}
+
 // options is the transport this seam names, for either kind of client.
 func (s clientSeam) options() []githubapp.Option {
 	if s.doer == nil {
@@ -265,6 +298,153 @@ func readPullRequest(ctx context.Context, root string, number int, seam clientSe
 	}
 	t.reader = reader
 	return t, nil
+}
+
+// relayNouns names what each relay action hands over, for a line of output.
+var relayNouns = map[string]string{
+	relay.ActionRun:     "review",
+	relay.ActionApprove: "approval",
+}
+
+// relayRoute is the relay a posting command on a machine holding no
+// registration hands its post to, and what reaches it.
+type relayRoute struct {
+	// slug is the repository under review.
+	slug review.Slug
+	// repo is the relay repository, and from is the variable that named it.
+	repo, from string
+	// token reaches the relay, and tokenFrom is the variable it came from.
+	token, tokenFrom string
+	doer             relay.Doer
+}
+
+// routeToRelay answers a posting command that resolvePullRequest refused: with
+// the relay that posts in its place, or with the error the command fails with.
+//
+// The relay is the answer only on a machine holding no registration at all,
+// and only when relayVariable names one. A broken or half-written registration
+// keeps its refusal unchanged, whose answer is to finish registering: relaying
+// around it would hide the breakage the same way reading around it with a
+// token would. A machine holding none and naming no relay is refused with
+// both ways out.
+//
+// Every refusal here is made before anything is read, so a command that could
+// never reach its relay spends nothing finding that out.
+func routeToRelay(root string, asJSON bool, seam clientSeam, refusal error) (*relayRoute, error) {
+	if !githubapp.Unregistered(refusal) {
+		return nil, refusal
+	}
+	// resolvePullRequest read the same remote before it refused, so this
+	// fails only when the remote changed in between, and the refusal then
+	// stands as it was.
+	slug, err := review.RemoteSlug(root, review.DefaultRemote)
+	if err != nil {
+		return nil, refusal
+	}
+	relayRepo, relayFrom := seam.relay()
+	if relayRepo == "" {
+		return nil, fmt.Errorf("%w, or set %s to the owner/name of a relay repository that can post to %s as the App",
+			refusal, relayVariable, slug)
+	}
+	// A relayed command learns how the relay's run ended and not what GitHub
+	// made of what it posted, so it cannot write the document --json
+	// promises, and a consumer parsing this stream would be handed prose.
+	if asJSON {
+		return nil, fmt.Errorf("%w; %s names %s, but a relayed review reports only how the relay's run ended, "+
+			"which is not the review --json describes: drop --json to relay it", refusal, relayFrom, relayRepo)
+	}
+	token, tokenFrom := seam.token()
+	if token == "" {
+		return nil, fmt.Errorf("%w; %s names %s, but neither GH_TOKEN nor GITHUB_TOKEN holds a token to reach it with",
+			refusal, relayFrom, relayRepo)
+	}
+	return &relayRoute{
+		slug: slug, repo: relayRepo, from: relayFrom,
+		token: token, tokenFrom: tokenFrom,
+		doer: seam.relayDoer(),
+	}, nil
+}
+
+// hand dispatches req to the relay, waits for its run to end, and reports how
+// it ended: nil once the run has succeeded, and otherwise the error the
+// command fails with.
+//
+// The relay's runner makes every call that writes to the reviewed repository,
+// as the App, so nothing reaches it from this process: the caller's token only
+// starts the run and reads how it ended. What the run posted is on the pull
+// request and in the run's log, which this process never sees, so only the
+// run's conclusion and address are reported.
+func (r *relayRoute) hand(ctx context.Context, env *Env, req relay.Request) error {
+	noun := relayNouns[req.Action]
+	target := relay.Target{Slug: r.repo, Token: r.token}
+	fmt.Fprintf(env.Stdout, "This machine holds no GitHub App registration: relaying the %s of %s#%d through %s.\n",
+		noun, r.slug, req.PR, r.repo)
+	dispatched, err := relay.Dispatch(ctx, r.doer, target, req)
+	if err != nil {
+		return fmt.Errorf("relay the %s of %s#%d through %s, named by %s, with the token in %s: %w",
+			noun, r.slug, req.PR, r.repo, r.from, r.tokenFrom, err)
+	}
+	if dispatched.URL != "" {
+		fmt.Fprintf(env.Stdout, "Relay run: %s\n", dispatched.URL)
+	}
+	fmt.Fprintf(env.Stdout, "Waiting up to %s for it to finish.\n", relay.DefaultTimeout)
+	result, err := relay.Await(ctx, r.doer, target, dispatched, 0)
+	if err != nil {
+		return fmt.Errorf("relay the %s of %s#%d through %s, named by %s, with the token in %s: %w",
+			noun, r.slug, req.PR, r.repo, r.from, r.tokenFrom, err)
+	}
+	if result.Conclusion != "success" {
+		return fmt.Errorf("the relay run for the %s of %s#%d did not succeed (%s): %s",
+			noun, r.slug, req.PR, result.Conclusion, result.URL)
+	}
+	fmt.Fprintf(env.Stdout, "The relay run for the %s of %s#%d succeeded: %s\n", noun, r.slug, req.PR, result.URL)
+	fmt.Fprintln(env.Stdout, "What it posted is on the pull request, and its log says how it got there.")
+	return nil
+}
+
+// relayOrRefuse answers a command that resolvePullRequest refused and that
+// hands the relay nothing but the pull request, and returns what the command
+// reports: nil once a relay has run and succeeded, and otherwise the error the
+// command fails with.
+//
+// It is for an action the relay's runner decides from the pull request itself,
+// which approval is. routeToRelay decides whether there is a relay to hand it
+// to, and hand reports how its run went.
+func relayOrRefuse(ctx context.Context, env *Env, root string, number int, action, panel string, asJSON bool,
+	seam clientSeam, refusal error,
+) error {
+	route, err := routeToRelay(root, asJSON, seam, refusal)
+	if err != nil {
+		return err
+	}
+	return route.hand(ctx, env, relay.Request{
+		Repo: route.slug.String(), PR: number, Action: action, Panel: panel,
+	})
+}
+
+// resolveToPost resolves a pull request for a run that posts, and returns the
+// relay that posts its review when this machine cannot.
+//
+// A registered machine reads and posts as the App, and the route is nil. On a
+// machine holding no registration at all, the relay relayVariable names posts
+// in its place. Every refusal routeToRelay makes comes before anything is
+// read; the pull request is then read with the token, as a run that posts
+// nothing reads it, and the panel runs here. The target's client is nil, so
+// nothing on this machine can post, and the route is what does.
+func resolveToPost(ctx context.Context, root string, number int, flags runFlags, seam clientSeam) (*pullRequestTarget, *relayRoute, error) {
+	t, err := resolvePullRequest(ctx, root, number, seam)
+	if err == nil {
+		return t, nil, nil
+	}
+	route, err := routeToRelay(root, flags.json, seam, err)
+	if err != nil {
+		return nil, nil, err
+	}
+	t, err = readPullRequest(ctx, root, number, seam)
+	if err != nil {
+		return nil, nil, err
+	}
+	return t, route, nil
 }
 
 // anchorPullRequest brings a pull request's commits into the local repository
@@ -488,13 +668,18 @@ func runCodeReviewPR(cmd *cobra.Command, env *Env, target reviewTarget, flags ru
 	}
 	// A run that posts resolves as the App, and so refuses here on a machine
 	// that holds no registration, before any panel is spent on a review it
-	// could never post. A run that posts nothing reads through whatever this
+	// could never post — unless a relay is named, which posts the review this
+	// machine computes. A run that posts nothing reads through whatever this
 	// machine has.
-	resolve := resolvePullRequest
-	if flags.dryRun || flags.noPost {
-		resolve = readPullRequest
+	var (
+		t     *pullRequestTarget
+		route *relayRoute
+	)
+	if !flags.dryRun && !flags.noPost {
+		t, route, err = resolveToPost(cmd.Context(), root, target.pr, flags, seam)
+	} else {
+		t, err = readPullRequest(cmd.Context(), root, target.pr, seam)
 	}
-	t, err := resolve(cmd.Context(), root, target.pr, seam)
 	if err != nil {
 		return err
 	}
@@ -527,12 +712,48 @@ func runCodeReviewPR(cmd *cobra.Command, env *Env, target reviewTarget, flags ru
 		return nil
 	}
 
+	scrubDispatchSecrets()
 	result, err := reviewrun.Run(cmd.Context(), opts)
 	if err != nil {
 		return err
 	}
 	payload, place := reviewpost.Build(result, t.pr, t.added)
+	return deliverReview(cmd.Context(), env, t, result, payload, place, route, flags)
+}
 
+// scrubDispatchSecrets removes every environment variable this process reads
+// to reach GitHub as this machine, before any reviewer is started.
+//
+// A reviewer's own credential is unrelated to any of these — it authenticates
+// a coding-agent CLI, never this tool's own GitHub access — but agentic-driver's
+// Ambient credentials, the only mode this package asks for, hand a reviewer's
+// child process this process's entire environment. A reviewer reads the diff
+// under review before anything has judged whether to trust it, so an
+// instruction embedded in that diff has no legitimate way to reach the
+// caller's own token or the relay this machine would otherwise dispatch to;
+// removing them here is what makes that true regardless of the sandbox a
+// provider gives its own child. Everything that needs one of these has
+// already read it by the time a panel starts: a pull request's target is
+// resolved, its prior reviews and threads are read, and a relay route, if
+// there is one, already holds its own token rather than this process's
+// environment.
+func scrubDispatchSecrets() {
+	for _, name := range []string{"GH_TOKEN", "GITHUB_TOKEN", relayVariable} {
+		_ = os.Unsetenv(name)
+	}
+}
+
+// deliverReview does what a finished review of a pull request calls for:
+// withholds it, posts it as the App, or hands it to a relay that posts it as
+// the App from elsewhere.
+//
+// One function for all three, so a review that reaches a relay has been
+// through every decision a review posted from here goes through, in the same
+// order. route is nil when this machine holds the registration; t.client is
+// nil when it does not, and then route is the only thing that can post.
+func deliverReview(ctx context.Context, env *Env, t *pullRequestTarget, result *reviewrun.Review,
+	payload githubapp.ReviewPayload, place reviewpost.Placement, route *relayRoute, flags runFlags,
+) error {
 	// A blocked review — every provider it could try declined to serve the
 	// credential — takes the same path as --no-post: reported to the caller,
 	// posted nowhere. A block is a credential/quota condition, not a defect
@@ -545,8 +766,11 @@ func runCodeReviewPR(cmd *cobra.Command, env *Env, target reviewTarget, flags ru
 		}
 		return unavailableError(result)
 	}
+	if t.client == nil {
+		return relayReview(ctx, env, t, result, payload, place, route)
+	}
 
-	posted, err := t.client.CreateReview(cmd.Context(), t.pr.Number, payload)
+	posted, err := t.client.CreateReview(ctx, t.pr.Number, payload)
 	if err != nil {
 		// The review is not lost with the post. Reporting it costs nothing and
 		// is the difference between a rate limit that wasted a panel and one
@@ -563,12 +787,47 @@ func runCodeReviewPR(cmd *cobra.Command, env *Env, target reviewTarget, flags ru
 	// subject_type is not a field on a review's draft comments. They are posted
 	// after the review has landed, so a failure here costs one thread and never
 	// the review.
-	failures := postFileComments(cmd.Context(), t, place)
+	failures := postFileComments(ctx, t.client, t.pr.Number, reviewpost.FileComments(t.pr, place))
 
 	if err := reportReview(env, t, result, payload, place, &posted, failures, flags.json); err != nil {
 		return err
 	}
 	reportFileComments(env, failures, flags.json)
+	return unavailableError(result)
+}
+
+// relayReview hands a finished review to the relay, whose runner posts it as
+// the App with `code-review post`.
+//
+// The relay is handed exactly the requests a registered run would make — the
+// review, then each file-level comment — encoded as relayedReview, which is
+// what `code-review post` decodes. The review is written out before the relay
+// is dispatched, so what the panel found is on this machine's output however
+// the relay's run ends.
+func relayReview(ctx context.Context, env *Env, t *pullRequestTarget, result *reviewrun.Review,
+	payload githubapp.ReviewPayload, place reviewpost.Placement, route *relayRoute,
+) error {
+	if route == nil {
+		return fmt.Errorf("%s#%d was read without the App's registration and no relay was named, so its review has nowhere to be posted from",
+			t.slug, t.pr.Number)
+	}
+	if payload.Comments == nil {
+		payload.Comments = []githubapp.ReviewComment{}
+	}
+	raw, err := json.Marshal(relayedReview{Review: payload, FileComments: reviewpost.FileComments(t.pr, place)})
+	if err != nil {
+		return fmt.Errorf("encode the review of %s#%d for the relay: %w", t.slug, t.pr.Number, err)
+	}
+
+	fmt.Fprintf(env.Stdout, "scope:    %s\n", t.scope.describe())
+	reviewrun.Render(env.Stdout, result)
+	renderPlacement(env.Stdout, place)
+	fmt.Fprintln(env.Stdout)
+	if err := route.hand(ctx, env, relay.Request{
+		Repo: t.slug.String(), PR: t.pr.Number, Action: relay.ActionRun, Payload: string(raw),
+	}); err != nil {
+		return err
+	}
 	return unavailableError(result)
 }
 
@@ -585,10 +844,10 @@ type fileCommentFailure struct {
 // comments rather than a batch, so the finding a rate limit swallowed is the
 // only finding lost. Each is still stated in the review body, which is what
 // makes a failure reportable rather than silent.
-func postFileComments(ctx context.Context, t *pullRequestTarget, place reviewpost.Placement) []fileCommentFailure {
+func postFileComments(ctx context.Context, client *githubapp.Client, number int, comments []githubapp.FileComment) []fileCommentFailure {
 	var failures []fileCommentFailure
-	for _, comment := range reviewpost.FileComments(t.pr, place) {
-		if _, err := t.client.CreateFileComment(ctx, t.pr.Number, comment); err != nil {
+	for _, comment := range comments {
+		if _, err := client.CreateFileComment(ctx, number, comment); err != nil {
 			failures = append(failures, fileCommentFailure{Path: comment.Path, Reason: err.Error()})
 		}
 	}

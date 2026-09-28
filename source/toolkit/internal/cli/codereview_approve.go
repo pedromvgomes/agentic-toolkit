@@ -5,6 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/pedromvgomes/agentic-toolkit/internal/relay"
 	"github.com/pedromvgomes/agentic-toolkit/internal/review"
 	"github.com/pedromvgomes/agentic-toolkit/internal/reviewapprove"
 )
@@ -21,6 +22,10 @@ func newCodeReviewApproveCmd(env *Env) *cobra.Command {
 		Long: "Posts one GitHub review with event APPROVE, as the App, bound to the pull\n" +
 			"request's current head. It counts toward a required approval, which a solo\n" +
 			"author cannot satisfy alone.\n" +
+			"\n" +
+			"On a machine holding no App registration at all, a relay named by\n" +
+			"AGTK_CODE_REVIEW_RELAY approves in its place, through a separate,\n" +
+			"already-registered machine, and this command waits on that run instead.\n" +
 			"\n" +
 			"Granted only when the head carries a review by this installation that reached\n" +
 			"a verdict, every finding at or above the manifest's approval floor is marked a\n" +
@@ -50,7 +55,7 @@ func runCodeReviewApprove(cmd *cobra.Command, env *Env, number int, seam clientS
 	}
 	t, err := resolvePullRequest(cmd.Context(), root, number, seam)
 	if err != nil {
-		return err
+		return relayOrRefuse(cmd.Context(), env, root, number, relay.ActionApprove, "", false, seam, err)
 	}
 	// The floor is read from the manifest at the base ref, like every other
 	// rule a pull request is judged by. A floor read from the head would let a

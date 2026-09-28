@@ -90,6 +90,7 @@ const (
 	tokenPath        = "/app/installations/99/access_tokens"
 	pullPath         = "/repos/acme/widgets/pulls/7"
 	reviewsPath      = "/repos/acme/widgets/pulls/7/reviews"
+	appPath          = "/app"
 )
 
 // auth are the two exchanges every authenticated call is preceded by.
@@ -99,6 +100,13 @@ func auth(expires time.Time) []exchange {
 		{method: http.MethodPost, path: tokenPath, status: 201,
 			body: fmt.Sprintf(`{"token": "ghs_scripted", "expires_at": %q}`, expires.Format(time.RFC3339))},
 	}
+}
+
+// appLogin is the one exchange viewerLogin makes, the first time a Client
+// with a real App credential needs to compare a comment or review's author
+// against its own bot login.
+func appLogin() exchange {
+	return exchange{method: http.MethodGet, path: appPath, status: 200, body: `{"slug": "agtk-code-review"}`}
 }
 
 func client(t *testing.T, exchanges ...exchange) (*githubapp.Client, *scripted) {

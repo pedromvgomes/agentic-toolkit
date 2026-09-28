@@ -60,6 +60,10 @@ type Client struct {
 	// never handed out: nothing outside this package can reach a Client that
 	// writes with a token that is not the App's.
 	static string
+
+	// appLogin is this App's own bot login, resolved once and cached. Read
+	// only by viewerLogin.
+	appLogin string
 }
 
 // Option configures a Client.
@@ -321,6 +325,41 @@ func (c *Client) bearer(ctx context.Context) (string, error) {
 
 // tokenMargin is how much life a held token must have left to be reused.
 const tokenMargin = time.Minute
+
+// viewerLogin is the login ByViewer is compared against, on a read path that
+// cannot ask GraphQL for viewerDidAuthor directly.
+//
+// A Client built from a caller's own token (static set, cred nil) never
+// resolves one: nothing it reads is ever this installation's, and every
+// caller of this path is a ReadClient that clears ByViewer on its own result
+// regardless of what is returned here — resolving an App login neither of
+// them holds would cost a request to answer a question the caller already
+// knows the answer to.
+func (c *Client) viewerLogin(ctx context.Context) (string, error) {
+	if c.cred == nil {
+		return "", nil // [lydite:exclude_from_mutation][replace-return: unobservable — the only caller with cred == nil is ReadClient, which force-clears ByViewer after every call into this path regardless of what this returns]
+	}
+	if c.appLogin != "" {
+		return c.appLogin, nil
+	}
+	jwt, err := c.cred.appJWT(c.now())
+	if err != nil {
+		return "", err
+	}
+	var app struct {
+		Slug string `json:"slug"`
+	}
+	if err := c.do(ctx, http.MethodGet, "/app", jwt, nil, &app); err != nil {
+		return "", err
+	}
+	if app.Slug == "" {
+		return "", errors.New("GitHub reported no slug for this App")
+	}
+	// GitHub's own convention for an App's bot account: the App's slug with
+	// "[bot]" appended, exactly as it authors a comment or a review.
+	c.appLogin = app.Slug + "[bot]"
+	return c.appLogin, nil
+}
 
 // installationError turns "the App is not installed here" into the sentence
 // that fixes it, and leaves every other refusal alone.

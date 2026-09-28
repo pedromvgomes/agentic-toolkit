@@ -14,8 +14,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/pedromvgomes/agentic-toolkit/internal/githubapp"
 	"github.com/pedromvgomes/agentic-toolkit/internal/review"
@@ -620,7 +622,7 @@ func TestEachFileLevelFindingGetsOneRequestOfItsOwn(t *testing.T) {
 		{Path: "a.go", Category: "architecture", Severity: reviewrun.SeverityAmber, Issue: "two reasons to change"},
 		{Path: "b.go", Category: "correctness", Severity: reviewrun.SeverityRed, Issue: "off by one"},
 	}}
-	failures := postFileComments(context.Background(), target, place)
+	failures := postFileComments(context.Background(), target.client, target.pr.Number, reviewpost.FileComments(target.pr, place))
 
 	if len(failures) != 0 {
 		t.Errorf("comments GitHub accepted are reported as refused: %+v", failures)
@@ -662,7 +664,7 @@ func TestOneRefusedFileCommentNeitherStopsTheRestNorGoesUnreported(t *testing.T)
 		{Path: "a.go", Category: "architecture", Severity: reviewrun.SeverityAmber},
 		{Path: "b.go", Category: "correctness", Severity: reviewrun.SeverityRed},
 	}}
-	failures := postFileComments(context.Background(), target, place)
+	failures := postFileComments(context.Background(), target.client, target.pr.Number, reviewpost.FileComments(target.pr, place))
 
 	if len(doer.paths) != 2 {
 		t.Errorf("a refused comment stopped the ones after it: %v", doer.paths)
@@ -824,13 +826,20 @@ func TestPostingAndApprovingRefuseWithoutARegistrationBeforeAnythingIsRead(t *te
 		cmd := NewRootCmd(env)
 		cmd.SetContext(context.Background())
 
-		err := runCodeReviewPR(cmd, env, reviewTarget{pr: 7}, runFlags{}, seam)
-		if err == nil || !strings.Contains(err.Error(), "code-review register") {
-			t.Errorf("run --pr with %v was not refused for want of a registration: %v", vars, err)
-		}
-		err = runCodeReviewApprove(cmd, env, 7, seam)
-		if err == nil || !strings.Contains(err.Error(), "code-review register") {
-			t.Errorf("approve with %v was not refused for want of a registration: %v", vars, err)
+		runErr := runCodeReviewPR(cmd, env, reviewTarget{pr: 7}, runFlags{}, seam)
+		approveErr := runCodeReviewApprove(cmd, env, 7, seam)
+		for command, err := range map[string]error{"run --pr": runErr, "approve": approveErr} {
+			if err == nil {
+				t.Errorf("%s with %v was not refused for want of a registration", command, vars)
+				continue
+			}
+			// Both ways out are named: registering this machine, or naming a
+			// relay that posts as the App from somewhere else.
+			for _, want := range []string{"code-review register", "AGTK_CODE_REVIEW_RELAY", "acme/widgets"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("%s with %v is refused without naming %q: %v", command, vars, want, err)
+				}
+			}
 		}
 
 		if len(doer.calls) > 0 {
@@ -932,6 +941,14 @@ func TestAZeroValueClientSeamReadsTheRealEnvironmentAndTransport(t *testing.T) {
 	if opts := (clientSeam{}).options(); opts != nil {
 		t.Errorf("a zero-value seam's options is %v, want nil", opts)
 	}
+
+	t.Setenv("AGTK_CODE_REVIEW_RELAY", "acme/relay")
+	if repo, _ := (clientSeam{}).relay(); repo != "acme/relay" {
+		t.Errorf("a zero-value seam read the relay %q, want acme/relay", repo)
+	}
+	if _, ok := (clientSeam{}).relayDoer().(*http.Client); !ok {
+		t.Errorf("a zero-value seam reaches the relay through %T, want a real HTTP client", (clientSeam{}).relayDoer())
+	}
 }
 
 // A repository readPullRequest cannot even name is refused before any network
@@ -946,5 +963,636 @@ func TestReadPullRequestFailsBeforeAnythingWithNoRemote(t *testing.T) {
 	}
 	if len(doer.calls) > 0 {
 		t.Errorf("a repository that cannot be identified still reached GitHub: %v", doer.calls)
+	}
+}
+
+// relayRunURL is the page of the run relayNet reports starting.
+const relayRunURL = "https://github.com/acme/relay/actions/runs/555"
+
+// relayNet answers the relay repository's dispatch and the read of the run it
+// names, and hands every other request to next.
+//
+// Every request is recorded, so a test can say which repository was asked for
+// what, and under which token.
+type relayNet struct {
+	// next answers what is not the relay's, and is nil when nothing else
+	// should be asked for; such a request is then answered 404.
+	next githubapp.Doer
+	// refuse is the status the dispatch is answered with, and zero accepts it.
+	refuse int
+	// conclusion is how the run ends.
+	conclusion string
+
+	calls []string
+	// dispatched is the body the dispatch was sent with.
+	dispatched string
+}
+
+func (n *relayNet) Do(req *http.Request) (*http.Response, error) {
+	n.calls = append(n.calls, req.Method+" "+req.URL.Path+" "+req.Header.Get("Authorization"))
+	answer := func(status int, body string) (*http.Response, error) {
+		return &http.Response{StatusCode: status, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(body))}, nil
+	}
+	switch {
+	case req.Method == http.MethodPost && req.URL.Path == "/repos/acme/relay/actions/workflows/relay.yml/dispatches":
+		raw, err := io.ReadAll(req.Body)
+		if err != nil {
+			return nil, err
+		}
+		n.dispatched = string(raw)
+		if n.refuse != 0 {
+			return answer(n.refuse, `{"message": "Not Found"}`)
+		}
+		return answer(http.StatusOK, `{"workflow_run_id": 555, "html_url": "`+relayRunURL+`"}`)
+	case req.Method == http.MethodGet && req.URL.Path == "/repos/acme/relay/actions/runs/555":
+		return answer(http.StatusOK, fmt.Sprintf(
+			`{"id": 555, "status": "completed", "conclusion": %q, "html_url": %q, "display_title": "relayed", "created_at": "2026-09-28T12:00:00Z"}`,
+			n.conclusion, relayRunURL))
+	case n.next != nil:
+		return n.next.Do(req)
+	}
+	return answer(http.StatusNotFound, `{"message": "Not Found"}`)
+}
+
+// relayCalls are the requests that reached the relay repository.
+func (n *relayNet) relayCalls() []string {
+	var calls []string
+	for _, call := range n.calls {
+		if strings.Contains(call, " /repos/acme/relay/") {
+			calls = append(calls, call)
+		}
+	}
+	return calls
+}
+
+// relayInputs decodes the inputs the relay was dispatched with.
+func relayInputs(t *testing.T, n *relayNet) map[string]string {
+	t.Helper()
+	var body struct {
+		Inputs map[string]string `json:"inputs"`
+	}
+	if err := json.Unmarshal([]byte(n.dispatched), &body); err != nil {
+		t.Fatalf("the dispatch body is not JSON: %v\n%s", err, n.dispatched)
+	}
+	return body.Inputs
+}
+
+// relayed is an environment naming the relay and a token to reach it with.
+func relayed() map[string]string {
+	return map[string]string{"GH_TOKEN": "ghp_env", "AGTK_CODE_REVIEW_RELAY": " acme/relay\n"}
+}
+
+// postPR runs `run --pr 7` through a seam and returns what it wrote.
+func postPR(t *testing.T, work string, target reviewTarget, flags runFlags, seam clientSeam) (string, error) {
+	t.Helper()
+	var out bytes.Buffer
+	env := &Env{Stdin: strings.NewReader(""), Stdout: &out, Stderr: io.Discard, WorkDir: work}
+	cmd := NewRootCmd(env)
+	cmd.SetContext(context.Background())
+	err := runCodeReviewPR(cmd, env, target, flags, seam)
+	return out.String(), err
+}
+
+// approvePR runs `approve --pr 7` through a seam and returns what it wrote.
+func approvePR(t *testing.T, work string, seam clientSeam) (string, error) {
+	t.Helper()
+	var out bytes.Buffer
+	env := &Env{Stdin: strings.NewReader(""), Stdout: &out, Stderr: io.Discard, WorkDir: work}
+	cmd := NewRootCmd(env)
+	cmd.SetContext(context.Background())
+	err := runCodeReviewApprove(cmd, env, 7, seam)
+	return out.String(), err
+}
+
+// AGTK_CODE_REVIEW_RELAY is read with surrounding whitespace dropped, and one
+// holding only whitespace names no relay.
+// A reviewer's own credential is Ambient — agentic-driver's default, and the
+// only mode this package asks for — so its child process inherits this
+// process's whole environment. Nothing a reviewer reads has a legitimate use
+// for this machine's own GitHub token or the relay it would otherwise
+// dispatch to, so both are gone from the process environment before any
+// reviewer could start.
+func TestScrubDispatchSecretsRemovesEveryDispatchVariable(t *testing.T) {
+	t.Setenv("GH_TOKEN", "ghp_secret")
+	t.Setenv("GITHUB_TOKEN", "ghp_also_secret")
+	t.Setenv("AGTK_CODE_REVIEW_RELAY", "acme/relay")
+
+	scrubDispatchSecrets()
+
+	for _, name := range []string{"GH_TOKEN", "GITHUB_TOKEN", "AGTK_CODE_REVIEW_RELAY"} {
+		if v, ok := os.LookupEnv(name); ok {
+			t.Errorf("%s is still set to %q after scrubbing", name, v)
+		}
+	}
+}
+
+// A run that reaches the panel scrubs the dispatch variables first, on both
+// the path that can post and the path that never touches GitHub: a reviewer
+// that gets to run at all must never find one of them in its own
+// environment.
+func TestARunThatReachesThePanelScrubsDispatchSecretsFirst(t *testing.T) {
+	work, baseSHA, headSHA := prRepo(t)
+	doer := prDoer(baseSHA, headSHA, reviewOf(headSHA, true, "looks good to me"), noThreads)
+	t.Setenv("GH_TOKEN", "ghp_secret")
+	t.Setenv("GITHUB_TOKEN", "ghp_also_secret")
+	t.Setenv("AGTK_CODE_REVIEW_RELAY", "acme/relay")
+
+	runPR(t, work, runFlags{}, doer)
+
+	for _, name := range []string{"GH_TOKEN", "GITHUB_TOKEN", "AGTK_CODE_REVIEW_RELAY"} {
+		if v, ok := os.LookupEnv(name); ok {
+			t.Errorf("%s is still %q after a posting run reached the panel", name, v)
+		}
+	}
+}
+
+// The same, for a local run that never resolves a pull request at all: it
+// scrubs before the panel just as a posting run does, rather than only where
+// a relay or a token happens to be in play.
+func TestALocalRunThatReachesThePanelScrubsDispatchSecretsFirst(t *testing.T) {
+	work, _, _ := prRepo(t)
+	t.Setenv("GH_TOKEN", "ghp_secret")
+	t.Setenv("GITHUB_TOKEN", "ghp_also_secret")
+	t.Setenv("AGTK_CODE_REVIEW_RELAY", "acme/relay")
+
+	var out bytes.Buffer
+	env := &Env{Stdin: strings.NewReader(""), Stdout: &out, Stderr: io.Discard, WorkDir: work}
+	cmd := NewRootCmd(env)
+	cmd.SetContext(context.Background())
+	_ = runCodeReviewRun(cmd, env, reviewTarget{context: "worktree"}, runFlags{})
+
+	for _, name := range []string{"GH_TOKEN", "GITHUB_TOKEN", "AGTK_CODE_REVIEW_RELAY"} {
+		if v, ok := os.LookupEnv(name); ok {
+			t.Errorf("%s is still %q after a local run reached the panel", name, v)
+		}
+	}
+}
+
+func TestTheRelayComesFromAgtkCodeReviewRelay(t *testing.T) {
+	for _, tc := range []struct {
+		vars           map[string]string
+		repo, variable string
+	}{
+		{map[string]string{"AGTK_CODE_REVIEW_RELAY": " acme/relay\n"}, "acme/relay", "AGTK_CODE_REVIEW_RELAY"},
+		{map[string]string{"AGTK_CODE_REVIEW_RELAY": " \n"}, "", ""},
+		{map[string]string{}, "", ""},
+	} {
+		repo, variable := clientSeam{getenv: environment(tc.vars)}.relay()
+		if repo != tc.repo || variable != tc.variable {
+			t.Errorf("%v gave %q from %q, want %q from %q", tc.vars, repo, variable, tc.repo, tc.variable)
+		}
+	}
+}
+
+// With no transport named for a relay, its own client fails one request
+// rather than hanging the wait, which a timeout of zero — or one computed
+// wrong — would defeat either by firing immediately or never.
+func TestRelayDoerTimesOutAtThirtySeconds(t *testing.T) {
+	doer := clientSeam{}.relayDoer()
+	client, ok := doer.(*http.Client)
+	if !ok {
+		t.Fatalf("the relay's own transport is a %T, want *http.Client", doer)
+	}
+	if client.Timeout != 30*time.Second {
+		t.Errorf("the relay's own transport times out at %s, want 30s", client.Timeout)
+	}
+}
+
+// relayTo is the route to the relay relayNet answers for, as routeToRelay
+// builds it from relayed().
+func relayTo(net *relayNet) *relayRoute {
+	return &relayRoute{
+		slug: mustSlug("acme", "widgets"),
+		repo: "acme/relay", from: "AGTK_CODE_REVIEW_RELAY",
+		token: "ghp_env", tokenFrom: "GH_TOKEN",
+		doer: net,
+	}
+}
+
+// relayedTarget is a pull request read with a token, as a run on a machine
+// holding no registration reads it: nothing on it can post.
+func relayedTarget() *pullRequestTarget {
+	return &pullRequestTarget{
+		slug:  mustSlug("acme", "widgets"),
+		pr:    githubapp.PullRequest{Number: 7, HeadSHA: strings.Repeat("2", 40)},
+		added: reviewpost.AddedLines{"a.go": {4: true}},
+		scope: reviewScope{reason: "no earlier review by this installation reached a verdict"},
+	}
+}
+
+// deliverRelayed hands a finished review of relayedTarget to deliverReview
+// along route, and returns what it wrote.
+func deliverRelayed(t *testing.T, result *reviewrun.Review, route *relayRoute, flags runFlags) (string, relayedReview, error) {
+	t.Helper()
+	target := relayedTarget()
+	payload, place := reviewpost.Build(result, target.pr, target.added)
+	want := relayedReview{Review: payload, FileComments: reviewpost.FileComments(target.pr, place)}
+	if want.Review.Comments == nil {
+		want.Review.Comments = []githubapp.ReviewComment{}
+	}
+	var out bytes.Buffer
+	env := &Env{Stdin: strings.NewReader(""), Stdout: &out, Stderr: io.Discard, WorkDir: t.TempDir()}
+	err := deliverReview(context.Background(), env, target, result, payload, place, route, flags)
+	return out.String(), want, err
+}
+
+// relayableReview is a finished review carrying one inline finding and one
+// against a whole file, so a payload carries both halves of what is posted.
+func relayableReview() *reviewrun.Review {
+	return reviewFor(true,
+		reviewrun.Finding{
+			Path: "a.go", StartLine: line(4), EndLine: line(4),
+			Category: "correctness", Severity: reviewrun.SeverityRed,
+			Issue: "off by one", Evidence: "i <= len(x)", Reviewer: "correctness",
+		},
+		reviewrun.Finding{
+			Path: "a.go", Category: "architecture", Severity: reviewrun.SeverityAmber,
+			Issue: "two reasons to change", Reviewer: "architecture",
+		},
+	)
+}
+
+// On a machine holding no registration, a run that posts reads the pull
+// request with the caller's token, as a run that posts nothing does, so the
+// panel runs here. Nothing it holds can post: the target carries no client,
+// the relay is what will post, and nothing has been dispatched to it yet.
+func TestAnUnregisteredMachineWithARelayReadsWithTheTokenAndRunsThePanelHere(t *testing.T) {
+	work, baseSHA, headSHA := prRepo(t)
+	net := &relayNet{conclusion: "success", next: prDoer(baseSHA, headSHA, reviewsOf(), noThreads)}
+	seam := clientSeam{dir: unregistered(t), doer: net, getenv: environment(relayed())}
+
+	target, route, err := resolveToPost(context.Background(), work, 7, runFlags{}, seam)
+	if err != nil {
+		t.Fatalf("resolve to post: %v", err)
+	}
+	if target.client != nil {
+		t.Error("a pull request read with a token carries a client that posts")
+	}
+	if route == nil || route.repo != "acme/relay" || route.token != "ghp_env" {
+		t.Fatalf("the relay to post through is %+v, want acme/relay reached with GH_TOKEN", route)
+	}
+	if !headFetched(t, work, headSHA) {
+		t.Error("the head a panel would review was not fetched")
+	}
+	if want := []string{"GET /repos/acme/widgets/pulls/7 Bearer ghp_env"}; strings.Join(net.calls, "\n") != strings.Join(want, "\n") {
+		t.Errorf("resolving asked for %v, want only %v: a read with the caller's token and nothing of the App's", net.calls, want)
+	}
+}
+
+// A finished review on a machine holding no registration is handed to the
+// relay whole, as the JSON `code-review post` reads, and posted nowhere else:
+// every request goes to the relay repository under the caller's token, and the
+// payload decodes, strictly, to exactly the review and file-level comments a
+// registered run would have posted.
+func TestARelayedReviewIsHandedToTheRelayWholeAndPostedNowhereElse(t *testing.T) {
+	net := &relayNet{conclusion: "success"}
+	out, want, err := deliverRelayed(t, relayableReview(), relayTo(net), runFlags{})
+	if err != nil {
+		t.Fatalf("a relayed review failed: %v\n%s", err, out)
+	}
+	for _, text := range []string{
+		"off by one", "acme/widgets#7", relayRunURL, "succeeded",
+		"scope:    full change (no earlier review by this installation reached a verdict)",
+		"1 inline, 1 against a whole file",
+		"relaying the review of acme/widgets#7 through acme/relay.",
+		"Relay run: " + relayRunURL,
+		"Waiting up to",
+		"What it posted is on the pull request, and its log says how it got there.",
+	} {
+		if !strings.Contains(out, text) {
+			t.Errorf("the relayed review does not report %q:\n%s", text, out)
+		}
+	}
+	if !strings.Contains(out, "with nowhere to answer.\n\nThis machine holds no GitHub App registration") {
+		t.Errorf("the placement and the relay's own report run together with no blank line between them:\n%s", out)
+	}
+	if got := net.relayCalls(); len(got) != len(net.calls) || len(got) != 2 {
+		t.Errorf("a relayed review asked for %v, want only the relay's dispatch and its run", net.calls)
+	}
+	for _, call := range net.calls {
+		if !strings.HasSuffix(call, " Bearer ghp_env") {
+			t.Errorf("the relay was not reached with the caller's token: %s", call)
+		}
+	}
+
+	inputs := relayInputs(t, net)
+	for k, v := range map[string]string{"repo": "acme/widgets", "pr": "7", "action": "run"} {
+		if inputs[k] != v {
+			t.Errorf("input %s is %q, want %q", k, inputs[k], v)
+		}
+	}
+	if len(inputs) != 4 {
+		t.Errorf("the relay was dispatched with %v, want repo, pr, action and payload alone", inputs)
+	}
+	got, err := readRelayedReview(strings.NewReader(inputs["payload"]))
+	if err != nil {
+		t.Fatalf("the payload is not one `code-review post` reads: %v\n%s", err, inputs["payload"])
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("the relay was handed\n%+v\nwant\n%+v", got, want)
+	}
+	if len(got.Review.Comments) != 1 || len(got.FileComments) != 1 {
+		t.Errorf("the payload lost a finding: %d inline, %d file-level", len(got.Review.Comments), len(got.FileComments))
+	}
+}
+
+// A review that reached no verdict is posted from a relay as it is from here,
+// so it stays visible, and still fails the command.
+func TestARelayedReviewWithNoVerdictIsPostedAndFailsTheCommand(t *testing.T) {
+	net := &relayNet{conclusion: "success"}
+	out, _, err := deliverRelayed(t, reviewFor(false), relayTo(net), runFlags{})
+	if err == nil || !strings.Contains(err.Error(), "could not reach a verdict") {
+		t.Errorf("a relayed review that reached no verdict ended as %v", err)
+	}
+	if len(net.relayCalls()) != 2 || !strings.Contains(out, "succeeded") {
+		t.Errorf("a review that reached no verdict was not relayed: %v\n%s", net.calls, out)
+	}
+}
+
+// What a registered run withholds, a relayed one withholds too: --no-post and
+// a blocked review reach no relay.
+func TestAWithheldReviewIsNeverRelayed(t *testing.T) {
+	blocked := reviewFor(false)
+	blocked.Blocked = true
+	for name, tc := range map[string]struct {
+		result *reviewrun.Review
+		flags  runFlags
+	}{
+		"--no-post": {relayableReview(), runFlags{noPost: true}},
+		"blocked":   {blocked, runFlags{}},
+	} {
+		net := &relayNet{conclusion: "success"}
+		out, _, _ := deliverRelayed(t, tc.result, relayTo(net), tc.flags)
+		if len(net.calls) > 0 {
+			t.Errorf("%s: a withheld review reached %v", name, net.calls)
+		}
+		if !strings.Contains(out, "Nothing was posted.") {
+			t.Errorf("%s: a withheld review does not say it was withheld:\n%s", name, out)
+		}
+	}
+}
+
+// A registered machine posts as the App whatever the environment names: the
+// relay is an answer to holding no registration, not a second way to post.
+func TestARegisteredMachineNeverRelaysWhateverTheEnvironmentHolds(t *testing.T) {
+	work, baseSHA, headSHA := prRepo(t)
+	dir := registration(t)
+
+	var runs, approvals []string
+	for _, vars := range []map[string]string{{}, relayed()} {
+		net := &relayNet{conclusion: "success", next: prDoer(baseSHA, headSHA, reviewedBy(headSHA, true), noThreads)}
+		out, err := postPR(t, work, reviewTarget{pr: 7}, runFlags{}, clientSeam{dir: dir, doer: net, getenv: environment(vars)})
+		if err != nil {
+			t.Fatalf("run --pr with %v: %v", vars, err)
+		}
+		runs = append(runs, out)
+		if calls := net.relayCalls(); len(calls) > 0 {
+			t.Errorf("run --pr on a registered machine with %v reached the relay: %v", vars, calls)
+		}
+
+		marker := reviewrun.ReviewMarker{Head: headSHA, Complete: true}
+		net = &relayNet{conclusion: "success", next: &approvalDoer{
+			rest: prDoer(baseSHA, headSHA, "", "").rest,
+			graphql: []string{
+				reviewsAnswer(headSHA, "## Review by `agtk`\n\n"+marker.Render()+"\n"),
+				threadsAnswer(),
+			},
+		}}
+		out, err = approvePR(t, work, clientSeam{dir: dir, doer: net, getenv: environment(vars)})
+		if err != nil {
+			t.Fatalf("approve with %v: %v\n%s", vars, err, out)
+		}
+		approvals = append(approvals, out)
+		if calls := net.relayCalls(); len(calls) > 0 {
+			t.Errorf("approve on a registered machine with %v reached the relay: %v", vars, calls)
+		}
+	}
+	if runs[0] != runs[1] {
+		t.Errorf("a relay in the environment changed what a registered run reports:\n--- without ---\n%s\n--- with ---\n%s", runs[0], runs[1])
+	}
+	if approvals[0] != approvals[1] {
+		t.Errorf("a relay in the environment changed what a registered approval reports:\n--- without ---\n%s\n--- with ---\n%s",
+			approvals[0], approvals[1])
+	}
+}
+
+// A flag the relay does not carry is refused only where a run would relay. On
+// a registered machine --full posts as the App with a relay named, and here
+// reaches the no-op on a head that already carries a review.
+func TestARegisteredMachineTakesAFlagTheRelayDoesNotCarry(t *testing.T) {
+	work, baseSHA, headSHA := prRepo(t)
+	net := &relayNet{conclusion: "success", next: prDoer(baseSHA, headSHA, reviewedBy(headSHA, true), noThreads)}
+	out, err := postPR(t, work, reviewTarget{pr: 7}, runFlags{full: true},
+		clientSeam{dir: registration(t), doer: net, getenv: environment(relayed())})
+	if err != nil {
+		t.Fatalf("--full on a registered machine with a relay named: %v", err)
+	}
+	if !strings.Contains(out, "already carries a") {
+		t.Errorf("--full on a registered machine did not reach the reviewed head's no-op:\n%s", out)
+	}
+	if calls := net.relayCalls(); len(calls) > 0 {
+		t.Errorf("--full on a registered machine reached the relay: %v", calls)
+	}
+}
+
+// A registration somebody started and never finished is answered by finishing
+// it, whatever relay the environment names. Relaying around it would hide the
+// breakage exactly as reading around it with a token would.
+func TestAHalfWrittenRegistrationIsNeverRelayedAround(t *testing.T) {
+	work, _, _ := prRepo(t)
+	dir := registration(t)
+	if err := os.Remove(filepath.Join(dir, githubapp.KeyFile)); err != nil {
+		t.Fatal(err)
+	}
+	net := &relayNet{conclusion: "success"}
+	seam := clientSeam{dir: dir, doer: net, getenv: environment(relayed())}
+
+	out, err := postPR(t, work, reviewTarget{pr: 7}, runFlags{}, seam)
+	if err == nil || !strings.Contains(err.Error(), "register` again") {
+		t.Errorf("run --pr relayed around a half-written registration: %v", err)
+	}
+	approveOut, approveErr := approvePR(t, work, seam)
+	if approveErr == nil || !strings.Contains(approveErr.Error(), "register` again") {
+		t.Errorf("approve relayed around a half-written registration: %v", approveErr)
+	}
+	for _, e := range []error{err, approveErr} {
+		if e != nil && strings.Contains(e.Error(), "AGTK_CODE_REVIEW_RELAY") {
+			t.Errorf("a half-written registration is answered with the relay: %v", e)
+		}
+	}
+	if len(net.calls) > 0 {
+		t.Errorf("a half-written registration still sent %v", net.calls)
+	}
+	if out != "" || approveOut != "" {
+		t.Errorf("a refused post still reported something:\n%s%s", out, approveOut)
+	}
+}
+
+// A relay GitHub will not dispatch — a token without access to it reads the
+// same as a relay that is not there — is named with the variable that named
+// it and the token that was refused, since those are what somebody changes.
+// An approval and a review alike.
+func TestARefusedRelayDispatchNamesTheRelayAndTheToken(t *testing.T) {
+	work, _, _ := prRepo(t)
+	approvalNet := &relayNet{refuse: http.StatusNotFound}
+	_, approveErr := approvePR(t, work, clientSeam{dir: unregistered(t), doer: approvalNet, getenv: environment(relayed())})
+
+	reviewNet := &relayNet{refuse: http.StatusNotFound}
+	out, _, runErr := deliverRelayed(t, relayableReview(), relayTo(reviewNet), runFlags{})
+
+	for command, tc := range map[string]struct {
+		err error
+		net *relayNet
+	}{"approve": {approveErr, approvalNet}, "run --pr": {runErr, reviewNet}} {
+		if tc.err == nil {
+			t.Errorf("%s: a refused dispatch was reported as a success", command)
+			continue
+		}
+		for _, want := range []string{"acme/relay", "AGTK_CODE_REVIEW_RELAY", "GH_TOKEN", "404"} {
+			if !strings.Contains(tc.err.Error(), want) {
+				t.Errorf("%s: the refusal does not name %q: %v", command, want, tc.err)
+			}
+		}
+		if len(tc.net.calls) != 1 {
+			t.Errorf("%s: a refused dispatch was followed by %v", command, tc.net.calls)
+		}
+	}
+	// What the panel found is not lost with the relay: it was written out
+	// before anything was dispatched.
+	if !strings.Contains(out, "off by one") {
+		t.Errorf("a review whose relay was refused was not reported:\n%s", out)
+	}
+}
+
+// A relay run that completes without succeeding is a failure, reported with
+// how it ended and where its log is, and never as a posted review or a granted
+// approval.
+func TestARelayRunThatDidNotSucceedFailsTheCommand(t *testing.T) {
+	work, _, _ := prRepo(t)
+	approvalNet := &relayNet{conclusion: "failure"}
+	approveOut, approveErr := approvePR(t, work, clientSeam{dir: unregistered(t), doer: approvalNet, getenv: environment(relayed())})
+
+	reviewNet := &relayNet{conclusion: "failure"}
+	runOut, _, runErr := deliverRelayed(t, relayableReview(), relayTo(reviewNet), runFlags{})
+
+	for command, tc := range map[string]struct {
+		out string
+		err error
+	}{"approve": {approveOut, approveErr}, "run --pr": {runOut, runErr}} {
+		if tc.err == nil {
+			t.Errorf("%s: a failed relay run was reported as a success:\n%s", command, tc.out)
+			continue
+		}
+		for _, want := range []string{"failure", relayRunURL, "acme/widgets#7"} {
+			if !strings.Contains(tc.err.Error(), want) {
+				t.Errorf("%s: the failure does not name %q: %v", command, want, tc.err)
+			}
+		}
+		if strings.Contains(tc.out, "succeeded") {
+			t.Errorf("%s: a failed relay run reported success:\n%s", command, tc.out)
+		}
+	}
+}
+
+// A relay named with no token to reach it is neither way out, and the refusal
+// says which half is missing.
+func TestARelayWithNoTokenToReachItIsRefusedBeforeAnythingIsSent(t *testing.T) {
+	work, _, _ := prRepo(t)
+	net := &relayNet{conclusion: "success"}
+	_, err := postPR(t, work, reviewTarget{pr: 7}, runFlags{},
+		clientSeam{dir: unregistered(t), doer: net, getenv: environment(map[string]string{"AGTK_CODE_REVIEW_RELAY": "acme/relay"})})
+	if err == nil {
+		t.Fatal("a relay was dispatched with no token")
+	}
+	for _, want := range []string{"code-review register", "acme/relay", "GH_TOKEN", "GITHUB_TOKEN"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not name %q: %v", want, err)
+		}
+	}
+	if len(net.calls) > 0 {
+		t.Errorf("a relay with no token still sent %v", net.calls)
+	}
+}
+
+// A relayed run learns how the relay's run ended and nothing of the review
+// inside it, so under --json it is refused rather than handing a consumer
+// parsing the stream a line of prose.
+func TestARelayIsNotUsedUnderJSON(t *testing.T) {
+	work, _, _ := prRepo(t)
+	net := &relayNet{conclusion: "success"}
+	out, err := postPR(t, work, reviewTarget{pr: 7}, runFlags{json: true},
+		clientSeam{dir: unregistered(t), doer: net, getenv: environment(relayed())})
+	if err == nil || !strings.Contains(err.Error(), "--json") {
+		t.Errorf("a relayed run under --json was not refused for it: %v", err)
+	}
+	if len(net.calls) > 0 || out != "" {
+		t.Errorf("a refused relay under --json still sent %v and wrote %q", net.calls, out)
+	}
+}
+
+// --force and --full ask for exactly what a relayed run already does: a
+// token's reads always clear ByViewer, so chooseScope and carriesAVerdictFor
+// never find a review by this installation to vouch for, and the pull
+// request is always reviewed whole. Passing either changes nothing that
+// reaches the relay, so neither is refused.
+func TestForceAndFullAreAcceptedByARelayedRun(t *testing.T) {
+	work, baseSHA, headSHA := prRepo(t)
+	for _, flags := range []runFlags{{force: true}, {full: true}, {force: true, full: true}} {
+		net := &relayNet{conclusion: "success", next: prDoer(baseSHA, headSHA, reviewsOf(), noThreads)}
+		seam := clientSeam{dir: unregistered(t), doer: net, getenv: environment(relayed())}
+		target, route, err := resolveToPost(context.Background(), work, 7, flags, seam)
+		if err != nil {
+			t.Errorf("%+v was refused: %v", flags, err)
+			continue
+		}
+		if route == nil || target == nil {
+			t.Errorf("%+v resolved with no relay to post through", flags)
+		}
+	}
+}
+
+// A run that posts nothing has no post to relay. --dry-run and --no-post read
+// through the token as they do with no relay named, and without a token they
+// are refused as they are with no relay named, whether or not a flag the
+// relay does not carry is also set.
+func TestARunThatPostsNothingNeverRelays(t *testing.T) {
+	for _, flags := range []runFlags{
+		{dryRun: true}, {noPost: true},
+		{dryRun: true, force: true, full: true}, {noPost: true, force: true, full: true},
+	} {
+		work, _, _ := prRepo(t)
+		net := &relayNet{conclusion: "success"}
+		_, err := postPR(t, work, reviewTarget{pr: 7}, flags, clientSeam{
+			dir: unregistered(t), doer: net,
+			getenv: environment(map[string]string{"AGTK_CODE_REVIEW_RELAY": "acme/relay"}),
+		})
+		if err == nil || !strings.Contains(err.Error(), "GH_TOKEN or GITHUB_TOKEN to a token that can read") {
+			t.Errorf("%+v with no token was not refused as a read: %v", flags, err)
+		}
+		if err != nil && strings.Contains(err.Error(), "AGTK_CODE_REVIEW_RELAY") {
+			t.Errorf("%+v, which posts nothing, offered the relay: %v", flags, err)
+		}
+		if len(net.calls) > 0 {
+			t.Errorf("%+v with no token still sent %v", flags, net.calls)
+		}
+	}
+
+	for _, flags := range []runFlags{{dryRun: true}, {dryRun: true, force: true, full: true}} {
+		work, baseSHA, headSHA := prRepo(t)
+		net := &relayNet{conclusion: "success", next: prDoer(baseSHA, headSHA, reviewsOf(), noThreads)}
+		out, err := postPR(t, work, reviewTarget{pr: 7}, flags,
+			clientSeam{dir: unregistered(t), doer: net, getenv: environment(relayed())})
+		if err != nil {
+			t.Fatalf("%+v with a token and a relay: %v", flags, err)
+		}
+		if !strings.Contains(out, "Nothing was spent and nothing was posted.") {
+			t.Errorf("%+v did not preview the review:\n%s", flags, out)
+		}
+		if calls := net.relayCalls(); len(calls) > 0 {
+			t.Errorf("%+v reached the relay: %v", flags, calls)
+		}
+		if len(net.calls) == 0 {
+			t.Errorf("%+v read nothing with the token", flags)
+		}
 	}
 }
