@@ -15,7 +15,7 @@ func TestLock_ResolvesPrimaryAndWritesLockfile(t *testing.T) {
 	work := t.TempDir()
 	cache := t.TempDir()
 
-	writeEntryStack(t, work, url, "main")
+	writeEntryManifest(t, work, url, "main")
 
 	stdout, _, err := runCLI(t, work, "lock", "--cache", cache)
 	if err != nil {

@@ -336,11 +336,10 @@ func TestAnUndeterminedSignalDoesNotMaskOneThatIsPresent(t *testing.T) {
 	set := review.NewSignalSet()
 	set.Add(review.SignalConcurrency)
 	set.MarkUndetermined(review.SignalFixRevert, "the 200-hunk history budget ran out")
-	p := &review.Profile{ChangedFiles: 3, ChangedLines: 40, Signals: set, ReferencingFiles: review.AvailableCount(0)}
+	p := &review.Profile{ChangedFiles: 3, ChangedLines: 400, Signals: set, ReferencingFiles: review.AvailableCount(0)}
 
-	// The worktree context, because that is where a signal raises to deep at
-	// all: a pull request caps at standard, having already been read locally.
-	// Which context is not what this test is about.
+	// A change this large raises to deep on the signal alone; which context is
+	// not what this test is about.
 	sel, err := review.Select(m, review.ContextWorktree, p, "")
 	if err != nil {
 		t.Fatalf("Select: %v", err)
@@ -455,16 +454,39 @@ func TestTheBuiltInPanelsAreAllDescribed(t *testing.T) {
 	}
 }
 
-// A pull request caps at standard. By the time a branch is opened it has been
-// through the local loop, so an every-axis-twice reading on the pull request
-// re-reads code that was already read that way — the most expensive panel,
-// spent on the second look rather than the first.
-//
-// Reaching deep on a pull request is `--panel deep-codex`, a person deciding
-// this change is the exception. The signals below are the ones that do raise to
-// deep in a worktree, which is what makes this a ceiling rather than an absence
-// of rules.
-func TestAPullRequestNeverEscalatesPastStandard(t *testing.T) {
+// With nothing else about it, a change stays on the context's own default —
+// the same panel a pull request runs on the codex roster that a worktree runs
+// on Claude.
+func TestASmallUnremarkableChangeRunsEachContextsOwnDefault(t *testing.T) {
+	m, err := review.DefaultManifest()
+	if err != nil {
+		t.Fatalf("DefaultManifest: %v", err)
+	}
+	p := &review.Profile{
+		ChangedFiles: 1, ChangedLines: 10, Signals: review.NewSignalSet(),
+		ReferencingFiles: review.AvailableCount(0),
+	}
+
+	if sel, err := review.Select(m, review.ContextWorktree, p, ""); err != nil {
+		t.Fatalf("Select: %v", err)
+	} else if sel.Panel != "quick" {
+		t.Errorf("worktree panel = %q, want quick", sel.Panel)
+	}
+
+	if sel, err := review.Select(m, review.ContextPR, p, ""); err != nil {
+		t.Fatalf("Select: %v", err)
+	} else if sel.Panel != "quick-codex" {
+		t.Errorf("pr panel = %q, want quick-codex", sel.Panel)
+	}
+}
+
+// A risky signal always earns a strong reviewer a read, twice, even at its
+// smallest; `changed_lines` decides how far past that the reading goes. Under
+// 20 lines that is `focused`/`focused-codex`; from 20 up to 300, `standard`/
+// `standard-codex`; at or above 300, `deep`/`deep-codex`. The threshold is the
+// same on both contexts, so which one differs is the panel's provider, not
+// its depth.
+func TestARiskySignalsDepthTracksChangedLines(t *testing.T) {
 	m, err := review.DefaultManifest()
 	if err != nil {
 		t.Fatalf("DefaultManifest: %v", err)
@@ -478,37 +500,48 @@ func TestAPullRequestNeverEscalatesPastStandard(t *testing.T) {
 		review.SignalFixRevert,
 	} {
 		t.Run(string(signal), func(t *testing.T) {
-			set := review.NewSignalSet()
-			set.Add(signal)
-			p := &review.Profile{
-				ChangedFiles: 3, ChangedLines: 40, Signals: set,
-				ReferencingFiles: review.AvailableCount(0),
-			}
+			for _, tc := range []struct {
+				name         string
+				lines        int
+				wantWorktree string
+				wantPR       string
+			}{
+				{"under the focused threshold", 5, "focused", "focused-codex"},
+				{"between the thresholds", 40, "standard", "standard-codex"},
+				{"at the deep threshold", 300, "deep", "deep-codex"},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					set := review.NewSignalSet()
+					set.Add(signal)
+					p := &review.Profile{
+						ChangedFiles: 3, ChangedLines: tc.lines, Signals: set,
+						ReferencingFiles: review.AvailableCount(0),
+					}
 
-			sel, err := review.Select(m, review.ContextPR, p, "")
-			if err != nil {
-				t.Fatalf("Select: %v", err)
-			}
-			if sel.Panel != "standard-codex" {
-				t.Errorf("panel = %q, want standard-codex — a pull request caps at standard", sel.Panel)
-			}
+					worktree, err := review.Select(m, review.ContextWorktree, p, "")
+					if err != nil {
+						t.Fatalf("Select: %v", err)
+					}
+					if worktree.Panel != tc.wantWorktree {
+						t.Errorf("worktree panel = %q, want %q", worktree.Panel, tc.wantWorktree)
+					}
 
-			// The same signal in a worktree still buys the deeper reading, or
-			// the ceiling above is indistinguishable from having deleted the
-			// criterion.
-			local, err := review.Select(m, review.ContextWorktree, p, "")
-			if err != nil {
-				t.Fatalf("Select: %v", err)
-			}
-			if local.Panel != "deep" {
-				t.Errorf("worktree panel = %q, want deep — the criterion still raises before the pull request", local.Panel)
+					pr, err := review.Select(m, review.ContextPR, p, "")
+					if err != nil {
+						t.Fatalf("Select: %v", err)
+					}
+					if pr.Panel != tc.wantPR {
+						t.Errorf("pr panel = %q, want %q", pr.Panel, tc.wantPR)
+					}
+				})
 			}
 		})
 	}
 }
 
-// Blast radius caps on a pull request the same way a signal does.
-func TestAWidelyReferencedChangeStillCapsAtStandardOnAPullRequest(t *testing.T) {
+// Widely used code raises the same way on both contexts, on each context's
+// own roster.
+func TestAWidelyReferencedChangeRaisesOnBothContexts(t *testing.T) {
 	m, err := review.DefaultManifest()
 	if err != nil {
 		t.Fatalf("DefaultManifest: %v", err)
@@ -518,11 +551,59 @@ func TestAWidelyReferencedChangeStillCapsAtStandardOnAPullRequest(t *testing.T) 
 		ReferencingFiles: review.AvailableCount(200),
 	}
 
-	sel, err := review.Select(m, review.ContextPR, p, "")
-	if err != nil {
+	if sel, err := review.Select(m, review.ContextWorktree, p, ""); err != nil {
 		t.Fatalf("Select: %v", err)
+	} else if sel.Panel != "deep" {
+		t.Errorf("worktree panel = %q, want deep", sel.Panel)
 	}
-	if sel.Panel != "standard-codex" {
-		t.Errorf("panel = %q, want standard-codex", sel.Panel)
+
+	if sel, err := review.Select(m, review.ContextPR, p, ""); err != nil {
+		t.Fatalf("Select: %v", err)
+	} else if sel.Panel != "deep-codex" {
+		t.Errorf("pr panel = %q, want deep-codex", sel.Panel)
+	}
+}
+
+// Bulk raises the same way on both contexts too: a change wide enough to
+// matter on a worktree is exactly as wide on the pull request that follows.
+func TestAWideChangeRaisesOnBothContexts(t *testing.T) {
+	m, err := review.DefaultManifest()
+	if err != nil {
+		t.Fatalf("DefaultManifest: %v", err)
+	}
+	p := &review.Profile{
+		ChangedFiles: 50, ChangedLines: 200, Signals: review.NewSignalSet(),
+		ReferencingFiles: review.AvailableCount(0),
+	}
+
+	if sel, err := review.Select(m, review.ContextWorktree, p, ""); err != nil {
+		t.Fatalf("Select: %v", err)
+	} else if sel.Panel != "standard" {
+		t.Errorf("worktree panel = %q, want standard", sel.Panel)
+	}
+
+	if sel, err := review.Select(m, review.ContextPR, p, ""); err != nil {
+		t.Fatalf("Select: %v", err)
+	} else if sel.Panel != "standard-codex" {
+		t.Errorf("pr panel = %q, want standard-codex", sel.Panel)
+	}
+}
+
+// The built-in default itself loads and validates with the new panels and
+// fallbacks wired in — a description or a fallback naming a panel that does
+// not exist would otherwise only surface the first time a repo without its
+// own manifest ran a review.
+func TestTheBuiltInDefaultLoadsWithItsFullPanelSet(t *testing.T) {
+	m, err := review.DefaultManifest()
+	if err != nil {
+		t.Fatalf("DefaultManifest: %v", err)
+	}
+	if err := review.CheckCapabilities("<built-in default>", m); err != nil {
+		t.Fatalf("CheckCapabilities: %v", err)
+	}
+	for _, name := range []string{"quick", "focused", "standard", "deep", "quick-codex", "focused-codex", "standard-codex", "deep-codex"} {
+		if _, ok := m.Panels[name]; !ok {
+			t.Errorf("the built-in default declares no %q panel", name)
+		}
 	}
 }

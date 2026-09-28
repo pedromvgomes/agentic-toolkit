@@ -29,6 +29,7 @@ func TestTheDefaultStackRendersEveryThingItLists(t *testing.T) {
 		{".claude/agents/wrap-session-reviewer/AGENT.md", "wrap-session-reviewer"},
 		{".claude/commands/memory-curate.md", "agtk memory curate"},
 		{".claude/commands/memory-seed.md", "memory-explorer"},
+		{"CLAUDE.md", "Instructions are rendered, not edited"},
 		{".claude/skills/wrap-session/SKILL.md", "wrap-session-reviewer"},
 		{".claude/settings.json", "agtk memory candidates"},
 	} {
@@ -95,6 +96,69 @@ func TestTheMemoryHooksReachTheConsumerUnderTheirEvents(t *testing.T) {
 	}
 	if !strings.Contains(string(settings), "agtk memory candidates") {
 		t.Error("the session-end hook did not reach settings.json")
+	}
+}
+
+// A hook that only lands under the wrong event never fires, and a settings
+// merge that dropped its matcher would let the guarded command through.
+func TestTheNoAuthoringFootersHookReachesPreToolUse(t *testing.T) {
+	apply := renderDefaultStack(t)
+
+	settings, err := os.ReadFile(filepath.Join(apply, ".claude/settings.json"))
+	if err != nil {
+		t.Fatalf("settings did not reach the consumer: %v", err)
+	}
+	if !strings.Contains(string(settings), "PreToolUse") {
+		t.Fatalf("settings.json carries no PreToolUse hook:\n%s", settings)
+	}
+	if !strings.Contains(string(settings), "\"Bash\"") {
+		t.Errorf("settings.json's PreToolUse hook carries no Bash matcher:\n%s", settings)
+	}
+	if !strings.Contains(string(settings), "agtk guard footers") {
+		t.Error("settings.json's PreToolUse hook does not invoke `agtk guard footers`")
+	}
+}
+
+// The instruction is what tells a session why the hook exists and what to do
+// when it refuses a command; without it in CLAUDE.md the refusal is unexplained.
+func TestTheNoAuthoringFootersInstructionReachesClaudeMD(t *testing.T) {
+	apply := renderDefaultStack(t)
+
+	body, err := os.ReadFile(filepath.Join(apply, "CLAUDE.md"))
+	if err != nil {
+		t.Fatalf("CLAUDE.md did not reach the consumer: %v", err)
+	}
+	if !strings.Contains(string(body), "No authoring footers") {
+		t.Errorf("CLAUDE.md does not carry the no-authoring-footers instruction:\n%s", body)
+	}
+}
+
+// A skill's companion files sit beside SKILL.md on disk, and an adapter that
+// only copies the entrypoint would leave a skill's reference material missing
+// with nothing failing until a session tries to read it.
+func TestASkillsCompanionFileIsRenderedAlongsideIt(t *testing.T) {
+	apply := renderDefaultStack(t)
+
+	if _, err := os.Stat(filepath.Join(apply, ".claude/skills/using-agentic-toolkit/SKILL.md")); err != nil {
+		t.Fatalf("using-agentic-toolkit did not reach the consumer: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(apply, ".claude/skills/using-agentic-toolkit/REFERENCE.md")); err != nil {
+		t.Errorf("using-agentic-toolkit's REFERENCE.md, a companion file, never rendered: %v", err)
+	}
+}
+
+// The instruction is what tells a session the default policy and where to
+// read it off a repo; without it in CLAUDE.md a session has no way to know
+// whether to commit or ignore what it renders.
+func TestTheRenderedOutputStaysOutOfGitInstructionReachesClaudeMD(t *testing.T) {
+	apply := renderDefaultStack(t)
+
+	body, err := os.ReadFile(filepath.Join(apply, "CLAUDE.md"))
+	if err != nil {
+		t.Fatalf("CLAUDE.md did not reach the consumer: %v", err)
+	}
+	if !strings.Contains(string(body), "Rendered output stays out of git") {
+		t.Errorf("CLAUDE.md does not carry the rendered-output-stays-out-of-git instruction:\n%s", body)
 	}
 }
 

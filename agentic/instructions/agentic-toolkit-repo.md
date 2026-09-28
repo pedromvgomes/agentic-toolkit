@@ -75,6 +75,11 @@ stack lists is never opened and never reported: adding the file is not adding th
 - Look up unfamiliar domain terms in [CONTEXT.md](CONTEXT.md) rather than guessing a synonym
 - Check `docs/adr/` before revisiting a decision that already has one
 - Add a stack-render test under `source/toolkit/internal/cli/tests/` when a stack's rendered output changes
+- Update `docs/CONSUMER-GUIDE.md` and `definitions/skills/using-agentic-toolkit/REFERENCE.md`
+  together when changing entry-manifest/stack semantics — the two describe the same
+  entry-manifest-vs-Stack model from different angles (the guide is the fuller reference,
+  `REFERENCE.md` is scoped to what an agent inside a consumer repo needs), and updating one
+  without the other lets it silently go wrong
 
 ### Ask first
 - Renumbering or superseding an existing ADR

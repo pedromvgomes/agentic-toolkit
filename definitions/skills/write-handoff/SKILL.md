@@ -95,9 +95,13 @@ files cannot be named yet is a task that has not been thought through — split 
 
 You cannot clear the context or start the next session yourself. That is the user's step.
 
-Output the handoff's path, then tell the user to run `/clear`. Nothing else in the flow changes
-the model, and the session that comes back is on the settings default — which is what the
-implementing half runs on.
+Output the handoff's path, then tell the user the two steps: run `/clear`, then run
+`/implement-handoff`. Nothing else in the flow changes the model, and the session that comes back
+is on the settings default — which is what the implementing half runs on.
 
-Do not paste a continuation prompt. The session-start hook finds the handoff and says what to
-invoke; a prompt to paste as well would be a second way in, and the two would drift.
+Never say the handoff is picked up automatically. The session-start hook adds a note about it to
+the new session, but a hook cannot begin a turn: after `/clear` nothing happens until the user
+runs `/implement-handoff`, which finds the waiting handoff itself.
+
+Do not paste a continuation prompt. The user's way in is the `/implement-handoff` command; a
+prompt to paste as well would be a second way in, and the two would drift.

@@ -162,3 +162,22 @@ func TestTheTwoMarkersDoNotReadEachOther(t *testing.T) {
 		t.Errorf("the review marker read %+v; it took the fingerprint marker's identity", got.Findings)
 	}
 }
+
+// A narrowed review records the commit it read on from, and approval walks
+// back through it. A marker without one is a review of the whole change.
+func TestAReviewMarkerCarriesTheCommitItReadOnFrom(t *testing.T) {
+	since := "fedcba9876543210fedcba9876543210fedcba98"
+	want := ReviewMarker{Head: head, Since: since, Complete: true}
+	got, ok := ParseReviewMarker(want.Render())
+	if !ok || got.Since != since {
+		t.Fatalf("since did not survive the round trip: %+v, %v\n%s", got, ok, want.Render())
+	}
+	whole, ok := ParseReviewMarker(ReviewMarker{Head: head, Complete: true}.Render())
+	if !ok || whole.Since != "" {
+		t.Fatalf("a marker of the whole change reads as narrowed: %+v", whole)
+	}
+	if _, ok := ParseReviewMarker(ReviewMarkerPrefix + " " + FingerprintVersion + " head=" + head +
+		" verdict=complete since= " + fingerprintMarkerClose); ok {
+		t.Error("a marker naming an empty since parses, which would read as a review of the whole change")
+	}
+}

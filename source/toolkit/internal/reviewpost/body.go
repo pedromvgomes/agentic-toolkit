@@ -20,6 +20,17 @@ func Body(r *reviewrun.Review, pr githubapp.PullRequest, place Placement) string
 
 	fmt.Fprintf(&b, "## Review by `agtk` — panel `%s`\n\n", r.Panel)
 
+	if r.Since != "" {
+		fmt.Fprintf(&b, "_Reads only what changed since `%s`, the last commit a review by this installation "+
+			"reached a verdict on. Findings from that review stand on their own threads and are not repeated here._\n\n",
+			r.Since)
+	}
+
+	if r.FallbackFrom != "" {
+		fmt.Fprintf(&b, "_Retried here after every run on `%s` was blocked; what follows is from `%s`._\n\n",
+			r.FallbackFrom, r.Panel)
+	}
+
 	if !r.Available {
 		fmt.Fprintf(&b, "**This review did not reach a verdict:** %s\n\n", r.Reason)
 		writeRuns(&b, r)
@@ -72,7 +83,8 @@ func writeDeadlock(b *strings.Builder, place Placement) {
 // be written.
 func reviewMarker(r *reviewrun.Review, pr githubapp.PullRequest, place Placement) string {
 	marker := reviewrun.ReviewMarker{
-		Head: pr.HeadSHA,
+		Head:  pr.HeadSHA,
+		Since: r.Since,
 		// A verdict is the judge answering, every reviewer answering, and the
 		// pull request's threads being readable. A run missing any of those
 		// found less than it would have, and "found nothing" is the one thing
@@ -183,9 +195,10 @@ func location(f reviewrun.Finding) string {
 // be able to tell "nobody found anything" from "a quarter of the panel never
 // ran".
 func writeRuns(b *strings.Builder, r *reviewrun.Review) {
-	if unanswered := r.Unanswered(); len(unanswered) > 0 {
-		fmt.Fprintf(b, "### Could not answer (%d)\n\n", len(unanswered))
-		for _, run := range unanswered {
+	_, missing := r.Superseded()
+	if len(missing) > 0 {
+		fmt.Fprintf(b, "### Could not answer (%d)\n\n", len(missing))
+		for _, run := range missing {
 			fmt.Fprintf(b, "- `%s`: %s\n", run.Label, run.Report.Reason)
 		}
 		b.WriteString("\nThis review is partial: what these would have found is unknown, not absent.\n\n")

@@ -2,12 +2,14 @@
 name: open-pr
 description: |
   Ship the current branch: update the documentation for the modules it touched, stage what the work taught into the memory store,
-  push, open the pull request under the repo's git rules, and put it through a posted panel review. Usable on its own for any
-  finished branch, and the step `implement-handoff` forks to once its review loop comes back clean. Trigger on "open a PR",
-  "open the PR for this branch", "ship this branch", "raise a pull request", "let's get this reviewed".
+  push, open the pull request under the repo's git rules, and put it through a posted panel review that loops until every
+  thread is answered. Usable on its own for any finished branch, and the step `implement-handoff` forks to once its review loop
+  comes back clean. Trigger on "open a PR", "open the PR for this branch", "ship this branch", "raise a pull request", "let's get
+  this reviewed".
 requires:
   - agents/wrap-session-reviewer
   - skills/panel-code-review
+  - skills/review-pull-request
   - instructions/git
 extensions:
   claude:
@@ -113,15 +115,22 @@ Report the URL.
 
 ## 5 — Review it, posted
 
-Invoke `panel-code-review` on the pull request just opened.
+Invoke `panel-code-review` on the pull request just opened, with `--no-fix`: fixing is the next
+step's, and a question here about whether to fix would stop a run that has nobody to answer it.
 
 This is a second reading, not a repeat of any local one: the review manifest's defaults put a
 pull request on a different panel from a working tree, so the change is read by a model that
 has not seen it. Report the posted review's URL and how many findings landed.
 
-Fixing what it finds is `pr-review-resolver`'s, not this skill's. The findings are comment
-threads now, and code changed without a reply on its thread leaves the pull request no better
-off. Say that, and stop.
+## 6 — Converge it
+
+Invoke `review-pull-request <N>`. The review just posted is its first pass: every thread it
+opened gets fixed or answered, the fixes are pushed, and the next pass reads only what they
+changed, until nothing is waiting or the loop stops for another reason.
+
+Report its outcome as it gave it: the passes, what each cost, every false-positive marking the
+agent posted, and the threads waiting for a person to resolve. Anything but clean means the
+pull request is open and not ready, so say that and do not describe the branch as shipped.
 
 ## What this skill never does
 

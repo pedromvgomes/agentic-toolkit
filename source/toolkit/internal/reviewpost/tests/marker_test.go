@@ -90,6 +90,23 @@ func TestAReviewMissingAReviewerRecordsItselfAsIncomplete(t *testing.T) {
 	}
 }
 
+// A manifest's `fallback:` is the operator saying the substitute panel is an
+// acceptable answer, so a fallback that fully answers is a verdict, not a
+// gap — the blocked runs it replaced are the reason it ran, not a quarter of
+// it that never came in.
+func TestAReviewThatRecoveredOnItsFallbackRecordsItselfAsComplete(t *testing.T) {
+	r := reviewWith()
+	r.Panel = "standard"
+	r.FallbackFrom = "standard-codex"
+	r.Reports = []reviewrun.RunReport{
+		{Label: "correctness-codex", Role: reviewrun.RoleReviewer, Panel: "standard-codex", Report: reviewrun.Blocked("the credential was exhausted")},
+		{Label: "correctness", Role: reviewrun.RoleReviewer, Panel: "standard", Report: reviewrun.Answered(nil)},
+	}
+	if marker := markerOf(t, r); !marker.Complete {
+		t.Error("a review that recovered cleanly on its fallback records itself as incomplete")
+	}
+}
+
 // A run that could not read the pull request's threads withheld nothing and
 // knows nothing about what was already answered, so what it reports is not the
 // whole picture either.
@@ -132,5 +149,21 @@ func TestAFindingsProseCannotOpenASecondMarker(t *testing.T) {
 
 	if marker := markerOf(t, reviewWith(f)); marker.Head != pr.HeadSHA {
 		t.Errorf("a finding's prose replaced the review's own marker: head=%q", marker.Head)
+	}
+}
+
+// A narrowed review says so to the people reading the pull request, and
+// records what it read on from for approval to walk back through.
+func TestANarrowedReviewSaysWhatItReadOnFrom(t *testing.T) {
+	since := "fedcba9876543210fedcba9876543210fedcba98"
+	r := reviewWith(finding("a.go", at(10), at(10), "correctness"))
+	r.Since = since
+
+	payload, _ := reviewpost.Build(r, pr, added)
+	if !strings.Contains(payload.Body, "Reads only what changed since `"+since+"`") {
+		t.Errorf("the body does not tell a reader the review was narrowed:\n%s", payload.Body)
+	}
+	if marker := markerOf(t, r); marker.Since != since {
+		t.Errorf("the marker reads on from %q, want %q", marker.Since, since)
 	}
 }

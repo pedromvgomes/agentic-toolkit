@@ -17,16 +17,19 @@ So the flow is two sessions with a `/clear` between them, and a document that su
      └─ write-handoff             → handoff/20260909-1412-add-x.md
 
   ── you run /clear ───────────────────────────────────────────
+     (SessionStart hook notes handoff/*.md — a reminder, it starts nothing)
 
   ── session 2 ────────────────────────────────────────────────
-   SessionStart hook sees handoff/*.md           model: sonnet
-     └─ "invoke implement-handoff"
+   you run /implement-handoff                    model: sonnet
+     └─ implement-handoff
           ├─ predecessor merged?    → else stop
           ├─ task 1 → task-implementer  → diff + verify → commit
           ├─ task 2 → task-implementer  → diff + verify → commit
-          ├─ review-implementation      → loop until clean
+          ├─ review-implementation      → loop until clean        (local, ≤5 passes)
           ├─ open-pr                    → docs, candidates, PR, posted review
-          ├─ handoff → handoff/done/
+          │    └─ review-pull-request   → answer, push, re-review (PR, ≤5 passes)
+          ├─ make the PR mergeable      → fix failed checks, lydite not red, rebase if required
+          ├─ handoff → handoff/done/    → only if all of the above came back clean
           └─ next slice? → write-handoff, predecessor = the PR just opened
 ```
 
@@ -72,14 +75,22 @@ You see one final plan. Approve it, and `write-handoff` writes the first slice.
 ## The `/clear`, which you do by hand
 
 Nothing in the flow can clear a session's context, and nothing should pretend to. When
-`/plan-feature` finishes it tells you to run `/clear`, and stops.
+`/plan-feature` finishes it tells you the two steps — run `/clear`, then run
+`/implement-handoff` — and stops.
+
+Both steps are yours. After `/clear` the session sits idle until you type something; nothing
+picks the handoff up on its own.
 
 ## Stage two: the handoff
 
+You start stage two by running `/implement-handoff`. It asks `agtk handoff list` which handoffs
+are waiting, and asks you which one when there are several.
+
 A `SessionStart` hook fires on `startup` and `clear` — the two ways a session begins with no
-memory of the one before it — globs `handoff/*.md` at depth one, and injects an instruction to
-invoke `implement-handoff`. It cannot run the skill and cannot change the model. It only says
-what is waiting.
+memory of the one before it — globs `handoff/*.md` at depth one, and adds a note to the new
+session saying a handoff is waiting and to invoke `implement-handoff`. It is a reminder, most
+useful in a session started fresh in a new terminal. A hook can only add context: it cannot send
+a message, begin a turn, run the skill or change the model.
 
 `implement-handoff` coordinates **from the main session**. Subagent nesting is allowed three
 layers deep, so nothing about the platform stops it delegating the role; it does not, because the
@@ -105,6 +116,25 @@ Then `open-pr`: documentation for the modules touched, durable findings staged i
 store's `candidates/`, push, `gh pr create` with the handoff's conventional title, and a second
 review posted to the pull request — which the review manifest puts on a different panel, so the
 change is read by a model that has not seen it.
+
+That review is the first pass of `review-pull-request`, the published-side counterpart of the
+local loop. Each pass, `pr-review-resolver --unattended` works through every open thread:
+agtk's, bots', and people's. It fixes what it judges valid, and replies on each thread with the
+commit that fixed it, with `agtk: false positive: <reason>`, or with a direct answer. Then it
+pushes, and the next pass reviews only what that push changed (ADR 0018). The loop stops when
+nothing is waiting for an answer, when the pull request stops moving, or at the fifth pass.
+
+**The loop never resolves a thread. You do.** Resolving is where you agree with the agent's
+fix or with its false-positive call, and `agtk code-review approve` refuses until you have. The
+closing report lists every marking the agent made, and every thread waiting for you.
+
+Then the coordinator makes the pull request mergeable. It waits for the checks (the wait ends as
+soon as they finish or one fails; 30 minutes is only the ceiling) and fixes a failed one on the
+branch, for up to three rounds. In a repository with a `.lydite/` directory it also reads lydite's
+verdict comment: green or a referral is done, red is fixed even where lydite is not a required
+check. It rebases when the repository requires a current branch. A check still running at the
+ceiling, a failure that survives three rounds, or a PR review loop that did not come back clean
+leaves the handoff where it is: the pull request is open, and the work is not done.
 
 ## Several pull requests
 

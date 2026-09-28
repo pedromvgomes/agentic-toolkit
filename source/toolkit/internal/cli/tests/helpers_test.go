@@ -141,14 +141,13 @@ func writeFile(t *testing.T, path, content string) {
 	}
 }
 
-// writeEntryStack writes a minimal entry-point stack manifest at
-// <workDir>/.agentic-toolkit.yaml that extends the test fixture's
+// writeEntryManifest writes a minimal entry manifest at
+// <workDir>/.agentic-toolkit.yaml composing the test fixture's
 // `stacks/default.yaml`. sourceURL is the bare-repo URL returned by
-// fixtureRepoFromDir; ref is typically "main". Used everywhere the old
-// `source: <url>@main\npresets:\n  - default\n` body was written.
-func writeEntryStack(t *testing.T, workDir, sourceURL, ref string) {
+// fixtureRepoFromDir; ref is typically "main".
+func writeEntryManifest(t *testing.T, workDir, sourceURL, ref string) {
 	t.Helper()
-	body := "extends:\n  - " + sourceURL + "/stacks/default.yaml@" + ref + "\n"
+	body := "stacks:\n  - " + sourceURL + "/stacks/default.yaml@" + ref + "\n"
 	writeFile(t, filepath.Join(workDir, ".agentic-toolkit.yaml"), body)
 }
 

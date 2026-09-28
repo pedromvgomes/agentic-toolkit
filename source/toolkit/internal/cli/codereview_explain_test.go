@@ -13,9 +13,9 @@ import (
 // under the rules its base ref declares.
 //
 // The panel is the assertion that separates the two targets: the built-in
-// default starts the worktree context at `quick` and the pr context at
-// `standard`, so a run that had explained the local change instead would say
-// `quick` and would say it convincingly.
+// default runs the worktree context's rules on Claude and the pr context's on
+// codex, so a run that had explained the local change instead would say
+// `quick` rather than `quick-codex`, and would say it convincingly.
 func TestExplainPRAnswersForThePullRequestNotTheWorkingTree(t *testing.T) {
 	work, baseSHA, headSHA := prRepo(t)
 	doer := stubDoer{
@@ -38,7 +38,7 @@ func TestExplainPRAnswersForThePullRequestNotTheWorkingTree(t *testing.T) {
 	}
 
 	got := out.String()
-	for _, want := range []string{"context: pr", "panel:   standard", headSHA} {
+	for _, want := range []string{"context: pr", "panel:   quick-codex", headSHA} {
 		if !strings.Contains(got, want) {
 			t.Errorf("explain --pr did not report %q:\n%s", want, got)
 		}

@@ -3,10 +3,12 @@ package tests
 import (
 	"fmt"
 	"io/fs"
+	"testing"
 	"testing/fstest"
 
 	"github.com/pedromvgomes/agentic-toolkit/internal/resolver"
 	"github.com/pedromvgomes/agentic-toolkit/internal/sourceref"
+	"github.com/pedromvgomes/agentic-toolkit/internal/stack"
 )
 
 // fakeProvider serves predetermined fs.FS + ResolvedRef pairs keyed by
@@ -83,6 +85,63 @@ func validRuleBody(description string) string {
 func validInstructionBody(description string) string {
 	return "---\ndescription: " + description + "\n---\n\nbody\n"
 }
+
+func validCommandBody(description string) string {
+	return "---\ndescription: " + description + "\n---\n\nbody\n"
+}
+
+func validHookBody(name string) string {
+	return "name: " + name + "\ndescription: A hook.\nevent: PreToolUse\nhandler:\n  type: command\n  command: \"true\"\n"
+}
+
+func validMCPBody(name string) string {
+	return "name: " + name + "\ndescription: An MCP server.\ntransport: stdio\ncommand: mcp-server\n"
+}
+
+// validSettingBody sets one top-level key, so two settings definitions can be
+// made to contend for it.
+func validSettingBody(name, model string) string {
+	return "name: " + name + "\ndescription: A setting.\nvalue:\n  model: " + model + "\n"
+}
+
+// entryBody renders an entry manifest composing the given stacks. extra is
+// appended verbatim for the fields a test sets on top (root:, context:,
+// memory:).
+func entryBody(stacks []string, extra string) string {
+	if len(stacks) == 0 {
+		return "stacks: []\n" + extra
+	}
+	out := "stacks:\n"
+	for _, s := range stacks {
+		out += "  - " + s + "\n"
+	}
+	return out + extra
+}
+
+// parseEntry reads the entry manifest out of an in-memory FS, which is where
+// tests keep it; the CLI reads the same bytes off disk.
+func parseEntry(t *testing.T, fsys fs.FS, pathInFS string) *stack.EntryManifest {
+	t.Helper()
+	raw, err := fs.ReadFile(fsys, pathInFS)
+	if err != nil {
+		t.Fatalf("read %s: %v", pathInFS, err)
+	}
+	m, err := stack.ParseEntryManifestBytes(pathInFS, raw)
+	if err != nil {
+		t.Fatalf("parse entry manifest: %v", err)
+	}
+	return m
+}
+
+// resolveEntry parses the entry manifest at the conventional path in entryFS
+// and resolves it against provider.
+func resolveEntry(t *testing.T, entryFS fs.FS, provider *fakeProvider) (*resolver.Plan, error) {
+	t.Helper()
+	return resolver.Resolve(parseEntry(t, entryFS, entryManifestPath), entryFS, entryManifestPath, provider)
+}
+
+// entryManifestPath is where every fixture keeps its entry manifest.
+const entryManifestPath = ".agentic-toolkit.yaml"
 
 // stackBody renders a stack manifest from the given category-keyed entry
 // lists. extends entries go under `extends:`. Use empty values to omit

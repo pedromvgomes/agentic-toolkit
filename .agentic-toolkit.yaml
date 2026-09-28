@@ -4,7 +4,7 @@
 # this repo IS the source, so a URL ref would fetch a pinned copy of itself and
 # render yesterday's definitions over today's working tree — and it would make
 # the toolkit's own setup depend on a repo it does not own.
-extends:
+stacks:
   - ./stacks/default.yaml
   - ./stacks/plannotator.yaml
   - ./stacks/serena.yaml
@@ -19,13 +19,6 @@ extends:
 platforms:
   - claude
   - codex
-
-# Scoped to this repo rather than to stacks/default.yaml: it describes
-# agentic-toolkit's own layout, commands and boundaries, which is exactly
-# what a consumer repo extending the default stack must not be told about
-# its own tree.
-instructions:
-  - agentic-toolkit-repo
 
 # `root` is set rather than left to the default it happens to match, so this
 # repo exercises the configured path as well as shipping the default one.

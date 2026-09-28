@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	agentic "github.com/pedromvgomes/agentic-driver"
@@ -75,6 +76,24 @@ func TestABlockedPanelFallsBackToItsDeclaredTwin(t *testing.T) {
 	}
 	if out.Blocked {
 		t.Error("a review that recovered on its fallback is marked blocked")
+	}
+	superseded, missing := out.Superseded()
+	if len(superseded) == 0 {
+		t.Error("the blocked run that caused the fallback is not recorded as superseded")
+	}
+	if len(missing) != 0 {
+		t.Errorf("a review that recovered cleanly on its fallback still reports a real gap: %+v", missing)
+	}
+	for _, run := range out.Reports {
+		if run.Panel == "" {
+			t.Errorf("run %q carries no panel of its own", run.Label)
+		}
+	}
+	if strings.Contains(out.Record(), "could not answer") {
+		t.Errorf("a review that recovered cleanly on its fallback still records a gap: %s", out.Record())
+	}
+	if !strings.Contains(out.Record(), "answered by the fallback") {
+		t.Errorf("the record drops what the fallback replaced instead of relabelling it: %s", out.Record())
 	}
 }
 

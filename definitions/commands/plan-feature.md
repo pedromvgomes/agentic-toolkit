@@ -92,12 +92,17 @@ not the findings, and not a diff between them.
 
 Once the user approves, invoke the `write-handoff` skill for the **first slice**.
 
-Then tell the user to run `/clear`, and stop.
+Then tell the user the two steps that start the implementation — run `/clear`, then run
+`/implement-handoff` — and stop.
 
 That is the whole handover. Nothing else in this flow changes the model: your `model: opus`
 applies while this command runs and no longer, so the session that comes back after `/clear` is
-on the settings default — which is what the implementing half is meant to run on. The
-session-start hook finds the handoff and says what to invoke.
+on the settings default — which is what the implementing half is meant to run on.
+
+Nothing starts the implementation automatically, so never tell the user it will be picked up on
+its own. The session-start hook adds a note about the waiting handoff to the new session, but a
+hook cannot begin a turn: after `/clear` the session sits idle until the user runs
+`/implement-handoff`.
 
 Do not start implementing. Not the first task, not the easy one, not a stub. The implementing
 session exists because doing that here is what this flow is arranged to prevent.

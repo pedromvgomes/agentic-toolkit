@@ -680,3 +680,271 @@ func TestOneRefusedFileCommentNeitherStopsTheRestNorGoesUnreported(t *testing.T)
 		}
 	}
 }
+
+// bearerDoer answers as the doer it wraps and records which path each request
+// asked for and which token it carried.
+type bearerDoer struct {
+	next  githubapp.Doer
+	calls []string
+}
+
+func (d *bearerDoer) Do(req *http.Request) (*http.Response, error) {
+	d.calls = append(d.calls, req.URL.Path+" "+req.Header.Get("Authorization"))
+	return d.next.Do(req)
+}
+
+// environment answers a token lookup from vars rather than from the process,
+// so a token the test runner happens to hold never decides an outcome.
+func environment(vars map[string]string) func(string) string {
+	return func(name string) string { return vars[name] }
+}
+
+// unregistered is a registration directory holding nothing.
+func unregistered(t *testing.T) string {
+	t.Helper()
+	return filepath.Join(t.TempDir(), "config")
+}
+
+// explainPR runs `explain --pr 7` through a seam and returns what it wrote.
+func explainPR(t *testing.T, work string, seam clientSeam) (string, error) {
+	t.Helper()
+	var out bytes.Buffer
+	env := &Env{Stdin: strings.NewReader(""), Stdout: &out, Stderr: io.Discard, WorkDir: work}
+	cmd := NewRootCmd(env)
+	cmd.SetContext(context.Background())
+	err := runCodeReviewExplain(cmd, env, reviewTarget{pr: 7, context: "worktree"}, false, seam)
+	return out.String(), err
+}
+
+// headFetched reports whether the pull request's head reached the local
+// repository, which it does only once the pull request has been read.
+func headFetched(t *testing.T, work, head string) bool {
+	t.Helper()
+	cmd := exec.Command("git", "cat-file", "-e", head+"^{commit}")
+	cmd.Dir = work
+	return cmd.Run() == nil
+}
+
+// GH_TOKEN is looked at first and GITHUB_TOKEN second, and a variable holding
+// only whitespace is one that is not set.
+func TestTheReadTokenComesFromGHTokenThenGitHubToken(t *testing.T) {
+	for _, tc := range []struct {
+		vars            map[string]string
+		token, variable string
+	}{
+		{map[string]string{"GH_TOKEN": "gh", "GITHUB_TOKEN": "github"}, "gh", "GH_TOKEN"},
+		{map[string]string{"GH_TOKEN": " \n", "GITHUB_TOKEN": " github\n"}, "github", "GITHUB_TOKEN"},
+		{map[string]string{"GITHUB_TOKEN": "github"}, "github", "GITHUB_TOKEN"},
+		{map[string]string{}, "", ""},
+	} {
+		token, variable := clientSeam{getenv: environment(tc.vars)}.token()
+		if token != tc.token || variable != tc.variable {
+			t.Errorf("%v gave %q from %q, want %q from %q", tc.vars, token, variable, tc.token, tc.variable)
+		}
+	}
+}
+
+// A container holding no App registration can still say which panel a pull
+// request would get, reading it with the token its environment carries — and
+// only with that token: nothing asks GitHub for an installation token.
+func TestExplainPRReadsWithAnEnvironmentTokenOnAMachineHoldingNoRegistration(t *testing.T) {
+	work, baseSHA, headSHA := prRepo(t)
+	doer := &bearerDoer{next: prDoer(baseSHA, headSHA, reviewsOf(), noThreads)}
+
+	out, err := explainPR(t, work, clientSeam{
+		dir: unregistered(t), doer: doer,
+		getenv: environment(map[string]string{"GH_TOKEN": "  ghp_env\n"}),
+	})
+	if err != nil {
+		t.Fatalf("explain --pr with only GH_TOKEN: %v", err)
+	}
+	for _, want := range []string{"context: pr", "panel:   quick-codex", headSHA} {
+		if !strings.Contains(out, want) {
+			t.Errorf("explain --pr did not report %q:\n%s", want, out)
+		}
+	}
+	if len(doer.calls) == 0 {
+		t.Fatal("explain --pr read nothing from GitHub")
+	}
+	for _, call := range doer.calls {
+		if !strings.HasSuffix(call, " Bearer ghp_env") {
+			t.Errorf("a request was not made with the environment's token: %s", call)
+		}
+	}
+}
+
+// A registered machine reads as the App whether or not the environment holds a
+// token, and says exactly the same thing either way.
+func TestARegisteredMachineReadsAsTheAppWhateverTheEnvironmentHolds(t *testing.T) {
+	work, baseSHA, headSHA := prRepo(t)
+	dir := registration(t)
+
+	var outputs []string
+	for _, vars := range []map[string]string{
+		{},
+		{"GH_TOKEN": "ghp_env", "GITHUB_TOKEN": "ghs_actions"},
+	} {
+		doer := &bearerDoer{next: prDoer(baseSHA, headSHA, reviewsOf(), noThreads)}
+		out, err := explainPR(t, work, clientSeam{dir: dir, doer: doer, getenv: environment(vars)})
+		if err != nil {
+			t.Fatalf("explain --pr with %v: %v", vars, err)
+		}
+		outputs = append(outputs, out)
+		for _, call := range doer.calls {
+			if strings.Contains(call, "ghp_env") || strings.Contains(call, "ghs_actions") {
+				t.Errorf("a registered machine read with the environment's token: %s", call)
+			}
+			if strings.HasPrefix(call, "/repos/acme/widgets/pulls/7 ") && !strings.HasSuffix(call, " Bearer ghs_x") {
+				t.Errorf("the pull request was not read with the installation token: %s", call)
+			}
+		}
+	}
+	if outputs[0] != outputs[1] {
+		t.Errorf("a token in the environment changed what a registered machine reports:\n--- without ---\n%s\n--- with ---\n%s",
+			outputs[0], outputs[1])
+	}
+}
+
+// A review is posted and a head approved only as the App, since a review under
+// any other identity is invisible to the reads that decide what was reviewed.
+// Both refuse on a machine holding no registration whatever the environment
+// carries, and before anything is read: no request reaches GitHub and the head
+// is never fetched, so no panel can have been started.
+func TestPostingAndApprovingRefuseWithoutARegistrationBeforeAnythingIsRead(t *testing.T) {
+	for _, vars := range []map[string]string{
+		{},
+		{"GH_TOKEN": "ghp_env"},
+	} {
+		work, baseSHA, headSHA := prRepo(t)
+		doer := &bearerDoer{next: prDoer(baseSHA, headSHA, reviewsOf(), noThreads)}
+		seam := clientSeam{dir: unregistered(t), doer: doer, getenv: environment(vars)}
+
+		var out bytes.Buffer
+		env := &Env{Stdin: strings.NewReader(""), Stdout: &out, Stderr: io.Discard, WorkDir: work}
+		cmd := NewRootCmd(env)
+		cmd.SetContext(context.Background())
+
+		err := runCodeReviewPR(cmd, env, reviewTarget{pr: 7}, runFlags{}, seam)
+		if err == nil || !strings.Contains(err.Error(), "code-review register") {
+			t.Errorf("run --pr with %v was not refused for want of a registration: %v", vars, err)
+		}
+		err = runCodeReviewApprove(cmd, env, 7, seam)
+		if err == nil || !strings.Contains(err.Error(), "code-review register") {
+			t.Errorf("approve with %v was not refused for want of a registration: %v", vars, err)
+		}
+
+		if len(doer.calls) > 0 {
+			t.Errorf("with %v, a refused post still asked GitHub for %v", vars, doer.calls)
+		}
+		if headFetched(t, work, headSHA) {
+			t.Errorf("with %v, a refused post still fetched the head a panel would review", vars)
+		}
+		if out.Len() > 0 {
+			t.Errorf("with %v, a refused post still reported something:\n%s", vars, out.String())
+		}
+	}
+}
+
+// A read with neither a registration nor a token names both ways to fix it.
+func TestExplainPRWithNeitherARegistrationNorATokenNamesBoth(t *testing.T) {
+	work, _, _ := prRepo(t)
+	_, err := explainPR(t, work, clientSeam{dir: unregistered(t), getenv: environment(nil)})
+	if err == nil {
+		t.Fatal("explain --pr read a pull request with nothing to read it with")
+	}
+	for _, want := range []string{"code-review register", "GH_TOKEN", "GITHUB_TOKEN"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not name %q: %v", want, err)
+		}
+	}
+}
+
+// A registration somebody started and never finished is answered by finishing
+// it. Reading around it with a token would hide the breakage until the first
+// command that posts, so the token is not used and nothing is read.
+func TestAHalfWrittenRegistrationIsNotReadAroundWithAToken(t *testing.T) {
+	work, baseSHA, headSHA := prRepo(t)
+	dir := registration(t)
+	if err := os.Remove(filepath.Join(dir, githubapp.KeyFile)); err != nil {
+		t.Fatal(err)
+	}
+	doer := &bearerDoer{next: prDoer(baseSHA, headSHA, reviewsOf(), noThreads)}
+	seam := clientSeam{dir: dir, doer: doer, getenv: environment(map[string]string{"GH_TOKEN": "ghp_env"})}
+
+	_, err := explainPR(t, work, seam)
+	if err == nil {
+		t.Fatal("explain --pr read around a half-written registration")
+	}
+	for _, want := range []string{"no private key", "register` again"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not say %q: %v", want, err)
+		}
+	}
+
+	var out bytes.Buffer
+	env := &Env{Stdin: strings.NewReader(""), Stdout: &out, Stderr: io.Discard, WorkDir: work}
+	cmd := NewRootCmd(env)
+	cmd.SetContext(context.Background())
+	err = runCodeReviewPR(cmd, env, reviewTarget{pr: 7}, runFlags{dryRun: true}, seam)
+	if err == nil || !strings.Contains(err.Error(), "register` again") {
+		t.Errorf("run --pr --dry-run read around a half-written registration: %v", err)
+	}
+
+	if len(doer.calls) > 0 {
+		t.Errorf("a half-written registration still sent %v", doer.calls)
+	}
+}
+
+// GitHub answers a token that cannot see a repository as though the pull
+// request were not there. The refusal names the token it read with, and says
+// nothing about a registration, which is not what is missing.
+func TestATokenThatCannotSeeTheRepositoryIsNotReportedAsAMissingRegistration(t *testing.T) {
+	work, _, _ := prRepo(t)
+	doer := &bearerDoer{next: stubDoer{}}
+	_, err := explainPR(t, work, clientSeam{
+		dir: unregistered(t), doer: doer,
+		getenv: environment(map[string]string{"GITHUB_TOKEN": "ghs_other_repo"}),
+	})
+	if err == nil {
+		t.Fatal("a pull request the token cannot see was explained")
+	}
+	for _, want := range []string{"acme/widgets#7", "GITHUB_TOKEN", "cannot see the repository"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not say %q: %v", want, err)
+		}
+	}
+	if strings.Contains(err.Error(), "regist") {
+		t.Errorf("a token without access is reported as a registration problem: %v", err)
+	}
+}
+
+// A zero-value clientSeam is what production code builds: getenv reads the
+// real environment, and options carries no transport override, so both
+// fall through to what a live process actually has.
+func TestAZeroValueClientSeamReadsTheRealEnvironmentAndTransport(t *testing.T) {
+	t.Setenv("GH_TOKEN", "")
+	t.Setenv("GITHUB_TOKEN", "ghp_from_the_real_environment")
+	token, variable := (clientSeam{}).token()
+	if token != "ghp_from_the_real_environment" || variable != "GITHUB_TOKEN" {
+		t.Errorf("a zero-value seam read %q from %q, want ghp_from_the_real_environment from GITHUB_TOKEN", token, variable)
+	}
+
+	if opts := (clientSeam{}).options(); opts != nil {
+		t.Errorf("a zero-value seam's options is %v, want nil", opts)
+	}
+}
+
+// A repository readPullRequest cannot even name is refused before any network
+// call, the same way resolvePullRequest is.
+func TestReadPullRequestFailsBeforeAnythingWithNoRemote(t *testing.T) {
+	work := t.TempDir()
+	doer := &bearerDoer{next: stubDoer{}}
+	_, err := readPullRequest(context.Background(), work, 7,
+		clientSeam{dir: unregistered(t), doer: doer, getenv: environment(nil)})
+	if err == nil {
+		t.Fatal("readPullRequest succeeded with no git repository to name a remote from")
+	}
+	if len(doer.calls) > 0 {
+		t.Errorf("a repository that cannot be identified still reached GitHub: %v", doer.calls)
+	}
+}

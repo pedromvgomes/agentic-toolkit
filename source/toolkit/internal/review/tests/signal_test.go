@@ -251,13 +251,11 @@ func TestAGatingFileFiresInALanguageTheTableDoesNotKnow(t *testing.T) {
 	}
 }
 
-// The tail cutoff: once a routine repair has answered, the search for a revert
-// runs a bounded distance further and then reports undetermined.
-//
-// Undetermined rather than absent is the whole point. A scan that stopped
-// looking and a scan that looked everywhere both produce "no revert found",
-// and only one of them licenses skipping the deeper panel.
-func TestTheRevertSearchStopsAndSaysSoRatherThanReportingAbsent(t *testing.T) {
+// A routine repair found early in the history does not shorten the search for
+// a revert: the two classes are independent, so `bugfix-lines` answering
+// present must not make `fix-revert` undetermined while the real budget still
+// has hunks left to spend. Only running past the whole budget earns that.
+func TestARoutineRepairDoesNotShortenTheSearchForARevert(t *testing.T) {
 	const files = 60
 
 	r := newRepo(t)
@@ -276,6 +274,39 @@ func TestTheRevertSearchStopsAndSaysSoRatherThanReportingAbsent(t *testing.T) {
 	if has, known := p.Signals.Has(review.SignalBugfixLines); !has || !known {
 		t.Errorf("bugfix-lines = (%v, known=%v), want present; signals were %s", has, known, p.Signals)
 	}
+	if has, known := p.Signals.Has(review.SignalFixRevert); has || !known {
+		t.Errorf("fix-revert = (%v, known=%v), want absent-and-determined: 60 hunks is well within the default budget, so a routine repair earlier in the history must not leave the revert search undetermined; signals were %s", has, known, p.Signals)
+	}
+}
+
+// The tail cutoff: once the real budget runs out, the search reports
+// undetermined rather than absent.
+//
+// Undetermined rather than absent is the whole point. A scan that stopped
+// looking and a scan that looked everywhere both produce "no revert found",
+// and only one of them licenses skipping the deeper panel.
+func TestTheRevertSearchStopsAndSaysSoRatherThanReportingAbsent(t *testing.T) {
+	const files = 60
+
+	r := newRepo(t)
+	for i := 0; i < files; i++ {
+		r.write(fmt.Sprintf("pkg/f%02d.go", i), fmt.Sprintf("package pkg\n\nvar v%02d = 1\n", i))
+	}
+	// Every line in the change traces to this one subject: a routine repair,
+	// and nowhere a revert.
+	base := r.commit("fix(pkg): correct the values")
+
+	for i := 0; i < files; i++ {
+		r.write(fmt.Sprintf("pkg/f%02d.go", i), fmt.Sprintf("package pkg\n\nvar v%02d = 2\n", i))
+	}
+	p, err := review.BuildProfile(review.ProfileOptions{Dir: r.dir, Base: base, BlameBudget: files / 2})
+	if err != nil {
+		t.Fatalf("BuildProfile: %v", err)
+	}
+
+	if has, known := p.Signals.Has(review.SignalBugfixLines); !has || !known {
+		t.Errorf("bugfix-lines = (%v, known=%v), want present; signals were %s", has, known, p.Signals)
+	}
 
 	has, known := p.Signals.Has(review.SignalFixRevert)
 	if has {
@@ -284,7 +315,7 @@ func TestTheRevertSearchStopsAndSaysSoRatherThanReportingAbsent(t *testing.T) {
 	if known {
 		t.Errorf("fix-revert reported absent after the search stopped early; a scan that stopped looking must not read as one that looked: %s", p.Signals)
 	}
-	if reason := p.Signals.Undetermined(review.SignalFixRevert); !strings.Contains(reason, "revert") {
-		t.Errorf("undetermined reason does not say the revert search stopped: %q", reason)
+	if reason := p.Signals.Undetermined(review.SignalFixRevert); !strings.Contains(reason, "budget") {
+		t.Errorf("undetermined reason does not say the budget ran out: %q", reason)
 	}
 }

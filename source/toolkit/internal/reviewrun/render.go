@@ -79,9 +79,9 @@ func renderFinding(w io.Writer, n int, f Finding) {
 // looks identical to a reviewer that never ran, and the two mean opposite
 // things: one is evidence, the other is a gap.
 func renderRuns(w io.Writer, r *Review) {
-	if unanswered := r.Unanswered(); len(unanswered) > 0 {
-		fmt.Fprintf(w, "Could not answer (%d):\n", len(unanswered))
-		for _, run := range unanswered {
+	if _, missing := r.Superseded(); len(missing) > 0 {
+		fmt.Fprintf(w, "Could not answer (%d):\n", len(missing))
+		for _, run := range missing {
 			fmt.Fprintf(w, "  - %s: %s\n", run.Label, run.Report.Reason)
 		}
 		fmt.Fprintln(w)

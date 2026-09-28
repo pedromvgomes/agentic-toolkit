@@ -228,8 +228,8 @@ func render() ([]byte, error) {
 }
 
 // renderConfig produces CONFIG-SCHEMA.md, the consumer-facing schema for
-// .agentic-toolkit.yaml (the entry-point stack manifest) and
-// .agentic-toolkit.lock.yaml.
+// .agentic-toolkit.yaml (the entry manifest), stacks/<name>.yaml (the
+// shareable stack shape it composes), and .agentic-toolkit.lock.yaml.
 func renderConfig() ([]byte, error) {
 	var b bytes.Buffer
 
@@ -239,7 +239,7 @@ func renderConfig() ([]byte, error) {
 	fmt.Fprintln(&b)
 	fmt.Fprintln(&b, "A consumer repo opts into the toolkit by committing two files at the repo root:")
 	fmt.Fprintln(&b)
-	fmt.Fprintln(&b, "- `.agentic-toolkit.yaml` — entry-point **stack manifest**: declares which other stacks to extend and which definitions to layer on top. Hand-edited.")
+	fmt.Fprintln(&b, "- `.agentic-toolkit.yaml` — the **entry manifest**: composes shared stacks and finds the rest by convention. Hand-edited.")
 	fmt.Fprintln(&b, "- `.agentic-toolkit.lock.yaml` — pinned record of what the resolver actually fetched. Resolver-written; commit it.")
 	fmt.Fprintln(&b)
 	fmt.Fprintf(&b, "A repo that wants its own code review declares one more, optional file: `%s/%s`.\n", rev.ManifestDir, rev.ManifestFile)
@@ -247,18 +247,29 @@ func renderConfig() ([]byte, error) {
 
 	fmt.Fprintln(&b, "## Stack manifest")
 	fmt.Fprintln(&b)
-	fmt.Fprintln(&b, "**Path:** `.agentic-toolkit.yaml` at the repo root, or any `stacks/<name>.yaml` file in any repo published for sharing.")
+	fmt.Fprintln(&b, "**Path:** any `stacks/<name>.yaml` file in a repo published for sharing.")
 	fmt.Fprintln(&b)
-	fmt.Fprintln(&b, "The same shape is used everywhere: the consumer's entry-point file is just a stack with no extra ceremony. There is no \"preset\" / \"consumer config\" distinction.")
+	fmt.Fprintln(&b, "A stack layers other stacks (`extends:`) and lists its own definitions by name per category. It is a different, related shape from the entry manifest below — see ADR 0016.")
 	fmt.Fprintln(&b)
 	fmt.Fprintln(&b, "### Fields")
 	fmt.Fprintln(&b)
 	writeFieldTable(&b, docForType(reflect.TypeOf(stk.Stack{})).Fields)
 	fmt.Fprintln(&b)
 
+	fmt.Fprintln(&b, "## Entry manifest")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "**Path:** `.agentic-toolkit.yaml` at the repo root, or another file named by `--config`/`--stack`.")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "The entry manifest is its own type, not a Stack (see ADR 0016). Its category fields mean \"scan `root/<category>/` by convention\"; `root:`, `context:`, `memory:` and `platforms:` are native to the entry manifest alone and do not exist on a Stack reached through `extends:` or `stacks:`. Composing shared content into an entry manifest uses `stacks:`, distinct from a Stack's own `extends:`.")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "### Fields")
+	fmt.Fprintln(&b)
+	writeFieldTable(&b, docForType(reflect.TypeOf(stk.EntryManifest{})).Fields)
+	fmt.Fprintln(&b)
+
 	fmt.Fprintln(&b, "### `memory`")
 	fmt.Fprintln(&b)
-	fmt.Fprintln(&b, "Settings for the repo-resident memory store (`agtk memory ...`). Honoured **only in the entry manifest**: the store's location is a fact about the consumer repo, not about a shareable stack, so a stack reached through `extends:` that sets it is ignored with a diagnostic rather than silently relocating the consumer's committed notes.")
+	fmt.Fprintln(&b, "Settings for the repo-resident memory store (`agtk memory ...`): where the store lives and which agent manages it.")
 	fmt.Fprintln(&b)
 	writeFieldTable(&b, docForType(reflect.TypeOf(stk.MemoryConfig{})).Fields)
 	fmt.Fprintln(&b)

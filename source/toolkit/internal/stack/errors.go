@@ -30,6 +30,7 @@ const (
 	ErrInvalidExtends  ErrorKind = "invalid_extends"
 	ErrLegacyConfig    ErrorKind = "legacy_config"
 	ErrUnknownPlatform ErrorKind = "unknown_platform"
+	ErrRepoOnlyField   ErrorKind = "repo_only_field"
 )
 
 func (e *ParseError) Error() string {

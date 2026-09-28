@@ -331,8 +331,8 @@ func addMemoryGrants(fragments map[string]any, plan *resolver.Plan, roots scopeR
 	}
 
 	root := ""
-	if plan.Stack != nil {
-		root = plan.Stack.MemoryRoot()
+	if plan.EntryManifest != nil {
+		root = plan.EntryManifest.MemoryRoot()
 	}
 	// Checked here as well as in the memory commands: this is a second entry
 	// point to the same field, and a root the rest of agtk refuses would
@@ -369,7 +369,7 @@ func addMemoryGrants(fragments map[string]any, plan *resolver.Plan, roots scopeR
 // default-stack render test asserts they arrive, which is what fails if it is
 // ever renamed without this.
 func usesMemoryStore(plan *resolver.Plan) bool {
-	if plan.Stack != nil && plan.Stack.Memory != nil {
+	if plan.EntryManifest != nil && plan.EntryManifest.Memory != nil {
 		return true
 	}
 	for _, d := range plan.Definitions {

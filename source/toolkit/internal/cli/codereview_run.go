@@ -18,6 +18,7 @@ type runFlags struct {
 	dryRun      bool
 	noPost      bool
 	force       bool
+	full        bool
 	json        bool
 }
 
@@ -49,7 +50,12 @@ func newCodeReviewRunCmd(env *Env) *cobra.Command {
 			"A head that already carries a review of the same commit is a no-op that says\n" +
 			"so and spends nothing; --force reviews it again. Findings the pull request\n" +
 			"already carries are withheld either way, so re-running after a push posts\n" +
-			"what is new and nothing else.",
+			"what is new and nothing else.\n" +
+			"\n" +
+			"After a push, a --pr review reads only what changed since the last head a\n" +
+			"review by this installation reached a verdict on, when that head is still an\n" +
+			"ancestor and the base has not been merged in since. The panel is sized from\n" +
+			"that narrower diff. --full reads the whole change regardless.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCodeReviewRun(cmd, env, target, flags)
@@ -66,6 +72,8 @@ func newCodeReviewRunCmd(env *Env) *cobra.Command {
 		"run the panel and print the request that would post the review, without posting it")
 	cmd.Flags().BoolVar(&flags.force, "force", false,
 		"review a head that already carries a review, instead of stopping")
+	cmd.Flags().BoolVar(&flags.full, "full", false,
+		"with --pr, read the whole change even when an earlier review of this pull request reached a verdict")
 	cmd.Flags().BoolVar(&flags.json, "json", false, "emit the review as JSON")
 	cmd.Flags().IntVar(&target.pr, "pr", 0,
 		"review this open pull request and post the result to it")
@@ -87,6 +95,11 @@ func runCodeReviewRun(cmd *cobra.Command, env *Env, target reviewTarget, flags r
 	// flag that was honoured.
 	if flags.force {
 		return errors.New("--force reviews a pull request head that already carries a review; without --pr there is no posted review to override")
+	}
+	// --full widens a pull request re-review back to the whole change. A
+	// local review always reads the range it was given.
+	if flags.full {
+		return errors.New("--full makes a --pr re-review read the whole change; without --pr the range is the one you name")
 	}
 	root, base, mergeBase, err := resolveTarget(env, target)
 	if err != nil {

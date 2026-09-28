@@ -1,0 +1,17 @@
+name: no-authoring-footers-claude-pre-tool-use
+description: Refuse a git commit/tag or gh pr/issue/release/api call that would publish an authoring footer.
+platforms: [claude]
+requires:
+  - instructions/no-authoring-footers
+event: PreToolUse
+matcher: Bash
+handler:
+  type: command
+  command: |
+    # A missing agtk, or one rendered from a newer stack than the installed
+    # binary knows (no `guard` subcommand yet), must not block every commit —
+    # the instruction still applies, but there is nothing here to enforce it
+    # against until the binary catches up.
+    agtk guard footers --help >/dev/null 2>&1 || exit 0
+    agtk guard footers
+timeout: 5

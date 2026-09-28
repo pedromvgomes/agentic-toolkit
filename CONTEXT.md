@@ -18,17 +18,29 @@ _Avoid_: type, group
 
 **Stack**:
 A single YAML manifest listing **Definition** entries per **Category**, optionally layering
-other stacks under it via `extends:`. Both a shareable stack and a consumer's own
-`.agentic-toolkit.yaml` are stacks; there is no separate "preset" or "consumer config" concept.
+other stacks under it via `extends:`. Shareable: published under `stacks/*.yaml`, pulled in by
+name or URL from another **Stack** or from an **Entry manifest**'s `stacks:` field. Distinct
+from an **Entry manifest** since ADR 0016 — nothing composes *into* a Stack the way `stacks:`
+composes shared content into an Entry manifest, and a Stack has none of the Entry manifest's
+own fields (`root:`-convention scanning, `context:`, `memory:`, `platforms:`).
 _Avoid_: preset, profile, consumer config
 
 **Entry manifest**:
-The **Stack** that a given `agtk` invocation starts from — the consumer's own file, or the
-one named by `--config`/`--stack`. Distinguished from stacks reached through `extends:`,
-because some settings are honoured only here. The file half of the **Toolkit namespace**:
-`.agentic-toolkit.yaml` in the working directory, a sibling of `.agentic-toolkit/` rather than
-something inside it, unless `--config`/`--stack` points the invocation at a file elsewhere.
-_Avoid_: root config, top-level stack
+The document naming a **Consumer**'s own content and composing shared content in — its own
+type, not a **Stack** (ADR 0016 reverses an earlier decision that treated them as the same
+type). The file half of the **Toolkit namespace**: `.agentic-toolkit.yaml` in the working
+directory, a sibling of `.agentic-toolkit/` rather than something inside it, unless
+`--config`/`--stack` points the invocation at a file elsewhere.
+
+Its own `root:` (default `"agentic"`) names a directory `agtk` scans by fixed per-**Category**
+convention (`root/skills/`, `root/instructions/`, ...) for **Definition**s the consumer doesn't
+list by name; an absent per-category subdirectory just means none, not an error. `context:`
+names one optional file — read raw, rendered first, no **Category** shape of its own. `memory:`
+and `platforms:` are honoured only here, as native fields, never on a **Stack**. `stacks:`
+composes shared **Stack** content in, the way `extends:` composes one Stack into another —
+distinct fields on distinct types, because nothing composes *into* an Entry manifest the way
+`extends:`/`stacks:` compose into whatever names them.
+_Avoid_: root config, top-level stack, consumer config, local (as a field name)
 
 **Consumer**:
 The repo that `agtk` renders into. Owns an **Entry manifest**, a lockfile, and its own
@@ -53,10 +65,10 @@ something missing from it. Which of the two a committed file belongs in turns on
   against. Absent, that part runs on what is built into `agtk`, and the rest of `agtk` carries
   on; absent the **Entry manifest**, there is nothing to carry on with.
 
-Committed *content* is outside the namespace, at a path a **Stack** names rather than one
-`agtk` fixes, so a **Consumer** places it: a **Memory store** is what agents wrote rather
-than how `agtk` behaves, and a local **Definition** under `root:` is what is being
-distributed. Where `agtk`
+Committed *content* is outside the namespace, at a path a **Stack** or an **Entry manifest**
+names rather than one `agtk` fixes, so a **Consumer** places it: a **Memory store** is what
+agents wrote rather than how `agtk` behaves, and a locally-scanned **Definition** under an
+Entry manifest's `root:` is what is being distributed. Where `agtk`
 supplies a default for such a path, the default is `agtk`'s own and is bound by the same rule
 as every other path `agtk` fixes. A **Render**ed tree is outside the namespace and is no
 place to commit into at all: those paths belong to a **Platform**, and the ignore rule that
@@ -341,7 +353,11 @@ repository contents is what makes an approval an approval rather than a decorati
 
 Granted only when a **Review** exists for the PR's current head commit and reached a verdict,
 every **Finding** it reports at or above the **Severity** floor is marked a **False positive**,
-and no **Comment thread** on the PR is unresolved. Nothing overrides any of it. A defect is
+and no **Comment thread** on the PR is unresolved. A **Review** that read only what changed since
+an earlier one speaks for the whole change together with it, back to one that read everything; a
+**Finding** from an earlier one that the head's did not repeat is cleared by a **False positive**
+marking, or by an answer from somebody with write access on a thread that is then resolved —
+never by its absence, since the head's **Review** did not read that code. See ADR 0018. Nothing overrides any of it. A defect is
 cleared by changing the code, and a wrong **Finding** by saying so on the PR, and those are the
 only two ways: there is no flag that approves anyway, because one would make the whole of this
 a checklist rather than a control.
@@ -360,6 +376,9 @@ quotes the same evidence.
 A reply rather than resolution, because the two are different claims. Resolving says the
 conversation is finished; it does not say the defect was never there, and a **Severity** at or
 above the floor is a defect until somebody writes down that it is not.
+
+An agent acting for somebody with write access may write the marking; only a person resolves
+the thread. Resolution is where the person stands between an author's claim and **Approval**.
 
 Write access rather than anyone who can comment, because the author of a change is the party a
 review does not trust. A **Finding** its own author could dismiss is one an injected
@@ -405,11 +424,15 @@ _Avoid_: id, key, hash
 
 **App registration**:
 The GitHub App id and private key one machine holds, in agtk's own config directory. What a
-**Review** is posted as. Registered once per machine rather than once per repository, and
-never written into a repository — a fork, a clone or a leaked secret scan has nothing to
-find. The key is readable by its owner alone, and one any other account can read is refused
-rather than used: the blast radius of an App key is one machine, and a key a second account
-can read makes that untrue.
+**Review** is posted as, and what posting or approving one always requires — no environment
+variable substitutes for it there. A read that only needs to see GitHub state, such as
+`explain --pr` or `run --pr` with `--dry-run`/`--no-post`, does not: on a machine holding no
+registration at all it falls back to a token in `GH_TOKEN` or `GITHUB_TOKEN`, while a broken
+or half-written registration still refuses rather than being read around. Registered once per
+machine rather than once per repository, and never written into a repository — a fork, a clone
+or a leaked secret scan has nothing to find. The key is readable by its owner alone, and one
+any other account can read is refused rather than used: the blast radius of an App key is one
+machine, and a key a second account can read makes that untrue.
 
 The short-lived installation token minted from it is held in memory for one run and written
 nowhere. It reaches every repository the App is installed on, so it never enters a model's
@@ -472,8 +495,8 @@ suppressor that removed it first would open that hole from the other side.
 _Avoid_: dedupe, skip, filter, squelch
 
 **Review marker**:
-The HTML comment a posted **Review**'s body carries, naming the commit reviewed, whether the
-run reached a verdict, every surviving **Finding** by **Fingerprint** and **Severity**, and
+The HTML comment a posted **Review**'s body carries, naming the commit reviewed, the earlier
+commit it read on from when it read only what changed since, whether the run reached a verdict, every surviving **Finding** by **Fingerprint** and **Severity**, and
 which of them `agtk` could give no **Comment thread** to. It is how **Approval** learns what the
 last review found, since nothing is persisted and the pull request is the only record.
 
@@ -601,8 +624,10 @@ field. Resolution: **Stale** is mechanical and derived from blob hashes; **Confi
 (`suspect`) is a curator's judgment. `agtk memory audit` reports the first and never writes
 the second.
 
-**"Root"** — `root:` in a **Stack** is the convention root for bare-name **Definition** lookups;
-`memory.root` is the **Memory store** location. Unrelated; always qualify which.
+**"Root"** — three unrelated meanings, always qualify which: `root:` in a **Stack** is the
+convention root for bare-name **Definition** lookups; `root:` in an **Entry manifest** is the
+convention root for locally-scanned **Definition**s (default `"agentic"`); `memory.root` is the
+**Memory store** location.
 
 **"Agent"** — a **Definition** **Category**, and also the thing that runs one. `memory.agent`
 is neither: it names which coding-agent CLI `agtk` drives when it **Curate**s. Say "provider"

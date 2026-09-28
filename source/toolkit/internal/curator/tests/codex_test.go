@@ -101,16 +101,14 @@ func TestThePolicyIsInlinedForAProviderThatCannotDefineAgents(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 	argv := strings.Join(fake.Recorded(t).Args, "\x00")
+	stdin := fake.Stdin(t)
 
-	if strings.Contains(argv, "Delegate to the "+curator.AgentName) {
+	if strings.Contains(stdin, "Delegate to the "+curator.AgentName) {
 		t.Error("the run was told to delegate to an agent this provider cannot define")
 	}
-	// prompt.md's own heading, which appears nowhere else. The harness records
-	// one `arg:` line per argument, so a multi-line prompt is observable only
-	// by its first line — enough to tell the policy document apart from a
-	// prompt that merely names the job.
-	if !strings.Contains(argv, "# Memory Curator") {
-		t.Errorf("the curator's policy did not reach the run: %q", argv)
+	// prompt.md's own heading, which appears nowhere else.
+	if !strings.Contains(stdin, "# Memory Curator") {
+		t.Errorf("the curator's policy did not reach the run: %q", stdin)
 	}
 	if !strings.Contains(argv, "-s\x00read-only") {
 		t.Errorf("the dry run was not sandboxed: %q", argv)

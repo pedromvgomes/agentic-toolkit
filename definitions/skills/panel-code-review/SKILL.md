@@ -98,9 +98,12 @@ Free: no model runs. Report it in one line — the panel, how many runs, and any
 that fired — then continue without asking. The user is being told what they are paying for,
 not asked to approve it.
 
-`explain --pr` reads GitHub and needs the App registration. If it fails for want of one, say
-that `agtk code-review register` registers this machine, and stop — it would have failed the
-same way after a panel had run.
+`explain --pr` reads GitHub. On a machine holding no App registration it falls back to a token
+in `GH_TOKEN` or `GITHUB_TOKEN`, so it can still succeed without one. If it fails, say that
+`agtk code-review register` registers this machine, and stop — it would have failed the same
+way after a panel had run. Posting or approving a review always needs the registration; no
+environment variable substitutes for it there, so a successful `explain --pr` here is no promise
+that `run --pr` in step 4 will post.
 
 **A named panel silences the rules.** `--panel` wins outright, so an escalation that fired does
 not raise past it. When the output shows a rule fired and the panel is the one the user named,
@@ -152,7 +155,8 @@ thread leaves the pull request no better off than before.
 - `--no-fix`: stop here.
 - `--auto-fix`: invoke `pr-review-resolver` for this PR without asking. It still shows its own
   plan and waits for approval before writing code; `--auto-fix` answers the question about
-  *whether* to fix, not the one about *what* to change.
+  *whether* to fix, not the one about *what* to change. Fixing with nobody at the keyboard,
+  pass after pass, is `review-pull-request`'s, which runs the resolver with `--unattended`.
 - otherwise: ask whether to run `pr-review-resolver` on the PR now, and invoke it on yes.
 
 **Local target.** There are no threads and nothing posted, so fix here.
