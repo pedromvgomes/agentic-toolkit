@@ -148,11 +148,12 @@ type memoryIndexJSON struct {
 }
 
 type memoryCurateCheckJSON struct {
-	Version  int      `json:"version"`
-	Provider string   `json:"provider"`
-	Binary   string   `json:"binary"`
-	Mode     string   `json:"mode"`
-	Tools    []string `json:"tools"`
+	Version         int      `json:"version"`
+	Provider        string   `json:"provider"`
+	Binary          string   `json:"binary"`
+	Mode            string   `json:"mode"`
+	Tools           []string `json:"tools"`
+	DisallowedTools []string `json:"disallowed_tools"`
 }
 
 type memoryCurateJSON struct {

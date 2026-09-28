@@ -821,15 +821,16 @@ func newMemoryCurateCmd(env *Env) *cobra.Command {
 				}
 				if jsonOut {
 					return writeJSON(env, memoryCurateCheckJSON{
-						Version:  jsonVersion,
-						Provider: ready.Provider,
-						Binary:   ready.Binary,
-						Mode:     ready.Mode,
-						Tools:    ready.Tools,
+						Version:         jsonVersion,
+						Provider:        ready.Provider,
+						Binary:          ready.Binary,
+						Mode:            ready.Mode,
+						Tools:           ready.Tools,
+						DisallowedTools: ready.DisallowedTools,
 					})
 				}
-				fmt.Fprintf(env.Stdout, "provider:  %s\nbinary:    %s\nmode:      %s\ntools:     %s\n",
-					ready.Provider, ready.Binary, describeMode(ready.Mode), describeTools(ready.Tools))
+				fmt.Fprintf(env.Stdout, "provider:  %s\nbinary:    %s\nmode:      %s\ntools:     %s\ndeny:      %s\n",
+					ready.Provider, ready.Binary, describeMode(ready.Mode), describeTools(ready.Tools), describeDenyList(ready.DisallowedTools))
 				return nil
 			}
 
@@ -908,8 +909,6 @@ func selfPath(env *Env) string {
 	return exe
 }
 
-// memoryAgent reads `memory.agent` from the entry manifest, the same way and
-// from the same file memoryStore reads `memory.root`.
 // reportCurateResult prints what a curate run produced and decides what the
 // command returns. A verification failure comes back from curator.Run beside
 // a populated Result: Text is the curator's own account of a run the store
@@ -944,6 +943,8 @@ func reportCurateResult(env *Env, jsonOut, stale bool, res curator.Result, runEr
 	return nil
 }
 
+// memoryAgent reads `memory.agent` from the entry manifest, the same way and
+// from the same file memoryStore reads `memory.root`.
 func memoryAgent(env *Env) (string, error) {
 	m, err := stack.ParseEntryManifestFile(memoryManifestPath(env))
 	if err != nil {
@@ -1067,4 +1068,16 @@ func describeMode(mode string) string {
 		return "none passed — the grant is the whole permission"
 	}
 	return mode
+}
+
+// describeDenyList renders the delegation deny list for a reader. Empty means
+// this provider has no vocabulary for denying a tool at all, which Check
+// refuses to report ready for on anything but a dry run — so an empty field
+// here means the sandbox mode is what closes delegation instead, not that
+// nothing does.
+func describeDenyList(tools []string) string {
+	if len(tools) == 0 {
+		return "none — this provider cannot deny a tool; the mode is what closes delegation instead"
+	}
+	return strings.Join(tools, ", ")
 }
