@@ -239,6 +239,114 @@ func TestRetryAfterReadsTheResetOffARateLimit(t *testing.T) {
 	}
 }
 
+// A timeout of zero names no timeout of the caller's own, so it is replaced
+// with DefaultTimeout rather than left at zero, which would expire the wait
+// before its first poll.
+func TestAwaitZeroTimeoutUsesTheDefault(t *testing.T) {
+	net := &scripted{t: t, exchanges: []exchange{
+		{method: http.MethodGet, path: runPath(590), status: 200,
+			body: runJSON(590, "queued", "", "run acme/widgets#42", time.Now())},
+		{method: http.MethodGet, path: runPath(590), status: 200,
+			body: runJSON(590, "completed", "success", "run acme/widgets#42", time.Now())},
+	}}
+	got, err := await(context.Background(), net, target, Dispatched{Request: widgets42, RunID: 590}, 0, fastPoll)
+	if err != nil {
+		t.Fatalf("a zero timeout was not replaced with the default: %v", err)
+	}
+	net.done()
+	if got.Conclusion != "success" {
+		t.Errorf("got %+v, want the run's success", got)
+	}
+}
+
+// A run that completes in the same read that outlives the deadline is still
+// reported: the read that found it already happened, and discarding what it
+// found would report a timeout for a run that in fact finished.
+func TestAwaitDoesNotDropACompletedRunReadAfterTheDeadline(t *testing.T) {
+	slow := doerFunc(func(*http.Request) (*http.Response, error) {
+		time.Sleep(20 * time.Millisecond)
+		return answer(200, runJSON(600, "completed", "success", "run acme/widgets#42", time.Now()))
+	})
+	got, err := await(context.Background(), slow, target, Dispatched{Request: widgets42, RunID: 600}, 5*time.Millisecond, fastPoll)
+	if err != nil || got.Conclusion != "success" {
+		t.Errorf("a run read as completed just after its deadline passed reported %v / %+v, want its success", err, got)
+	}
+}
+
+// A rate limit that clears sooner than the ordinary poll interval never
+// stretches the wait past what the caller already asked for: the interval
+// is respected on its own once the rate limit no longer dominates it.
+func TestAwaitDoesNotShortenTheWaitOnceTheRateLimitAlreadyCleared(t *testing.T) {
+	cleared := http.Header{}
+	cleared.Set("X-RateLimit-Remaining", "0")
+	cleared.Set("X-RateLimit-Reset", "1")
+	net := &scripted{t: t, exchanges: []exchange{
+		{method: http.MethodGet, path: runPath(610), status: http.StatusTooManyRequests,
+			body: `{"message": "rate limit exceeded"}`, header: cleared},
+		{method: http.MethodGet, path: runPath(610), status: 200,
+			body: runJSON(610, "completed", "success", "run acme/widgets#42", time.Now())},
+	}}
+	start := time.Now()
+	got, err := await(context.Background(), net, target, Dispatched{Request: widgets42, RunID: 610}, time.Minute, 200*time.Millisecond)
+	if err != nil {
+		t.Fatal(err)
+	}
+	net.done()
+	if got.Conclusion != "success" {
+		t.Errorf("got %+v, want the run's success", got)
+	}
+	if elapsed := time.Since(start); elapsed < 150*time.Millisecond {
+		t.Errorf("a rate limit that already cleared still shortened the wait: retried after %s, want close to the 200ms interval", elapsed)
+	}
+}
+
+// readRun by id reports a failed read as not found, so a caller that checks
+// found in isolation from the error never mistakes the two.
+func TestReadRunByIDReportsNotFoundOnAFailedRead(t *testing.T) {
+	net := &scripted{t: t, exchanges: []exchange{
+		{method: http.MethodGet, path: runPath(700), status: http.StatusNotFound, body: `{"message": "Not Found"}`},
+	}}
+	_, found, err := readRun(context.Background(), net, target, 700, "run acme/widgets#42", time.Now())
+	if err == nil {
+		t.Fatal("a failed read of a named run id reported no error")
+	}
+	if found {
+		t.Error("a failed read of a named run id reported it as found")
+	}
+}
+
+// Two runs dispatched at once can share a created_at to the second; the
+// earlier of the two by id is the one taken, so a caller never follows the
+// other dispatch's run.
+func TestReadRunPrefersTheLowerIDWhenTwoRunsTieOnCreatedAt(t *testing.T) {
+	when := time.Now()
+	net := &scripted{t: t, exchanges: []exchange{
+		{method: http.MethodGet, path: listPath, status: 200, body: listJSON(
+			runJSON(802, "queued", "", "run acme/widgets#42", when),
+			runJSON(801, "queued", "", "run acme/widgets#42", when),
+		)},
+	}}
+	run, found, err := readRun(context.Background(), net, target, 0, "run acme/widgets#42", when)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found || run.ID != 801 {
+		t.Errorf("readRun chose %+v (found=%v), want run 801, the earlier dispatch's own", run, found)
+	}
+}
+
+// A server failure is read past because the relay's run goes on regardless,
+// and a refusal below it is not: the two are told apart at the boundary
+// itself, 500, not somewhere comfortably past it.
+func TestFinalIsExactlyBelowFiveHundred(t *testing.T) {
+	if !final(&Error{StatusCode: 499}) {
+		t.Error("499 is not read as a refusal that will not change")
+	}
+	if final(&Error{StatusCode: 500}) {
+		t.Error("500 is read as final rather than a server failure to read past")
+	}
+}
+
 func TestAwaitGivesUpWhenNoRunAppears(t *testing.T) {
 	never := doerFunc(func(*http.Request) (*http.Response, error) { return answer(200, listJSON()) })
 	start := time.Now()

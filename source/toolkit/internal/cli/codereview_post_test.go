@@ -124,6 +124,59 @@ func TestPostIsASubcommandOfCodeReview(t *testing.T) {
 	}
 }
 
+// A command whose own flag was never registered has no --pr to parse, so
+// this fails the way an unrecognised flag would rather than the way a
+// command with nothing to post to would.
+func TestPostRegistersItsOwnPRFlag(t *testing.T) {
+	env := &Env{Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: io.Discard, WorkDir: t.TempDir()}
+	cmd, _, err := NewRootCmd(env).Find([]string{"code-review", "post"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Flags().Set("pr", "9"); err != nil {
+		t.Fatalf("post does not register --pr: %v", err)
+	}
+}
+
+// The number is checked on the boundary a pull request numbering starts at:
+// 0 and below are refused, and 1 is not.
+func TestPostRefusesAPullRequestNumberBelowOneAndAcceptsOne(t *testing.T) {
+	env := &Env{Stdin: strings.NewReader(""), Stdout: io.Discard, Stderr: io.Discard, WorkDir: t.TempDir()}
+	cmd := NewRootCmd(env)
+	cmd.SetContext(context.Background())
+
+	err := runCodeReviewPost(cmd, env, 0, clientSeam{})
+	if err == nil || !strings.Contains(err.Error(), "not a pull request number") {
+		t.Fatalf("post --pr 0 was %v, want a refusal naming the pull request number", err)
+	}
+
+	err = runCodeReviewPost(cmd, env, 1, clientSeam{})
+	if err != nil && strings.Contains(err.Error(), "not a pull request number") {
+		t.Errorf("post --pr 1 was refused as not a pull request number: %v", err)
+	}
+}
+
+// Standard input is capped one byte past the limit, so a review that is
+// exactly at the limit is read whole and a review one byte over it is
+// refused for being too large rather than silently truncated and read as
+// something else.
+func TestPostRefusesStandardInputOverTheLimitAndReadsExactlyAtIt(t *testing.T) {
+	work, _, _ := prRepo(t)
+	dir := registration(t)
+
+	atLimit := strings.Repeat("x", maxRelayedReview)
+	_, err := postReview(t, work, strings.NewReader(atLimit), clientSeam{dir: dir, doer: stubDoer{}})
+	if err != nil && strings.Contains(err.Error(), "larger than") {
+		t.Errorf("a review exactly at the limit was refused as too large: %v", err)
+	}
+
+	overLimit := strings.Repeat("x", maxRelayedReview+1)
+	_, err = postReview(t, work, strings.NewReader(overLimit), clientSeam{dir: dir, doer: stubDoer{}})
+	if err == nil || !strings.Contains(err.Error(), "larger than") {
+		t.Errorf("a review one byte over the limit was %v, want a refusal naming the limit", err)
+	}
+}
+
 // A review read from standard input is posted as the App exactly as it was
 // computed: the review with its inline comments, then one request per
 // file-level comment, and the review's address is what is reported.

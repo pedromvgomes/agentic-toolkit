@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -220,6 +221,65 @@ func TestARefusedDispatchSaysWhatGitHubSaid(t *testing.T) {
 		if !strings.Contains(err.Error(), "acme/relay") {
 			t.Errorf("%q does not name the relay it was refused by", err)
 		}
+	}
+}
+
+// The boundary itself, 300, is where a response stops being one this package
+// reads a body out of and starts being one it reports as a refusal.
+func TestCallTreatsThreeHundredAsARefusal(t *testing.T) {
+	net := &scripted{t: t, exchanges: []exchange{
+		{method: http.MethodPost, path: dispatchPath, status: 300, body: `{"message": "Multiple Choices"}`},
+	}}
+	_, err := Dispatch(context.Background(), net, target,
+		Request{Repo: "acme/widgets", PR: 42, Action: ActionRun, Payload: review})
+	var apiErr *Error
+	if !errors.As(err, &apiErr) || apiErr.StatusCode != 300 {
+		t.Fatalf("a 300 came back as %v, want it read as a refusal", err)
+	}
+}
+
+// apiMessage prefers GitHub's own field, and falls back to the body itself
+// both when the body is not that shape and when the field it names is empty.
+func TestAPIMessagePrefersGitHubsFieldAndFallsBackToTheBody(t *testing.T) {
+	if got := apiMessage([]byte(`{"message": "Not Found"}`)); got != "Not Found" {
+		t.Errorf("apiMessage read %q, want GitHub's own message", got)
+	}
+	if got := apiMessage([]byte(`not json`)); got != "not json" {
+		t.Errorf("apiMessage of a non-JSON body read %q, want the body itself", got)
+	}
+	if got := apiMessage([]byte(`{"message": ""}`)); got != `{"message": ""}` {
+		t.Errorf("apiMessage of an empty message read %q, want the body itself", got)
+	}
+}
+
+// Retry-After is seconds, not nanoseconds: a header of "5" reset close to 5
+// seconds out, not a duration so small it never changes the wait.
+func TestRateLimitResetReadsRetryAfterInSeconds(t *testing.T) {
+	res := &http.Response{Header: http.Header{"Retry-After": []string{"5"}}}
+	got := rateLimitReset(res)
+	if d := time.Until(got); d < 4*time.Second || d > 6*time.Second {
+		t.Errorf("Retry-After: 5 reset in %s, want close to 5s", d)
+	}
+}
+
+// X-RateLimit-Reset is read only once the primary limit is actually
+// exhausted; otherwise it is a future timestamp this package must not treat
+// as a reason to wait.
+func TestRateLimitResetIgnoresXRateLimitHeadersUnlessRemainingIsZero(t *testing.T) {
+	future := time.Now().Add(time.Hour).Unix()
+
+	withRemaining := &http.Response{Header: http.Header{}}
+	withRemaining.Header.Set("X-RateLimit-Remaining", "1")
+	withRemaining.Header.Set("X-RateLimit-Reset", fmt.Sprintf("%d", future))
+	if got := rateLimitReset(withRemaining); !got.IsZero() {
+		t.Errorf("a response with remaining requests reset at %s, want zero", got)
+	}
+
+	exhausted := &http.Response{Header: http.Header{}}
+	exhausted.Header.Set("X-RateLimit-Remaining", "0")
+	exhausted.Header.Set("X-RateLimit-Reset", fmt.Sprintf("%d", future))
+	if got := rateLimitReset(exhausted); got.Unix() != future {
+		t.Errorf("an exhausted primary limit reset at %d, want %d", got.Unix(), future)
 	}
 }
 
