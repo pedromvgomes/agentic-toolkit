@@ -608,6 +608,30 @@ func TestMemoryAnchorSelectsNamedNotes(t *testing.T) {
 	}
 }
 
+// TestMemoryAnchorResolvesNamesIndependently: a named note that fails to
+// parse must not stop another named note in the same call from being
+// stamped, and the failure must be reported as a parse problem rather than
+// as an unknown note.
+func TestMemoryAnchorResolvesNamesIndependently(t *testing.T) {
+	work := memoryProject(t, "stacks: []\n")
+	writeFile(t, filepath.Join(work, ".memory/notes/pins-shas.md"), memoryNote)
+	writeFile(t, filepath.Join(work, ".memory/notes/broken.md"), "not a note\n")
+
+	_, _, err := runCLI(t, work, "memory", "anchor", "pins-shas", "broken")
+	if err == nil {
+		t.Fatal("expected a non-zero exit when a named note cannot be resolved")
+	}
+	if got := readFile(t, filepath.Join(work, ".memory/notes/pins-shas.md")); !strings.Contains(got, "blob:") {
+		t.Error("a name that failed to resolve prevented the other named note from being stamped")
+	}
+	if !strings.Contains(err.Error(), "broken") || !strings.Contains(err.Error(), "does not parse") {
+		t.Errorf("error should name %q specifically as a parse failure: %v", "broken", err)
+	}
+	if strings.Contains(err.Error(), `no note named "broken"`) {
+		t.Errorf("a note that exists but fails to parse must not be reported as unknown: %v", err)
+	}
+}
+
 // TestMemoryStatsText covers the human-readable report, including the hit
 // line that only appears once something has been read.
 func TestMemoryStatsText(t *testing.T) {

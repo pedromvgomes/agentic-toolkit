@@ -264,17 +264,13 @@ func newMemoryAnchorCmd(env *Env) *cobra.Command {
 				return errors.New("--all stamps every note; naming notes as well says two different things")
 			}
 
-			store, notes, _, err := loadStoreNotes(env)
+			store, notes, parseErrs, err := loadStoreNotes(env)
 			if err != nil {
 				return err
 			}
-			selected, err := selectNotes(notes, args)
-			if err != nil {
-				return err
-			}
+			selected, failed := selectNotes(store, notes, parseErrs, args)
 
 			results := make([]memory.StampResult, 0, len(selected))
-			var failed []string
 			for _, n := range selected {
 				res, err := store.Stamp(n)
 				if err != nil {
@@ -939,21 +935,28 @@ func memoryAgent(env *Env) (string, error) {
 
 // ===== shared helpers =====
 
-// selectNotes filters notes by name, erroring on a name that is not in the
-// store rather than silently stamping nothing.
-func selectNotes(notes []*memory.Note, names []string) ([]*memory.Note, error) {
+// selectNotes filters notes by name, resolving each one independently so a
+// name that fails to resolve does not stop another name in the same call
+// from being selected. names with no note in the store are told apart from
+// names whose file is there but fails to parse, since only the store, not
+// the caller, knows which of the two happened. An empty names selects every
+// note, exactly as it always has.
+func selectNotes(store *memory.Store, notes []*memory.Note, parseErrs []error, names []string) (selected []*memory.Note, failed []string) {
 	if len(names) == 0 {
 		return notes, nil
 	}
-	out := make([]*memory.Note, 0, len(names))
 	for _, name := range names {
-		n := findNote(notes, name)
-		if n == nil {
-			return nil, fmt.Errorf("no note named %q", name)
+		l := curator.ResolveNote(store, notes, parseErrs, name)
+		switch {
+		case l.Note != nil:
+			selected = append(selected, l.Note)
+		case l.Err != nil:
+			failed = append(failed, fmt.Sprintf("%s: note exists but does not parse: %v", name, l.Err))
+		default:
+			failed = append(failed, fmt.Sprintf("no note named %q", name))
 		}
-		out = append(out, n)
 	}
-	return out, nil
+	return selected, failed
 }
 
 func findNote(notes []*memory.Note, name string) *memory.Note {
