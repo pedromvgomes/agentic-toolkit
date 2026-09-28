@@ -5,12 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/pedromvgomes/agentic-toolkit/internal/githubapp"
+	"github.com/pedromvgomes/agentic-toolkit/internal/relay"
 	"github.com/pedromvgomes/agentic-toolkit/internal/review"
 	"github.com/pedromvgomes/agentic-toolkit/internal/reviewapprove"
 	"github.com/pedromvgomes/agentic-toolkit/internal/reviewpost"
@@ -164,6 +167,35 @@ func (s clientSeam) token() (token, variable string) {
 	return "", ""
 }
 
+// relayVariable names the relay repository a posting command on a machine
+// holding no registration hands its post to.
+const relayVariable = "AGTK_CODE_REVIEW_RELAY"
+
+// relay returns the relay repository relayVariable names, and the name of the
+// variable it came from. Both are empty when it holds only whitespace.
+func (s clientSeam) relay() (repo, variable string) {
+	getenv := s.getenv
+	if getenv == nil {
+		getenv = os.Getenv
+	}
+	if value := strings.TrimSpace(getenv(relayVariable)); value != "" {
+		return value, relayVariable
+	}
+	return "", ""
+}
+
+// relayDoer is the transport this seam names, for reaching the relay.
+//
+// With no transport named it is a client holding the same per-request bound
+// githubapp's own client does, so a relay that stops answering fails one
+// request rather than hanging the wait.
+func (s clientSeam) relayDoer() relay.Doer {
+	if s.doer == nil {
+		return &http.Client{Timeout: 30 * time.Second}
+	}
+	return s.doer
+}
+
 // options is the transport this seam names, for either kind of client.
 func (s clientSeam) options() []githubapp.Option {
 	if s.doer == nil {
@@ -265,6 +297,91 @@ func readPullRequest(ctx context.Context, root string, number int, seam clientSe
 	}
 	t.reader = reader
 	return t, nil
+}
+
+// relayNouns names what each relay action hands over, for a line of output.
+var relayNouns = map[string]string{
+	relay.ActionRun:     "review",
+	relay.ActionApprove: "approval",
+}
+
+// relayOrRefuse answers a posting command that resolvePullRequest refused,
+// and returns what the command reports: nil once a relay has run and
+// succeeded, and otherwise the error the command fails with.
+//
+// The relay is the answer only on a machine holding no registration at all,
+// and only when relayVariable names one. A broken or half-written registration
+// keeps its refusal unchanged, whose answer is to finish registering: relaying
+// around it would hide the breakage the same way reading around it with a
+// token would. A machine holding none and naming no relay is refused with
+// both ways out.
+//
+// Once a relay is named, how its run went is what the error explains, not the
+// absence of a registration this machine was never going to post with. The
+// relay's runner reviews or approves the pull request itself, as the App, so
+// nothing reaches the reviewed repository from this process: the caller's
+// token only starts the run and reads how it ended. What the run posted is on
+// the pull request and in the run's log, which this process never sees, so
+// only the run's conclusion and address are reported.
+func relayOrRefuse(ctx context.Context, env *Env, root string, number int, action, panel string, asJSON bool,
+	seam clientSeam, refusal error,
+) error {
+	if !githubapp.Unregistered(refusal) {
+		return refusal
+	}
+	// resolvePullRequest read the same remote before it refused, so this
+	// fails only when the remote changed in between, and the refusal then
+	// stands as it was.
+	slug, err := review.RemoteSlug(root, review.DefaultRemote)
+	if err != nil {
+		return refusal
+	}
+	relayRepo, relayFrom := seam.relay()
+	if relayRepo == "" {
+		return fmt.Errorf("%w, or set %s to the owner/name of a relay repository that can post to %s as the App",
+			refusal, relayVariable, slug)
+	}
+	// A relayed run learns how the relay's run ended and nothing of the review
+	// inside it, so it cannot write the document --json promises, and a
+	// consumer parsing this stream would be handed prose.
+	if asJSON {
+		return fmt.Errorf("%w; %s names %s, but a relayed review reports only how the relay's run ended, "+
+			"which is not the review --json describes: drop --json to relay it", refusal, relayFrom, relayRepo)
+	}
+	token, tokenFrom := seam.token()
+	if token == "" {
+		return fmt.Errorf("%w; %s names %s, but neither GH_TOKEN nor GITHUB_TOKEN holds a token to reach it with",
+			refusal, relayFrom, relayRepo)
+	}
+
+	noun := relayNouns[action]
+	target := relay.Target{Slug: relayRepo, Token: token}
+	fmt.Fprintf(env.Stdout, "This machine holds no GitHub App registration: relaying the %s of %s#%d through %s.\n",
+		noun, slug, number, relayRepo)
+	doer := seam.relayDoer()
+	dispatched, err := relay.Dispatch(ctx, doer, target, relay.Request{
+		Repo: slug.String(), PR: number, Action: action, Panel: panel,
+	})
+	if err != nil {
+		return fmt.Errorf("relay the %s of %s#%d through %s, named by %s, with the token in %s: %w",
+			noun, slug, number, relayRepo, relayFrom, tokenFrom, err)
+	}
+	if dispatched.URL != "" {
+		fmt.Fprintf(env.Stdout, "Relay run: %s\n", dispatched.URL)
+	}
+	fmt.Fprintf(env.Stdout, "Waiting up to %s for it to finish.\n", relay.DefaultTimeout)
+	result, err := relay.Await(ctx, doer, target, dispatched, 0)
+	if err != nil {
+		return fmt.Errorf("relay the %s of %s#%d through %s, named by %s, with the token in %s: %w",
+			noun, slug, number, relayRepo, relayFrom, tokenFrom, err)
+	}
+	if result.Conclusion != "success" {
+		return fmt.Errorf("the relay run for the %s of %s#%d did not succeed (%s): %s",
+			noun, slug, number, result.Conclusion, result.URL)
+	}
+	fmt.Fprintf(env.Stdout, "The relay run for the %s of %s#%d succeeded: %s\n", noun, slug, number, result.URL)
+	fmt.Fprintln(env.Stdout, "What it posted is on the pull request, and its log says how it got there.")
+	return nil
 }
 
 // anchorPullRequest brings a pull request's commits into the local repository
@@ -488,14 +605,18 @@ func runCodeReviewPR(cmd *cobra.Command, env *Env, target reviewTarget, flags ru
 	}
 	// A run that posts resolves as the App, and so refuses here on a machine
 	// that holds no registration, before any panel is spent on a review it
-	// could never post. A run that posts nothing reads through whatever this
-	// machine has.
+	// could never post; a relay, when one is named, posts it instead. A run
+	// that posts nothing reads through whatever this machine has.
+	posts := !flags.dryRun && !flags.noPost
 	resolve := resolvePullRequest
-	if flags.dryRun || flags.noPost {
+	if !posts {
 		resolve = readPullRequest
 	}
 	t, err := resolve(cmd.Context(), root, target.pr, seam)
 	if err != nil {
+		if posts {
+			return relayOrRefuse(cmd.Context(), env, root, target.pr, relay.ActionRun, target.panel, flags.json, seam, err)
+		}
 		return err
 	}
 

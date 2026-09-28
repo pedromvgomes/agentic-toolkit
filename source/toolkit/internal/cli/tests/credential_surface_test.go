@@ -30,9 +30,13 @@ var credentialSurface = []string{
 }
 
 // environmentSurface is every package a token passes through: the credential
-// surface, and the command layer, which reads a token from GH_TOKEN or
-// GITHUB_TOKEN on a machine holding no App registration.
-var environmentSurface = append(append([]string{}, credentialSurface...), "source/toolkit/internal/cli")
+// surface, the command layer, which reads a token from GH_TOKEN or
+// GITHUB_TOKEN on a machine holding no App registration, and the relay, which
+// that token dispatches.
+var environmentSurface = append(append([]string{}, credentialSurface...),
+	"source/toolkit/internal/cli",
+	"source/toolkit/internal/relay",
+)
 
 // mustResolve fails the calling test unless importPath names a package that
 // resolves.
@@ -73,6 +77,29 @@ func TestTheModelInvokingPackagesCannotReachTheCredential(t *testing.T) {
 			if dep == credentialPackage {
 				t.Errorf("%s depends on %s, so a run that reads someone else's diff can reach this machine's GitHub App key", pkg, credentialPackage)
 			}
+		}
+	}
+}
+
+// relayImportPath is the package that carries a caller's own token to the
+// relay repository.
+const relayImportPath = "github.com/pedromvgomes/agentic-toolkit/internal/relay"
+
+// The relay carries a caller's own token and never the App's credential: the
+// key is held by the relay's runner, not by the machine dispatching to it.
+// Keeping the relay out of reach of the package holding the key makes that a
+// property of the import graph, so handing the relay the App's credential
+// would take adding an import rather than forgetting to remove one.
+func TestTheRelayCannotReachTheCredential(t *testing.T) {
+	mustResolve(t, credentialPackage)
+	mustResolve(t, relayImportPath)
+	out, err := exec.Command("go", "list", "-deps", "-f", "{{.ImportPath}}", relayImportPath).Output()
+	if err != nil {
+		t.Fatalf("go list %s: %v", relayImportPath, err)
+	}
+	for dep := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
+		if dep == credentialPackage {
+			t.Errorf("%s depends on %s, so the package carrying a caller's token can reach the App's key", relayImportPath, credentialPackage)
 		}
 	}
 }
