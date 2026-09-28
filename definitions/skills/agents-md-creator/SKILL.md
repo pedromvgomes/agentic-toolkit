@@ -27,6 +27,14 @@ every other agent pointed at AGENTS.md (directly or via the import) read the sam
 
 ## Workflow
 
+**First, check whether agtk renders this repo.** When the repo root holds `.agentic-toolkit.yaml`, the root `AGENTS.md`, the
+managed region of the root `CLAUDE.md`, and everything under the root `.agents/`, `.claude/` and `.codex/` are output of
+`agtk render`, and an edit to any of them is overwritten by the next render. For the repo root, write the content this skill
+describes into the manifest's `context:` file — or, when it sets none, a file under `<root>/instructions/` (`root:` from the
+manifest, `agentic` by default) with a one-line `description:` frontmatter — then run `agtk render`. Skip steps 4 and 5 for the
+root: the render writes `CLAUDE.md` and the rules index itself, and rules are authored in `<root>/rules/`, not `.agents/rules/`.
+A module-level AGENTS.md in a subdirectory is not rendered, and follows the workflow below unchanged.
+
 1. **Analyze the codebase** — Before writing anything, explore the repository to understand its structure,
    tech stack, conventions, and existing documentation (README, CONTRIBUTING, etc.)
 2. **Determine scope** — Is this for a repo root or a specific module? Root-level files cover broad guidance;
@@ -89,8 +97,8 @@ at the top, after any title/intro, with **exactly this text** — this is the ca
 ```markdown
 ## Rules
 
-This module has prescriptive rules in `.agents/rules/`. **Read every file in that directory before making changes here, and follow each rule strictly.**
-Each file contains one rule. New rules go in that directory — one file per rule, kebab-case filename matching the rule's intent.
+This module has prescriptive rules in `.agents/rules/`. Read every file in that directory before making changes here and follow
+each one — nothing else loads them for you. Each file contains one rule. New rules go in that directory — one file per rule, kebab-case filename matching the rule's intent.
 ```
 <!-- END CANONICAL RULES POINTER -->
 

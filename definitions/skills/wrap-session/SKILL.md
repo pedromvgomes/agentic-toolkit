@@ -1,7 +1,8 @@
 ---
 name: wrap-session
 description: |
-  Use at the end of a working session to review and update documentation (AGENTS.md and per-rule files under .agents/rules/) for any modules
+  Use at the end of a working session to review and update documentation (AGENTS.md and per-rule files — under .agents/rules/, or the
+  agtk rules source in a repo agtk renders) for any modules
   touched during the session. Asks the user which change scope to review (uncommitted, branch commits, or both), then dispatches to the wrap-session-reviewer
   subagent to do the actual work on Sonnet. Triggers on user phrases like "wrap up", "wrap this session", "end of session", "session review", "review docs",
   "let's close out", "we're done with this session", or any explicit signal that the user is finishing a session and wants documentation considered for the
@@ -12,7 +13,9 @@ requires:
 
 # Wrap Session
 
-Run at the end of a working session to update `AGENTS.md` and per-rule files under `.agents/rules/` for any modules touched during the session.
+Run at the end of a working session to update `AGENTS.md` and per-rule files under `.agents/rules/` for any modules touched during the session. In a
+repo agtk renders (one with `.agentic-toolkit.yaml` at its root), those are render output: the subagent edits the manifest's rules, instructions and
+`context:` sources instead, and runs `agtk render`.
 
 This skill is **orchestration only**. It asks one question, then hands off to the `wrap-session-reviewer` subagent which runs on Sonnet.
 Keep token usage here minimal — do not do the review work yourself.
