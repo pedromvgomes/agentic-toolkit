@@ -13,6 +13,13 @@ import (
 const (
 	ccrThreadsPath = "/repos/acme/widgets/pulls/7/ccr/review_threads"
 	prCommentsPath = "/repos/acme/widgets/pulls/7/comments"
+
+	// commentsPerPageForTest and reviewsPerPageForTest mirror the unexported
+	// commentsPerPage and reviewsPerPage constants in package githubapp,
+	// which this package (a black box against it) cannot reference directly.
+	// A page exactly this size is what forces a second page to be fetched.
+	commentsPerPageForTest = 100
+	reviewsPerPageForTest  = 10
 )
 
 // blockedByProxy is the refusal GitHub's own API answers a GraphQL query with
@@ -148,6 +155,215 @@ func TestAThreadListMissingAKnownCommentIsRefused(t *testing.T) {
 	net.done()
 	if err == nil || !strings.Contains(err.Error(), "2") {
 		t.Fatalf("a thread list missing comment 2 was %v, want a refusal naming it", err)
+	}
+}
+
+// prCommentsPage renders n synthetic comments, ids starting at first, as one
+// page of the paginated comment read — and the ids it used, so a caller can
+// name them on a thread node.
+func prCommentsPage(first int64, n int) (page string, ids []int64) {
+	var raw []string
+	for i := 0; i < n; i++ {
+		id := first + int64(i)
+		raw = append(raw, prComment(id, "x", "someone", ""))
+		ids = append(ids, id)
+	}
+	return prComments(raw...), ids
+}
+
+// The paginated comment read that backs both proxy readers joins every page
+// rather than stopping at the first, the same way the GraphQL connection it
+// replaces does.
+func TestEveryPageOfPRCommentsIsRead(t *testing.T) {
+	page1, ids1 := prCommentsPage(1, commentsPerPageForTest)
+	page2, ids2 := prCommentsPage(int64(commentsPerPageForTest)+1, 1)
+	allIDs, err := json.Marshal(append(append([]int64{}, ids1...), ids2...))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	c, net := client(t, append(append(auth(far()), blockedByProxy()),
+		exchange{method: http.MethodGet, path: ccrThreadsPath, status: 200,
+			body: `[{"resolved":false,"outdated":false,"path":"a.go","comment_ids":` + string(allIDs) + `}]`},
+		exchange{method: http.MethodGet, path: prCommentsPath, status: 200, body: page1},
+		exchange{method: http.MethodGet, path: prCommentsPath, status: 200, body: page2},
+		appLogin(),
+	)...)
+
+	threads, err := c.ReadReviewThreads(context.Background(), 7)
+	if err != nil {
+		t.Fatalf("read the threads: %v", err)
+	}
+	net.done()
+	if len(threads) != 1 {
+		t.Fatalf("read %d threads, want 1: %+v", len(threads), threads)
+	}
+	// The second page's request has to carry page=2, or two identical
+	// requests would return the same page twice and still look like paging.
+	if q := commentsPageQuery(t, net, 1); !strings.Contains(q, "page=2") {
+		t.Errorf("the second page was not asked for with page=2: %s", q)
+	}
+}
+
+// commentsPageQuery returns the query string of the (0-indexed) nth request
+// made to prCommentsPath.
+func commentsPageQuery(t *testing.T, net *scripted, n int) string {
+	t.Helper()
+	return pageQuery(t, net, prCommentsPath, n)
+}
+
+// pageQuery returns the query string of the (0-indexed) nth request made to
+// path.
+func pageQuery(t *testing.T, net *scripted, path string, n int) string {
+	t.Helper()
+	count := 0
+	for _, req := range net.seen {
+		if req.URL.Path != path {
+			continue
+		}
+		if count == n {
+			return req.URL.RawQuery
+		}
+		count++
+	}
+	t.Fatalf("request %d to %s was never made", n, path)
+	return ""
+}
+
+// Reading exactly maxPages of comments succeeds — the boundary itself is
+// still allowed, and only one page past it is refused.
+func TestReadingExactlyMaxPagesOfCommentsSucceeds(t *testing.T) {
+	var allIDs []int64
+	var pages []exchange
+	for i := 0; i < 39; i++ {
+		page, ids := prCommentsPage(int64(len(allIDs))+1, commentsPerPageForTest)
+		allIDs = append(allIDs, ids...)
+		pages = append(pages, exchange{method: http.MethodGet, path: prCommentsPath, status: 200, body: page})
+	}
+	// The 40th (last allowed) page ends the list.
+	lastPage, lastIDs := prCommentsPage(int64(len(allIDs))+1, 1)
+	allIDs = append(allIDs, lastIDs...)
+	pages = append(pages, exchange{method: http.MethodGet, path: prCommentsPath, status: 200, body: lastPage})
+
+	idsJSON, err := json.Marshal(allIDs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	exchanges := append(auth(far()), blockedByProxy(),
+		exchange{method: http.MethodGet, path: ccrThreadsPath, status: 200,
+			body: `[{"resolved":false,"outdated":false,"path":"a.go","comment_ids":` + string(idsJSON) + `}]`})
+	exchanges = append(exchanges, pages...)
+	exchanges = append(exchanges, appLogin())
+	c, net := client(t, exchanges...)
+
+	if _, err := c.ReadReviewThreads(context.Background(), 7); err != nil {
+		t.Fatalf("reading exactly maxPages of comments was refused: %v", err)
+	}
+	net.done()
+}
+
+// A comment list that never ends is a loop, and a loop against a
+// rate-limited API is worse than a refusal — the same bound the GraphQL
+// connection this read replaces is held to.
+func TestAPRCommentListThatNeverEndsIsRefusedRatherThanLoopedOn(t *testing.T) {
+	exchanges := append(auth(far()), blockedByProxy(),
+		exchange{method: http.MethodGet, path: ccrThreadsPath, status: 200, body: "[]"})
+	// One more page than the bound allows, so reaching the bound is what
+	// stops it rather than running out of script.
+	for i := 0; i <= 40; i++ {
+		page, _ := prCommentsPage(1, commentsPerPageForTest)
+		exchanges = append(exchanges, exchange{method: http.MethodGet, path: prCommentsPath, status: 200, body: page})
+	}
+	c, net := client(t, exchanges...)
+
+	_, err := c.ReadReviewThreads(context.Background(), 7)
+	if err == nil {
+		t.Fatal("an endless comment list was read as an answer")
+	}
+	if !strings.Contains(err.Error(), "did not end") {
+		t.Errorf("the refusal does not say the list never ended: %v", err)
+	}
+	if len(net.seen) > 45 {
+		t.Errorf("the read made %d calls, so the bound did not stop it", len(net.seen))
+	}
+}
+
+// reviewsPage renders n synthetic reviews as one page of the paginated
+// review read.
+func reviewsPage(commitID, login string, n int) string {
+	var raw []string
+	for i := 0; i < n; i++ {
+		body, err := json.Marshal(map[string]any{
+			"body": "x", "commit_id": commitID, "user": map[string]any{"login": login},
+		})
+		if err != nil {
+			panic(err)
+		}
+		raw = append(raw, string(body))
+	}
+	return "[" + strings.Join(raw, ",") + "]"
+}
+
+// The paginated review read that backs the REST fallback joins every page,
+// the same way the GraphQL connection it replaces does.
+func TestEveryPageOfReviewsIsReadOverREST(t *testing.T) {
+	c, net := client(t, append(append(auth(far()), blockedByProxy()),
+		appLogin(),
+		exchange{method: http.MethodGet, path: reviewsPath, status: 200, body: reviewsPage("abc", "someone", reviewsPerPageForTest)},
+		exchange{method: http.MethodGet, path: reviewsPath, status: 200, body: reviewsPage("abc", "someone", 1)},
+	)...)
+
+	reviews, err := c.ReadSubmittedReviews(context.Background(), 7)
+	if err != nil {
+		t.Fatalf("read the reviews: %v", err)
+	}
+	net.done()
+	if len(reviews) != reviewsPerPageForTest+1 {
+		t.Fatalf("read %d reviews, want %d", len(reviews), reviewsPerPageForTest+1)
+	}
+	if q := pageQuery(t, net, reviewsPath, 1); !strings.Contains(q, "page=2") {
+		t.Errorf("the second page was not asked for with page=2: %s", q)
+	}
+}
+
+// Reading exactly maxPages of reviews succeeds — the boundary itself is
+// still allowed, and only one page past it is refused.
+func TestReadingExactlyMaxPagesOfReviewsSucceedsOverREST(t *testing.T) {
+	exchanges := append(auth(far()), blockedByProxy(), appLogin())
+	for i := 0; i < 39; i++ {
+		exchanges = append(exchanges,
+			exchange{method: http.MethodGet, path: reviewsPath, status: 200, body: reviewsPage("abc", "someone", reviewsPerPageForTest)})
+	}
+	// The 40th (last allowed) page ends the list.
+	exchanges = append(exchanges,
+		exchange{method: http.MethodGet, path: reviewsPath, status: 200, body: reviewsPage("abc", "someone", 1)})
+	c, net := client(t, exchanges...)
+
+	if _, err := c.ReadSubmittedReviews(context.Background(), 7); err != nil {
+		t.Fatalf("reading exactly maxPages of reviews was refused: %v", err)
+	}
+	net.done()
+}
+
+// A review list that never ends is refused rather than looped on, the same
+// bound the GraphQL connection this read replaces is held to.
+func TestAReviewListThatNeverEndsIsRefusedRatherThanLoopedOnOverREST(t *testing.T) {
+	exchanges := append(auth(far()), blockedByProxy(), appLogin())
+	for i := 0; i <= 40; i++ {
+		exchanges = append(exchanges,
+			exchange{method: http.MethodGet, path: reviewsPath, status: 200, body: reviewsPage("abc", "someone", reviewsPerPageForTest)})
+	}
+	c, net := client(t, exchanges...)
+
+	_, err := c.ReadSubmittedReviews(context.Background(), 7)
+	if err == nil {
+		t.Fatal("an endless review list was read as an answer")
+	}
+	if !strings.Contains(err.Error(), "did not end") {
+		t.Errorf("the refusal does not say the list never ended: %v", err)
+	}
+	if len(net.seen) > 44 {
+		t.Errorf("the read made %d calls, so the bound did not stop it", len(net.seen))
 	}
 }
 

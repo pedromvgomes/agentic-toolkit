@@ -1086,6 +1086,48 @@ func TestScrubDispatchSecretsRemovesEveryDispatchVariable(t *testing.T) {
 	}
 }
 
+// A run that reaches the panel scrubs the dispatch variables first, on both
+// the path that can post and the path that never touches GitHub: a reviewer
+// that gets to run at all must never find one of them in its own
+// environment.
+func TestARunThatReachesThePanelScrubsDispatchSecretsFirst(t *testing.T) {
+	work, baseSHA, headSHA := prRepo(t)
+	doer := prDoer(baseSHA, headSHA, reviewOf(headSHA, true, "looks good to me"), noThreads)
+	t.Setenv("GH_TOKEN", "ghp_secret")
+	t.Setenv("GITHUB_TOKEN", "ghp_also_secret")
+	t.Setenv("AGTK_CODE_REVIEW_RELAY", "acme/relay")
+
+	runPR(t, work, runFlags{}, doer)
+
+	for _, name := range []string{"GH_TOKEN", "GITHUB_TOKEN", "AGTK_CODE_REVIEW_RELAY"} {
+		if v, ok := os.LookupEnv(name); ok {
+			t.Errorf("%s is still %q after a posting run reached the panel", name, v)
+		}
+	}
+}
+
+// The same, for a local run that never resolves a pull request at all: it
+// scrubs before the panel just as a posting run does, rather than only where
+// a relay or a token happens to be in play.
+func TestALocalRunThatReachesThePanelScrubsDispatchSecretsFirst(t *testing.T) {
+	work, _, _ := prRepo(t)
+	t.Setenv("GH_TOKEN", "ghp_secret")
+	t.Setenv("GITHUB_TOKEN", "ghp_also_secret")
+	t.Setenv("AGTK_CODE_REVIEW_RELAY", "acme/relay")
+
+	var out bytes.Buffer
+	env := &Env{Stdin: strings.NewReader(""), Stdout: &out, Stderr: io.Discard, WorkDir: work}
+	cmd := NewRootCmd(env)
+	cmd.SetContext(context.Background())
+	_ = runCodeReviewRun(cmd, env, reviewTarget{context: "worktree"}, runFlags{})
+
+	for _, name := range []string{"GH_TOKEN", "GITHUB_TOKEN", "AGTK_CODE_REVIEW_RELAY"} {
+		if v, ok := os.LookupEnv(name); ok {
+			t.Errorf("%s is still %q after a local run reached the panel", name, v)
+		}
+	}
+}
+
 func TestTheRelayComesFromAgtkCodeReviewRelay(t *testing.T) {
 	for _, tc := range []struct {
 		vars           map[string]string

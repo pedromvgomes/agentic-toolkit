@@ -337,7 +337,7 @@ const tokenMargin = time.Minute
 // knows the answer to.
 func (c *Client) viewerLogin(ctx context.Context) (string, error) {
 	if c.cred == nil {
-		return "", nil
+		return "", nil // [lydite:exclude_from_mutation][replace-return: unobservable — the only caller with cred == nil is ReadClient, which force-clears ByViewer after every call into this path regardless of what this returns]
 	}
 	if c.appLogin != "" {
 		return c.appLogin, nil
