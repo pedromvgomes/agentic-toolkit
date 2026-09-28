@@ -43,9 +43,10 @@ hook for a setup script (`agtk code-review register --app-id "$APP_ID" --key-std
 but it still requires the register step to run in every fresh container, and still lands the key
 on disk at the fixed path/mode afterward (Initialize always writes both files).
 
-**Which subcommands need it.** `githubapp.Load` is called from exactly two places:
-`cli/codereview_pr.go:140` (posting) and the `clientSeam.client` helper in `cli/codereview.go`
-used by `resolvePullRequest`, which both `run --pr` and `explain --pr` go through. So `explain
+**Which subcommands need it.** `githubapp.Load` is called from exactly one place:
+`clientSeam.client` (`cli/codereview_pr.go:131`, the `Load` call itself at `:140`), which
+`resolvePullRequest` (`cli/codereview_pr.go:159`) calls to get its client, and which both
+`run --pr` and `explain --pr` go through. So `explain
 --pr` needs the registration not to post but to *read* the PR (number resolution, head/base SHA,
 diff, existing review threads) — there is no read-only/anonymous or `gh`-token fallback path
 anywhere in `internal/githubapp`; grepped for `GH_TOKEN`/`GITHUB_TOKEN`/`gh auth` in that package
@@ -55,7 +56,7 @@ local-only (manifest, diff profiling), per the comment block at the top of
 `cli/codereview.go:14-27`.
 
 **Installation lookup.** One App, no per-repo config: `githubapp.Client.bearer()`
-(`client.go:209-241`) looks up the installation id per-repo lazily via `GET
+(`client.go:211-245`) looks up the installation id per-repo lazily via `GET
 /repos/{slug}/installation` (signed with the App's JWT) the first time a client is used, caches
 it in memory for that process's life, then mints a short-lived installation access token. No
 separate "reviewer" vs "approver" App — one registration serves `run`, `explain --pr`, and
