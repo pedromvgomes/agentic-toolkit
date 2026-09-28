@@ -69,8 +69,10 @@ rather than being read or relayed around. The token client's type has no posting
 satisfy `reviewapprove.GitHub`, so a read-token reaching a post site is a compile error, and
 `internal/relay` never imports `internal/githubapp` at all (an import-graph test enforces this),
 so the package that carries a caller's token to the relay repository cannot reach the App's key
-even by accident. `--force`, `--full` and `--json` refuse to relay rather than silently drop what
-they ask for, since a relay dispatch carries only the pull request, the action and its panel. See
+even by accident. `--json` refuses to relay (a relayed run reports only how the relay's own run
+ended, not the review detail `--json` promises); `--force` and `--full` are accepted, because the
+token fallback `run --pr` reads the pull request through always reports `ByViewer: false`, so the
+relayed path already reviews the pull request whole whether or not either flag is passed. See
 ADR 0019 for the read fallback's design and ADR 0020 for the relay's. Bare `explain` (no `--pr`)
 needs no registration at all — it is local-only (manifest, diff profiling), per the comment block
 at the top of `cli/codereview.go:14-27`.
@@ -83,9 +85,18 @@ separate "reviewer" vs "approver" App — one registration serves `run`, `explai
 `approve`.
 
 **A CI/headless design now exists, as the relay.** `AGTK_CODE_REVIEW_RELAY=owner/name` names a
-dedicated repository whose own GitHub Actions workflow holds an App registration and reruns
-`agtk code-review run --pr`/`approve` itself (ADR 0020). ADR 0012's argument against running in CI
-was about the *coding-agent* model credential (Codex's non-shareable `auth.json`) needing a shared,
-standing runner — not about the App's own posting credential, which is what the relay provisions
-once, deliberately, in a repository dedicated to nothing else, dispatched per relayed post rather
-than run as a general service.
+dedicated repository whose own GitHub Actions workflow holds an App registration (ADR 0020). What
+it reruns differs by action: `approve` never runs a panel, so its relay reruns
+`agtk code-review approve --pr` from scratch, exactly as a registered laptop would. `run --pr`'s
+posting path runs its panel on the dispatching machine, through the same token fallback described
+above, and hands the relay only the review already computed; the relay's own run is
+`agtk code-review post`, which posts that review as the App and starts no model. Because of this,
+the relay repository never needs a coding-agent credential of its own — ADR 0012's argument
+against running in CI, that Codex's non-shareable `auth.json` needs a shared, standing runner,
+does not apply to a workflow that never starts a model. What the relay provisions once,
+deliberately, in a repository dedicated to nothing else, is only the App's own posting
+credential, dispatched per relayed post rather than run as a general service. This does trade
+away something the rerun design would have kept: `code-review post` trusts the review body it is
+handed, so whoever can dispatch the relay workflow can make it post any review under the App's
+real identity — accepted only because the relay repository's collaborators are the same people
+whose pull requests it posts to (ADR 0020's Decision and Consequences).

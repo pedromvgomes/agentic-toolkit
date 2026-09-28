@@ -444,23 +444,41 @@ _Avoid_: secret, credential file, PAT
 **Relay**:
 The repository `AGTK_CODE_REVIEW_RELAY=owner/name` names, whose own GitHub Actions workflow
 holds an **App registration** of its own and posts or approves a **Review** through it when this
-machine holds none. `run --pr`'s posting path and `approve` dispatch that workflow and wait on
-the run it starts, in place of refusing, reporting only whether the run succeeded and where —
-never what it posted, which stays on the pull request and in a log this process never reads.
+machine holds none. What it is dispatched with differs by action. `approve` has no panel to run
+and hands the relay only the pull request; the relay's own run is `agtk code-review approve --pr
+N` from scratch, exactly as it would run on a registered machine. `run --pr`'s posting path runs
+the panel on *this* machine instead — reading the pull request through the same token fallback
+`explain --pr` uses — and hands the relay the review it already computed, as the JSON
+`code-review post` reads; the relay's own run is `code-review post`, which posts that review as
+the App and starts no model. Either way this process waits on the run it dispatched, reporting
+only whether it succeeded and where — never what it posted, which stays on the pull request and
+in a log this process never reads.
 
-The token that dispatches it (`GH_TOKEN` or `GITHUB_TOKEN`, the same variables a read falls back
-to) reaches only the relay repository — triggering and reading its own Actions runs — and never
-the repository under review; the relay's own workflow is what reaches that repository, through
-its own installation token and the App id and key it holds. A broken or half-written
-registration on this machine still refuses rather than being relayed around, the same rule a
-read follows.
+The token that dispatches either (`GH_TOKEN` or `GITHUB_TOKEN`, the same variables a read falls
+back to) reaches only the relay repository — triggering and reading its own Actions runs, and
+for `run --pr` carrying the computed review in the dispatch's own input — and never the
+repository under review; the relay's own workflow is what reaches that repository, through its
+own installation token and the App id and key it holds. A broken or half-written registration on
+this machine still refuses rather than being relayed around, the same rule a read follows.
 
-`--force`, `--full` and `--json` are not carried: a relay is dispatched with only the pull
-request and its panel, which cannot express a forced re-review, a full one, or the review detail
-`--json` promises, so posting under any of them still needs this machine's own registration.
-Its own default branch must be named `main` — a dispatch names that branch directly rather than
-asking GitHub which one is the default, and a relay repository whose default branch is called
-anything else has every dispatch refused with GitHub's own "no ref found" error.
+`--force` and `--full` are accepted under a relay rather than refused: the token fallback that
+reads the pull request for `run --pr` always reports `ByViewer: false` (ADR 0019), so this path
+never finds a review by this installation to vouch for and already reviews the pull request
+whole, exactly what either flag asks for regardless of whether it is passed. `--json` still
+refuses: a relayed
+run reports only how the relay's run ended, not the review `--json` promises. Its own default
+branch must be named `main` — a dispatch names that branch directly rather than asking GitHub
+which one is the default, and a relay repository whose default branch is called anything else
+has every dispatch refused with GitHub's own "no ref found" error.
+
+Trusting the review a `run --pr` dispatch carries is a deliberate, narrower trust than trusting
+the relay's own registration: whoever holds a token that can dispatch the relay workflow can make
+it post any review body, under the App's real identity, for the pull request's current head —
+including a body that claims a clean verdict. `agtk code-review post`'s own check refuses a
+different event, a stale head, or a mismatched file-comment commit, but it does not, and cannot,
+verify that the body it is handed came from an actual panel run. See ADR 0020's Decision and
+Consequences for the accepted trade-off and the condition it depends on: a relay repository kept
+private to the people who are also the ones whose pull requests it posts to.
 _Avoid_: CI, pipeline, bot job
 
 **Fingerprint marker**:

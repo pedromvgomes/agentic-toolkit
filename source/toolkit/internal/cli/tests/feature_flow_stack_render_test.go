@@ -236,7 +236,7 @@ func TestPanelCodeReviewNamesTheTokenFallbackAndPostingsRequirement(t *testing.T
 }
 
 // A relay is the one alternative to posting from a registered machine, and
-// --force/--full/--json are not carried by it. A skill silent on either leaves
+// --json is the one flag it does not carry. A skill silent on either leaves
 // an agent to discover the refusal by running into it.
 func TestPanelCodeReviewNamesTheRelayAndWhatItDoesNotCarry(t *testing.T) {
 	apply := renderFeatureFlowStack(t)
@@ -249,8 +249,8 @@ func TestPanelCodeReviewNamesTheRelayAndWhatItDoesNotCarry(t *testing.T) {
 	if !strings.Contains(skill, "AGTK_CODE_REVIEW_RELAY") {
 		t.Error("panel-code-review does not name the relay repository variable")
 	}
-	if !strings.Contains(skill, "--force") || !strings.Contains(skill, "--full") || !strings.Contains(skill, "--json") {
-		t.Error("panel-code-review does not say that --force, --full and --json are not carried by a relay")
+	if !strings.Contains(skill, "--json") {
+		t.Error("panel-code-review does not say that --json is not carried by a relay")
 	}
 }
 

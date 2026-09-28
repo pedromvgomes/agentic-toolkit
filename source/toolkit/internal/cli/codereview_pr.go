@@ -306,21 +306,6 @@ var relayNouns = map[string]string{
 	relay.ActionApprove: "approval",
 }
 
-// unforwarded names the flags set on a run that change what it posts and that
-// a relay does not carry, in the order the refusal names them. --timeout and
-// --max-parallel are absent because they tune the panel, which runs on this
-// machine whether its review is posted from here or relayed.
-func (f runFlags) unforwarded() []string {
-	var names []string
-	if f.force {
-		names = append(names, "--force")
-	}
-	if f.full {
-		names = append(names, "--full")
-	}
-	return names
-}
-
 // relayRoute is the relay a posting command on a machine holding no
 // registration hands its post to, and what reaches it.
 type relayRoute struct {
@@ -345,12 +330,7 @@ type relayRoute struct {
 //
 // Every refusal here is made before anything is read, so a command that could
 // never reach its relay spends nothing finding that out.
-//
-// unforwarded names the flags the command was given that change what it posts
-// and that a relay.Request cannot carry. Any one of them refuses the relay: a
-// relayed run without it would still report success for a post that is not
-// the one asked for.
-func routeToRelay(root string, asJSON bool, unforwarded []string, seam clientSeam, refusal error) (*relayRoute, error) {
+func routeToRelay(root string, asJSON bool, seam clientSeam, refusal error) (*relayRoute, error) {
 	if !githubapp.Unregistered(refusal) {
 		return nil, refusal
 	}
@@ -372,17 +352,6 @@ func routeToRelay(root string, asJSON bool, unforwarded []string, seam clientSea
 	if asJSON {
 		return nil, fmt.Errorf("%w; %s names %s, but a relayed review reports only how the relay's run ended, "+
 			"which is not the review --json describes: drop --json to relay it", refusal, relayFrom, relayRepo)
-	}
-	// The relay is dispatched with the pull request and its panel alone, and
-	// its runner reviews with its own defaults. Relaying --force would end in
-	// the relay's no-op on a head that already carries a review, and --full in
-	// a review of only the delta since the last reviewed head, each reported
-	// here as a run that succeeded.
-	if len(unforwarded) > 0 {
-		dropped := strings.Join(unforwarded, " and ")
-		return nil, fmt.Errorf("%w; %s names %s, but a relay is handed only the pull request and its panel, "+
-			"so relaying it would drop %s: run this on a machine holding the registration, or drop %s to relay it",
-			refusal, relayFrom, relayRepo, dropped, dropped)
 	}
 	token, tokenFrom := seam.token()
 	if token == "" {
@@ -442,9 +411,9 @@ func (r *relayRoute) hand(ctx context.Context, env *Env, req relay.Request) erro
 // which approval is. routeToRelay decides whether there is a relay to hand it
 // to, and hand reports how its run went.
 func relayOrRefuse(ctx context.Context, env *Env, root string, number int, action, panel string, asJSON bool,
-	unforwarded []string, seam clientSeam, refusal error,
+	seam clientSeam, refusal error,
 ) error {
-	route, err := routeToRelay(root, asJSON, unforwarded, seam, refusal)
+	route, err := routeToRelay(root, asJSON, seam, refusal)
 	if err != nil {
 		return err
 	}
@@ -467,7 +436,7 @@ func resolveToPost(ctx context.Context, root string, number int, flags runFlags,
 	if err == nil {
 		return t, nil, nil
 	}
-	route, err := routeToRelay(root, flags.json, flags.unforwarded(), seam, err)
+	route, err := routeToRelay(root, flags.json, seam, err)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -17,6 +17,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/pedromvgomes/agentic-toolkit/internal/githubapp"
 	"github.com/pedromvgomes/agentic-toolkit/internal/review"
@@ -1081,6 +1082,20 @@ func TestTheRelayComesFromAgtkCodeReviewRelay(t *testing.T) {
 	}
 }
 
+// With no transport named for a relay, its own client fails one request
+// rather than hanging the wait, which a timeout of zero — or one computed
+// wrong — would defeat either by firing immediately or never.
+func TestRelayDoerTimesOutAtThirtySeconds(t *testing.T) {
+	doer := clientSeam{}.relayDoer()
+	client, ok := doer.(*http.Client)
+	if !ok {
+		t.Fatalf("the relay's own transport is a %T, want *http.Client", doer)
+	}
+	if client.Timeout != 30*time.Second {
+		t.Errorf("the relay's own transport times out at %s, want 30s", client.Timeout)
+	}
+}
+
 // relayTo is the route to the relay relayNet answers for, as routeToRelay
 // builds it from relayed().
 func relayTo(net *relayNet) *relayRoute {
@@ -1173,10 +1188,21 @@ func TestARelayedReviewIsHandedToTheRelayWholeAndPostedNowhereElse(t *testing.T)
 	if err != nil {
 		t.Fatalf("a relayed review failed: %v\n%s", err, out)
 	}
-	for _, text := range []string{"off by one", "acme/widgets#7", "acme/relay", relayRunURL, "succeeded"} {
+	for _, text := range []string{
+		"off by one", "acme/widgets#7", relayRunURL, "succeeded",
+		"scope:    full change (no earlier review by this installation reached a verdict)",
+		"1 inline, 1 against a whole file",
+		"relaying the review of acme/widgets#7 through acme/relay.",
+		"Relay run: " + relayRunURL,
+		"Waiting up to",
+		"What it posted is on the pull request, and its log says how it got there.",
+	} {
 		if !strings.Contains(out, text) {
 			t.Errorf("the relayed review does not report %q:\n%s", text, out)
 		}
+	}
+	if !strings.Contains(out, "with nowhere to answer.\n\nThis machine holds no GitHub App registration") {
+		t.Errorf("the placement and the relay's own report run together with no blank line between them:\n%s", out)
 	}
 	if got := net.relayCalls(); len(got) != len(net.calls) || len(got) != 2 {
 		t.Errorf("a relayed review asked for %v, want only the relay's dispatch and its run", net.calls)
@@ -1442,38 +1468,23 @@ func TestARelayIsNotUsedUnderJSON(t *testing.T) {
 	}
 }
 
-// A relay is handed the pull request and its panel alone, so a flag that
-// changes what the run posts is refused before anything is sent, rather than
-// dropped from a relayed run that would still report success. The refusal
-// names the flag, the relay and both ways out.
-func TestARelayIsNotUsedUnderAFlagItDoesNotCarry(t *testing.T) {
-	for _, tc := range []struct {
-		flags        runFlags
-		named, unset []string
-	}{
-		{runFlags{force: true}, []string{"--force"}, []string{"--full"}},
-		{runFlags{full: true}, []string{"--full"}, []string{"--force"}},
-		{runFlags{force: true, full: true}, []string{"--force and --full"}, nil},
-	} {
-		work, _, _ := prRepo(t)
-		net := &relayNet{conclusion: "success"}
-		out, err := postPR(t, work, reviewTarget{pr: 7, panel: "deep"}, tc.flags,
-			clientSeam{dir: unregistered(t), doer: net, getenv: environment(relayed())})
-		if err == nil {
-			t.Fatalf("%+v was relayed without what it asks for:\n%s", tc.flags, out)
+// --force and --full ask for exactly what a relayed run already does: a
+// token's reads always clear ByViewer, so chooseScope and carriesAVerdictFor
+// never find a review by this installation to vouch for, and the pull
+// request is always reviewed whole. Passing either changes nothing that
+// reaches the relay, so neither is refused.
+func TestForceAndFullAreAcceptedByARelayedRun(t *testing.T) {
+	work, baseSHA, headSHA := prRepo(t)
+	for _, flags := range []runFlags{{force: true}, {full: true}, {force: true, full: true}} {
+		net := &relayNet{conclusion: "success", next: prDoer(baseSHA, headSHA, reviewsOf(), noThreads)}
+		seam := clientSeam{dir: unregistered(t), doer: net, getenv: environment(relayed())}
+		target, route, err := resolveToPost(context.Background(), work, 7, flags, seam)
+		if err != nil {
+			t.Errorf("%+v was refused: %v", flags, err)
+			continue
 		}
-		for _, want := range append([]string{"acme/relay", "AGTK_CODE_REVIEW_RELAY", "code-review register"}, tc.named...) {
-			if !strings.Contains(err.Error(), want) {
-				t.Errorf("the refusal of %+v does not name %q: %v", tc.flags, want, err)
-			}
-		}
-		for _, unwanted := range tc.unset {
-			if strings.Contains(err.Error(), unwanted) {
-				t.Errorf("the refusal of %+v names %s, which was not passed: %v", tc.flags, unwanted, err)
-			}
-		}
-		if len(net.calls) > 0 || out != "" {
-			t.Errorf("a refused relay under %+v still sent %v and wrote %q", tc.flags, net.calls, out)
+		if route == nil || target == nil {
+			t.Errorf("%+v resolved with no relay to post through", flags)
 		}
 	}
 }

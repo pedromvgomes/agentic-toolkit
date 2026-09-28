@@ -104,12 +104,16 @@ in `GH_TOKEN` or `GITHUB_TOKEN`, so it can still succeed without one. If it fail
 way after a panel had run.
 
 Posting or approving a review always needs the registration — on this machine, or on a relay's.
-`AGTK_CODE_REVIEW_RELAY=owner/name` names a relay repository, and a posting `run --pr` or
-`approve` hands it the post when this machine holds none at all, waiting on the relay's own run
-and reporting only how it ended. `--force`, `--full` and `--json` refuse to relay: a relay is
-dispatched with only the pull request and its panel, which carries none of what those flags ask
-for or what `--json` promises, so posting under any of them still needs this machine's own
-registration. A successful `explain --pr` here is no promise that `run --pr` in step 4 will post.
+`AGTK_CODE_REVIEW_RELAY=owner/name` names a relay repository. On a machine holding no
+registration at all, a posting `run --pr` still reads the pull request with a plain token and
+runs the panel here; the relay's own `code-review post` then posts the review this machine
+already computed, as the App, and this command waits on that run instead of posting directly.
+`approve` has no panel to run, so its relay reruns `agtk code-review approve --pr` from scratch.
+`--force` and `--full` are accepted under a relay: a token's reads never carry this
+installation's own verdicts, so this path already reviews the pull request whole, exactly what
+either flag asks for. `--json` still refuses to relay, since a relayed run reports only how the
+relay's run ended, not the review `--json` promises. A successful `explain --pr` here is no
+promise that `run --pr` in step 4 will post.
 
 **A named panel silences the rules.** `--panel` wins outright, so an escalation that fired does
 not raise past it. When the output shows a rule fired and the panel is the one the user named,
