@@ -65,6 +65,33 @@ func Dir() (string, error) { return userconfig.Dir() }
 // answers: one is `agtk code-review register`, the other is a broken file.
 var ErrNotInitialized = errors.New("this machine holds no GitHub App registration")
 
+// ErrIncompleteRegistration is what Load reports, alongside ErrNotInitialized,
+// when an App id is present and its private key is not. A half-written
+// registration is one somebody started, and its answer is to finish it rather
+// than to read GitHub under some other identity.
+var ErrIncompleteRegistration = errors.New("the GitHub App registration on this machine is incomplete")
+
+// Unregistered reports whether err is Load finding no registration at all.
+//
+// False for an incomplete registration, which also matches ErrNotInitialized.
+// A caller choosing what to do in place of a registration asks this rather
+// than errors.Is, or a machine with a broken registration is treated as one
+// that never had any.
+func Unregistered(err error) bool {
+	return errors.Is(err, ErrNotInitialized) && !errors.Is(err, ErrIncompleteRegistration)
+}
+
+// incompleteRegistration carries ErrIncompleteRegistration without adding its
+// text to the message, which reads the same as it does to a caller that only
+// checks ErrNotInitialized.
+type incompleteRegistration struct{ err error }
+
+func (e incompleteRegistration) Error() string { return e.err.Error() }
+
+func (e incompleteRegistration) Unwrap() []error {
+	return []error{e.err, ErrIncompleteRegistration}
+}
+
 // Initialize writes a registration, replacing any this machine already holds.
 //
 // The key is parsed before anything is written, so a paste that is not a
@@ -168,8 +195,8 @@ func Load(dir string) (*Credential, error) {
 	}
 	pemBytes, err := os.ReadFile(keyPath) // #nosec G304 -- agtk's own registration at its XDG path
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil, fmt.Errorf("%w: %s holds an App id but no private key; run `agtk code-review register` again",
-			ErrNotInitialized, dir)
+		return nil, incompleteRegistration{fmt.Errorf("%w: %s holds an App id but no private key; run `agtk code-review register` again",
+			ErrNotInitialized, dir)}
 	}
 	if err != nil {
 		return nil, fmt.Errorf("read %s: %w", keyPath, err)
