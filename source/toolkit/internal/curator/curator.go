@@ -24,6 +24,7 @@ import (
 
 	agentic "github.com/pedromvgomes/agentic-driver"
 
+	"github.com/pedromvgomes/agentic-toolkit/internal/memory"
 	"github.com/pedromvgomes/agentic-toolkit/internal/provider"
 )
 
@@ -186,6 +187,13 @@ type Options struct {
 	// stamping commands fail and it finishes having verified everything and
 	// recorded nothing.
 	AgtkPath string
+	// StoreRoot is the store's `memory.root`, absolute or relative to WorkDir,
+	// and empty for the default — the value memory.New takes. Run snapshots the
+	// store it names before the child starts and re-reads it after, to check
+	// the run's completion report against what is actually on disk. Naming a
+	// different store than the grant's NotesDir and CandidatesDir sit in
+	// verifies a store the run never touched.
+	StoreRoot string
 }
 
 // scope is the narrowing this run's grant gets.
@@ -472,6 +480,12 @@ func disallow(p agentic.Provider, dryRun bool) ([]string, error) {
 const permissionMode = ""
 
 // Run curates the store and returns the curator's report.
+//
+// A run that writes is held to its completion report: the store is diffed
+// against a snapshot taken before the child started, and a report that does
+// not account for the difference in both directions is an error. That error
+// comes back beside the populated Result, whose Text is then the curator's own
+// account of the run the store contradicts.
 func Run(ctx context.Context, opts Options) (Result, error) {
 	provider, err := newProvider(opts.Provider)
 	if err != nil {
@@ -506,6 +520,17 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		return Result{}, err
 	}
 
+	// Taken before the child starts, since the check afterwards diffs against
+	// it. A dry run takes none: its grant writes nothing, so there is nothing
+	// on disk to diff.
+	store := memory.New(opts.WorkDir, opts.StoreRoot)
+	var before snapshot
+	if !opts.DryRun {
+		if before, err = takeSnapshot(store); err != nil {
+			return Result{}, err
+		}
+	}
+
 	res, err := driver.Run(ctx, agentic.Request{
 		Prompt:          task(opts),
 		AllowedTools:    b.tools,
@@ -532,7 +557,7 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	if err := json.Unmarshal(res.Structured, &wire); err != nil {
 		return Result{}, fmt.Errorf("curator: run produced a completion report that does not parse: %w", err)
 	}
-	return Result{
+	result := Result{
 		Text:    strings.TrimSpace(res.Text),
 		IsError: res.IsError,
 		Model:   res.Model,
@@ -542,7 +567,16 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 			NotesRetracted:     wire.NotesRetracted,
 			NotesTouched:       wire.NotesTouched,
 		},
-	}, nil
+	}
+	// A report is the run's account of itself, and a run that stopped part-way
+	// or skipped a step reports as confidently as one that finished. Only the
+	// store says which it was.
+	if !opts.DryRun {
+		if err := verify(store, before, result.Report); err != nil {
+			return result, err
+		}
+	}
+	return result, nil
 }
 
 // task is the instruction the run itself receives. It says which of the two

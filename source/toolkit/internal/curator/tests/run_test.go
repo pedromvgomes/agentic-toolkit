@@ -33,11 +33,18 @@ const noReportEnvelope = `{"type":"result","subtype":"success","is_error":false,
 // the state a real refusal reaches when it never gets far enough to file one.
 const refusedEnvelopeWithoutReport = `{"type":"result","subtype":"success","is_error":true,"session_id":"s5","result":"could not reach the store"}`
 
-// A well-formed report that resolved nothing. Whether an empty report is
-// CONSISTENT with the store on disk is a different question from whether it
-// parses as a report at all, which is the only thing this package checks.
+// A well-formed report that resolved nothing, which is consistent with a store
+// the run left untouched.
 const emptyReportEnvelope = `{"type":"result","subtype":"success","is_error":false,"session_id":"s4","result":"nothing cleared the bar","structured_output":{"candidatesResolved":[],"notesRetracted":[],"notesTouched":[]}}`
 
+// curatedNote is the note curatedEnvelope reports touching.
+const curatedNote = "lockfile-pins-shas-not-tags"
+
+// run curates a project whose store already holds everything the envelopes
+// above report — curatedNote stamped and indexed, no candidates staged — and
+// which the fake leaves untouched, so every report here is consistent with the
+// store and a test about something else is not failed by the check against
+// disk.
 func run(t *testing.T, stdout string, opts curator.Options) (*agentictest.Fake, curator.Result, error) {
 	t.Helper()
 
@@ -49,6 +56,9 @@ func run(t *testing.T, stdout string, opts curator.Options) (*agentictest.Fake, 
 	if opts.WorkDir == "" {
 		opts.WorkDir = t.TempDir()
 	}
+	p := newProjectIn(t, opts.WorkDir)
+	p.writeNote(t, curatedNote, true)
+	p.reindex(t)
 	res, err := curator.Run(t.Context(), opts)
 	return fake, res, err
 }
@@ -116,9 +126,8 @@ func TestARunWithNoCompletionReportFails(t *testing.T) {
 }
 
 // Three empty arrays is a well-formed report: it says the run ruled on
-// nothing and changed nothing, which is a complete answer. Whether that
-// answer is consistent with the state of the store on disk is a separate
-// check this package does not make.
+// nothing and changed nothing, which is a complete answer, and a true one
+// about a run that left the store as it found it.
 func TestAWellFormedEmptyReportIsAccepted(t *testing.T) {
 	_, res, err := run(t, emptyReportEnvelope, curator.Options{})
 	if err != nil {

@@ -776,6 +776,7 @@ func newMemoryCurateCmd(env *Env) *cobra.Command {
 					WorkDir:       store.ProjectRoot,
 					NotesDir:      store.NotesPath(),
 					CandidatesDir: store.CandidatesPath(),
+					StoreRoot:     store.Root,
 					AgtkPath:      selfPath(env),
 					DryRun:        dryRun,
 					Notes:         args,
@@ -807,6 +808,7 @@ func newMemoryCurateCmd(env *Env) *cobra.Command {
 				// author notes and clear the backlog and nothing else.
 				NotesDir:      store.NotesPath(),
 				CandidatesDir: store.CandidatesPath(),
+				StoreRoot:     store.Root,
 				// The running binary, not whatever PATH resolves: a consumer
 				// installs agtk separately from the lockfile-pinned
 				// definitions, so the agtk on PATH can be older than this one
