@@ -3,6 +3,7 @@ package githubapp
 import (
 	"context"
 	"fmt"
+	"net/http"
 )
 
 // ThreadReply is one reply on a comment thread.
@@ -110,6 +111,10 @@ const (
 // silently short is a thread approval does not know is unresolved, and an
 // approval granted over an open conversation is the failure reading threads at
 // all exists to prevent.
+//
+// A GraphQL query refused specifically because it was made from inside a
+// network that blocks it is read again over the substitute route that
+// refusal names, rather than failed: see graphQLBlockedByProxy.
 func (c *Client) ReadAnsweredThreads(ctx context.Context, number int) ([]AnsweredThread, error) {
 	if number < 1 {
 		return nil, fmt.Errorf("%d is not a pull request number", number)
@@ -119,6 +124,14 @@ func (c *Client) ReadAnsweredThreads(ctx context.Context, number int) ([]Answere
 		return nil, err
 	}
 
+	out, err := c.readAnsweredThreadsGraphQL(ctx, owner, repo, number)
+	if graphQLBlockedByProxy(err) {
+		return c.readAnsweredThreadsViaProxy(ctx, owner, repo, number)
+	}
+	return out, err
+}
+
+func (c *Client) readAnsweredThreadsGraphQL(ctx context.Context, owner, repo string, number int) ([]AnsweredThread, error) {
 	var out []AnsweredThread
 	cursor := ""
 	for page := 0; ; page++ {
@@ -188,6 +201,47 @@ func (c *Client) ReadAnsweredThreads(ctx context.Context, number int) ([]Answere
 	}
 }
 
+// readAnsweredThreadsViaProxy reads every comment thread, its root comment
+// and its replies, over the substitute route a blocked GraphQL query is
+// told to use.
+func (c *Client) readAnsweredThreadsViaProxy(ctx context.Context, owner, repo string, number int) ([]AnsweredThread, error) {
+	nodes, err := c.readThreadNodesViaProxy(ctx, owner, repo, number)
+	if err != nil {
+		return nil, err
+	}
+	viewer, err := c.viewerLogin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]AnsweredThread, 0, len(nodes))
+	for _, node := range nodes {
+		thread := AnsweredThread{
+			ReviewThread: ReviewThread{Path: node.Path, Resolved: node.Resolved, Outdated: node.Outdated},
+		}
+		for i, id := range node.CommentIDs {
+			comment, err := c.readComment(ctx, owner, repo, id)
+			if err != nil {
+				return nil, err
+			}
+			// The root is the first comment ever made on the thread; the
+			// substitute route reports comment ids in that order. A reply
+			// is written by whoever replied, so identity is read from the
+			// root or from nowhere — the same rule the GraphQL path follows.
+			if i == 0 {
+				thread.Body = comment.Body
+				thread.ByViewer = viewer != "" && comment.User.Login == viewer
+				continue
+			}
+			thread.Replies = append(thread.Replies, ThreadReply{
+				Body:              comment.Body,
+				AuthorAssociation: comment.AuthorAssociation,
+			})
+		}
+		out = append(out, thread)
+	}
+	return out, nil
+}
+
 // submittedReviewsQuery reads the reviews on a pull request with their bodies.
 var submittedReviewsQuery = fmt.Sprintf(`query($owner:String!,$repo:String!,$number:Int!,$cursor:String){
   repository(owner:$owner,name:$repo){
@@ -228,6 +282,10 @@ type SubmittedReview struct {
 // already been reviewed. Both need the body — the marker lives in it — so a
 // second query returning the commit alone would be the same request asked
 // twice, and the cheaper one could not answer either question.
+//
+// A GraphQL query refused specifically because it was made from inside a
+// network that blocks it is read again over REST, rather than failed: see
+// graphQLBlockedByProxy.
 func (c *Client) ReadSubmittedReviews(ctx context.Context, number int) ([]SubmittedReview, error) {
 	if number < 1 {
 		return nil, fmt.Errorf("%d is not a pull request number", number)
@@ -237,6 +295,14 @@ func (c *Client) ReadSubmittedReviews(ctx context.Context, number int) ([]Submit
 		return nil, err
 	}
 
+	out, err := c.readSubmittedReviewsGraphQL(ctx, owner, repo, number)
+	if graphQLBlockedByProxy(err) {
+		return c.readSubmittedReviewsREST(ctx, owner, repo, number)
+	}
+	return out, err
+}
+
+func (c *Client) readSubmittedReviewsGraphQL(ctx context.Context, owner, repo string, number int) ([]SubmittedReview, error) {
 	var out []SubmittedReview
 	cursor := ""
 	for page := 0; ; page++ {
@@ -282,5 +348,46 @@ func (c *Client) ReadSubmittedReviews(ctx context.Context, number int) ([]Submit
 			return out, nil
 		}
 		cursor = reviews.PageInfo.EndCursor
+	}
+}
+
+// readSubmittedReviewsREST reads every review on a pull request over REST,
+// the substitute for a GraphQL query refused specifically because it was
+// made from inside a network that blocks it — unlike a comment thread's
+// resolved/outdated state, everything a review carries has always had a
+// plain, always-available REST answer, so no non-standard route is needed
+// here the way readReviewThreadsViaProxy needs one.
+func (c *Client) readSubmittedReviewsREST(ctx context.Context, owner, repo string, number int) ([]SubmittedReview, error) {
+	viewer, err := c.viewerLogin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var out []SubmittedReview
+	for page := 1; ; page++ {
+		if page > maxPages {
+			return nil, fmt.Errorf("the reviews on %s#%d did not end after %d pages of %d",
+				c.slug, number, maxPages, reviewsPerPage)
+		}
+		var batch []struct {
+			Body     string `json:"body"`
+			CommitID string `json:"commit_id"`
+			User     struct {
+				Login string `json:"login"`
+			} `json:"user"`
+		}
+		path := fmt.Sprintf("/repos/%s/%s/pulls/%d/reviews?per_page=%d&page=%d", owner, repo, number, reviewsPerPage, page)
+		if err := c.call(ctx, http.MethodGet, path, nil, &batch); err != nil {
+			return nil, err
+		}
+		for _, node := range batch {
+			out = append(out, SubmittedReview{
+				CommitSHA: node.CommitID,
+				Body:      node.Body,
+				ByViewer:  viewer != "" && node.User.Login == viewer,
+			})
+		}
+		if len(batch) < reviewsPerPage {
+			return out, nil
+		}
 	}
 }

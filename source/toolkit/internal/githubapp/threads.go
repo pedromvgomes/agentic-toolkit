@@ -63,6 +63,10 @@ var reviewThreadsQuery = fmt.Sprintf(`query($owner:String!,$repo:String!,$number
 // The whole list or an error. A thread list that is silently short is a
 // finding whose thread was not seen and is therefore posted a second time,
 // which is the failure reading threads at all exists to prevent.
+//
+// A GraphQL query refused specifically because it was made from inside a
+// network that blocks it is read again over the substitute route that
+// refusal names, rather than failed: see graphQLBlockedByProxy.
 func (c *Client) ReadReviewThreads(ctx context.Context, number int) ([]ReviewThread, error) {
 	if number < 1 {
 		return nil, fmt.Errorf("%d is not a pull request number", number)
@@ -72,6 +76,14 @@ func (c *Client) ReadReviewThreads(ctx context.Context, number int) ([]ReviewThr
 		return nil, err
 	}
 
+	out, err := c.readReviewThreadsGraphQL(ctx, owner, repo, number)
+	if graphQLBlockedByProxy(err) {
+		return c.readReviewThreadsViaProxy(ctx, owner, repo, number)
+	}
+	return out, err
+}
+
+func (c *Client) readReviewThreadsGraphQL(ctx context.Context, owner, repo string, number int) ([]ReviewThread, error) {
 	var out []ReviewThread
 	cursor := ""
 	for page := 0; ; page++ {
@@ -123,4 +135,34 @@ func (c *Client) ReadReviewThreads(ctx context.Context, number int) ([]ReviewThr
 		}
 		cursor = threads.PageInfo.EndCursor
 	}
+}
+
+// readReviewThreadsViaProxy reads every comment thread's resolved/outdated
+// state and its root comment's body and author, over the substitute route a
+// blocked GraphQL query is told to use.
+func (c *Client) readReviewThreadsViaProxy(ctx context.Context, owner, repo string, number int) ([]ReviewThread, error) {
+	nodes, err := c.readThreadNodesViaProxy(ctx, owner, repo, number)
+	if err != nil {
+		return nil, err
+	}
+	viewer, err := c.viewerLogin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]ReviewThread, 0, len(nodes))
+	for _, node := range nodes {
+		thread := ReviewThread{Path: node.Path, Resolved: node.Resolved, Outdated: node.Outdated}
+		if len(node.CommentIDs) > 0 {
+			// The root is the first comment ever made on the thread; the
+			// substitute route reports comment ids in that order.
+			root, err := c.readComment(ctx, owner, repo, node.CommentIDs[0])
+			if err != nil {
+				return nil, err
+			}
+			thread.Body = root.Body
+			thread.ByViewer = viewer != "" && root.User.Login == viewer
+		}
+		out = append(out, thread)
+	}
+	return out, nil
 }
