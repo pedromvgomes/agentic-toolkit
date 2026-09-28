@@ -258,19 +258,68 @@ func TestMemorySourceModeUsesConsumerConfig(t *testing.T) {
 }
 
 // TestMemoryWarnsOnUnreadableNote: a note that fails to parse drops out of
-// the index, so every command says so rather than silently narrowing the
-// store.
+// the index, so every command warns about it, and index and audit fail the
+// run so the narrowed store cannot pass as clean.
 func TestMemoryWarnsOnUnreadableNote(t *testing.T) {
 	work := memoryProject(t, "stacks: []\n")
 	writeFile(t, filepath.Join(work, ".memory/notes/pins-shas.md"), memoryNote)
 	writeFile(t, filepath.Join(work, ".memory/notes/broken.md"), "not a note\n")
 
-	_, stderr, err := runCLI(t, work, "memory", "index")
-	if err != nil {
-		t.Fatalf("memory index: %v", err)
+	stdout, stderr, err := runCLI(t, work, "memory", "index")
+	if err == nil {
+		t.Fatal("memory index: want a non-zero exit for an unreadable note, got nil error")
 	}
 	if !strings.Contains(stderr, "broken.md") {
 		t.Errorf("index did not warn about the unreadable note: %q", stderr)
+	}
+	if !strings.Contains(err.Error(), "broken.md") {
+		t.Errorf("index error does not name the unreadable note: %v", err)
+	}
+	if !strings.Contains(stdout, "1 note") {
+		t.Errorf("index did not still regenerate the index for the note that did parse: %q", stdout)
+	}
+}
+
+// TestMemoryAuditFailsOnUnreadableNote: audit reports staleness for the
+// notes that did parse, but still fails the run when another note in the
+// same store could not be read at all — an unreadable note is not "fresh".
+func TestMemoryAuditFailsOnUnreadableNote(t *testing.T) {
+	work := memoryProject(t, "stacks: []\n")
+	writeFile(t, filepath.Join(work, ".memory/notes/pins-shas.md"), memoryNote)
+	if _, _, err := runCLI(t, work, "memory", "anchor", "--all"); err != nil {
+		t.Fatalf("memory anchor: %v", err)
+	}
+	writeFile(t, filepath.Join(work, ".memory/notes/broken.md"), "not a note\n")
+
+	stdout, stderr, err := runCLI(t, work, "memory", "audit")
+	if err == nil {
+		t.Fatal("memory audit: want a non-zero exit for an unreadable note, got nil error")
+	}
+	if !strings.Contains(stderr, "broken.md") {
+		t.Errorf("audit did not warn about the unreadable note: %q", stderr)
+	}
+	if !strings.Contains(err.Error(), "broken.md") {
+		t.Errorf("audit error does not name the unreadable note: %v", err)
+	}
+	if !strings.Contains(stdout, "fresh") {
+		t.Errorf("audit did not still report on the note that did parse: %q", stdout)
+	}
+}
+
+// TestMemoryStatsToleratesUnreadableNote: stats' exit code means "the store
+// itself could not be read", a different and stricter contract than one
+// note's frontmatter being bad, so it warns and keeps its zero exit.
+func TestMemoryStatsToleratesUnreadableNote(t *testing.T) {
+	work := memoryProject(t, "stacks: []\n")
+	writeFile(t, filepath.Join(work, ".memory/notes/pins-shas.md"), memoryNote)
+	writeFile(t, filepath.Join(work, ".memory/notes/broken.md"), "not a note\n")
+
+	_, stderr, err := runCLI(t, work, "memory", "stats")
+	if err != nil {
+		t.Fatalf("memory stats: want a zero exit for one unreadable note, got %v", err)
+	}
+	if !strings.Contains(stderr, "broken.md") {
+		t.Errorf("stats did not warn about the unreadable note: %q", stderr)
 	}
 }
 

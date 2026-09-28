@@ -145,21 +145,36 @@ func memoryStore(env *Env) (*memory.Store, error) {
 }
 
 // loadStoreNotes is the shared prologue: locate the store, parse its notes.
-// Parse errors are returned separately because index, audit and stats must
-// keep working when one note is malformed; only lint reports them.
+// Parse errors are returned separately so each caller decides for itself
+// whether an unreadable note is a warning or a failure: index and audit still
+// produce their normal output for the notes that did parse, then fail the
+// run; lint folds them into its own issue list; stats leaves them as a
+// warning only, because its exit code means "the store itself could not be
+// read" and must not be conflated with "one note's frontmatter is bad".
 func loadStoreNotes(env *Env) (*memory.Store, []*memory.Note, []error, error) {
 	store, err := memoryStore(env)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 	notes, parseErrs := store.LoadNotes()
-	// Every command but lint ignores these, and a note that silently drops
-	// out of the index is exactly the kind of quiet loss the store must not
-	// have. Warn once, here, for all of them.
+	// Every caller gets this warning regardless of whether it also turns
+	// the error into a failure, and a note that silently drops out of the
+	// index is exactly the kind of quiet loss the store must not have.
 	for _, e := range parseErrs {
 		fmt.Fprintf(env.Stderr, "warning: skipping unreadable note: %v\n", e)
 	}
 	return store, notes, parseErrs, nil
+}
+
+// unreadableNotesErr names every note loadStoreNotes could not parse, so a
+// caller that fails on parse errors reports which files and why rather than
+// only a bare non-zero exit.
+func unreadableNotesErr(parseErrs []error) error {
+	msgs := make([]string, len(parseErrs))
+	for i, e := range parseErrs {
+		msgs[i] = e.Error()
+	}
+	return fmt.Errorf("%s unreadable:\n%s", plural(len(parseErrs), "note"), strings.Join(msgs, "\n"))
 }
 
 // ===== index =====
@@ -176,7 +191,7 @@ func newMemoryIndexCmd(env *Env) *cobra.Command {
 			"Creates the store (notes/, candidates/, .gitignore) when it does not exist.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			store, notes, _, err := loadStoreNotes(env)
+			store, notes, parseErrs, err := loadStoreNotes(env)
 			if err != nil {
 				return err
 			}
@@ -188,18 +203,27 @@ func newMemoryIndexCmd(env *Env) *cobra.Command {
 				return err
 			}
 			if jsonOut {
-				return writeJSON(env, memoryIndexJSON{
+				if err := writeJSON(env, memoryIndexJSON{
 					Version: jsonVersion,
 					Path:    relToWork(env, store.IndexPath()),
 					Notes:   len(notes),
 					Changed: changed,
-				})
+				}); err != nil {
+					return err
+				}
+			} else {
+				state := "unchanged"
+				if changed {
+					state = "rewritten"
+				}
+				fmt.Fprintf(env.Stdout, "%s: %s (%s)\n", relToWork(env, store.IndexPath()), plural(len(notes), "note"), state)
 			}
-			state := "unchanged"
-			if changed {
-				state = "rewritten"
+			// The index is now written without the notes that failed to
+			// parse; report that as a failure rather than let the run
+			// look clean while the index silently narrowed.
+			if len(parseErrs) > 0 {
+				return unreadableNotesErr(parseErrs)
 			}
-			fmt.Fprintf(env.Stdout, "%s: %s (%s)\n", relToWork(env, store.IndexPath()), plural(len(notes), "note"), state)
 			return nil
 		},
 	}
@@ -344,7 +368,7 @@ func newMemoryAuditCmd(env *Env) *cobra.Command {
 			"is stale.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			store, notes, _, err := loadStoreNotes(env)
+			store, notes, parseErrs, err := loadStoreNotes(env)
 			if err != nil {
 				return err
 			}
@@ -361,6 +385,12 @@ func newMemoryAuditCmd(env *Env) *cobra.Command {
 				}
 			} else {
 				printAuditReport(env, len(notes), stale)
+			}
+			// An unreadable note never reaches Audit, so it cannot show up
+			// as stale; report it as its own failure or the note's absence
+			// from the report reads as "fresh" instead of "unchecked".
+			if len(parseErrs) > 0 {
+				return unreadableNotesErr(parseErrs)
 			}
 			if len(stale) > 0 {
 				return errMemoryStale
