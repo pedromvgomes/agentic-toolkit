@@ -43,8 +43,10 @@ Requires Go 1.26+. The module lives at `source/toolkit/go.mod`, not the repo roo
 - `source/toolkit/cmd/agtk/` — CLI entrypoint
 - `source/toolkit/internal/` — CLI implementation (private packages): `resolver`, `lockfile`,
   `stack`, `definitions`, `sourceref`/`sourcestore` (fetch/cache), `review`/`reviewrun`/`reviewpost`/
-  `reviewapprove` (code-review flow), `curator`, `memory`, `githubapp`, `updater`/`updatecheck`,
-  `adapters` (per-platform render targets, over the shared `adapters/fsops`)
+  `reviewapprove` (code-review flow), `curator`, `memory`, `githubapp`, `relay` (dispatches a
+  registered repository's own workflow to post or approve on behalf of a machine holding no App
+  registration; never imports `githubapp`), `updater`/`updatecheck`, `adapters` (per-platform
+  render targets, over the shared `adapters/fsops`)
 - `definitions/` — the catalog, one directory per category: `agents/`, `commands/`, `hooks/`,
   `instructions/`, `mcp/`, `settings/`, `skills/`. `rules/` is a valid category the schema
   defines and this repo currently ships none of. See
