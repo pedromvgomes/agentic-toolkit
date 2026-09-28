@@ -67,7 +67,7 @@ it is what keeps merge conflicts survivable in a store several branches write to
 ---
 name: lockfile-pins-shas-not-tags
 kind: invariant
-description: Lock resolution pins commit SHAs, never tags.
+description: "Lock resolution pins commit SHAs, never tags."
 anchors:
   - path: internal/resolver/graph.go
 confidence: verified
@@ -82,6 +82,10 @@ reproducibility for consumers. Tried and reverted in [[fetch-retag-attempt]].
 - `confidence` is `verified | suspect`, and is yours alone. Nothing mechanical writes it.
 - `description` is required, and one line. It is what the index shows and what routes a reader
   to the note, so make it say the claim, not the topic.
+- Quote `description`, always, even when nothing in it looks like it needs quoting. An unquoted
+  colon inside the value ends the key early and breaks frontmatter parsing, and that failure
+  mode is not one you can spot by eye before it happens — quoting unconditionally is simpler
+  than deciding case by case whether a given value is safe.
 - **Every claim in the body carries a pointer.** `graph.go:88`, never "the resolver does X".
   That is what makes a note checkable in one `sed -n` instead of a re-exploration, and it is
   the main defence against a stale note being believed.

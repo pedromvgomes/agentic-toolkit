@@ -1,8 +1,9 @@
 # The curator ships in the binary, not as a definition
 
 The curator's prompt lives in `source/toolkit/internal/curator/`, embedded into `agtk`, and there is no
-`memory-curator` agent definition. `agtk memory curate` names the roster and the tool grant
-itself when it invokes the provider. This supersedes the sentence in
+`memory-curator` agent definition. `agtk memory curate` inlines the embedded prompt directly
+into the request and constructs the tool grant itself when it invokes the provider. This
+supersedes the sentence in
 `docs/adr/0002-no-model-calls-in-agtk.md` that says model-driven memory work "ships as agent
 definitions run by whatever agent the repo is configured for, never as subcommands" — for the
 curator. The explorer is still a definition and still runs inside the host session.
@@ -17,10 +18,10 @@ exists on disk.
 ## Considered options
 
 **Read the rendered definition back.** `agtk` wrote `.claude/.agtk-manifest.json` and knows
-where the curator went, so it could read that file and pass its body as the roster's prompt.
-The curator would stay a definition, pinned by the lockfile like everything else. Rejected
-because it makes `curate` unusable on a repo that has not rendered — which includes the repo
-that just adopted memory, the case that most wants curation to work.
+where the curator went, so it could read that file and pass its body as the prompt in place of
+the embedded copy. The curator would stay a definition, pinned by the lockfile like everything
+else. Rejected because it makes `curate` unusable on a repo that has not rendered — which
+includes the repo that just adopted memory, the case that most wants curation to work.
 
 **Keep the definition and embed a copy.** Renders for in-session dispatch, embeds for headless
 runs, one authored source. Rejected because `//go:embed` paths cannot climb out of their
