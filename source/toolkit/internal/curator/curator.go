@@ -16,6 +16,7 @@ package curator
 import (
 	"context"
 	_ "embed"
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -203,6 +204,55 @@ type Result struct {
 	// reported nothing.
 	Model   string
 	CostUSD float64
+	// Report is the run's own account of what it resolved, parsed from the
+	// completion report every run is required to end on. See completionSchema.
+	Report Report
+}
+
+// Report is the curator's completion report: the run's own account of which
+// candidates it ruled on and which notes it wrote to, parsed from
+// Request.Structured rather than scraped out of prose.
+//
+// A run that ends without one is refused before this is ever populated — see
+// completionSchema and the check in Run — so every Result a caller holds
+// carries a Report whose fields, however empty, the run actually reported.
+type Report struct {
+	// CandidatesResolved names every candidate the run ruled on this pass —
+	// promoted, merged or rejected — by id: the filename stem `memory
+	// candidates --json` reports as `name`. A candidate whose note was
+	// retracted belongs here too, alongside NotesRetracted.
+	CandidatesResolved []string
+	// NotesRetracted names every note the run deleted outright, because the
+	// candidate that named it turned out false. A note merely edited, not
+	// deleted, belongs in NotesTouched instead.
+	NotesRetracted []string
+	// NotesTouched names every note the run created or edited. Each one is
+	// expected to have been anchored and re-stamped in the same run — a name
+	// here that was not also anchored is a run that edited a note and left
+	// its staleness signal lying.
+	NotesTouched []string
+}
+
+// completionSchema binds a run's final turn to a machine-readable completion
+// report, so what a run resolved is parsed rather than scraped out of prose.
+// See prompt.md's Report section for what belongs in each field.
+var completionSchema = json.RawMessage(`{
+	"type": "object",
+	"additionalProperties": false,
+	"required": ["candidatesResolved", "notesRetracted", "notesTouched"],
+	"properties": {
+		"candidatesResolved": {"type": "array", "items": {"type": "string"}},
+		"notesRetracted": {"type": "array", "items": {"type": "string"}},
+		"notesTouched": {"type": "array", "items": {"type": "string"}}
+	}
+}`)
+
+// reportWire is the completion report's wire shape, decoded straight off
+// Result.Structured.
+type reportWire struct {
+	CandidatesResolved []string `json:"candidatesResolved"`
+	NotesRetracted     []string `json:"notesRetracted"`
+	NotesTouched       []string `json:"notesTouched"`
 }
 
 // allowedTools is what the curator may do, constructed here rather than
@@ -462,15 +512,36 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		DisallowedTools: denied,
 		PermissionMode:  b.mode,
 		WorkDir:         opts.WorkDir,
+		Schema:          completionSchema,
 	})
 	if err != nil {
 		return Result{}, err
+	}
+	// Checked ahead of and independent of IsError: a schema-bound run with no
+	// payload already comes back with IsError set, on the one provider that
+	// forces the verdict itself — but relaying that would report a generic
+	// failure and lose the one fact that actually explains it, and a provider
+	// that does not force the verdict would otherwise slip an empty Report
+	// past this into a Result nothing populated.
+	if res.Structured == nil {
+		return Result{}, fmt.Errorf(
+			"curator: run produced no completion report; nothing says what it resolved (is_error=%v): %s",
+			res.IsError, strings.TrimSpace(res.Text))
+	}
+	var wire reportWire
+	if err := json.Unmarshal(res.Structured, &wire); err != nil {
+		return Result{}, fmt.Errorf("curator: run produced a completion report that does not parse: %w", err)
 	}
 	return Result{
 		Text:    strings.TrimSpace(res.Text),
 		IsError: res.IsError,
 		Model:   res.Model,
 		CostUSD: res.Usage.CostUSD,
+		Report: Report{
+			CandidatesResolved: wire.CandidatesResolved,
+			NotesRetracted:     wire.NotesRetracted,
+			NotesTouched:       wire.NotesTouched,
+		},
 	}, nil
 }
 

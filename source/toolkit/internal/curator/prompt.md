@@ -144,12 +144,28 @@ to zero makes the session-start digest cry wolf forever.
 
 ## Report
 
-Keep it short and factual.
+Your final turn is exactly this JSON, and nothing else — no prose around it, no markdown fence:
 
+```json
+{
+  "candidatesResolved": ["<candidate id>", "..."],
+  "notesRetracted":     ["<note name>", "..."],
+  "notesTouched":       ["<note name>", "..."]
+}
 ```
-Promoted: <note names>
-Merged:   <candidate> -> <existing note>
-Rejected: <candidate> — <one-line reason>
-Updated:  <note> — <still-true | now-false | unchecked>
-Store:    <n> notes, <n> stale
-```
+
+A candidate's id is its filename stem — the `name` field `agtk memory candidates --json`
+reports, not the file path.
+
+- `candidatesResolved` — every candidate you ruled on this pass: promoted, merged or rejected.
+  A candidate whose note you retracted goes here too, in addition to `notesRetracted` below —
+  the candidate was resolved, and separately, a note came down because of it.
+- `notesRetracted` — every note you deleted outright, because the candidate ruled it
+  `now-false` and there was nothing true left to keep.
+- `notesTouched` — every note you created or edited: a promotion, a merge, a rewritten body, or
+  a re-check you re-stamped. Anything named here is expected to have been anchored in this same
+  run — naming a note here without anchoring it is exactly the silent failure stamping exists
+  to prevent.
+
+Ruled on nothing, changed nothing, retracted nothing? Report it as such — three empty
+arrays is a complete and honest answer, not a report you owe an explanation for.

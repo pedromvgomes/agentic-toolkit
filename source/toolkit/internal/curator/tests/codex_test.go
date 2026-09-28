@@ -11,10 +11,11 @@ import (
 )
 
 // codexEnvelope is one `codex exec --json` stream that ends in a turn the
-// decoder can fold into a Result.
+// decoder can fold into a Result. The final agent message is codex's whole
+// answer to a schema-bound run, so it has to be the completion report itself.
 const codexEnvelope = `{"type":"thread.started","thread_id":"22222222-2222-4222-8222-222222222222"}
 {"type":"turn.started"}
-{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"dry run report"}}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"{\"candidatesResolved\":[],\"notesRetracted\":[],\"notesTouched\":[]}"}}
 {"type":"turn.completed","usage":{"input_tokens":10,"cached_input_tokens":0,"cache_write_input_tokens":0,"output_tokens":2,"reasoning_output_tokens":0}}
 `
 

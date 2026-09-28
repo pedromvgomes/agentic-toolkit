@@ -15,11 +15,28 @@ import (
 // The terminal `result` line of a run. Every provider streams, so a fake's
 // stdout is NDJSON and a whole turn fits on one line; the fields are trimmed to
 // the ones the provider reads.
-const curatedEnvelope = `{"type":"result","subtype":"success","is_error":false,"session_id":"s1","num_turns":4,"total_cost_usd":0.42,"result":"Promoted: lockfile-pins-shas-not-tags\nRejected: 20260905-where-render-lives — re-derivable\nStore: 9 notes, 0 stale","modelUsage":{"claude-opus-5[1m]":{"canonicalModel":"claude-opus-5","inputTokens":12,"cacheReadInputTokens":9000}}}`
+const curatedEnvelope = `{"type":"result","subtype":"success","is_error":false,"session_id":"s1","num_turns":4,"total_cost_usd":0.42,"result":"Promoted: lockfile-pins-shas-not-tags\nRejected: 20260905-where-render-lives — re-derivable\nStore: 9 notes, 0 stale","structured_output":{"candidatesResolved":["lockfile-pins-shas-not-tags","20260905-where-render-lives"],"notesRetracted":[],"notesTouched":["lockfile-pins-shas-not-tags"]},"modelUsage":{"claude-opus-5[1m]":{"canonicalModel":"claude-opus-5","inputTokens":12,"cacheReadInputTokens":9000}}}`
 
-// A failing turn. The CLI reporting its own failure is a verdict, not an
-// outage: the report is populated and carries the explanation.
-const refusedEnvelope = `{"type":"result","subtype":"success","is_error":true,"session_id":"s2","result":"could not reach the store"}`
+// A failing turn that still filed the completion report it owes. The CLI
+// reporting its own failure is a verdict, not an outage: the report is
+// populated and carries the explanation, and the run's account of what it
+// resolved is exactly as empty as a run that did nothing should file.
+const refusedEnvelope = `{"type":"result","subtype":"success","is_error":true,"session_id":"s2","result":"could not reach the store","structured_output":{"candidatesResolved":[],"notesRetracted":[],"notesTouched":[]}}`
+
+// A turn that ends with no completion report at all, whatever the CLI's own
+// verdict on it. Missing entirely rather than null or empty: a run this
+// disconnected from the schema it was bound to could not be trusted to
+// distinguish those either.
+const noReportEnvelope = `{"type":"result","subtype":"success","is_error":false,"session_id":"s3","result":"done"}`
+
+// The same absence of a report, on a turn the CLI itself called a failure —
+// the state a real refusal reaches when it never gets far enough to file one.
+const refusedEnvelopeWithoutReport = `{"type":"result","subtype":"success","is_error":true,"session_id":"s5","result":"could not reach the store"}`
+
+// A well-formed report that resolved nothing. Whether an empty report is
+// CONSISTENT with the store on disk is a different question from whether it
+// parses as a report at all, which is the only thing this package checks.
+const emptyReportEnvelope = `{"type":"result","subtype":"success","is_error":false,"session_id":"s4","result":"nothing cleared the bar","structured_output":{"candidatesResolved":[],"notesRetracted":[],"notesTouched":[]}}`
 
 func run(t *testing.T, stdout string, opts curator.Options) (*agentictest.Fake, curator.Result, error) {
 	t.Helper()
@@ -53,11 +70,18 @@ func TestARunReturnsTheCuratorsReport(t *testing.T) {
 	if res.Model == "" {
 		t.Error("Model is empty; the run's cost is meaningless without the model it was charged for")
 	}
+	if !slices.Contains(res.Report.CandidatesResolved, "lockfile-pins-shas-not-tags") {
+		t.Errorf("Report.CandidatesResolved = %v, want the candidate the run ruled on", res.Report.CandidatesResolved)
+	}
+	if !slices.Contains(res.Report.NotesTouched, "lockfile-pins-shas-not-tags") {
+		t.Errorf("Report.NotesTouched = %v, want the note the run wrote", res.Report.NotesTouched)
+	}
 }
 
 // The CLI declaring the turn a failure is a verdict from the provider, not an
 // error from running it. Discarding the report as an outage loses the only
-// explanation there is.
+// explanation there is — and the run still filed the completion report it
+// owes, which is what tells the two apart from a run that produced neither.
 func TestACuratorsOwnFailureCarriesItsReport(t *testing.T) {
 	_, res, err := run(t, refusedEnvelope, curator.Options{})
 	if err != nil {
@@ -68,6 +92,46 @@ func TestACuratorsOwnFailureCarriesItsReport(t *testing.T) {
 	}
 	if !strings.Contains(res.Text, "could not reach the store") {
 		t.Errorf("Text = %q, want the explanation kept", res.Text)
+	}
+}
+
+// A run that ends with no completion report at all is refused outright,
+// whatever the CLI's own verdict on the turn says — a prose account of what
+// happened is not a substitute for the one thing a caller can act on.
+func TestARunWithNoCompletionReportFails(t *testing.T) {
+	for name, envelope := range map[string]string{
+		"the CLI called it a success": noReportEnvelope,
+		"the CLI called it a failure": refusedEnvelopeWithoutReport,
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, _, err := run(t, envelope, curator.Options{})
+			if err == nil {
+				t.Fatal("a run with no completion report was accepted")
+			}
+			if !strings.Contains(err.Error(), "no completion report") {
+				t.Errorf("error = %v, want it to name the missing report", err)
+			}
+		})
+	}
+}
+
+// Three empty arrays is a well-formed report: it says the run ruled on
+// nothing and changed nothing, which is a complete answer. Whether that
+// answer is consistent with the state of the store on disk is a separate
+// check this package does not make.
+func TestAWellFormedEmptyReportIsAccepted(t *testing.T) {
+	_, res, err := run(t, emptyReportEnvelope, curator.Options{})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	for name, got := range map[string][]string{
+		"CandidatesResolved": res.Report.CandidatesResolved,
+		"NotesRetracted":     res.Report.NotesRetracted,
+		"NotesTouched":       res.Report.NotesTouched,
+	} {
+		if len(got) != 0 {
+			t.Errorf("Report.%s = %v, want empty", name, got)
+		}
 	}
 }
 
