@@ -43,6 +43,13 @@ func newCodeReviewRunCmd(env *Env) *cobra.Command {
 			"review, with event COMMENT. Nothing else is ever posted: approval is a\n" +
 			"separate act with its own subcommand, and no code path from here reaches it.\n" +
 			"\n" +
+			"On a machine holding no App registration at all, a relay named by\n" +
+			"AGTK_CODE_REVIEW_RELAY posts in its place, through a separate,\n" +
+			"already-registered machine, and this command waits on that run instead.\n" +
+			"--force, --full and --json refuse to relay: it carries only the pull request\n" +
+			"and its panel, none of what those flags ask for or what --json promises, so\n" +
+			"posting under any of them still needs this machine's own registration.\n" +
+			"\n" +
 			"--dry-run prints the assembled prompts and the runs that would be made, and\n" +
 			"spends nothing. --no-post runs the panel for real and prints the exact\n" +
 			"request it would have made instead of making it.\n" +

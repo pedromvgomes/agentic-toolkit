@@ -424,21 +424,41 @@ _Avoid_: id, key, hash
 
 **App registration**:
 The GitHub App id and private key one machine holds, in agtk's own config directory. What a
-**Review** is posted as, and what posting or approving one always requires — no environment
-variable substitutes for it there. A read that only needs to see GitHub state, such as
-`explain --pr` or `run --pr` with `--dry-run`/`--no-post`, does not: on a machine holding no
-registration at all it falls back to a token in `GH_TOKEN` or `GITHUB_TOKEN`, while a broken
-or half-written registration still refuses rather than being read around. Registered once per
-machine rather than once per repository, and never written into a repository — a fork, a clone
-or a leaked secret scan has nothing to find. The key is readable by its owner alone, and one
-any other account can read is refused rather than used: the blast radius of an App key is one
-machine, and a key a second account can read makes that untrue.
+**Review** is posted as, and what posting or approving one always requires — on this machine, or
+on a **Relay**'s, since a relay posts through a registration of its own rather than around this
+requirement. A read that only needs to see GitHub state, such as `explain --pr` or `run --pr`
+with `--dry-run`/`--no-post`, needs neither: on a machine holding no registration at all it falls
+back to a token in `GH_TOKEN` or `GITHUB_TOKEN`, while a broken or half-written registration
+still refuses rather than being read around, or relayed around — the same rule both follow.
+Registered once per machine rather than once per repository, and never written into a
+repository — a fork, a clone or a leaked secret scan has nothing to find. The key is readable by
+its owner alone, and one any other account can read is refused rather than used: the blast
+radius of an App key is one machine, and a key a second account can read makes that untrue.
 
 The short-lived installation token minted from it is held in memory for one run and written
 nowhere. It reaches every repository the App is installed on, so it never enters a model's
 process — a **Reviewer** inherits the operator's environment, which is why the token is
 passed as an argument rather than placed in one.
 _Avoid_: secret, credential file, PAT
+
+**Relay**:
+The repository `AGTK_CODE_REVIEW_RELAY=owner/name` names, whose own GitHub Actions workflow
+holds an **App registration** of its own and posts or approves a **Review** through it when this
+machine holds none. `run --pr`'s posting path and `approve` dispatch that workflow and wait on
+the run it starts, in place of refusing, reporting only whether the run succeeded and where —
+never what it posted, which stays on the pull request and in a log this process never reads.
+
+The token that dispatches it (`GH_TOKEN` or `GITHUB_TOKEN`, the same variables a read falls back
+to) reaches only the relay repository — triggering and reading its own Actions runs — and never
+the repository under review; the relay's own workflow is what reaches that repository, through
+its own installation token and the App id and key it holds. A broken or half-written
+registration on this machine still refuses rather than being relayed around, the same rule a
+read follows.
+
+`--force`, `--full` and `--json` are not carried: a relay is dispatched with only the pull
+request and its panel, which cannot express a forced re-review, a full one, or the review detail
+`--json` promises, so posting under any of them still needs this machine's own registration.
+_Avoid_: CI, pipeline, bot job
 
 **Fingerprint marker**:
 The HTML comment a posted inline comment carries its **Fingerprint** in, invisible in

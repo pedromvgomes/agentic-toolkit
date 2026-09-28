@@ -23,6 +23,10 @@ func newCodeReviewApproveCmd(env *Env) *cobra.Command {
 			"request's current head. It counts toward a required approval, which a solo\n" +
 			"author cannot satisfy alone.\n" +
 			"\n" +
+			"On a machine holding no App registration at all, a relay named by\n" +
+			"AGTK_CODE_REVIEW_RELAY approves in its place, through a separate,\n" +
+			"already-registered machine, and this command waits on that run instead.\n" +
+			"\n" +
 			"Granted only when the head carries a review by this installation that reached\n" +
 			"a verdict, every finding at or above the manifest's approval floor is marked a\n" +
 			"false positive on its thread by an account that can push, and every comment\n" +

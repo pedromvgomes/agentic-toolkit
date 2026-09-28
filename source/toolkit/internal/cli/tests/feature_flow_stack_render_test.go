@@ -235,6 +235,25 @@ func TestPanelCodeReviewNamesTheTokenFallbackAndPostingsRequirement(t *testing.T
 	}
 }
 
+// A relay is the one alternative to posting from a registered machine, and
+// --force/--full/--json are not carried by it. A skill silent on either leaves
+// an agent to discover the refusal by running into it.
+func TestPanelCodeReviewNamesTheRelayAndWhatItDoesNotCarry(t *testing.T) {
+	apply := renderFeatureFlowStack(t)
+
+	body, err := os.ReadFile(filepath.Join(apply, ".claude/skills/panel-code-review/SKILL.md"))
+	if err != nil {
+		t.Fatalf("panel-code-review did not reach the consumer: %v", err)
+	}
+	skill := string(body)
+	if !strings.Contains(skill, "AGTK_CODE_REVIEW_RELAY") {
+		t.Error("panel-code-review does not name the relay repository variable")
+	}
+	if !strings.Contains(skill, "--force") || !strings.Contains(skill, "--full") || !strings.Contains(skill, "--json") {
+		t.Error("panel-code-review does not say that --force, --full and --json are not carried by a relay")
+	}
+}
+
 // A review comment is answered on its own thread. gh has no subcommand for
 // that, so a skill that only says "reply" leaves the agent to reach for
 // `gh pr comment`, which posts to the pull request's conversation where the
