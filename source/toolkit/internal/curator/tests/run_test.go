@@ -120,16 +120,16 @@ func TestTheStaleSweepAsksForDifferentWork(t *testing.T) {
 		t.Fatalf("Run --stale: %v", err)
 	}
 
-	backlogArgs := strings.Join(backlog.Recorded(t).Args, " ")
-	sweepArgs := strings.Join(sweep.Recorded(t).Args, " ")
-	if backlogArgs == sweepArgs {
+	backlogPrompt := backlog.Stdin(t)
+	sweepPrompt := sweep.Stdin(t)
+	if backlogPrompt == sweepPrompt {
 		t.Fatal("--stale sent the child the same instruction as the default run")
 	}
-	if !strings.Contains(sweepArgs, "audit") {
-		t.Errorf("the sweep does not point the curator at the stale list: %q", sweepArgs)
+	if !strings.Contains(sweepPrompt, "audit") {
+		t.Errorf("the sweep does not point the curator at the stale list: %q", sweepPrompt)
 	}
-	if !strings.Contains(backlogArgs, "candidates") {
-		t.Errorf("the default run does not point the curator at the backlog: %q", backlogArgs)
+	if !strings.Contains(backlogPrompt, "candidates") {
+		t.Errorf("the default run does not point the curator at the backlog: %q", backlogPrompt)
 	}
 }
 
