@@ -1,15 +1,17 @@
 ---
-about: code-review's GitHub App registration is deliberately machine-local, and posting or approving always needs it; reading a pull request needs it only on a machine that also holds no GH_TOKEN/GITHUB_TOKEN fallback
+about: code-review's GitHub App registration is deliberately machine-local; posting or approving needs it on this machine, or on a configured relay's, but never a bare GH_TOKEN/GITHUB_TOKEN; reading a pull request needs it only on a machine that also holds no such token
 saw:
   - source/toolkit/internal/githubapp/credential.go
   - source/toolkit/internal/cli/codereview_initialize.go
   - source/toolkit/internal/cli/codereview.go
   - source/toolkit/internal/cli/codereview_pr.go
   - source/toolkit/internal/githubapp/client.go
+  - source/toolkit/internal/relay/relay.go
   - docs/adr/0012-reviews-run-locally-not-in-ci.md
   - docs/adr/0009-the-app-can-push-so-that-it-can-approve.md
   - docs/adr/0006-the-judge-decides-agtk-transmits.md
   - docs/adr/0019-a-token-reads-a-pull-request-and-never-posts.md
+  - docs/adr/0020-a-relay-posts-as-the-app-from-a-separate-repository.md
 ---
 
 Investigated for: making `agtk code-review` work in an ephemeral cloud container (fresh
@@ -38,9 +40,12 @@ under `agtk`'s config dir (`userconfig.Dir()`, i.e. `$XDG_CONFIG_HOME/agentic-to
 0700. `Load` refuses (doesn't just warn) if the dir or key file is group/other-accessible. No env
 var of any kind is read inside `githubapp` itself or `cli/codereview_initialize.go` — the App
 credential stays file-based and machine-local, unconditionally. `GH_TOKEN`/`GITHUB_TOKEN` are
-read, but only in `internal/cli` (`clientSeam.token`) and only to build a read-only fallback
-client when no registration exists at all; they never reach `internal/githubapp` and never
-substitute for the App credential on a posting path. The one non-interactive affordance for the
+read, but only in `internal/cli` (`clientSeam.token`), for two purposes that never touch the App
+credential itself: building a read-only fallback client when no registration exists at all, and
+dispatching a configured relay's `workflow_dispatch` (`internal/relay`) when posting refuses for
+the same reason. Neither ever reaches `internal/githubapp`, and a bare token is never itself the
+identity that posts — a relay's own runner posts as the App, through its own registration,
+elsewhere. The one non-interactive affordance for the
 App credential itself is `register --key-stdin`, which reads the PEM from stdin instead of
 `--key-file`, explicitly so a key can come from a secret manager "without being written to disk
 first" — this is the natural hook for a setup script
@@ -50,19 +55,25 @@ at the fixed path/mode afterward (Initialize always writes both files).
 
 **Which subcommands need it.** `resolvePullRequest` (`cli/codereview_pr.go`) builds its client
 only from `clientSeam.client`, i.e. only from the registration, and both a posting `run --pr` and
-`approve` resolve through it — so posting and approving always refuse on an unregistered machine,
-whatever the environment holds. Reads are different: `explain --pr` and `run --pr`'s
-`--dry-run`/`--no-post` paths resolve through `readPullRequest` instead, which reads as the App
-when registered and otherwise falls back to a token from `GH_TOKEN` or `GITHUB_TOKEN`
-(`githubapp.NewReadClient`), built in `internal/cli` rather than `internal/githubapp` so the
-credential-holding package stays source-agnostic (`credential_surface_test.go`'s guard against
-`os.Setenv`/`os.Environ` walks `internal/githubapp` only, not `internal/cli`). The fallback
-triggers only when `githubapp.Unregistered(err)` is true — a broken/partial registration (App id
-present, key missing) still refuses with "register again" rather than being read around. The
-token client's type has no posting method and cannot satisfy `reviewapprove.GitHub`, so a
-read-token reaching a post site is a compile error. See ADR 0019 for the full design and why
-posting was excluded. Bare `explain` (no `--pr`) needs no registration at all — it is local-only
-(manifest, diff profiling), per the comment block at the top of `cli/codereview.go:14-27`.
+`approve` resolve through it — so posting and approving refuse on an unregistered machine unless
+`relayOrRefuse` finds `AGTK_CODE_REVIEW_RELAY` set, in which case it dispatches that repository's
+own workflow instead of refusing (`internal/relay`; ADR 0020). Reads are different: `explain --pr`
+and `run --pr`'s `--dry-run`/`--no-post` paths resolve through `readPullRequest` instead, which
+reads as the App when registered and otherwise falls back to a token from `GH_TOKEN` or
+`GITHUB_TOKEN` (`githubapp.NewReadClient`), built in `internal/cli` rather than `internal/githubapp`
+so the credential-holding package stays source-agnostic (`credential_surface_test.go`'s guard
+against `os.Setenv`/`os.Environ` walks `internal/githubapp` and `internal/relay`, not
+`internal/cli`). Both fallbacks trigger only when `githubapp.Unregistered(err)` is true — a
+broken/partial registration (App id present, key missing) still refuses with "register again"
+rather than being read or relayed around. The token client's type has no posting method and cannot
+satisfy `reviewapprove.GitHub`, so a read-token reaching a post site is a compile error, and
+`internal/relay` never imports `internal/githubapp` at all (an import-graph test enforces this),
+so the package that carries a caller's token to the relay repository cannot reach the App's key
+even by accident. `--force`, `--full` and `--json` refuse to relay rather than silently drop what
+they ask for, since a relay dispatch carries only the pull request, the action and its panel. See
+ADR 0019 for the read fallback's design and ADR 0020 for the relay's. Bare `explain` (no `--pr`)
+needs no registration at all — it is local-only (manifest, diff profiling), per the comment block
+at the top of `cli/codereview.go:14-27`.
 
 **Installation lookup.** One App, no per-repo config: `githubapp.Client.bearer()`
 (`client.go:211-245`) looks up the installation id per-repo lazily via `GET
@@ -71,8 +82,10 @@ it in memory for that process's life, then mints a short-lived installation acce
 separate "reviewer" vs "approver" App — one registration serves `run`, `explain --pr`, and
 `approve`.
 
-**No prior CI/headless design exists.** Found no mention of GitHub Actions, ephemeral runners,
-or env-var-based registration for `code-review` outside ADR 0012, which argues *against* running
-in CI at all (cost of an always-on reviewer, Codex's non-shareable credential) — that argument is
-about the *model* credential, not the GitHub App key, so it doesn't by itself rule out
-registering the App fresh per ephemeral container via a setup script and `--key-stdin`.
+**A CI/headless design now exists, as the relay.** `AGTK_CODE_REVIEW_RELAY=owner/name` names a
+dedicated repository whose own GitHub Actions workflow holds an App registration and reruns
+`agtk code-review run --pr`/`approve` itself (ADR 0020). ADR 0012's argument against running in CI
+was about the *coding-agent* model credential (Codex's non-shareable `auth.json`) needing a shared,
+standing runner — not about the App's own posting credential, which is what the relay provisions
+once, deliberately, in a repository dedicated to nothing else, dispatched per relayed post rather
+than run as a general service.
