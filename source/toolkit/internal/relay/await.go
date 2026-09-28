@@ -62,6 +62,7 @@ func await(ctx context.Context, doer Doer, target Target, d Dispatched, timeout,
 	var lastErr error
 	for {
 		run, found, err := readRun(waitCtx, doer, target, id, name, d.Since)
+		wait := interval
 		switch {
 		case err != nil && waitCtx.Err() != nil:
 			// The wait ended mid-request; the stop below reports why.
@@ -70,6 +71,12 @@ func await(ctx context.Context, doer Doer, target Target, d Dispatched, timeout,
 				return Result{}, fmt.Errorf("read the relay run on %s: %w", target.Slug, err)
 			}
 			lastErr = err
+			// A rate limit is read again no sooner than it clears. Reading
+			// again during the block risks extending it or flagging the
+			// token, and the relay's own run is in no hurry either way.
+			if until := retryAfter(err); until > wait {
+				wait = until
+			}
 		case found:
 			id = run.ID
 			if run.HTMLURL != "" {
@@ -79,10 +86,20 @@ func await(ctx context.Context, doer Doer, target Target, d Dispatched, timeout,
 				return Result{Conclusion: run.Conclusion, URL: url}, nil
 			}
 		}
-		if sleep(waitCtx, interval) != nil {
+		if sleep(waitCtx, wait) != nil {
 			return Result{}, stopped(ctx, target, name, id, url, timeout, lastErr)
 		}
 	}
+}
+
+// retryAfter is how long to wait before reading again, when err is a rate
+// limit naming when it resets, and zero for anything else.
+func retryAfter(err error) time.Duration {
+	var apiErr *Error
+	if !errors.As(err, &apiErr) || apiErr.RetryAfter.IsZero() {
+		return 0
+	}
+	return time.Until(apiErr.RetryAfter)
 }
 
 // readRun reads run id, or, while no run is known, looks for the one named

@@ -219,6 +219,26 @@ func TestAwaitStopsAtAPlainForbidden(t *testing.T) {
 	net.done()
 }
 
+// retryAfter is what decides how long a rate limit is waited out, so its own
+// duration is worth pinning down directly, without engaging await's loop or
+// sleeping out a real rate limit to do it.
+func TestRetryAfterReadsTheResetOffARateLimit(t *testing.T) {
+	reset := time.Now().Add(90 * time.Second)
+	limited := &Error{StatusCode: http.StatusTooManyRequests, RetryAfter: reset}
+	if got := retryAfter(limited); got <= 89*time.Second || got > 90*time.Second {
+		t.Errorf("retryAfter(%+v) = %s, want close to 90s", limited, got)
+	}
+
+	notLimited := &Error{StatusCode: http.StatusNotFound}
+	if got := retryAfter(notLimited); got != 0 {
+		t.Errorf("retryAfter(%+v) = %s, want 0", notLimited, got)
+	}
+
+	if got := retryAfter(errors.New("a transport failure, not GitHub's own refusal")); got != 0 {
+		t.Errorf("retryAfter of a non-API error = %s, want 0", got)
+	}
+}
+
 func TestAwaitGivesUpWhenNoRunAppears(t *testing.T) {
 	never := doerFunc(func(*http.Request) (*http.Response, error) { return answer(200, listJSON()) })
 	start := time.Now()
