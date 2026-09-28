@@ -75,6 +75,10 @@ const dispatchPath = "/repos/acme/relay/actions/workflows/relay.yml/dispatches"
 
 var target = Target{Slug: "acme/relay", Token: "ghp_caller"}
 
+// review is a run request's payload. Opaque to this package, so any non-empty
+// JSON stands in for the review the caller computed.
+const review = `{"review":{"commit_id":"abc","body":"ok","event":"COMMENT","comments":[]},"file_comments":[]}`
+
 // dispatchBody is the body a dispatch sent, decoded.
 type dispatchBody struct {
 	Ref              string            `json:"ref"`
@@ -105,7 +109,7 @@ func TestADispatchStartsTheRelayWorkflowOnMain(t *testing.T) {
 	}}
 	before := time.Now()
 	d, err := Dispatch(context.Background(), net, target,
-		Request{Repo: "acme/widgets", PR: 42, Action: ActionRun})
+		Request{Repo: "acme/widgets", PR: 42, Action: ActionRun, Payload: review})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +138,7 @@ func TestADispatchStartsTheRelayWorkflowOnMain(t *testing.T) {
 	if !body.ReturnRunDetails {
 		t.Error("the dispatch does not ask GitHub to name the run it starts")
 	}
-	want := map[string]string{"repo": "acme/widgets", "pr": "42", "action": "run"}
+	want := map[string]string{"repo": "acme/widgets", "pr": "42", "action": "run", "payload": review}
 	if len(body.Inputs) != len(want) {
 		t.Errorf("inputs are %v, want %v", body.Inputs, want)
 	}
@@ -163,7 +167,7 @@ func TestADispatchCarriesAPanelWhenOneIsGiven(t *testing.T) {
 		{method: http.MethodPost, path: dispatchPath, status: http.StatusNoContent},
 	}}
 	_, err := Dispatch(context.Background(), net, target,
-		Request{Repo: "acme/widgets", PR: 42, Action: ActionRun, Panel: "security"})
+		Request{Repo: "acme/widgets", PR: 42, Action: ActionRun, Panel: "security", Payload: review})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,6 +190,9 @@ func TestADispatchKeepsTheRunGitHubNames(t *testing.T) {
 	if d.RunID != 777 || d.URL != "https://github.com/acme/relay/actions/runs/777" {
 		t.Errorf("the dispatch named run %d at %q, want 777 and its page", d.RunID, d.URL)
 	}
+	if _, ok := decodeDispatch(t, net.bodies[0]).Inputs["payload"]; ok {
+		t.Errorf("an approval was dispatched with a payload: %s", net.bodies[0])
+	}
 }
 
 func TestARefusedDispatchSaysWhatGitHubSaid(t *testing.T) {
@@ -202,7 +209,7 @@ func TestARefusedDispatchSaysWhatGitHubSaid(t *testing.T) {
 			{method: http.MethodPost, path: dispatchPath, status: tc.status, body: tc.body},
 		}}
 		_, err := Dispatch(context.Background(), net, target,
-			Request{Repo: "acme/widgets", PR: 42, Action: ActionRun})
+			Request{Repo: "acme/widgets", PR: 42, Action: ActionRun, Payload: review})
 		var apiErr *Error
 		if !errors.As(err, &apiErr) {
 			t.Fatalf("a %d came back as %v, not a GitHub refusal", tc.status, err)
@@ -220,19 +227,22 @@ func TestARefusedDispatchSaysWhatGitHubSaid(t *testing.T) {
 // inputs, or as a path that addresses something other than the relay's
 // workflow, so none is sent.
 func TestAMalformedDispatchIsNeverSent(t *testing.T) {
-	good := Request{Repo: "acme/widgets", PR: 42, Action: ActionRun}
+	good := Request{Repo: "acme/widgets", PR: 42, Action: ActionRun, Payload: review}
 	for name, tc := range map[string]struct {
 		target Target
 		req    Request
 	}{
-		"no token":             {Target{Slug: "acme/relay", Token: "  "}, good},
-		"relay not owner/name": {Target{Slug: "acme", Token: "t"}, good},
-		"relay with a path":    {Target{Slug: "acme/relay/../other", Token: "t"}, good},
-		"relay with a query":   {Target{Slug: "acme/relay?x=1", Token: "t"}, good},
-		"repo not owner/name":  {target, Request{Repo: "widgets", PR: 42, Action: ActionRun}},
-		"no pull request":      {target, Request{Repo: "acme/widgets", Action: ActionRun}},
-		"unknown action":       {target, Request{Repo: "acme/widgets", PR: 42, Action: "merge"}},
-		"panel on an approval": {target, Request{Repo: "acme/widgets", PR: 42, Action: ActionApprove, Panel: "security"}},
+		"no token":               {Target{Slug: "acme/relay", Token: "  "}, good},
+		"relay not owner/name":   {Target{Slug: "acme", Token: "t"}, good},
+		"relay with a path":      {Target{Slug: "acme/relay/../other", Token: "t"}, good},
+		"relay with a query":     {Target{Slug: "acme/relay?x=1", Token: "t"}, good},
+		"repo not owner/name":    {target, Request{Repo: "widgets", PR: 42, Action: ActionRun, Payload: review}},
+		"no pull request":        {target, Request{Repo: "acme/widgets", Action: ActionRun, Payload: review}},
+		"unknown action":         {target, Request{Repo: "acme/widgets", PR: 42, Action: "merge"}},
+		"panel on an approval":   {target, Request{Repo: "acme/widgets", PR: 42, Action: ActionApprove, Panel: "security"}},
+		"run with no payload":    {target, Request{Repo: "acme/widgets", PR: 42, Action: ActionRun}},
+		"run with a blank one":   {target, Request{Repo: "acme/widgets", PR: 42, Action: ActionRun, Payload: " \n"}},
+		"payload on an approval": {target, Request{Repo: "acme/widgets", PR: 42, Action: ActionApprove, Payload: review}},
 	} {
 		net := &scripted{t: t}
 		if _, err := Dispatch(context.Background(), net, tc.target, tc.req); err == nil {
@@ -240,6 +250,33 @@ func TestAMalformedDispatchIsNeverSent(t *testing.T) {
 		}
 		if _, err := Await(context.Background(), net, tc.target, Dispatched{Request: tc.req}, time.Second); err == nil {
 			t.Errorf("%s: awaited", name)
+		}
+	}
+}
+
+// A run hands the relay the review it posts, and an approval hands it nothing
+// but the pull request: a run without a payload would have the relay post
+// nothing and report success, and a payload on an approval is one the relay
+// never reads. Each refusal says which.
+func TestARequestCarriesAPayloadExactlyWhenItIsARun(t *testing.T) {
+	for _, tc := range []struct {
+		req  Request
+		want string
+	}{
+		{Request{Repo: "acme/widgets", PR: 42, Action: ActionRun}, "carries none"},
+		{Request{Repo: "acme/widgets", PR: 42, Action: ActionApprove, Payload: review}, "takes no payload"},
+	} {
+		err := tc.req.check()
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%+v was checked as %v, want a refusal saying %q", tc.req, err, tc.want)
+		}
+	}
+	for _, ok := range []Request{
+		{Repo: "acme/widgets", PR: 42, Action: ActionRun, Payload: review},
+		{Repo: "acme/widgets", PR: 42, Action: ActionApprove},
+	} {
+		if err := ok.check(); err != nil {
+			t.Errorf("%+v was refused: %v", ok, err)
 		}
 	}
 }

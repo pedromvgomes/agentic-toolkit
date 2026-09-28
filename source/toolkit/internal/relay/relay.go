@@ -1,10 +1,11 @@
 // Package relay has a GitHub Actions workflow in another repository post or
 // approve a review, for a machine that holds no App registration.
 //
-// The workflow's runner holds the App's credential and runs the review itself,
-// from the pull request, as a registered machine would. The caller's token only
-// starts that run and reads how it ended, so nothing reaches the reviewed
-// repository under the caller's identity.
+// The workflow's runner holds the App's credential and makes every call that
+// writes to the reviewed repository, as a registered machine would: it posts a
+// review the caller already computed, or decides and grants an approval
+// itself. The caller's token only starts that run and reads how it ended, so
+// nothing reaches the reviewed repository under the caller's identity.
 //
 // A workflow_dispatch is accepted before the run it starts can be read, so
 // starting a run and learning its outcome are two steps: Dispatch, then Await.
@@ -55,10 +56,9 @@ const (
 	ActionApprove = "approve"
 )
 
-// DefaultTimeout bounds one Await. A relay run is a whole review on a runner
-// GitHub has to schedule and set up first, so the bound is the review's own
-// plus the time to reach it; a wait cut short reports that it stopped, never
-// how the run ended.
+// DefaultTimeout bounds one Await. A relay run is a job on a runner GitHub has
+// to schedule and set up first, so the bound is mostly the time to reach it; a
+// wait cut short reports that it stopped, never how the run ended.
 const DefaultTimeout = 20 * time.Minute
 
 // Doer is the seam the network is reached through, satisfied by *http.Client.
@@ -87,6 +87,14 @@ type Request struct {
 	Action string
 	// Panel overrides the review's panel, and applies only to ActionRun.
 	Panel string
+	// Payload is the review the relay posts, already encoded as JSON by the
+	// caller. It is required for ActionRun and refused for ActionApprove,
+	// which the relay's runner decides from the pull request itself.
+	//
+	// Opaque here: this package carries a caller's token and never learns the
+	// shape of what the App posts, so decoding it is left to the command the
+	// relay's runner feeds it to.
+	Payload string
 }
 
 // Dispatched is what a dispatch leaves to find its run by.
@@ -153,6 +161,9 @@ func Dispatch(ctx context.Context, doer Doer, target Target, req Request) (Dispa
 	if req.Panel != "" {
 		inputs["panel"] = req.Panel
 	}
+	if req.Payload != "" {
+		inputs["payload"] = req.Payload
+	}
 	body := struct {
 		Ref              string            `json:"ref"`
 		Inputs           map[string]string `json:"inputs"`
@@ -199,6 +210,15 @@ func (r Request) check() error {
 	}
 	if r.Panel != "" && r.Action != ActionRun {
 		return fmt.Errorf("a panel applies only to %q, not %q", ActionRun, r.Action)
+	}
+	// A run with nothing to post would have the relay post nothing and report
+	// success, and an approval carrying a payload would have one the relay
+	// never reads.
+	if r.Action == ActionRun && strings.TrimSpace(r.Payload) == "" {
+		return fmt.Errorf("%q hands the relay a review to post, and this request carries none", ActionRun)
+	}
+	if r.Action == ActionApprove && r.Payload != "" {
+		return fmt.Errorf("%q is decided by the relay from the pull request, and takes no payload", ActionApprove)
 	}
 	return nil
 }

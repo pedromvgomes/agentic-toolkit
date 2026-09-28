@@ -49,6 +49,7 @@ func newCodeReviewCmd(env *Env) *cobra.Command {
 	cmd.AddCommand(
 		newCodeReviewRunCmd(env),
 		newCodeReviewApproveCmd(env),
+		newCodeReviewPostCmd(env),
 		newCodeReviewInitializeCmd(env),
 		newCodeReviewInitCmd(env),
 		newCodeReviewExplainCmd(env),

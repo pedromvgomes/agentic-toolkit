@@ -34,7 +34,7 @@ func listJSON(runs ...string) string {
 	return fmt.Sprintf(`{"total_count": %d, "workflow_runs": [%s]}`, len(runs), strings.Join(runs, ","))
 }
 
-var widgets42 = Request{Repo: "acme/widgets", PR: 42, Action: ActionRun}
+var widgets42 = Request{Repo: "acme/widgets", PR: 42, Action: ActionRun, Payload: review}
 
 // doerFunc answers every request the same way, for waits whose number of polls
 // is not the point.
