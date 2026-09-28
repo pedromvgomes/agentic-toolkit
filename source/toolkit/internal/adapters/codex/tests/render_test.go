@@ -425,3 +425,38 @@ func mapKeys(m map[string]any) []string {
 	}
 	return out
 }
+
+// TestRender_RuleIndexSummary: a rule's index entry carries its
+// description; a rule with none falls back to its body's first `# `
+// heading, and a rule with neither renders the bare link with no dangling
+// `: ` after it.
+func TestRender_RuleIndexSummary(t *testing.T) {
+	tmp := t.TempDir()
+
+	plan := makePlan([]resolver.PlannedDefinition{
+		pdRule("described", "described rule", "# Heading ignored\n\nbody\n", "default"),
+		pdRule("headed", "", "intro line\n\n# Headed rule title\n\nbody\n", "default"),
+		pdRule("bare", "", "no heading here\n", "default"),
+	}, "default")
+
+	if err := codex.Render(plan, codex.Options{
+		Scope:       codex.ScopeProject,
+		ProjectRoot: tmp,
+	}); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+
+	agentsMD := mustRead(t, filepath.Join(tmp, "AGENTS.md"))
+	for _, want := range []string{
+		"- [described](.agents/rules/described.md): described rule\n",
+		"- [headed](.agents/rules/headed.md): Headed rule title\n",
+		"- [bare](.agents/rules/bare.md)\n",
+	} {
+		if !strings.Contains(agentsMD, want) {
+			t.Errorf("AGENTS.md missing %q:\n%s", want, agentsMD)
+		}
+	}
+	if strings.Contains(agentsMD, ": \n") {
+		t.Errorf("AGENTS.md carries a dangling `: `:\n%s", agentsMD)
+	}
+}
