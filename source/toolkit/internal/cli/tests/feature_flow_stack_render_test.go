@@ -215,6 +215,26 @@ func TestTheReviewSkillsFixPathRendersAlongsideIt(t *testing.T) {
 	}
 }
 
+// explain --pr can succeed without the App registration; posting cannot. A
+// skill that only names the registered path leaves the unregistered case
+// looking like a dead end, and one that drops the posting requirement lets
+// step 4 come as a surprise after step 3 said the read went fine.
+func TestPanelCodeReviewNamesTheTokenFallbackAndPostingsRequirement(t *testing.T) {
+	apply := renderFeatureFlowStack(t)
+
+	body, err := os.ReadFile(filepath.Join(apply, ".claude/skills/panel-code-review/SKILL.md"))
+	if err != nil {
+		t.Fatalf("panel-code-review did not reach the consumer: %v", err)
+	}
+	skill := string(body)
+	if !strings.Contains(skill, "GH_TOKEN") || !strings.Contains(skill, "GITHUB_TOKEN") {
+		t.Error("panel-code-review does not name the environment tokens explain --pr falls back to")
+	}
+	if !strings.Contains(skill, "Posting or approving a review always needs the registration") {
+		t.Error("panel-code-review does not say that posting and approving still need the App registration")
+	}
+}
+
 // A review comment is answered on its own thread. gh has no subcommand for
 // that, so a skill that only says "reply" leaves the agent to reach for
 // `gh pr comment`, which posts to the pull request's conversation where the
