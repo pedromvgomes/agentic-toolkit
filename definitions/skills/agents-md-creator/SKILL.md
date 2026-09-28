@@ -27,16 +27,20 @@ every other agent pointed at AGENTS.md (directly or via the import) read the sam
 
 ## Workflow
 
-**First, check whether agtk manages this repo.** When the repo root holds `.agentic-toolkit.yaml`, agtk owns every `AGENTS.md`
-and `CLAUDE.md` in the repository — at the root and in every subdirectory — and this skill does not hand-write any of them. Say so,
-and send the content where agtk reads it instead:
+**First, check whether agtk manages this repo.** When the repo root holds `.agentic-toolkit.yaml`, a file agtk renders is changed
+through its source, and a file it does not render is handled exactly as below:
 
-- Repo-wide guidance (commands, layout, boundaries, conventions) goes into the manifest's `context:` file, or, when it sets none, a
-  file under `<root>/instructions/` (`root:` from the manifest, `agentic` by default) with a one-line `description:` frontmatter.
-- Prescriptive rules, and anything true of one module rather than the whole repo, go in `<root>/rules/`, one rule per file with a
-  one-line `description:` frontmatter, the module's path named in its `## Applies to`.
+- The root `CLAUDE.md` is rendered (whenever `claude` is a platform, which includes omitting `platforms:`). Do not write it; put
+  repo-level guidance in the manifest's `context:` file, or, when it sets none, a file under `<root>/instructions/` (`root:` from the
+  manifest, `agentic` by default) with a one-line `description:` frontmatter.
+- The root `AGENTS.md` is rendered only when `platforms:` lists `codex`, and is then off-limits the same way. Otherwise it follows the
+  workflow below, except that its sibling `CLAUDE.md` is the rendered one and is left alone.
+- Rules go in `<root>/rules/`, one rule per file with a one-line `description:` frontmatter, never `.agents/rules/` or
+  `.claude/rules/`. agtk renders the rules index itself, so skip step 5's Rules Pointer.
+- `AGENTS.md` and `CLAUDE.md` in subdirectories are not rendered, so they follow the workflow below unchanged. [#119](https://github.com/pedromvgomes/agentic-toolkit/issues/119) tracks
+  rendering them, and this changes when it lands.
 
-Then run `agtk render`. The workflow below applies only to repos agtk does not manage.
+Run `agtk render` after changing any of those sources.
 
 1. **Analyze the codebase** — Before writing anything, explore the repository to understand its structure,
    tech stack, conventions, and existing documentation (README, CONTRIBUTING, etc.)
