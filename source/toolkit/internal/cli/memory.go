@@ -855,28 +855,7 @@ func newMemoryCurateCmd(env *Env) *cobra.Command {
 				Timeout:  timeout,
 				Limit:    limit,
 			})
-			if err != nil {
-				return err
-			}
-
-			if jsonOut {
-				if err := writeJSON(env, memoryCurateJSON{
-					Version: jsonVersion,
-					Stale:   stale,
-					Failed:  res.IsError,
-					Model:   res.Model,
-					CostUSD: res.CostUSD,
-					Report:  res.Text,
-				}); err != nil {
-					return err
-				}
-			} else {
-				fmt.Fprintln(env.Stdout, res.Text)
-			}
-			if res.IsError {
-				return errMemoryCurate
-			}
-			return nil
+			return reportCurateResult(env, jsonOut, stale, res, err)
 		},
 	}
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit machine-readable JSON output")
@@ -931,6 +910,40 @@ func selfPath(env *Env) string {
 
 // memoryAgent reads `memory.agent` from the entry manifest, the same way and
 // from the same file memoryStore reads `memory.root`.
+// reportCurateResult prints what a curate run produced and decides what the
+// command returns. A verification failure comes back from curator.Run beside
+// a populated Result: Text is the curator's own account of a run the store
+// then contradicted, so it is printed — or carried in the JSON report — before
+// the error that names the mismatch is returned. Every other error returns
+// before Text is ever set, so its emptiness is what tells the two apart.
+func reportCurateResult(env *Env, jsonOut, stale bool, res curator.Result, runErr error) error {
+	if runErr != nil && res.Text == "" {
+		return runErr
+	}
+
+	if jsonOut {
+		if err := writeJSON(env, memoryCurateJSON{
+			Version: jsonVersion,
+			Stale:   stale,
+			Failed:  runErr != nil || res.IsError,
+			Model:   res.Model,
+			CostUSD: res.CostUSD,
+			Report:  res.Text,
+		}); err != nil {
+			return err
+		}
+	} else {
+		fmt.Fprintln(env.Stdout, res.Text)
+	}
+	if runErr != nil {
+		return runErr
+	}
+	if res.IsError {
+		return errMemoryCurate
+	}
+	return nil
+}
+
 func memoryAgent(env *Env) (string, error) {
 	m, err := stack.ParseEntryManifestFile(memoryManifestPath(env))
 	if err != nil {

@@ -158,8 +158,9 @@ type memoryCurateCheckJSON struct {
 type memoryCurateJSON struct {
 	Version int  `json:"version"`
 	Stale   bool `json:"stale"`
-	// Failed is the curator's own verdict on its turn, not an error from
-	// running it: the report is populated either way and carries the reason.
+	// Failed is true for the curator's own verdict on its turn and for a
+	// verification failure the store caught after the fact; either way the
+	// report is populated and carries the reason.
 	Failed  bool    `json:"failed"`
 	Model   string  `json:"model,omitempty"`
 	CostUSD float64 `json:"cost_usd,omitempty"`
