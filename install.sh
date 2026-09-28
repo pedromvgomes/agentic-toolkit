@@ -84,16 +84,39 @@ fi
 
 # ===== version resolution =====
 
-version="${AGTK_VERSION:-}"
-if [ -z "$version" ]; then
+# Resolve "latest" via the github.com web redirect
+# (/releases/latest -> /releases/tag/<tag>) rather than the REST API.
+# api.github.com is rate-limited to 60 unauthenticated requests/hour per
+# IP, which shared-egress sandboxes (CI, cloud dev environments) exhaust
+# easily, and some egress proxies block it outright. The API is kept only
+# as a fallback.
+resolve_latest_redirect() {
+	latest_url="https://github.com/$repo/releases/latest"
+	case "$downloader" in
+		curl) final=$(curl -fsSLI -o /dev/null -w '%{url_effective}' "$latest_url" 2>/dev/null) || return 1 ;;
+		wget) final=$(wget -q -S --spider "$latest_url" 2>&1 | sed -n 's/^[[:space:]]*[Ll]ocation:[[:space:]]*//p' | tail -n 1 | tr -d '\r') ;;
+	esac
+	case "$final" in
+		*/releases/tag/*) printf '%s' "${final##*/releases/tag/}" ;;
+		*) return 1 ;;
+	esac
+}
+
+resolve_latest_api() {
 	api_url="https://api.github.com/repos/$repo/releases/latest"
 	case "$downloader" in
-		curl) tag_line=$(curl -fsSL "$api_url" | grep -E '"tag_name"' | head -n 1) ;;
-		wget) tag_line=$(wget -qO- "$api_url" | grep -E '"tag_name"' | head -n 1) ;;
+		curl) tag_line=$(curl -fsSL "$api_url" 2>/dev/null | grep -E '"tag_name"' | head -n 1) ;;
+		wget) tag_line=$(wget -qO- "$api_url" 2>/dev/null | grep -E '"tag_name"' | head -n 1) ;;
 	esac
 	# Extract the value: "tag_name": "v0.1.0",
-	version=$(printf '%s' "$tag_line" | sed -E 's/.*"tag_name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')
-	[ -n "$version" ] || err "could not resolve latest release tag from $api_url"
+	printf '%s' "$tag_line" | sed -E 's/.*"tag_name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/'
+}
+
+version="${AGTK_VERSION:-}"
+if [ -z "$version" ]; then
+	version=$(resolve_latest_redirect || true)
+	[ -n "$version" ] || version=$(resolve_latest_api || true)
+	[ -n "$version" ] || err "could not resolve latest release tag (set AGTK_VERSION=vX.Y.Z to pin one)"
 fi
 case "$version" in
 	v*) ;;
