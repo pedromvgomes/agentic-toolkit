@@ -7,9 +7,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/pedromvgomes/agentic-toolkit/internal/githubapp"
+	"github.com/pedromvgomes/agentic-toolkit/internal/reviewapprove"
 )
 
 // credentialPackage is where the GitHub App key and the installation tokens
@@ -24,6 +28,11 @@ var credentialSurface = []string{
 	"source/toolkit/internal/reviewpost",
 	"source/toolkit/internal/reviewapprove",
 }
+
+// environmentSurface is every package a token passes through: the credential
+// surface, and the command layer, which reads a token from GH_TOKEN or
+// GITHUB_TOKEN on a machine holding no App registration.
+var environmentSurface = append(append([]string{}, credentialSurface...), "source/toolkit/internal/cli")
 
 // mustResolve fails the calling test unless importPath names a package that
 // resolves.
@@ -79,7 +88,7 @@ func TestTheCredentialIsNeverPutIntoTheProcessEnvironment(t *testing.T) {
 	repo := repoRoot(t)
 	var offenders []string
 	fset := token.NewFileSet()
-	for _, dir := range credentialSurface {
+	for _, dir := range environmentSurface {
 		err := filepath.Walk(filepath.Join(repo, dir), func(path string, info os.FileInfo, err error) error {
 			if err != nil || info.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 				return err
@@ -301,5 +310,28 @@ func TestNothingInTheBinaryWritesToARepository(t *testing.T) {
 	}
 	if len(offenders) > 0 {
 		t.Errorf("the binary names an endpoint that writes to a repository; the App holds contents: write only so that its approvals count: %v", offenders)
+	}
+}
+
+// A token from the environment belongs to whoever set it, not to the App, and
+// a review posted under it is invisible to the reads that decide which head was
+// reviewed, which thread is a finding's and what approval may count.
+//
+// So the client a token builds reads and does nothing else. The compiler
+// already refuses it at every call site that posts; this keeps a write method
+// from being added to it, which would make that refusal a matter of nobody
+// calling it.
+func TestATokenClientReadsAndNothingElse(t *testing.T) {
+	read := reflect.TypeFor[*githubapp.ReadClient]()
+	if read.Implements(reflect.TypeFor[reviewapprove.GitHub]()) {
+		t.Errorf("%s satisfies reviewapprove.GitHub, so a token could approve a pull request", read)
+	}
+	if read.NumMethod() == 0 {
+		t.Fatalf("%s has no methods, so this guard asserts nothing", read)
+	}
+	for i := range read.NumMethod() {
+		if name := read.Method(i).Name; !strings.HasPrefix(name, "Read") {
+			t.Errorf("%s has %s, and everything a token client does is a read", read, name)
+		}
 	}
 }

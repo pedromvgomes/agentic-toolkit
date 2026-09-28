@@ -54,6 +54,12 @@ type Client struct {
 	installation int64
 	token        string
 	tokenExpiry  time.Time
+
+	// static is a token the caller supplied, spent as it is in place of an
+	// installation token. Set only on the Client a ReadClient holds, which is
+	// never handed out: nothing outside this package can reach a Client that
+	// writes with a token that is not the App's.
+	static string
 }
 
 // Option configures a Client.
@@ -80,6 +86,72 @@ func NewClient(cred *Credential, slug string, opts ...Option) *Client {
 		opt(c)
 	}
 	return c
+}
+
+// ReadClient reads one repository's pull requests with a token the caller
+// supplies, for a machine that holds no App registration.
+//
+// It has no method that writes, and the Client inside it is unexported, so it
+// cannot reach a call site that posts: reviewapprove.GitHub and a run's
+// CreateReview and CreateFileComment all fail to compile against it. That is a
+// property of the type rather than a check at the call, because a review
+// posted under any identity but the App's is invisible to the ByViewer reads
+// that decide which head was reviewed, which thread is a finding's, and what
+// approval may count.
+type ReadClient struct {
+	c *Client
+}
+
+// NewReadClient builds a client that reads slug with token.
+func NewReadClient(token, slug string, opts ...Option) (*ReadClient, error) {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return nil, errors.New("no GitHub token to read with")
+	}
+	c := NewClient(nil, slug, opts...)
+	c.static = token
+	return &ReadClient{c: c}, nil
+}
+
+// ReadPullRequest fetches one pull request's commits and refs.
+func (r *ReadClient) ReadPullRequest(ctx context.Context, number int) (PullRequest, error) {
+	return r.c.ReadPullRequest(ctx, number)
+}
+
+// ReadReviewThreads reads every comment thread on a pull request, none of them
+// by the viewer.
+//
+// ByViewer means the App's installation wrote the comment, and the viewer here
+// is whoever owns the token. Left as GitHub answers it, a token belonging to
+// the change's author would make the author's own comments read as the App's
+// fingerprints, and a finding would be withheld on the author's say-so.
+func (r *ReadClient) ReadReviewThreads(ctx context.Context, number int) ([]ReviewThread, error) {
+	threads, err := r.c.ReadReviewThreads(ctx, number)
+	if err != nil {
+		return nil, err
+	}
+	for i := range threads {
+		threads[i].ByViewer = false
+	}
+	return threads, nil
+}
+
+// ReadSubmittedReviews reads every review on a pull request, none of them by
+// the viewer.
+//
+// Cleared for the reason ReadReviewThreads clears it: a review marker is
+// believed only from the App, and the token's owner is not the App. Every
+// review therefore reads as somebody else's, which costs a re-review of work
+// the App already did and never suppresses one it did not.
+func (r *ReadClient) ReadSubmittedReviews(ctx context.Context, number int) ([]SubmittedReview, error) {
+	reviews, err := r.c.ReadSubmittedReviews(ctx, number)
+	if err != nil {
+		return nil, err
+	}
+	for i := range reviews {
+		reviews[i].ByViewer = false
+	}
+	return reviews, nil
 }
 
 // Error is a refusal GitHub made, carrying enough to say which one.
@@ -209,6 +281,9 @@ func rateLimitReset(res *http.Response) time.Time {
 // bearer returns an installation token, minting one when none is held or the
 // one held is close enough to expiry to be a hazard.
 func (c *Client) bearer(ctx context.Context) (string, error) {
+	if c.static != "" {
+		return c.static, nil
+	}
 	// Refreshed before the token actually expires, because the check and the
 	// request that uses it are not the same instant and a review post is the
 	// one call that must not be retried.

@@ -20,8 +20,9 @@ import (
 // and fetches its head, because base, head and context are what naming a pull
 // request decides, and none of the three is knowable without asking GitHub. So
 // bare `explain` is safe on the path of a hook and `explain --pr` is not: it
-// needs the App registration, and it fails without one before a panel has run
-// rather than after.
+// needs the App registration or, on a machine holding none, a token in
+// GH_TOKEN or GITHUB_TOKEN, and it fails without either before a panel has run
+// rather than after. Posting and approving take the registration alone.
 //
 // `run` is the one subcommand that invokes a model, and it reaches one through
 // internal/reviewrun rather than by constructing a driver here.
@@ -172,8 +173,9 @@ func newCodeReviewExplainCmd(env *Env) *cobra.Command {
 			"\n" +
 			"--pr answers it for an open pull request, under the rules its base ref\n" +
 			"declares. That reads the pull request and fetches its head, so it needs the\n" +
-			"App registration `code-review register` writes; without --pr nothing is\n" +
-			"read but this repository.",
+			"App registration `code-review register` writes or, on a machine holding\n" +
+			"none, a token in GH_TOKEN or GITHUB_TOKEN that can read the repository;\n" +
+			"without --pr nothing is read but this repository.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCodeReviewExplain(cmd, env, target, asJSON, seam)
@@ -237,7 +239,7 @@ func explainPullRequest(cmd *cobra.Command, env *Env, target reviewTarget, asJSO
 	if err != nil {
 		return fmt.Errorf("locate the repository: %w", err)
 	}
-	t, err := resolvePullRequest(cmd.Context(), root, target.pr, seam)
+	t, err := readPullRequest(cmd.Context(), root, target.pr, seam)
 	if err != nil {
 		return err
 	}
@@ -249,7 +251,7 @@ func explainPullRequest(cmd *cobra.Command, env *Env, target reviewTarget, asJSO
 
 	// The scope a plain run would choose, so the panel explained is the one
 	// that run would get: a re-review is sized from the narrower diff.
-	reviews, reviewsErr := t.client.ReadSubmittedReviews(cmd.Context(), t.pr.Number)
+	reviews, reviewsErr := t.reader.ReadSubmittedReviews(cmd.Context(), t.pr.Number)
 	t.scope = chooseScope(root, t, reviews, reviewsErr, false)
 
 	profile, err := review.BuildProfile(review.ProfileOptions{

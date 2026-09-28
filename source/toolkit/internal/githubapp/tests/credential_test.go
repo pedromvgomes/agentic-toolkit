@@ -120,11 +120,17 @@ func TestAMachineWithNoRegistrationSaysHowToMakeOne(t *testing.T) {
 	if !strings.Contains(err.Error(), "code-review register") {
 		t.Errorf("the refusal does not name the command that fixes it: %v", err)
 	}
+	if !githubapp.Unregistered(err) {
+		t.Errorf("a machine with no registration at all does not read as Unregistered: %v", err)
+	}
 }
 
 // A half-written registration is a different failure from an absent one, and
 // both have to name the command that repairs them rather than failing on a
-// missing file.
+// missing file. Unregistered is what a caller asks to tell the two apart, and
+// it must answer false here even though the error still matches
+// ErrNotInitialized — a fallback keyed on Unregistered must not read around a
+// registration somebody started.
 func TestAnAppIDWithNoKeyIsReportedAsAnIncompleteRegistration(t *testing.T) {
 	dir := register(t, 9, pkcs1PEM(t))
 	if err := os.Remove(filepath.Join(dir, githubapp.KeyFile)); err != nil {
@@ -133,6 +139,23 @@ func TestAnAppIDWithNoKeyIsReportedAsAnIncompleteRegistration(t *testing.T) {
 	_, err := githubapp.Load(dir)
 	if !errors.Is(err, githubapp.ErrNotInitialized) {
 		t.Fatalf("a registration with no key reports %v, want ErrNotInitialized", err)
+	}
+	if !errors.Is(err, githubapp.ErrIncompleteRegistration) {
+		t.Errorf("a registration with no key does not match ErrIncompleteRegistration: %v", err)
+	}
+	if githubapp.Unregistered(err) {
+		t.Errorf("a half-written registration reads as Unregistered: %v", err)
+	}
+}
+
+// Unregistered itself, on the two inputs a caller has no registration path
+// for: no error at all, and an error carrying neither sentinel.
+func TestUnregisteredIsFalseWithoutErrNotInitialized(t *testing.T) {
+	if githubapp.Unregistered(nil) {
+		t.Error("a nil error reads as Unregistered")
+	}
+	if githubapp.Unregistered(errors.New("some other failure")) {
+		t.Error("an unrelated error reads as Unregistered")
 	}
 }
 
