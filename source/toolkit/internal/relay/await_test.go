@@ -335,6 +335,27 @@ func TestReadRunPrefersTheLowerIDWhenTwoRunsTieOnCreatedAt(t *testing.T) {
 	}
 }
 
+// Two entries can share both an id and a created_at when GitHub's own list
+// repeats one. The boundary itself, id < match.id, is false on a tie, so the
+// first entry seen stays the match rather than being overwritten by a later
+// duplicate of itself.
+func TestReadRunKeepsTheFirstEntryWhenTwoShareIDAndCreatedAt(t *testing.T) {
+	when := time.Now()
+	net := &scripted{t: t, exchanges: []exchange{
+		{method: http.MethodGet, path: listPath, status: 200, body: listJSON(
+			runJSON(900, "queued", "", "run acme/widgets#42", when),
+			runJSON(900, "in_progress", "", "run acme/widgets#42", when),
+		)},
+	}}
+	run, found, err := readRun(context.Background(), net, target, 0, "run acme/widgets#42", when)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !found || run.Status != "queued" {
+		t.Errorf("readRun chose %+v (found=%v), want the first-seen entry for run 900", run, found)
+	}
+}
+
 // A server failure is read past because the relay's run goes on regardless,
 // and a refusal below it is not: the two are told apart at the boundary
 // itself, 500, not somewhere comfortably past it.

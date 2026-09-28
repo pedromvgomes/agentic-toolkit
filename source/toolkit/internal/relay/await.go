@@ -74,7 +74,7 @@ func await(ctx context.Context, doer Doer, target Target, d Dispatched, timeout,
 			// A rate limit is read again no sooner than it clears. Reading
 			// again during the block risks extending it or flagging the
 			// token, and the relay's own run is in no hurry either way.
-			if until := retryAfter(err); until > wait {
+			if until := retryAfter(err); until > wait { // [lydite:exclude_from_mutation][conditional-boundary ">" -> ">=": at until == wait, "wait = until" assigns wait its own current value, so the two operators behave identically at the tie]
 				wait = until
 			}
 		case found:
