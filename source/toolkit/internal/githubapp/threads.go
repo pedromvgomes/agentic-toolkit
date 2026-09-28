@@ -140,9 +140,20 @@ func (c *Client) readReviewThreadsGraphQL(ctx context.Context, owner, repo strin
 // readReviewThreadsViaProxy reads every comment thread's resolved/outdated
 // state and its root comment's body and author, over the substitute route a
 // blocked GraphQL query is told to use.
+//
+// Refused, rather than answered short, when the substitute thread list does
+// not account for every comment the pull request's own paginated comment
+// list reports: see checkThreadNodesComplete.
 func (c *Client) readReviewThreadsViaProxy(ctx context.Context, owner, repo string, number int) ([]ReviewThread, error) {
 	nodes, err := c.readThreadNodesViaProxy(ctx, owner, repo, number)
 	if err != nil {
+		return nil, err
+	}
+	comments, err := c.readAllPRComments(ctx, owner, repo, number)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkThreadNodesComplete(nodes, comments); err != nil {
 		return nil, err
 	}
 	viewer, err := c.viewerLogin(ctx)
@@ -155,9 +166,10 @@ func (c *Client) readReviewThreadsViaProxy(ctx context.Context, owner, repo stri
 		if len(node.CommentIDs) > 0 {
 			// The root is the first comment ever made on the thread; the
 			// substitute route reports comment ids in that order.
-			root, err := c.readComment(ctx, owner, repo, node.CommentIDs[0])
-			if err != nil {
-				return nil, err
+			root, ok := comments[node.CommentIDs[0]]
+			if !ok {
+				return nil, fmt.Errorf("the thread on %s names comment %d, which is not among %s#%d's comments",
+					node.Path, node.CommentIDs[0], c.slug, number)
 			}
 			thread.Body = root.Body
 			thread.ByViewer = viewer != "" && root.User.Login == viewer

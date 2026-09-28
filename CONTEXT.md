@@ -362,6 +362,12 @@ cleared by changing the code, and a wrong **Finding** by saying so on the PR, an
 only two ways: there is no flag that approves anyway, because one would make the whole of this
 a checklist rather than a control.
 
+A **Review** here is presumed to be what a panel actually produced. The one exception is a
+**Relay**'s `run --pr` leg, which posts a review this process computed elsewhere and never runs
+one itself — see **Relay**'s own note on the trust that requires and the condition it depends on.
+
+
+
 Never reachable from a review run. No model decides it, no tool grant contains it, and the
 **Judge** cannot reach it: a run that could approve the code it just reviewed is the hazard
 GitHub blocks `GITHUB_TOKEN` approvals to prevent. The person types the command.

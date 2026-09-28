@@ -1066,6 +1066,26 @@ func approvePR(t *testing.T, work string, seam clientSeam) (string, error) {
 
 // AGTK_CODE_REVIEW_RELAY is read with surrounding whitespace dropped, and one
 // holding only whitespace names no relay.
+// A reviewer's own credential is Ambient — agentic-driver's default, and the
+// only mode this package asks for — so its child process inherits this
+// process's whole environment. Nothing a reviewer reads has a legitimate use
+// for this machine's own GitHub token or the relay it would otherwise
+// dispatch to, so both are gone from the process environment before any
+// reviewer could start.
+func TestScrubDispatchSecretsRemovesEveryDispatchVariable(t *testing.T) {
+	t.Setenv("GH_TOKEN", "ghp_secret")
+	t.Setenv("GITHUB_TOKEN", "ghp_also_secret")
+	t.Setenv("AGTK_CODE_REVIEW_RELAY", "acme/relay")
+
+	scrubDispatchSecrets()
+
+	for _, name := range []string{"GH_TOKEN", "GITHUB_TOKEN", "AGTK_CODE_REVIEW_RELAY"} {
+		if v, ok := os.LookupEnv(name); ok {
+			t.Errorf("%s is still set to %q after scrubbing", name, v)
+		}
+	}
+}
+
 func TestTheRelayComesFromAgtkCodeReviewRelay(t *testing.T) {
 	for _, tc := range []struct {
 		vars           map[string]string

@@ -712,12 +712,35 @@ func runCodeReviewPR(cmd *cobra.Command, env *Env, target reviewTarget, flags ru
 		return nil
 	}
 
+	scrubDispatchSecrets()
 	result, err := reviewrun.Run(cmd.Context(), opts)
 	if err != nil {
 		return err
 	}
 	payload, place := reviewpost.Build(result, t.pr, t.added)
 	return deliverReview(cmd.Context(), env, t, result, payload, place, route, flags)
+}
+
+// scrubDispatchSecrets removes every environment variable this process reads
+// to reach GitHub as this machine, before any reviewer is started.
+//
+// A reviewer's own credential is unrelated to any of these — it authenticates
+// a coding-agent CLI, never this tool's own GitHub access — but agentic-driver's
+// Ambient credentials, the only mode this package asks for, hand a reviewer's
+// child process this process's entire environment. A reviewer reads the diff
+// under review before anything has judged whether to trust it, so an
+// instruction embedded in that diff has no legitimate way to reach the
+// caller's own token or the relay this machine would otherwise dispatch to;
+// removing them here is what makes that true regardless of the sandbox a
+// provider gives its own child. Everything that needs one of these has
+// already read it by the time a panel starts: a pull request's target is
+// resolved, its prior reviews and threads are read, and a relay route, if
+// there is one, already holds its own token rather than this process's
+// environment.
+func scrubDispatchSecrets() {
+	for _, name := range []string{"GH_TOKEN", "GITHUB_TOKEN", relayVariable} {
+		_ = os.Unsetenv(name)
+	}
 }
 
 // deliverReview does what a finished review of a pull request calls for:

@@ -141,6 +141,7 @@ func runCodeReviewRun(cmd *cobra.Command, env *Env, target reviewTarget, flags r
 		return nil
 	}
 
+	scrubDispatchSecrets()
 	result, err := reviewrun.Run(cmd.Context(), opts)
 	if err != nil {
 		return err

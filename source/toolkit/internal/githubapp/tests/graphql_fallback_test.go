@@ -2,6 +2,7 @@ package tests
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
@@ -11,8 +12,7 @@ import (
 
 const (
 	ccrThreadsPath = "/repos/acme/widgets/pulls/7/ccr/review_threads"
-	commentPath1   = "/repos/acme/widgets/pulls/comments/1"
-	commentPath2   = "/repos/acme/widgets/pulls/comments/2"
+	prCommentsPath = "/repos/acme/widgets/pulls/7/comments"
 )
 
 // blockedByProxy is the refusal GitHub's own API answers a GraphQL query with
@@ -42,9 +42,29 @@ func TestAnOrdinaryGraphQLRefusalIsNeverRetriedOverTheSubstituteRoute(t *testing
 	}
 }
 
+// prComments renders one page of the substitute route's paginated comment
+// list, the batch both proxy readers fill a thread's root and replies from.
+func prComments(comments ...string) string {
+	return "[" + strings.Join(comments, ",") + "]"
+}
+
+// prComment renders one comment as the substitute route's ordinary,
+// paginated comments endpoint reports it.
+func prComment(id int64, body, login, authorAssociation string) string {
+	raw, err := json.Marshal(map[string]any{
+		"id": id, "body": body, "author_association": authorAssociation,
+		"user": map[string]any{"login": login},
+	})
+	if err != nil {
+		panic(err)
+	}
+	return string(raw)
+}
+
 // Threads read over the substitute route carry the same resolved/outdated
-// state and root body/author GraphQL would have, filled in from the ordinary
-// REST endpoints the substitute route's comment ids point at.
+// state and root body/author GraphQL would have, filled in from one
+// paginated read of the pull request's own comments rather than one REST
+// call per comment id.
 func TestReadReviewThreadsFallsBackToTheSubstituteRouteWhenGraphQLIsBlocked(t *testing.T) {
 	c, net := client(t, append(append(auth(far()), blockedByProxy()),
 		exchange{method: http.MethodGet, path: ccrThreadsPath, status: 200, body: `[` +
@@ -52,11 +72,11 @@ func TestReadReviewThreadsFallsBackToTheSubstituteRouteWhenGraphQLIsBlocked(t *t
 			`{"resolved":true,"outdated":false,"path":"b.go","comment_ids":[2]},` +
 			`{"resolved":false,"outdated":true,"path":"c.go","comment_ids":[]}` +
 			`]`},
+		exchange{method: http.MethodGet, path: prCommentsPath, status: 200, body: prComments(
+			prComment(1, "open by the app", "agtk-code-review[bot]", ""),
+			prComment(2, "resolved by a person", "someone", ""),
+		)},
 		appLogin(),
-		exchange{method: http.MethodGet, path: commentPath1, status: 200,
-			body: `{"body":"open by the app","user":{"login":"agtk-code-review[bot]"}}`},
-		exchange{method: http.MethodGet, path: commentPath2, status: 200,
-			body: `{"body":"resolved by a person","user":{"login":"someone"}}`},
 	)...)
 
 	threads, err := c.ReadReviewThreads(context.Background(), 7)
@@ -88,8 +108,9 @@ func TestAReadClientClearsByViewerOnThreadsReadOverTheSubstituteRoute(t *testing
 	threads, net := readClient(t, blockedByProxy(),
 		exchange{method: http.MethodGet, path: ccrThreadsPath, status: 200, body: `[` +
 			`{"resolved":false,"outdated":false,"path":"a.go","comment_ids":[1]}]`},
-		exchange{method: http.MethodGet, path: commentPath1, status: 200,
-			body: `{"body":"looks like the app","user":{"login":"agtk-code-review[bot]"}}`},
+		exchange{method: http.MethodGet, path: prCommentsPath, status: 200, body: prComments(
+			prComment(1, "looks like the app", "agtk-code-review[bot]", ""),
+		)},
 	)
 	got, err := threads.ReadReviewThreads(context.Background(), 7)
 	if err != nil {
@@ -99,12 +120,34 @@ func TestAReadClientClearsByViewerOnThreadsReadOverTheSubstituteRoute(t *testing
 	if len(got) != 1 || got[0].ByViewer {
 		t.Errorf("a token client read a thread as ByViewer over the substitute route: %+v", got)
 	}
-	// The blocked GraphQL query, the substitute route, and the root comment's
-	// body — and no fourth call resolving an App login this client has no use
-	// for, since net.done() below requires every scripted call to be made and
-	// no more: a fourth call here would be one this test never scripted.
+	// The blocked GraphQL query, the substitute route, and the paginated
+	// comment read — and no fourth call resolving an App login this client
+	// has no use for, since net.done() below requires every scripted call to
+	// be made and no more: a fourth call here would be one this test never
+	// scripted.
 	if len(net.seen) != 3 {
 		t.Errorf("a token client made %d call(s), want exactly the 3 scripted", len(net.seen))
+	}
+}
+
+// A substitute thread list missing a comment the pull request's own,
+// paginated comment list reports is refused rather than answered short: the
+// route it comes from answers unpaginated, unlike the GraphQL connection it
+// replaces, so a caller has no other way to notice a partial answer.
+func TestAThreadListMissingAKnownCommentIsRefused(t *testing.T) {
+	c, net := client(t, append(append(auth(far()), blockedByProxy()),
+		exchange{method: http.MethodGet, path: ccrThreadsPath, status: 200, body: `[` +
+			`{"resolved":false,"outdated":false,"path":"a.go","comment_ids":[1]}]`},
+		exchange{method: http.MethodGet, path: prCommentsPath, status: 200, body: prComments(
+			prComment(1, "open by the app", "agtk-code-review[bot]", ""),
+			prComment(2, "an open reply the thread list never named", "someone", "OWNER"),
+		)},
+	)...)
+
+	_, err := c.ReadReviewThreads(context.Background(), 7)
+	net.done()
+	if err == nil || !strings.Contains(err.Error(), "2") {
+		t.Fatalf("a thread list missing comment 2 was %v, want a refusal naming it", err)
 	}
 }
 
@@ -116,11 +159,11 @@ func TestReadAnsweredThreadsFallsBackToTheSubstituteRouteWhenGraphQLIsBlocked(t 
 	c, net := client(t, append(append(auth(far()), blockedByProxy()),
 		exchange{method: http.MethodGet, path: ccrThreadsPath, status: 200, body: `[` +
 			`{"resolved":false,"outdated":false,"path":"a.go","comment_ids":[1,2]}]`},
+		exchange{method: http.MethodGet, path: prCommentsPath, status: 200, body: prComments(
+			prComment(1, "a finding", "agtk-code-review[bot]", ""),
+			prComment(2, "not a defect", "someone", "OWNER"),
+		)},
 		appLogin(),
-		exchange{method: http.MethodGet, path: commentPath1, status: 200,
-			body: `{"body":"a finding","user":{"login":"agtk-code-review[bot]"}}`},
-		exchange{method: http.MethodGet, path: commentPath2, status: 200,
-			body: `{"body":"not a defect","author_association":"OWNER","user":{"login":"someone"}}`},
 	)...)
 
 	threads, err := c.ReadAnsweredThreads(context.Background(), 7)
@@ -141,15 +184,35 @@ func TestReadAnsweredThreadsFallsBackToTheSubstituteRouteWhenGraphQLIsBlocked(t 
 	}
 }
 
+// A substitute thread list missing a comment is refused for approval's own
+// read exactly as it is for a review run's: approval trusts "no thread was
+// found open" only when the list it read from is known whole.
+func TestReadAnsweredThreadsRefusesAThreadListMissingAKnownComment(t *testing.T) {
+	c, net := client(t, append(append(auth(far()), blockedByProxy()),
+		exchange{method: http.MethodGet, path: ccrThreadsPath, status: 200, body: `[]`},
+		exchange{method: http.MethodGet, path: prCommentsPath, status: 200, body: prComments(
+			prComment(1, "an open thread no node named", "someone", "OWNER"),
+		)},
+	)...)
+
+	_, err := c.ReadAnsweredThreads(context.Background(), 7)
+	net.done()
+	if err == nil || !strings.Contains(err.Error(), "1") {
+		t.Fatalf("a thread list missing comment 1 was %v, want a refusal naming it", err)
+	}
+}
+
 // The App's own bot login costs one request the first time ByViewer needs
 // it, and is reused rather than resolved again on a second read from the
 // same client.
 func TestTheAppLoginIsResolvedOnceAndReused(t *testing.T) {
 	c, net := client(t, append(append(auth(far()), blockedByProxy()),
 		exchange{method: http.MethodGet, path: ccrThreadsPath, status: 200, body: `[]`},
+		exchange{method: http.MethodGet, path: prCommentsPath, status: 200, body: `[]`},
 		appLogin(),
 		blockedByProxy(),
 		exchange{method: http.MethodGet, path: ccrThreadsPath, status: 200, body: `[]`},
+		exchange{method: http.MethodGet, path: prCommentsPath, status: 200, body: `[]`},
 	)...)
 
 	if _, err := c.ReadReviewThreads(context.Background(), 7); err != nil {

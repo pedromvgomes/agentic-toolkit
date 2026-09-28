@@ -204,9 +204,22 @@ func (c *Client) readAnsweredThreadsGraphQL(ctx context.Context, owner, repo str
 // readAnsweredThreadsViaProxy reads every comment thread, its root comment
 // and its replies, over the substitute route a blocked GraphQL query is
 // told to use.
+//
+// Refused, rather than answered short, when the substitute thread list does
+// not account for every comment the pull request's own paginated comment
+// list reports: see checkThreadNodesComplete. Approval reads threads only
+// through this path, so failing here is what keeps a partial answer from
+// ever reading as "no thread is open".
 func (c *Client) readAnsweredThreadsViaProxy(ctx context.Context, owner, repo string, number int) ([]AnsweredThread, error) {
 	nodes, err := c.readThreadNodesViaProxy(ctx, owner, repo, number)
 	if err != nil {
+		return nil, err
+	}
+	comments, err := c.readAllPRComments(ctx, owner, repo, number)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkThreadNodesComplete(nodes, comments); err != nil {
 		return nil, err
 	}
 	viewer, err := c.viewerLogin(ctx)
@@ -219,9 +232,10 @@ func (c *Client) readAnsweredThreadsViaProxy(ctx context.Context, owner, repo st
 			ReviewThread: ReviewThread{Path: node.Path, Resolved: node.Resolved, Outdated: node.Outdated},
 		}
 		for i, id := range node.CommentIDs {
-			comment, err := c.readComment(ctx, owner, repo, id)
-			if err != nil {
-				return nil, err
+			comment, ok := comments[id]
+			if !ok {
+				return nil, fmt.Errorf("the thread on %s names comment %d, which is not among %s#%d's comments",
+					node.Path, id, c.slug, number)
 			}
 			// The root is the first comment ever made on the thread; the
 			// substitute route reports comment ids in that order. A reply
