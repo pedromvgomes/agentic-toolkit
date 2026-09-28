@@ -93,6 +93,91 @@ func TestANoteChangedOnDiskButNotReportedFails(t *testing.T) {
 	}
 }
 
+// writeAnchorlessNote writes a note with no anchors at all — a lint defect
+// independent of stamping, so it exercises touchedProblems' lint-filtering
+// loop without any DriftUnstamped noise from an anchor that exists but was
+// never stamped.
+func writeAnchorlessNote(t *testing.T, p *project, name string) {
+	t.Helper()
+	raw := "---\nname: " + name + "\nkind: invariant\n" +
+		"description: A claim with nothing pointing at it.\nconfidence: verified\n---\n\n" +
+		"No anchors here.\n"
+	writeFile(t, p.notePath(name), raw)
+}
+
+// touchedProblems filters lint issues to the touched note's own file, so a
+// note reported touched fails on its own defects and is never blamed for a
+// different note's.
+func TestATouchedNoteIsBlamedForItsOwnLintIssueAndNotAnothers(t *testing.T) {
+	const flawed = "flawed-note"
+	const otherFlawed = "other-flawed-note"
+	p := newProject(t)
+	writeAnchorlessNote(t, p, otherFlawed)
+	p.reindex(t)
+
+	after := p.fork(t)
+	writeAnchorlessNote(t, after, flawed)
+	after.reindex(t)
+
+	_, err := p.curate(t, after, curator.Report{NotesTouched: []string{flawed}}, curator.Options{})
+	wantRefused(t, err, `note "`+flawed+`"`, "no anchors")
+	if err != nil && strings.Contains(err.Error(), `note "`+flawed+`" is reported touched but fails lint`) &&
+		strings.Contains(err.Error(), otherFlawed) {
+		t.Errorf("a note's own verification failure was attributed using another note's file: %v", err)
+	}
+}
+
+// writeNamelessAnchorlessNote writes a note with neither `name:` nor
+// `anchors:` — the case the file-match half of the filter exists for. With
+// no name, matching by name is structurally impossible (the check is guarded
+// by n.Name != ""), so this note's own issue can only ever be found by file.
+func writeNamelessAnchorlessNote(t *testing.T, p *project, stem string) {
+	t.Helper()
+	raw := "---\nkind: invariant\n" +
+		"description: A claim with no name and nothing pointing at it.\nconfidence: verified\n---\n\n" +
+		"No name, no anchors.\n"
+	writeFile(t, p.notePath(stem), raw)
+}
+
+// A note with no `name:` field can only be matched to its own lint issues by
+// file, since the name half of the filter is guarded off entirely when there
+// is no name to compare.
+func TestATouchedNamelessNoteIsStillBlamedForItsOwnLintIssue(t *testing.T) {
+	const stem = "nameless-note"
+	p := newProject(t)
+	after := p.fork(t)
+	writeNamelessAnchorlessNote(t, after, stem)
+	after.reindex(t)
+
+	_, err := p.curate(t, after, curator.Report{NotesTouched: []string{stem}}, curator.Options{})
+	wantRefused(t, err, `note "`+stem+`"`, "no anchors")
+}
+
+// Two notes whose `name:` fields collide — one of them lying about which file
+// it names — are matched by name as well as by file, precisely because a
+// note's `name:` can disagree with its filename. The touched note here is
+// otherwise clean; the other note's lint issue reaches it only through that
+// name match.
+func TestATouchedNoteIsBlamedForACollidingNamesakesLintIssueToo(t *testing.T) {
+	const shared = "shared-name"
+	// Sorted after "shared-name" alphabetically, so LoadNotes' file order
+	// (and so ResolveNote's first match) lands on the genuine shared-name.md
+	// note, not this one — the point being tested is that a note resolved by
+	// its own file can still be blamed for a different file's issue solely
+	// because the two share a `name:` value.
+	const impostorStem = "zzz-impostor-note"
+	p := newProject(t)
+	after := p.fork(t)
+	after.writeNote(t, shared, true)
+	writeFile(t, after.notePath(impostorStem), "---\nname: "+shared+"\nkind: invariant\n"+
+		"description: A different file claiming the same name.\nconfidence: verified\n---\n\n"+
+		"No anchors here, filed under someone else's name.\n")
+	after.reindex(t)
+
+	_, err := p.curate(t, after, curator.Report{NotesTouched: []string{shared}}, curator.Options{})
+	wantRefused(t, err, `note "`+shared+`" is reported touched but fails lint`, "no anchors")
+}
+
 // A candidate that vanished with no ruling on record is a finding lost: the
 // explorer's evidence is gone, and nothing says whether it was promoted,
 // merged or rejected.

@@ -101,13 +101,38 @@ func TestLimitIsIgnoredUnderStale(t *testing.T) {
 // TestLimitUnsetLeavesTheBacklogJobUnchanged checks that Limit's zero value —
 // unset — leaves the non-stale job pointed at the backlog generically, the
 // same as a run with no Limit field at all.
+//
+// Asserts on the job's own sentence, not merely on a substring that also
+// appears in the embedded policy preamble ("agtk memory candidates --json"
+// is already there, in the "what you are given" section, so a prompt that
+// took the limited-run branch by mistake would still contain it).
 func TestLimitUnsetLeavesTheBacklogJobUnchanged(t *testing.T) {
 	fake, _, err := run(t, curatedEnvelope, curator.Options{})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	prompt := fake.Stdin(t)
-	if !strings.Contains(prompt, "memory candidates --json") {
-		t.Errorf("an unlimited run does not point the curator at the backlog: %q", prompt)
+	if !strings.Contains(prompt, "Curate the memory store's staged candidates: run") {
+		t.Errorf("an unlimited run does not point the curator at the backlog generically: %q", prompt)
+	}
+	if strings.Contains(prompt, "Curate exactly these") {
+		t.Errorf("an unlimited run named a limited candidate set: %q", prompt)
+	}
+}
+
+// TestLimitOnAnEmptyBacklogNamesNothingPlainly checks that --limit against a
+// backlog with nothing staged produces a plain statement rather than the
+// job's usual sentence with an empty id list spliced in.
+func TestLimitOnAnEmptyBacklogNamesNothingPlainly(t *testing.T) {
+	fake, _, err := run(t, curatedEnvelope, curator.Options{Limit: 5})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	prompt := fake.Stdin(t)
+	if strings.Contains(prompt, "Curate exactly these 0 staged candidates") {
+		t.Errorf("an empty-backlog limited run produced the garbled zero-candidate sentence: %q", prompt)
+	}
+	if !strings.Contains(prompt, "nothing staged") && !strings.Contains(prompt, "nothing to curate") {
+		t.Errorf("an empty-backlog limited run does not say plainly there is nothing to do: %q", prompt)
 	}
 }

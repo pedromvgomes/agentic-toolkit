@@ -258,8 +258,9 @@ func TestMemorySourceModeUsesConsumerConfig(t *testing.T) {
 }
 
 // TestMemoryWarnsOnUnreadableNote: a note that fails to parse drops out of
-// the index, so every command warns about it, and index and audit fail the
-// run so the narrowed store cannot pass as clean.
+// the index, so index fails the run and names it once, in full — not also as
+// a per-note warning during loading, which unreadableNotesErr would only
+// repeat.
 func TestMemoryWarnsOnUnreadableNote(t *testing.T) {
 	work := memoryProject(t, "stacks: []\n")
 	writeFile(t, filepath.Join(work, ".memory/notes/pins-shas.md"), memoryNote)
@@ -269,11 +270,11 @@ func TestMemoryWarnsOnUnreadableNote(t *testing.T) {
 	if err == nil {
 		t.Fatal("memory index: want a non-zero exit for an unreadable note, got nil error")
 	}
-	if !strings.Contains(stderr, "broken.md") {
-		t.Errorf("index did not warn about the unreadable note: %q", stderr)
-	}
 	if !strings.Contains(err.Error(), "broken.md") {
 		t.Errorf("index error does not name the unreadable note: %v", err)
+	}
+	if strings.Contains(stderr, "broken.md") {
+		t.Errorf("index warned about the unreadable note before also failing on it in full: %q", stderr)
 	}
 	if !strings.Contains(stdout, "1 note") {
 		t.Errorf("index did not still regenerate the index for the note that did parse: %q", stdout)
@@ -282,7 +283,8 @@ func TestMemoryWarnsOnUnreadableNote(t *testing.T) {
 
 // TestMemoryAuditFailsOnUnreadableNote: audit reports staleness for the
 // notes that did parse, but still fails the run when another note in the
-// same store could not be read at all — an unreadable note is not "fresh".
+// same store could not be read at all — an unreadable note is not "fresh" —
+// and names it once, in full, not also as a per-note warning during loading.
 func TestMemoryAuditFailsOnUnreadableNote(t *testing.T) {
 	work := memoryProject(t, "stacks: []\n")
 	writeFile(t, filepath.Join(work, ".memory/notes/pins-shas.md"), memoryNote)
@@ -295,11 +297,11 @@ func TestMemoryAuditFailsOnUnreadableNote(t *testing.T) {
 	if err == nil {
 		t.Fatal("memory audit: want a non-zero exit for an unreadable note, got nil error")
 	}
-	if !strings.Contains(stderr, "broken.md") {
-		t.Errorf("audit did not warn about the unreadable note: %q", stderr)
-	}
 	if !strings.Contains(err.Error(), "broken.md") {
 		t.Errorf("audit error does not name the unreadable note: %v", err)
+	}
+	if strings.Contains(stderr, "broken.md") {
+		t.Errorf("audit warned about the unreadable note before also failing on it in full: %q", stderr)
 	}
 	if !strings.Contains(stdout, "fresh") {
 		t.Errorf("audit did not still report on the note that did parse: %q", stdout)
@@ -953,6 +955,36 @@ func TestMemoryCurateLimitRefusesWithStale(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "--limit") || !strings.Contains(err.Error(), "--stale") {
 		t.Errorf("the refusal does not name both conflicting flags: %v", err)
+	}
+}
+
+// TestMemoryCurateNamedNoteWithoutLimitIsNotTreatedAsConflicting: --limit's
+// zero value — unset — must not read as "--limit narrows the backlog by
+// count" alongside a named note. The two checks guard limit>0, not limit>=0.
+func TestMemoryCurateNamedNoteWithoutLimitIsNotTreatedAsConflicting(t *testing.T) {
+	work := memoryProject(t, "stacks: []\n")
+
+	_, _, err := runCLI(t, work, "memory", "curate", "someNote")
+	if err == nil {
+		t.Fatal("curate accepted a note this store does not have")
+	}
+	if strings.Contains(err.Error(), "--limit") {
+		t.Errorf("an unlimited run was refused as though --limit conflicted with the named note: %v", err)
+	}
+}
+
+// TestMemoryCurateStaleWithoutLimitIsNotTreatedAsConflicting: the --stale
+// counterpart — --limit's zero value must not read as conflicting with
+// --stale either.
+func TestMemoryCurateStaleWithoutLimitIsNotTreatedAsConflicting(t *testing.T) {
+	work := memoryProject(t, "stacks: []\n")
+
+	_, _, err := runCLI(t, work, "memory", "curate", "--stale")
+	if err == nil {
+		t.Fatal("a stale sweep with no provider configured should fail on the provider, not succeed")
+	}
+	if strings.Contains(err.Error(), "--limit") {
+		t.Errorf("an unlimited stale sweep was refused as though --limit conflicted: %v", err)
 	}
 }
 

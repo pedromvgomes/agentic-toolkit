@@ -148,20 +148,27 @@ func memoryStore(env *Env) (*memory.Store, error) {
 // Parse errors are returned separately so each caller decides for itself
 // whether an unreadable note is a warning or a failure: index and audit still
 // produce their normal output for the notes that did parse, then fail the
-// run; lint folds them into its own issue list; stats leaves them as a
-// warning only, because its exit code means "the store itself could not be
-// read" and must not be conflated with "one note's frontmatter is bad".
-func loadStoreNotes(env *Env) (*memory.Store, []*memory.Note, []error, error) {
+// run with unreadableNotesErr's full list; lint folds them into its own
+// issue list; stats leaves them as a warning only, because its exit code
+// means "the store itself could not be read" and must not be conflated with
+// "one note's frontmatter is bad".
+//
+// warn prints "skipping unreadable note" for each one as it is found. A
+// caller that goes on to report the same errors in full — index and audit,
+// through unreadableNotesErr — passes false, so the operator sees the list
+// once instead of once per note and then again in full.
+func loadStoreNotes(env *Env, warn bool) (*memory.Store, []*memory.Note, []error, error) {
 	store, err := memoryStore(env)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 	notes, parseErrs := store.LoadNotes()
-	// Every caller gets this warning regardless of whether it also turns
-	// the error into a failure, and a note that silently drops out of the
-	// index is exactly the kind of quiet loss the store must not have.
-	for _, e := range parseErrs {
-		fmt.Fprintf(env.Stderr, "warning: skipping unreadable note: %v\n", e)
+	if warn {
+		// A note that silently drops out of the index is exactly the kind
+		// of quiet loss the store must not have.
+		for _, e := range parseErrs {
+			fmt.Fprintf(env.Stderr, "warning: skipping unreadable note: %v\n", e)
+		}
 	}
 	return store, notes, parseErrs, nil
 }
@@ -191,7 +198,7 @@ func newMemoryIndexCmd(env *Env) *cobra.Command {
 			"Creates the store (notes/, candidates/, .gitignore) when it does not exist.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			store, notes, parseErrs, err := loadStoreNotes(env)
+			store, notes, parseErrs, err := loadStoreNotes(env, false)
 			if err != nil {
 				return err
 			}
@@ -264,7 +271,7 @@ func newMemoryAnchorCmd(env *Env) *cobra.Command {
 				return errors.New("--all stamps every note; naming notes as well says two different things")
 			}
 
-			store, notes, parseErrs, err := loadStoreNotes(env)
+			store, notes, parseErrs, err := loadStoreNotes(env, true)
 			if err != nil {
 				return err
 			}
@@ -364,7 +371,7 @@ func newMemoryAuditCmd(env *Env) *cobra.Command {
 			"is stale.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			store, notes, parseErrs, err := loadStoreNotes(env)
+			store, notes, parseErrs, err := loadStoreNotes(env, false)
 			if err != nil {
 				return err
 			}
@@ -453,7 +460,7 @@ func newMemoryLintCmd(env *Env) *cobra.Command {
 			"of least resistance would become deleting the note.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			store, notes, parseErrs, err := loadStoreNotes(env)
+			store, notes, parseErrs, err := loadStoreNotes(env, true)
 			if err != nil {
 				return err
 			}
@@ -518,7 +525,7 @@ func newMemoryShowCmd(env *Env) *cobra.Command {
 			"bookkeeping an agent skips, and the denominator would quietly drift.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			store, notes, _, err := loadStoreNotes(env)
+			store, notes, _, err := loadStoreNotes(env, true)
 			if err != nil {
 				return err
 			}
@@ -575,7 +582,7 @@ func newMemoryStatsCmd(env *Env) *cobra.Command {
 			"the answer is to prune, never to store more.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			store, notes, _, err := loadStoreNotes(env)
+			store, notes, _, err := loadStoreNotes(env, true)
 			if err != nil {
 				return err
 			}

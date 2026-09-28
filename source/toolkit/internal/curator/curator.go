@@ -565,7 +565,8 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	}
 	var wire reportWire
 	if err := json.Unmarshal(res.Structured, &wire); err != nil {
-		return Result{}, fmt.Errorf("curator: run produced a completion report that does not parse: %w", err)
+		return Result{Text: strings.TrimSpace(res.Text), IsError: res.IsError, Model: res.Model, CostUSD: res.Usage.CostUSD},
+			fmt.Errorf("curator: run produced a completion report that does not parse: %w", err)
 	}
 	result := Result{
 		Text:    strings.TrimSpace(res.Text),
@@ -622,6 +623,10 @@ func task(opts Options, store *memory.Store) string {
 			"the code its pointers name and update, re-stamp or reject it. "
 	case opts.Limit > 0:
 		ids := limitedCandidateIDs(store, opts.Limit)
+		if len(ids) == 0 {
+			job = "The backlog has nothing staged. There is nothing to curate this run. "
+			break
+		}
 		job = "Curate exactly these " + strconv.Itoa(len(ids)) + " staged candidates, the oldest in the " +
 			"backlog: " + strings.Join(ids, ", ") + ". Leave every other candidate alone. "
 	default:
@@ -656,7 +661,7 @@ func task(opts Options, store *memory.Store) string {
 // however many exist; it never pads and never errors.
 func limitedCandidateIDs(store *memory.Store, n int) []string {
 	candidates, _ := store.LoadCandidates()
-	if n > len(candidates) {
+	if n > len(candidates) { // [lydite:exclude_from_mutation][n == len(candidates) reassigns n to the value it already holds, so > and >= clamp identically; no observable output differs]
 		n = len(candidates)
 	}
 	ids := make([]string, 0, n)

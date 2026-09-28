@@ -143,6 +143,7 @@ func verify(store *memory.Store, before snapshot, r Report) error {
 		return err
 	}
 	notes, parseErrs := store.LoadNotes()
+	issues := store.Lint(notes, nil)
 
 	var problems []string
 	fail := func(format string, args ...any) {
@@ -160,7 +161,7 @@ func verify(store *memory.Store, before snapshot, r Report) error {
 		}
 	}
 	for _, name := range r.NotesTouched {
-		problems = append(problems, touchedProblems(store, notes, parseErrs, name)...)
+		problems = append(problems, touchedProblems(store, notes, parseErrs, issues, name)...)
 	}
 
 	touched := reported(store, notes, parseErrs, r.NotesTouched)
@@ -213,9 +214,11 @@ func verify(store *memory.Store, before snapshot, r Report) error {
 }
 
 // touchedProblems is why a note reported touched does not hold up: it has to
-// exist, parse, be stamped and lint clean, since a note the run wrote and did
-// not anchor is one whose staleness signal says nothing.
-func touchedProblems(store *memory.Store, notes []*memory.Note, parseErrs []error, name string) []string {
+// exist, parse and lint clean, since a note the run wrote and did not anchor
+// fails lint for exactly that reason. issues is the store's lint pass, taken
+// once by the caller and reused across every touched name rather than
+// recomputed per name.
+func touchedProblems(store *memory.Store, notes []*memory.Note, parseErrs []error, issues []memory.Issue, name string) []string {
 	l := ResolveNote(store, notes, parseErrs, name)
 	switch {
 	case l.Err != nil:
@@ -225,19 +228,18 @@ func touchedProblems(store *memory.Store, notes []*memory.Note, parseErrs []erro
 	}
 	n := l.Note
 
+	// An unstamped anchor is not checked separately here: it is a lint failure
+	// too (both read the same a.Blob == "" / no Matches), by the same rule
+	// below, with an equally actionable message — anchors[i] (path): unstamped
+	// — run `agtk memory anchor <name>`. A second, AuditNote-based check of the
+	// identical condition would only ever agree with lint, never catch
+	// anything it missed.
 	var problems []string
-	for _, d := range store.AuditNote(n).Drifts {
-		if d.Kind == memory.DriftUnstamped {
-			problems = append(problems, fmt.Sprintf(
-				"note %q is reported touched but its anchor %s is unstamped; run `agtk memory anchor %s`",
-				name, d.Path, n.Name))
-		}
-	}
 	// Filtered by file as well as by name: a note whose `name:` is missing or
 	// disagrees with its filename carries that very issue under a name nobody
 	// reported, and one named the same as another note is flagged on whichever
 	// file LoadNotes read second.
-	for _, issue := range store.Lint(notes, nil) {
+	for _, issue := range issues {
 		if issue.File == n.File || (n.Name != "" && issue.Note == n.Name) {
 			problems = append(problems, fmt.Sprintf("note %q is reported touched but fails lint: %s", name, issue.Message))
 		}
