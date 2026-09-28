@@ -42,8 +42,10 @@ const (
 	// workflowFile is the relay repository's workflow, addressed by file name.
 	workflowFile = "relay.yml"
 
-	// ref is the branch the relay's workflow runs from: the relay repository's
-	// default branch, so every caller runs the workflow its owner last merged.
+	// ref is the branch the relay's workflow runs from. A relay repository's
+	// default branch must be named main: dispatching by name rather than by
+	// asking GitHub which branch is the default costs one request fewer on
+	// every dispatch, at the cost of this one required name.
 	ref = "main"
 )
 
@@ -119,6 +121,9 @@ type Error struct {
 	Method     string
 	Path       string
 	Message    string
+	// RetryAfter is when a rate limit this request hit resets, and is zero
+	// when the refusal was not one.
+	RetryAfter time.Time
 }
 
 func (e *Error) Error() string {
@@ -231,7 +236,10 @@ func call(ctx context.Context, doer Doer, token, method, path string, body, out 
 		return fmt.Errorf("read GitHub's answer to %s %s: %w", method, path, err)
 	}
 	if res.StatusCode >= 300 {
-		return &Error{StatusCode: res.StatusCode, Method: method, Path: path, Message: apiMessage(raw)}
+		return &Error{
+			StatusCode: res.StatusCode, Method: method, Path: path, Message: apiMessage(raw),
+			RetryAfter: rateLimitReset(res),
+		}
 	}
 	if out == nil || len(bytes.TrimSpace(raw)) == 0 {
 		return nil
@@ -252,4 +260,27 @@ func apiMessage(raw []byte) string {
 		return strings.TrimSpace(string(raw))
 	}
 	return payload.Message
+}
+
+// rateLimitReset reads when a rate limit res answered with resets, or the
+// zero time when it did not answer one.
+//
+// A primary limit reports its remaining count at zero and the reset instant
+// in X-RateLimit-Reset; a secondary limit reports neither and answers
+// Retry-After instead, which is read first because a response carrying it is
+// a secondary limit whatever X-RateLimit-Remaining says.
+func rateLimitReset(res *http.Response) time.Time {
+	if after := res.Header.Get("Retry-After"); after != "" {
+		if secs, err := strconv.Atoi(after); err == nil {
+			return time.Now().Add(time.Duration(secs) * time.Second)
+		}
+	}
+	if res.Header.Get("X-RateLimit-Remaining") != "0" {
+		return time.Time{}
+	}
+	reset, err := strconv.ParseInt(res.Header.Get("X-RateLimit-Reset"), 10, 64)
+	if err != nil {
+		return time.Time{}
+	}
+	return time.Unix(reset, 0)
 }

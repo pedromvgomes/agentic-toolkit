@@ -127,10 +127,22 @@ func readRun(ctx context.Context, doer Doer, target Target, id int64, name strin
 }
 
 // final reports whether a failed read is GitHub refusing the request, which
-// asking again does not change, rather than GitHub or the network failing.
+// asking again does not change, rather than GitHub or the network failing or
+// a rate limit that clears on its own.
+//
+// A 429, or a 403 RetryAfter marks as a rate limit rather than an ordinary
+// refusal, is read again within the wait's own timeout instead of ending it:
+// the relay's run keeps going regardless, and giving up here would report a
+// failure for a run that may still succeed.
 func final(err error) bool {
 	var apiErr *Error
-	return errors.As(err, &apiErr) && apiErr.StatusCode < 500
+	if !errors.As(err, &apiErr) {
+		return false
+	}
+	if apiErr.StatusCode == http.StatusTooManyRequests || (apiErr.StatusCode == http.StatusForbidden && !apiErr.RetryAfter.IsZero()) {
+		return false
+	}
+	return apiErr.StatusCode < 500
 }
 
 // sleep waits d, or until ctx ends.

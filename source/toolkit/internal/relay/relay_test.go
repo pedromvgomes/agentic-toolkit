@@ -19,6 +19,7 @@ type exchange struct {
 	path   string
 	status int
 	body   string
+	header http.Header
 }
 
 // scripted is the network, replaced. Each request is matched against the next
@@ -51,9 +52,13 @@ func (s *scripted) Do(req *http.Request) (*http.Response, error) {
 		s.t.Fatalf("call %d was %s %s, the script expects %s %s",
 			len(s.seen), req.Method, req.URL.Path, want.method, want.path)
 	}
+	header := want.header
+	if header == nil {
+		header = http.Header{}
+	}
 	return &http.Response{
 		StatusCode: want.status,
-		Header:     http.Header{},
+		Header:     header,
 		Body:       io.NopCloser(strings.NewReader(want.body)),
 	}, nil
 }

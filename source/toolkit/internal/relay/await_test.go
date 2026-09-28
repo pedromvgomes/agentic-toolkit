@@ -171,6 +171,54 @@ func TestAwaitStopsAtARefusal(t *testing.T) {
 	net.done()
 }
 
+// A rate limit clears on its own, so it is read past rather than ended at:
+// the relay's own run keeps going regardless, and stopping here would report
+// a failure for a run that may still succeed.
+func TestAwaitReadsPastARateLimit(t *testing.T) {
+	for name, blocked := range map[string]exchange{
+		"secondary, Retry-After": {
+			method: http.MethodGet, path: runPath(560), status: http.StatusForbidden,
+			body:   `{"message": "secondary rate limit"}`,
+			header: http.Header{"Retry-After": []string{"1"}},
+		},
+		"primary, 429": {
+			method: http.MethodGet, path: runPath(560), status: http.StatusTooManyRequests,
+			body: `{"message": "rate limit exceeded"}`,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			net := &scripted{t: t, exchanges: []exchange{
+				blocked,
+				{method: http.MethodGet, path: runPath(560), status: 200,
+					body: runJSON(560, "completed", "success", "run acme/widgets#42", time.Now())},
+			}}
+			got, err := await(context.Background(), net, target, Dispatched{Request: widgets42, RunID: 560}, time.Minute, fastPoll)
+			if err != nil {
+				t.Fatal(err)
+			}
+			net.done()
+			if got.Conclusion != "success" {
+				t.Errorf("got %+v, want the run's success", got)
+			}
+		})
+	}
+}
+
+// A 403 with no rate-limit header is an ordinary refusal — a token the relay
+// repository refuses outright, say — and reading it as a rate limit would
+// turn a refusal that will never change into one that waits out its timeout.
+func TestAwaitStopsAtAPlainForbidden(t *testing.T) {
+	net := &scripted{t: t, exchanges: []exchange{
+		{method: http.MethodGet, path: runPath(570), status: http.StatusForbidden, body: `{"message": "Forbidden"}`},
+	}}
+	_, err := await(context.Background(), net, target, Dispatched{Request: widgets42, RunID: 570}, time.Minute, fastPoll)
+	var apiErr *Error
+	if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusForbidden {
+		t.Fatalf("a plain 403 came back as %v, want the refusal", err)
+	}
+	net.done()
+}
+
 func TestAwaitGivesUpWhenNoRunAppears(t *testing.T) {
 	never := doerFunc(func(*http.Request) (*http.Response, error) { return answer(200, listJSON()) })
 	start := time.Now()

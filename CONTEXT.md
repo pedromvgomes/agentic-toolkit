@@ -458,6 +458,9 @@ read follows.
 `--force`, `--full` and `--json` are not carried: a relay is dispatched with only the pull
 request and its panel, which cannot express a forced re-review, a full one, or the review detail
 `--json` promises, so posting under any of them still needs this machine's own registration.
+Its own default branch must be named `main` — a dispatch names that branch directly rather than
+asking GitHub which one is the default, and a relay repository whose default branch is called
+anything else has every dispatch refused with GitHub's own "no ref found" error.
 _Avoid_: CI, pipeline, bot job
 
 **Fingerprint marker**:
