@@ -1,8 +1,8 @@
 ---
 description: |
   Before answering any question about why the codebase is the way it is — invariants,
-  rationale, gotchas, dead ends — the agent must delegate to the `memory-explorer`
-  agent, so an exploration already paid for is not paid for twice.
+  rationale, gotchas, dead ends — the agent delegates to the `memory-explorer` agent, so
+  an exploration already paid for is not paid for twice.
 requires:
   - agents/memory-explorer
 ---
@@ -14,17 +14,17 @@ exploration to learn. It only pays for itself if it is consulted before the expl
 is repeated. `agtk memory stats` says where it is and whether it holds anything —
 `memory.root` is configurable, so never assume a path.
 
-Before you answer any of these from your own reading, you MUST delegate to the
-`memory-explorer` agent:
+While the repo has a store, delegate these questions to the `memory-explorer` agent before
+answering them from your own reading:
 
 - why something is built the way it is
 - what breaks if you change X
 - what constrains a piece of code
 - whether an approach has already been tried and abandoned
 
-**This is non-negotiable while the repo has a store.** A stale or missing note is not a
-reason to skip the delegation — re-verifying and re-staging is the explorer's job, and
-skipping it is how the store quietly stops being true.
+A stale or missing note is still a reason to delegate, not to skip it: re-verifying and
+re-staging is the explorer's job, and a store nobody routes these questions through quietly
+stops being true.
 
 The one exception is a repo that has not adopted memory at all. Establish that with
 `agtk memory stats`, and read its outcome as one of three things — not two:
