@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -51,6 +52,7 @@ func newMemoryCmd(env *Env) *cobra.Command {
 		newMemoryShowCmd(env),
 		newMemorySearchCmd(env),
 		newMemoryStatsCmd(env),
+		newMemoryHitsCmd(env),
 		newMemoryCandidatesCmd(env),
 		newMemoryCurateCmd(env),
 	)
@@ -727,6 +729,9 @@ func newMemoryStatsCmd(env *Env) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			for _, e := range st.UnreadableHits {
+				fmt.Fprintf(env.Stderr, "warning: skipping unreadable hit record: %v\n", e)
+			}
 			if jsonOut {
 				return writeJSON(env, statsJSON(env, store, st))
 			}
@@ -763,17 +768,32 @@ func printStats(env *Env, store *memory.Store, st memory.Stats) {
 		fmt.Fprintf(env.Stdout, "index:       %s (~%s) — the tax, loaded per delegation\n",
 			humanBytes(st.IndexBytes), plural(approxTokens(st.IndexBytes), "token"))
 	}
-	// "in this checkout" is not hedging. The hits log is gitignored, so the
-	// rate describes one working copy's usage and a fresh clone reports zero;
-	// a reader who takes it for a property of the store draws the opposite
-	// conclusion from the same number.
-	if st.Hits == 0 {
+	// "this checkout" is not hedging. With no shard and no compacted file,
+	// every hit comes from the gitignored log, so the rate describes one
+	// working copy's usage and a fresh clone reports zero; a reader who takes
+	// it for a property of the store draws the opposite conclusion from the
+	// same number. Once a committed record exists the rate is the store's,
+	// and only the reads not yet folded are this checkout's alone.
+	shared := st.Shards > 0 || st.Compacted
+	switch {
+	case st.Hits == 0 && !shared:
 		fmt.Fprintf(env.Stdout, "hits:        none recorded in this checkout (%s is gitignored)\n", memory.HitsFile)
-	} else {
+	case st.Hits == 0:
+		fmt.Fprintln(env.Stdout, "hits:        none recorded")
+	case !shared:
 		fmt.Fprintf(env.Stdout, "hits:        %s over %d of %d notes (%.0f%% hit rate, this checkout only)\n",
 			plural(st.Hits, "read"), st.NotesHit, st.Notes, st.HitRate*100)
+	default:
+		fmt.Fprintf(env.Stdout, "hits:        %s over %d of %d notes (%.0f%% hit rate)\n",
+			plural(st.Hits, "read"), st.NotesHit, st.Notes, st.HitRate*100)
+	}
+	if st.Hits > 0 {
 		fmt.Fprintf(env.Stdout, "  window:    %s .. %s\n",
 			st.FirstHit.Format(time.RFC3339), st.LastHit.Format(time.RFC3339))
+	}
+	if shared && st.LocalHits > 0 {
+		fmt.Fprintf(env.Stdout, "  unfolded:  %s in %s, this checkout only — `agtk memory hits fold` shares them\n",
+			plural(st.LocalHits, "read"), memory.HitsFile)
 	}
 	if len(st.Cold) > 0 {
 		fmt.Fprintf(env.Stdout, "cold:        %d of %d notes never read\n", len(st.Cold), st.Notes)
@@ -790,6 +810,129 @@ func printStats(env *Env, store *memory.Store, st memory.Stats) {
 			fmt.Fprintf(env.Stdout, "             %s\n", name)
 		}
 	}
+}
+
+// ===== hits =====
+
+// errMemoryUnfolded flips `hits fold --check`'s exit code when the local log
+// holds reads no shard carries yet.
+var errMemoryUnfolded = errors.New("memory: the local hits log holds unfolded reads; run `agtk memory hits fold`")
+
+func newMemoryHitsCmd(env *Env) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "hits",
+		Short: "Share the hit record beyond this checkout",
+		Long: "`agtk memory show` records each read in the gitignored " + memory.HitsFile + ", which\n" +
+			"no other checkout sees. `fold` moves those reads into a committed shard under\n" +
+			memory.HitsDir + "/, so `stats` reports them from any clone of the branch.",
+		// The same guard as `agtk memory`: without a RunE, cobra takes an
+		// unknown subcommand as an argument, prints help and exits 0.
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error { return cmd.Help() },
+	}
+	cmd.AddCommand(newMemoryHitsFoldCmd(env))
+	return cmd
+}
+
+// memoryHitsFoldJSON is `memory hits fold --json`'s output. Hits and Notes
+// count the reads in the local log and the distinct notes they are of —
+// folded, or under --check waiting to be. Shard is the file written, and is
+// absent under --check and when there was nothing to fold.
+type memoryHitsFoldJSON struct {
+	Version int    `json:"version"`
+	Check   bool   `json:"check"`
+	Log     string `json:"log"`
+	Hits    int    `json:"hits"`
+	Notes   int    `json:"notes"`
+	Shard   string `json:"shard,omitempty"`
+}
+
+func newMemoryHitsFoldCmd(env *Env) *cobra.Command {
+	var (
+		jsonOut bool
+		check   bool
+	)
+	cmd := &cobra.Command{
+		Use:   "fold",
+		Short: "Move the local hits log into a committed shard",
+		Long: "Writes the reads in " + memory.HitsFile + " to a shard of their own,\n" +
+			memory.HitsDir + "/<date>-<branch>-<suffix>.json, holding each note's read count and\n" +
+			"first and last read, then empties the log. The shard is written first, so a\n" +
+			"fold that cannot write it leaves the log as it was.\n" +
+			"\n" +
+			"Every fold writes a file no other fold names, so branches that both fold\n" +
+			"merge without a conflict. Nothing is committed: the shard is left in the\n" +
+			"working tree for your own commit.\n" +
+			"\n" +
+			"An empty or missing log writes nothing. --check writes nothing either, and\n" +
+			"exits non-zero when the log holds reads not yet folded.",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			store, err := memoryStore(env)
+			if err != nil {
+				return err
+			}
+			log := relToWork(env, store.HitsPath())
+			if check {
+				hits, err := store.Hits()
+				if err != nil {
+					return err
+				}
+				notes := len(memory.TallyHits(hits))
+				if jsonOut {
+					if err := writeJSON(env, memoryHitsFoldJSON{
+						Version: jsonVersion, Check: true, Log: log, Hits: len(hits), Notes: notes,
+					}); err != nil {
+						return err
+					}
+				} else if len(hits) == 0 {
+					fmt.Fprintf(env.Stdout, "%s: nothing to fold\n", log)
+				} else {
+					fmt.Fprintf(env.Stdout, "%s: %s over %s not yet folded\n", log, plural(len(hits), "read"), plural(notes, "note"))
+				}
+				if len(hits) > 0 {
+					return errMemoryUnfolded
+				}
+				return nil
+			}
+
+			fold, err := store.FoldHits(memory.FoldOptions{
+				Now:    time.Now(),
+				Branch: currentBranch(store.ProjectRoot),
+			})
+			if err != nil {
+				return err
+			}
+			if jsonOut {
+				out := memoryHitsFoldJSON{Version: jsonVersion, Log: log, Hits: fold.Hits, Notes: fold.Notes}
+				if fold.Shard != "" {
+					out.Shard = relToWork(env, fold.Shard)
+				}
+				return writeJSON(env, out)
+			}
+			if fold.Shard == "" {
+				fmt.Fprintf(env.Stdout, "%s: nothing to fold\n", log)
+				return nil
+			}
+			fmt.Fprintf(env.Stdout, "folded %s over %s into %s; %s emptied\n",
+				plural(fold.Hits, "read"), plural(fold.Notes, "note"), relToWork(env, fold.Shard), log)
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit machine-readable JSON output")
+	cmd.Flags().BoolVar(&check, "check", false, "write nothing; exit non-zero when the log holds unfolded reads")
+	return cmd
+}
+
+// currentBranch is the branch checked out at dir, or empty on a detached
+// HEAD, outside a repository, or without git — each of which names its
+// shard with memory.BranchSlug's fallback rather than failing the fold.
+func currentBranch(dir string) string {
+	out, err := exec.Command("git", "-C", dir, "symbolic-ref", "--quiet", "--short", "HEAD").Output() // #nosec G204 -- fixed argv; dir is the store's project root
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
 
 // humanBytes formats a size the way the tax is worth reading — two

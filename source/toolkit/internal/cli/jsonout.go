@@ -318,16 +318,24 @@ type memoryStatsJSON struct {
 	IndexBytes int64 `json:"index_bytes"`
 	Hits       int   `json:"hits"`
 	NotesHit   int   `json:"notes_hit"`
-	// HitRate covers this checkout alone. The hits log is gitignored, so a
+	// HitRate is computed over the compacted file, the shards and the local
+	// log together. With Shards zero and Compacted false every hit comes
+	// from the gitignored log, so the rate covers this checkout alone: a
 	// fresh clone reports zero reads over a store that is heavily used
-	// elsewhere, and a consumer that treats this as a property of the store
-	// reads that as evidence to prune.
+	// elsewhere, and a consumer that treats that as a property of the store
+	// reads it as evidence to prune.
 	HitRate float64 `json:"hit_rate"`
 	// Cold names the notes with no recorded hit, sorted. It is the actionable
-	// form of a low HitRate, and carries the same per-checkout caveat.
+	// form of a low HitRate, and carries the same scope.
 	Cold     []string `json:"cold"`
 	FirstHit string   `json:"first_hit,omitempty"`
 	LastHit  string   `json:"last_hit,omitempty"`
+	// LocalHits is the part of Hits still in the gitignored log, seen by no
+	// other checkout until `agtk memory hits fold` writes it to a shard.
+	LocalHits int `json:"local_hits"`
+	// Shards and Compacted say which committed hit records were read.
+	Shards    int  `json:"shards"`
+	Compacted bool `json:"compacted"`
 }
 
 func anchorJSONNotes(results []memory.StampResult) []memoryAnchorNoteJSON {
@@ -388,6 +396,9 @@ func statsJSON(env *Env, store *memory.Store, st memory.Stats) memoryStatsJSON {
 		NotesHit:     st.NotesHit,
 		HitRate:      st.HitRate,
 		Cold:         st.Cold,
+		LocalHits:    st.LocalHits,
+		Shards:       st.Shards,
+		Compacted:    st.Compacted,
 	}
 	if out.Cold == nil {
 		// A JSON consumer branching on this must not have to distinguish null
