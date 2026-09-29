@@ -1,6 +1,7 @@
 package memory
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -101,6 +102,33 @@ func (s *Store) Lint(notes []*Note, parseErrs []error) []Issue {
 	}
 
 	sort.SliceStable(issues, func(i, j int) bool { return issues[i].File < issues[j].File })
+	return issues
+}
+
+// LintCandidates reports each unreadable candidate in candidates/ with the file
+// and the parse error, so a finding an explorer staged cannot vanish from the
+// backlog unremarked: an unquoted colon inside `about:` is invalid YAML, and
+// LoadCandidates drops the file.
+//
+// It is separate from Lint on purpose. The curator runs Lint to verify its own
+// work and can only delete candidates, so an unreadable candidate reported
+// there would push it to delete the file and either fail verification or lose
+// the finding. Only the CLI's lint asks for this.
+func (s *Store) LintCandidates() []Issue {
+	_, errs := s.LoadCandidates()
+
+	var issues []Issue
+	for _, err := range errs {
+		var bad *UnreadableCandidateError
+		if !errors.As(err, &bad) {
+			issues = append(issues, Issue{File: s.CandidatesPath(), Message: err.Error()})
+			continue
+		}
+		issues = append(issues, Issue{
+			File:    bad.File,
+			Message: "unreadable candidate: " + strings.TrimPrefix(bad.Err.Error(), bad.File+": "),
+		})
+	}
 	return issues
 }
 

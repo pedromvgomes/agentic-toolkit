@@ -339,6 +339,53 @@ func TestMemoryLintCleanWithoutStore(t *testing.T) {
 	}
 }
 
+// TestMemoryLintReportsAnUnreadableCandidate: an unquoted colon inside
+// `about:` is invalid YAML and the candidate drops out of the backlog, so lint
+// fails the run and names the file and the error rather than passing over it.
+func TestMemoryLintReportsAnUnreadableCandidate(t *testing.T) {
+	work := memoryProject(t, "stacks: []\n")
+	writeFile(t, filepath.Join(work, ".memory/notes/pins-shas.md"), memoryNote)
+	if _, _, err := runCLI(t, work, "memory", "anchor", "--all"); err != nil {
+		t.Fatalf("memory anchor: %v", err)
+	}
+	if _, _, err := runCLI(t, work, "memory", "index"); err != nil {
+		t.Fatalf("memory index: %v", err)
+	}
+	if stdout, _, err := runCLI(t, work, "memory", "lint"); err != nil {
+		t.Fatalf("memory lint on a clean store: %v (%s)", err, stdout)
+	}
+	writeFile(t, filepath.Join(work, ".memory/candidates/20260905-colon.md"),
+		"---\nabout: the flag is set: it is ignored\n---\n\nevidence\n")
+
+	stdout, _, err := runCLI(t, work, "memory", "lint")
+	if err == nil {
+		t.Fatalf("memory lint: want a non-zero exit for an unreadable candidate\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "20260905-colon.md") || !strings.Contains(stdout, "unreadable candidate") {
+		t.Errorf("lint does not name the unreadable candidate:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "frontmatter") {
+		t.Errorf("lint does not carry the parse error:\n%s", stdout)
+	}
+
+	jsonOut, _, err := runCLI(t, work, "memory", "lint", "--json")
+	if err == nil {
+		t.Fatal("memory lint --json: want a non-zero exit for an unreadable candidate")
+	}
+	var got struct {
+		Issues []struct {
+			File    string `json:"file"`
+			Message string `json:"message"`
+		} `json:"issues"`
+	}
+	if err := json.Unmarshal([]byte(jsonOut), &got); err != nil {
+		t.Fatalf("decode: %v\n%s", err, jsonOut)
+	}
+	if len(got.Issues) != 1 || !strings.HasSuffix(got.Issues[0].File, "20260905-colon.md") {
+		t.Errorf("issues = %+v, want the unreadable candidate", got.Issues)
+	}
+}
+
 // TestMemoryAnchorContinuesPastFailure: an unstampable note is reported and
 // the run continues, so the rest of the store still gets brought up to date.
 func TestMemoryAnchorContinuesPastFailure(t *testing.T) {

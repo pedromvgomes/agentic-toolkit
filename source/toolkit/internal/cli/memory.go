@@ -453,7 +453,9 @@ func newMemoryLintCmd(env *Env) *cobra.Command {
 		Long: "Checks that notes parse, that names are kebab-case and match their filenames,\n" +
 			"that kind and confidence are in range, that every note has a description, a\n" +
 			"body and at least one stamped anchor, and that INDEX.md matches what `agtk\n" +
-			"memory index` would generate.\n" +
+			"memory index` would generate. It also reports each candidate in candidates/\n" +
+			"that cannot be parsed, with the file and the error, since such a candidate\n" +
+			"is otherwise dropped from the backlog in silence.\n" +
 			"\n" +
 			"It says nothing about whether a note is still TRUE — that is `audit`. Failing\n" +
 			"CI on staleness would turn every rename in an unrelated PR red, and the path\n" +
@@ -465,6 +467,9 @@ func newMemoryLintCmd(env *Env) *cobra.Command {
 				return err
 			}
 			issues := store.Lint(notes, parseErrs)
+			// Unreadable candidates are reported here and not by Lint, which
+			// the curator runs on its own work and cannot act on them.
+			issues = append(issues, store.LintCandidates()...)
 
 			if jsonOut {
 				if err := writeJSON(env, memoryLintJSON{
