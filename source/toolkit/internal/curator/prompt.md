@@ -67,7 +67,7 @@ it is what keeps merge conflicts survivable in a store several branches write to
 ---
 name: lockfile-pins-shas-not-tags
 kind: invariant
-description: Lock resolution pins commit SHAs, never tags.
+description: "Lock resolution pins commit SHAs, never tags."
 anchors:
   - path: internal/resolver/graph.go
 confidence: verified
@@ -82,6 +82,10 @@ reproducibility for consumers. Tried and reverted in [[fetch-retag-attempt]].
 - `confidence` is `verified | suspect`, and is yours alone. Nothing mechanical writes it.
 - `description` is required, and one line. It is what the index shows and what routes a reader
   to the note, so make it say the claim, not the topic.
+- Quote `description`, always, even when nothing in it looks like it needs quoting. An unquoted
+  colon inside the value ends the key early and breaks frontmatter parsing, and that failure
+  mode is not one you can spot by eye before it happens — quoting unconditionally is simpler
+  than deciding case by case whether a given value is safe.
 - **Every claim in the body carries a pointer.** `graph.go:88`, never "the resolver does X".
   That is what makes a note checkable in one `sed -n` instead of a re-exploration, and it is
   the main defence against a stale note being believed.
@@ -144,12 +148,28 @@ to zero makes the session-start digest cry wolf forever.
 
 ## Report
 
-Keep it short and factual.
+Your final turn is exactly this JSON, and nothing else — no prose around it, no markdown fence:
 
+```json
+{
+  "candidatesResolved": ["<candidate id>", "..."],
+  "notesRetracted":     ["<note name>", "..."],
+  "notesTouched":       ["<note name>", "..."]
+}
 ```
-Promoted: <note names>
-Merged:   <candidate> -> <existing note>
-Rejected: <candidate> — <one-line reason>
-Updated:  <note> — <still-true | now-false | unchecked>
-Store:    <n> notes, <n> stale
-```
+
+A candidate's id is its filename stem — the `name` field `agtk memory candidates --json`
+reports, not the file path.
+
+- `candidatesResolved` — every candidate you ruled on this pass: promoted, merged or rejected.
+  A candidate whose note you retracted goes here too, in addition to `notesRetracted` below —
+  the candidate was resolved, and separately, a note came down because of it.
+- `notesRetracted` — every note you deleted outright, because the candidate ruled it
+  `now-false` and there was nothing true left to keep.
+- `notesTouched` — every note you created or edited: a promotion, a merge, a rewritten body, or
+  a re-check you re-stamped. Anything named here is expected to have been anchored in this same
+  run — naming a note here without anchoring it is exactly the silent failure stamping exists
+  to prevent.
+
+Ruled on nothing, changed nothing, retracted nothing? Report it as such — three empty
+arrays is a complete and honest answer, not a report you owe an explanation for.

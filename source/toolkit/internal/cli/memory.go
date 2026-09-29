@@ -145,21 +145,43 @@ func memoryStore(env *Env) (*memory.Store, error) {
 }
 
 // loadStoreNotes is the shared prologue: locate the store, parse its notes.
-// Parse errors are returned separately because index, audit and stats must
-// keep working when one note is malformed; only lint reports them.
-func loadStoreNotes(env *Env) (*memory.Store, []*memory.Note, []error, error) {
+// Parse errors are returned separately so each caller decides for itself
+// whether an unreadable note is a warning or a failure: index and audit still
+// produce their normal output for the notes that did parse, then fail the
+// run with unreadableNotesErr's full list; lint folds them into its own
+// issue list; stats leaves them as a warning only, because its exit code
+// means "the store itself could not be read" and must not be conflated with
+// "one note's frontmatter is bad".
+//
+// warn prints "skipping unreadable note" for each one as it is found. A
+// caller that goes on to report the same errors in full — index and audit,
+// through unreadableNotesErr — passes false, so the operator sees the list
+// once instead of once per note and then again in full.
+func loadStoreNotes(env *Env, warn bool) (*memory.Store, []*memory.Note, []error, error) {
 	store, err := memoryStore(env)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 	notes, parseErrs := store.LoadNotes()
-	// Every command but lint ignores these, and a note that silently drops
-	// out of the index is exactly the kind of quiet loss the store must not
-	// have. Warn once, here, for all of them.
-	for _, e := range parseErrs {
-		fmt.Fprintf(env.Stderr, "warning: skipping unreadable note: %v\n", e)
+	if warn {
+		// A note that silently drops out of the index is exactly the kind
+		// of quiet loss the store must not have.
+		for _, e := range parseErrs {
+			fmt.Fprintf(env.Stderr, "warning: skipping unreadable note: %v\n", e)
+		}
 	}
 	return store, notes, parseErrs, nil
+}
+
+// unreadableNotesErr names every note loadStoreNotes could not parse, so a
+// caller that fails on parse errors reports which files and why rather than
+// only a bare non-zero exit.
+func unreadableNotesErr(parseErrs []error) error {
+	msgs := make([]string, len(parseErrs))
+	for i, e := range parseErrs {
+		msgs[i] = e.Error()
+	}
+	return fmt.Errorf("%s unreadable:\n%s", plural(len(parseErrs), "note"), strings.Join(msgs, "\n"))
 }
 
 // ===== index =====
@@ -176,7 +198,7 @@ func newMemoryIndexCmd(env *Env) *cobra.Command {
 			"Creates the store (notes/, candidates/, .gitignore) when it does not exist.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			store, notes, _, err := loadStoreNotes(env)
+			store, notes, parseErrs, err := loadStoreNotes(env, false)
 			if err != nil {
 				return err
 			}
@@ -188,18 +210,27 @@ func newMemoryIndexCmd(env *Env) *cobra.Command {
 				return err
 			}
 			if jsonOut {
-				return writeJSON(env, memoryIndexJSON{
+				if err := writeJSON(env, memoryIndexJSON{
 					Version: jsonVersion,
 					Path:    relToWork(env, store.IndexPath()),
 					Notes:   len(notes),
 					Changed: changed,
-				})
+				}); err != nil {
+					return err
+				}
+			} else {
+				state := "unchanged"
+				if changed {
+					state = "rewritten"
+				}
+				fmt.Fprintf(env.Stdout, "%s: %s (%s)\n", relToWork(env, store.IndexPath()), plural(len(notes), "note"), state)
 			}
-			state := "unchanged"
-			if changed {
-				state = "rewritten"
+			// The index is now written without the notes that failed to
+			// parse; report that as a failure rather than let the run
+			// look clean while the index silently narrowed.
+			if len(parseErrs) > 0 {
+				return unreadableNotesErr(parseErrs)
 			}
-			fmt.Fprintf(env.Stdout, "%s: %s (%s)\n", relToWork(env, store.IndexPath()), plural(len(notes), "note"), state)
 			return nil
 		},
 	}
@@ -240,17 +271,13 @@ func newMemoryAnchorCmd(env *Env) *cobra.Command {
 				return errors.New("--all stamps every note; naming notes as well says two different things")
 			}
 
-			store, notes, _, err := loadStoreNotes(env)
+			store, notes, parseErrs, err := loadStoreNotes(env, true)
 			if err != nil {
 				return err
 			}
-			selected, err := selectNotes(notes, args)
-			if err != nil {
-				return err
-			}
+			selected, failed := selectNotes(store, notes, parseErrs, args)
 
 			results := make([]memory.StampResult, 0, len(selected))
-			var failed []string
 			for _, n := range selected {
 				res, err := store.Stamp(n)
 				if err != nil {
@@ -344,7 +371,7 @@ func newMemoryAuditCmd(env *Env) *cobra.Command {
 			"is stale.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			store, notes, _, err := loadStoreNotes(env)
+			store, notes, parseErrs, err := loadStoreNotes(env, false)
 			if err != nil {
 				return err
 			}
@@ -361,6 +388,12 @@ func newMemoryAuditCmd(env *Env) *cobra.Command {
 				}
 			} else {
 				printAuditReport(env, len(notes), stale)
+			}
+			// An unreadable note never reaches Audit, so it cannot show up
+			// as stale; report it as its own failure or the note's absence
+			// from the report reads as "fresh" instead of "unchecked".
+			if len(parseErrs) > 0 {
+				return unreadableNotesErr(parseErrs)
 			}
 			if len(stale) > 0 {
 				return errMemoryStale
@@ -427,7 +460,7 @@ func newMemoryLintCmd(env *Env) *cobra.Command {
 			"of least resistance would become deleting the note.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			store, notes, parseErrs, err := loadStoreNotes(env)
+			store, notes, parseErrs, err := loadStoreNotes(env, true)
 			if err != nil {
 				return err
 			}
@@ -492,7 +525,7 @@ func newMemoryShowCmd(env *Env) *cobra.Command {
 			"bookkeeping an agent skips, and the denominator would quietly drift.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			store, notes, _, err := loadStoreNotes(env)
+			store, notes, _, err := loadStoreNotes(env, true)
 			if err != nil {
 				return err
 			}
@@ -549,7 +582,7 @@ func newMemoryStatsCmd(env *Env) *cobra.Command {
 			"the answer is to prune, never to store more.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			store, notes, _, err := loadStoreNotes(env)
+			store, notes, _, err := loadStoreNotes(env, true)
 			if err != nil {
 				return err
 			}
@@ -732,6 +765,7 @@ func newMemoryCurateCmd(env *Env) *cobra.Command {
 		check   bool
 		dryRun  bool
 		timeout time.Duration
+		limit   int
 	)
 	cmd := &cobra.Command{
 		Use:   "curate [note...]",
@@ -757,6 +791,13 @@ func newMemoryCurateCmd(env *Env) *cobra.Command {
 			"default: this is the only memory command that costs anything.",
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if limit > 0 && len(args) > 0 {
+				return errors.New("--limit narrows the backlog by count; naming notes already narrows it by name")
+			}
+			if limit > 0 && stale {
+				return errors.New("--limit narrows the backlog by count; --stale already narrows it to the stale list")
+			}
+
 			store, err := memoryStore(env)
 			if err != nil {
 				return err
@@ -776,25 +817,16 @@ func newMemoryCurateCmd(env *Env) *cobra.Command {
 					WorkDir:       store.ProjectRoot,
 					NotesDir:      store.NotesPath(),
 					CandidatesDir: store.CandidatesPath(),
+					StoreRoot:     store.Root,
 					AgtkPath:      selfPath(env),
 					DryRun:        dryRun,
 					Notes:         args,
+					Limit:         limit,
 				})
 				if err != nil {
 					return err
 				}
-				if jsonOut {
-					return writeJSON(env, memoryCurateCheckJSON{
-						Version:  jsonVersion,
-						Provider: ready.Provider,
-						Binary:   ready.Binary,
-						Mode:     ready.Mode,
-						Tools:    ready.Tools,
-					})
-				}
-				fmt.Fprintf(env.Stdout, "provider:  %s\nbinary:    %s\nmode:      %s\ntools:     %s\n",
-					ready.Provider, ready.Binary, describeMode(ready.Mode), describeTools(ready.Tools))
-				return nil
+				return reportCurateCheck(env, jsonOut, ready)
 			}
 
 			res, err := curator.Run(cmd.Context(), curator.Options{
@@ -807,6 +839,7 @@ func newMemoryCurateCmd(env *Env) *cobra.Command {
 				// author notes and clear the backlog and nothing else.
 				NotesDir:      store.NotesPath(),
 				CandidatesDir: store.CandidatesPath(),
+				StoreRoot:     store.Root,
 				// The running binary, not whatever PATH resolves: a consumer
 				// installs agtk separately from the lockfile-pinned
 				// definitions, so the agtk on PATH can be older than this one
@@ -816,29 +849,9 @@ func newMemoryCurateCmd(env *Env) *cobra.Command {
 				DryRun:   dryRun,
 				Notes:    args,
 				Timeout:  timeout,
+				Limit:    limit,
 			})
-			if err != nil {
-				return err
-			}
-
-			if jsonOut {
-				if err := writeJSON(env, memoryCurateJSON{
-					Version: jsonVersion,
-					Stale:   stale,
-					Failed:  res.IsError,
-					Model:   res.Model,
-					CostUSD: res.CostUSD,
-					Report:  res.Text,
-				}); err != nil {
-					return err
-				}
-			} else {
-				fmt.Fprintln(env.Stdout, res.Text)
-			}
-			if res.IsError {
-				return errMemoryCurate
-			}
-			return nil
+			return reportCurateResult(env, jsonOut, stale, res, err)
 		},
 	}
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit machine-readable JSON output")
@@ -846,6 +859,9 @@ func newMemoryCurateCmd(env *Env) *cobra.Command {
 	cmd.Flags().BoolVar(&check, "check", false, "report what a run would use and start nothing")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "report what the curator would do, under a grant with no writing tools")
 	cmd.Flags().DurationVar(&timeout, "timeout", 0, "bound the curation run (default 20m)")
+	cmd.Flags().IntVar(&limit, "limit", 0, "point the non-stale backlog job at the oldest N staged candidates by id, "+
+		"instead of the whole backlog; only shapes the job description — the model's tool grants are not "+
+		"narrowed, so a run that goes beyond N is possible and is not itself an error")
 	return cmd
 }
 
@@ -888,6 +904,59 @@ func selfPath(env *Env) string {
 	return exe
 }
 
+// reportCurateCheck prints what a curate run would be given, and starts
+// nothing: the provider, the binary, the permission mode, the tool grant and
+// the delegation deny list.
+func reportCurateCheck(env *Env, jsonOut bool, ready curator.Ready) error {
+	if jsonOut {
+		return writeJSON(env, memoryCurateCheckJSON{
+			Version:         jsonVersion,
+			Provider:        ready.Provider,
+			Binary:          ready.Binary,
+			Mode:            ready.Mode,
+			Tools:           ready.Tools,
+			DisallowedTools: ready.DisallowedTools,
+		})
+	}
+	fmt.Fprintf(env.Stdout, "provider:  %s\nbinary:    %s\nmode:      %s\ntools:     %s\ndeny:      %s\n",
+		ready.Provider, ready.Binary, describeMode(ready.Mode), describeTools(ready.Tools), describeDenyList(ready.DisallowedTools))
+	return nil
+}
+
+// reportCurateResult prints what a curate run produced and decides what the
+// command returns. A verification failure comes back from curator.Run beside
+// a populated Result: Text is the curator's own account of a run the store
+// then contradicted, so it is printed — or carried in the JSON report — before
+// the error that names the mismatch is returned. Every other error returns
+// before Text is ever set, so its emptiness is what tells the two apart.
+func reportCurateResult(env *Env, jsonOut, stale bool, res curator.Result, runErr error) error {
+	if runErr != nil && res.Text == "" {
+		return runErr
+	}
+
+	if jsonOut {
+		if err := writeJSON(env, memoryCurateJSON{
+			Version: jsonVersion,
+			Stale:   stale,
+			Failed:  runErr != nil || res.IsError,
+			Model:   res.Model,
+			CostUSD: res.CostUSD,
+			Report:  res.Text,
+		}); err != nil {
+			return err
+		}
+	} else {
+		fmt.Fprintln(env.Stdout, res.Text)
+	}
+	if runErr != nil {
+		return runErr
+	}
+	if res.IsError {
+		return errMemoryCurate
+	}
+	return nil
+}
+
 // memoryAgent reads `memory.agent` from the entry manifest, the same way and
 // from the same file memoryStore reads `memory.root`.
 func memoryAgent(env *Env) (string, error) {
@@ -907,21 +976,28 @@ func memoryAgent(env *Env) (string, error) {
 
 // ===== shared helpers =====
 
-// selectNotes filters notes by name, erroring on a name that is not in the
-// store rather than silently stamping nothing.
-func selectNotes(notes []*memory.Note, names []string) ([]*memory.Note, error) {
+// selectNotes filters notes by name, resolving each one independently so a
+// name that fails to resolve does not stop another name in the same call
+// from being selected. names with no note in the store are told apart from
+// names whose file is there but fails to parse, since only the store, not
+// the caller, knows which of the two happened. An empty names selects every
+// note, exactly as it always has.
+func selectNotes(store *memory.Store, notes []*memory.Note, parseErrs []error, names []string) (selected []*memory.Note, failed []string) {
 	if len(names) == 0 {
 		return notes, nil
 	}
-	out := make([]*memory.Note, 0, len(names))
 	for _, name := range names {
-		n := findNote(notes, name)
-		if n == nil {
-			return nil, fmt.Errorf("no note named %q", name)
+		l := curator.ResolveNote(store, notes, parseErrs, name)
+		switch {
+		case l.Note != nil:
+			selected = append(selected, l.Note)
+		case l.Err != nil:
+			failed = append(failed, fmt.Sprintf("%s: note exists but does not parse: %v", name, l.Err))
+		default:
+			failed = append(failed, fmt.Sprintf("no note named %q", name))
 		}
-		out = append(out, n)
 	}
-	return out, nil
+	return selected, failed
 }
 
 func findNote(notes []*memory.Note, name string) *memory.Note {
@@ -1006,4 +1082,16 @@ func describeMode(mode string) string {
 		return "none passed — the grant is the whole permission"
 	}
 	return mode
+}
+
+// describeDenyList renders the delegation deny list for a reader. Empty means
+// this provider has no vocabulary for denying a tool at all, which Check
+// refuses to report ready for on anything but a dry run — so an empty field
+// here means the sandbox mode is what closes delegation instead, not that
+// nothing does.
+func describeDenyList(tools []string) string {
+	if len(tools) == 0 {
+		return "none — this provider cannot deny a tool; the mode is what closes delegation instead"
+	}
+	return strings.Join(tools, ", ")
 }

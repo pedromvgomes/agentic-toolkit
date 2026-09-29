@@ -10,8 +10,8 @@ import (
 )
 
 // The curator has no agent definition, so the embedded prompt is the only copy
-// of its content policy. An empty embed would produce a run with a roster
-// entry and no instructions, which answers rather than refusing.
+// of its content policy. An empty embed would produce a run with the job and
+// no instructions, which answers rather than refusing.
 func TestThePromptIsEmbedded(t *testing.T) {
 	if strings.TrimSpace(curator.Prompt()) == "" {
 		t.Fatal("the embedded curator prompt is empty")
