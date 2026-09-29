@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "notes": {
+    "anchored-symlinks-are-refused-not-followed": {
+      "count": 1,
+      "first": "2026-09-29T06:33:25.056127377Z",
+      "last": "2026-09-29T06:33:25.056127377Z"
+    },
+    "bash-writes-are-refused-inside-the-working-directory": {
+      "count": 1,
+      "first": "2026-09-29T06:33:26.01163057Z",
+      "last": "2026-09-29T06:33:26.01163057Z"
+    },
+    "committed-content-cannot-live-in-a-rendered-tree": {
+      "count": 2,
+      "first": "2026-09-29T05:50:48.455720702Z",
+      "last": "2026-09-29T06:33:24.979021431Z"
+    },
+    "curate-verification-is-bidirectional": {
+      "count": 1,
+      "first": "2026-09-29T06:33:25.924322079Z",
+      "last": "2026-09-29T06:33:25.924322079Z"
+    },
+    "curator-refuses-provider-without-deny-list": {
+      "count": 1,
+      "first": "2026-09-29T06:33:25.988230879Z",
+      "last": "2026-09-29T06:33:25.988230879Z"
+    },
+    "curator-write-grant-is-spelled-edit-with-no-mode": {
+      "count": 1,
+      "first": "2026-09-29T06:33:25.956278739Z",
+      "last": "2026-09-29T06:33:25.956278739Z"
+    },
+    "hook-commands-need-no-bash-grant": {
+      "count": 2,
+      "first": "2026-09-29T06:33:24.949115247Z",
+      "last": "2026-09-29T06:33:26.092006924Z"
+    },
+    "hook-must-tolerate-an-older-agtk": {
+      "count": 1,
+      "first": "2026-09-29T06:33:24.927951391Z",
+      "last": "2026-09-29T06:33:24.927951391Z"
+    },
+    "memory-config-is-entry-manifest-only": {
+      "count": 1,
+      "first": "2026-09-29T05:50:48.469869417Z",
+      "last": "2026-09-29T05:50:48.469869417Z"
+    },
+    "memory-hits-are-recorded-only-by-show": {
+      "count": 1,
+      "first": "2026-09-29T06:33:24.896116652Z",
+      "last": "2026-09-29T06:33:24.896116652Z"
+    },
+    "memory-new-does-not-validate-its-root": {
+      "count": 2,
+      "first": "2026-09-29T05:50:48.485682212Z",
+      "last": "2026-09-29T06:33:25.030779953Z"
+    },
+    "nonzero-exit-needs-a-sentinel-in-execute": {
+      "count": 1,
+      "first": "2026-09-29T06:33:26.069628501Z",
+      "last": "2026-09-29T06:33:26.069628501Z"
+    },
+    "scoped-anchor-grant-names-each-note-exactly": {
+      "count": 2,
+      "first": "2026-09-29T06:33:25.005953445Z",
+      "last": "2026-09-29T06:33:26.047516472Z"
+    },
+    "settings-merge-is-shallow-last-wins": {
+      "count": 1,
+      "first": "2026-09-29T06:33:26.11868801Z",
+      "last": "2026-09-29T06:33:26.11868801Z"
+    }
+  }
+}
