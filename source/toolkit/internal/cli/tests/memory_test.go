@@ -1563,9 +1563,17 @@ func hitsProject(t *testing.T) string {
 // stdout.
 func exitCode(t *testing.T, work string, args ...string) (int, string) {
 	t.Helper()
+	code, stdout, _ := exitCodeWithStderr(t, work, args...)
+	return code, stdout
+}
+
+// exitCodeWithStderr is exitCode that also returns what the run wrote to
+// stderr, for commands whose contract includes printing nothing there.
+func exitCodeWithStderr(t *testing.T, work string, args ...string) (int, string, string) {
+	t.Helper()
 	var out, errOut bytes.Buffer
 	env := &cli.Env{Stdin: strings.NewReader(""), Stdout: &out, Stderr: &errOut, WorkDir: work}
-	return cli.ExecuteArgs(env, args), out.String()
+	return cli.ExecuteArgs(env, args), out.String(), errOut.String()
 }
 
 type hitsFoldResult struct {
@@ -1601,9 +1609,12 @@ func TestMemoryHitsFoldSharesTheLog(t *testing.T) {
 		}
 	}
 
-	code, stdout := exitCode(t, work, "memory", "hits", "fold", "--check")
+	code, stdout, stderr := exitCodeWithStderr(t, work, "memory", "hits", "fold", "--check")
 	if code != 1 {
 		t.Errorf("--check over an unfolded log exited %d, want 1", code)
+	}
+	if stderr != "" {
+		t.Errorf("--check repeated its report on stderr: %q", stderr)
 	}
 	if !strings.Contains(stdout, "2 reads over 1 note not yet folded") {
 		t.Errorf("--check did not report what waits to be folded: %q", stdout)
@@ -1627,8 +1638,8 @@ func TestMemoryHitsFoldSharesTheLog(t *testing.T) {
 		t.Errorf("log after fold = %q (%v), want it empty", raw, err)
 	}
 
-	if code, stdout := exitCode(t, work, "memory", "hits", "fold", "--check"); code != 0 || !strings.Contains(stdout, "nothing to fold") {
-		t.Errorf("--check after a fold exited %d with %q, want 0 and nothing to fold", code, stdout)
+	if code, stdout, stderr := exitCodeWithStderr(t, work, "memory", "hits", "fold", "--check"); code != 0 || !strings.Contains(stdout, "nothing to fold") || stderr != "" {
+		t.Errorf("--check after a fold exited %d with stdout %q, stderr %q, want 0, nothing to fold and empty stderr", code, stdout, stderr)
 	}
 
 	stats, _, err := runCLI(t, work, "memory", "stats")
@@ -1734,12 +1745,12 @@ func TestMemoryStatsWithACommittedRecordButNoHits(t *testing.T) {
 func TestMemoryHitsFoldCheckWithNothingToFold(t *testing.T) {
 	work := hitsProject(t)
 
-	if code, stdout := exitCode(t, work, "memory", "hits", "fold", "--check"); code != 0 {
-		t.Errorf("--check with no log exited %d: %q", code, stdout)
+	if code, stdout, stderr := exitCodeWithStderr(t, work, "memory", "hits", "fold", "--check"); code != 0 || stderr != "" {
+		t.Errorf("--check with no log exited %d with stdout %q, stderr %q, want 0 and empty stderr", code, stdout, stderr)
 	}
 	writeFile(t, filepath.Join(work, ".memory/.hits.jsonl"), "")
-	if code, stdout := exitCode(t, work, "memory", "hits", "fold", "--check"); code != 0 {
-		t.Errorf("--check with an empty log exited %d: %q", code, stdout)
+	if code, stdout, stderr := exitCodeWithStderr(t, work, "memory", "hits", "fold", "--check"); code != 0 || stderr != "" {
+		t.Errorf("--check with an empty log exited %d with stdout %q, stderr %q, want 0 and empty stderr", code, stdout, stderr)
 	}
 
 	stdout, _, err := runCLI(t, work, "memory", "hits", "fold")
@@ -1765,9 +1776,12 @@ func TestMemoryHitsFoldCheckJSON(t *testing.T) {
 		t.Fatalf("memory show: %v", err)
 	}
 
-	code, stdout := exitCode(t, work, "memory", "hits", "fold", "--check", "--json")
+	code, stdout, stderr := exitCodeWithStderr(t, work, "memory", "hits", "fold", "--check", "--json")
 	if code != 1 {
 		t.Errorf("--check --json over an unfolded log exited %d, want 1", code)
+	}
+	if stderr != "" {
+		t.Errorf("--check --json wrote to stderr, so stdout is not the whole report: %q", stderr)
 	}
 	var res hitsFoldResult
 	if err := json.Unmarshal([]byte(stdout), &res); err != nil {
