@@ -211,6 +211,14 @@ func (o Options) scope() grantScope {
 	return grantScope{dryRun: o.DryRun, notes: o.Notes}
 }
 
+// backlog reports whether this run is the backlog job: unscoped, unlimited,
+// not the stale job and not a dry run. It is the one job pointed at every
+// staged candidate, so it is the one verify holds to leaving none staged
+// unreported — every other shape may leave a candidate staged by design.
+func (o Options) backlog() bool {
+	return len(o.Notes) == 0 && o.Limit <= 0 && !o.Stale && !o.DryRun
+}
+
 // Result is what a run produced.
 type Result struct {
 	// Text is the curator's report.
@@ -225,6 +233,12 @@ type Result struct {
 	// Report is the run's own account of what it resolved, parsed from the
 	// completion report every run is required to end on. See completionSchema.
 	Report Report
+	// Cleared names, by id, every candidate agtk removed after verification
+	// because the report resolved it and the run left it in candidates/.
+	// Empty when the run deleted every candidate it resolved, and always empty
+	// for a dry run or a run that failed verification, neither of which clears
+	// anything.
+	Cleared []string
 }
 
 // Report is the curator's completion report: the run's own account of which
@@ -495,7 +509,9 @@ const permissionMode = ""
 // against a snapshot taken before the child started, and a report that does
 // not account for the difference in both directions is an error. That error
 // comes back beside the populated Result, whose Text is then the curator's own
-// account of the run the store contradicts.
+// account of the run the store contradicts. A report that holds up has every
+// candidate it resolved and the run left staged removed, named in
+// Result.Cleared.
 func Run(ctx context.Context, opts Options) (Result, error) {
 	provider, err := newProvider(opts.Provider)
 	if err != nil {
@@ -581,9 +597,14 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	}
 	// A report is the run's account of itself, and a run that stopped part-way
 	// or skipped a step reports as confidently as one that finished. Only the
-	// store says which it was.
+	// store says which it was. Clearing follows only a report that held up, so
+	// a run the store contradicts leaves every candidate where it was.
 	if !opts.DryRun {
-		if err := verify(store, before, result.Report); err != nil {
+		if err := verify(store, before, result.Report, opts.backlog()); err != nil {
+			return result, err
+		}
+		result.Cleared, err = clearResolved(store, before, result.Report)
+		if err != nil {
 			return result, err
 		}
 	}

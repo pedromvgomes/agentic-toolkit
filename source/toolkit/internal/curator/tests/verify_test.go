@@ -1,6 +1,9 @@
 package tests
 
 import (
+	"errors"
+	"io/fs"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -29,15 +32,149 @@ func wantRefused(t *testing.T, err error, wants ...string) {
 	}
 }
 
-// A report is the run's account of itself. A candidate it says it resolved
-// and left staged is still in the backlog, and the next run rules on it again
-// having been told it was done.
-func TestAResolvedCandidateStillStagedFails(t *testing.T) {
+// staged reports whether candidate id is in p's candidates/.
+func staged(t *testing.T, p *project, id string) bool {
+	t.Helper()
+	_, err := os.Stat(p.candidatePath(id))
+	switch {
+	case err == nil:
+		return true
+	case errors.Is(err, fs.ErrNotExist):
+		return false
+	}
+	t.Fatalf("stat %s: %v", id, err)
+	return false
+}
+
+// A candidate the run resolved and left staged is still in the backlog, and
+// the next run rules on it again having been told it was done. The report
+// holding up is what settles that it is done, so agtk removes it and says so,
+// whether or not the run's own deletion went through.
+func TestAResolvedCandidateLeftStagedIsCleared(t *testing.T) {
+	const untouched = "20260902-where-render-lives"
 	p := newProject(t)
 	p.stage(t, pinsCandidate)
+	p.stage(t, untouched)
 
-	_, err := p.curate(t, p.fork(t), curator.Report{CandidatesResolved: []string{pinsCandidate}}, curator.Options{})
-	wantRefused(t, err, `candidate "`+pinsCandidate+`"`, "still in candidates/")
+	// Limited to the one candidate, so the other staying staged unreported is
+	// what the run was asked to do rather than a leftover that fails it.
+	res, err := p.curate(t, p.fork(t), curator.Report{CandidatesResolved: []string{pinsCandidate + memory.NoteExt}},
+		curator.Options{Limit: 1})
+	if err != nil {
+		t.Fatalf("a resolved candidate left staged failed the run instead of being cleared: %v", err)
+	}
+	if staged(t, p, pinsCandidate) {
+		t.Error("the resolved candidate is still in candidates/")
+	}
+	if !slices.Equal(res.Cleared, []string{pinsCandidate}) {
+		t.Errorf("Cleared = %v, want the one resolved candidate agtk removed", res.Cleared)
+	}
+	if !staged(t, p, untouched) {
+		t.Error("clearing removed a candidate the report did not resolve")
+	}
+}
+
+// Clearing is what the run's own deletion leaves undone, so after a run that
+// deleted everything it resolved there is nothing left to clear and nothing
+// to report as cleared.
+func TestAResolvedCandidateTheRunDeletedIsNotCleared(t *testing.T) {
+	p := newProject(t)
+	p.stage(t, pinsCandidate)
+	after := p.fork(t)
+	after.remove(t, after.candidatePath(pinsCandidate))
+
+	res, err := p.curate(t, after, curator.Report{CandidatesResolved: []string{pinsCandidate}}, curator.Options{})
+	if err != nil {
+		t.Fatalf("a run that deleted what it resolved was refused: %v", err)
+	}
+	if len(res.Cleared) != 0 {
+		t.Errorf("Cleared = %v, want nothing: the run already deleted the candidate", res.Cleared)
+	}
+}
+
+// A report the store contradicts settles nothing, including which candidates
+// were ruled on, so a failing run leaves every candidate where it was for the
+// re-run to find.
+func TestNothingIsClearedWhenVerificationFails(t *testing.T) {
+	for name, tc := range map[string]struct {
+		during func(*testing.T, *project)
+		want   string
+	}{
+		"an unreported note": {
+			during: func(t *testing.T, after *project) {
+				after.writeNote(t, pinsNote, true)
+				after.reindex(t)
+			},
+			want: `note "` + pinsNote + `" is new on disk but was not reported`,
+		},
+		"an unreported leftover": {
+			during: func(t *testing.T, after *project) { after.stage(t, "20260903-left-behind") },
+			want:   `candidate "20260903-left-behind"`,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			p := newProject(t)
+			p.stage(t, pinsCandidate)
+			after := p.fork(t)
+			tc.during(t, after)
+
+			res, err := p.curate(t, after, curator.Report{CandidatesResolved: []string{pinsCandidate}}, curator.Options{})
+			wantRefused(t, err, tc.want)
+			if !staged(t, p, pinsCandidate) {
+				t.Error("a run that failed verification had its resolved candidate cleared")
+			}
+			if len(res.Cleared) != 0 {
+				t.Errorf("Cleared = %v, want nothing from a run that failed verification", res.Cleared)
+			}
+		})
+	}
+}
+
+// The backlog job is pointed at every staged candidate. One it leaves staged
+// and does not report is a candidate nobody ruled on, behind a run that reads
+// as a finished pass — the next run is the only thing that would ever notice.
+func TestAnUnreportedLeftoverFailsTheBacklogRun(t *testing.T) {
+	const leftover = "20260902-where-render-lives"
+	p := newProject(t)
+	p.stage(t, pinsCandidate)
+	p.stage(t, leftover)
+	after := p.fork(t)
+	after.remove(t, after.candidatePath(pinsCandidate))
+
+	_, err := p.curate(t, after, curator.Report{CandidatesResolved: []string{pinsCandidate}}, curator.Options{})
+	wantRefused(t, err, `candidate "`+leftover+`" is still in candidates/ but was not reported resolved`)
+	if err != nil && strings.Contains(err.Error(), `candidate "`+pinsCandidate+`"`) {
+		t.Errorf("the candidate the run resolved was named as a leftover: %v", err)
+	}
+}
+
+// Every other job may leave a candidate staged by design: a scoped or limited
+// run is pointed at some candidates, the stale job at none, and a dry run
+// rules on nothing it can act on. Failing them for a staged candidate would
+// fail every one of them that did exactly what it was asked.
+func TestAnUnreportedLeftoverDoesNotFailAnyOtherJob(t *testing.T) {
+	for name, opts := range map[string]curator.Options{
+		"a scoped run":  {Notes: []string{pinsNote}},
+		"a limited run": {Limit: 1},
+		"the stale job": {Stale: true},
+		"a dry run":     {DryRun: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			p := newProject(t)
+			p.stage(t, pinsCandidate)
+
+			if _, err := p.curate(t, p.fork(t), curator.Report{}, curator.Options{}); err == nil {
+				t.Fatal("the fixture passes as a backlog run, so it proves nothing about this one")
+			}
+			res, err := p.curate(t, p.fork(t), curator.Report{}, opts)
+			if err != nil {
+				t.Fatalf("a staged candidate outside the backlog job failed the run: %v", err)
+			}
+			if !staged(t, p, pinsCandidate) || len(res.Cleared) != 0 {
+				t.Errorf("an unreported candidate was cleared (Cleared = %v)", res.Cleared)
+			}
+		})
+	}
 }
 
 // A note the run wrote and never anchored carries no hash, so audit has
@@ -191,7 +328,7 @@ func TestACandidateRemovedButNotReportedFails(t *testing.T) {
 	wantRefused(t, err, `candidate "`+pinsCandidate+`"`, "was removed but was not reported")
 }
 
-// A run that promoted, retracted and cleared everything it says it did, and
+// A run that promoted, retracted and deleted everything it says it did, and
 // nothing else, is accepted with its report intact.
 func TestAReportThatAccountsForTheStoreIsAccepted(t *testing.T) {
 	const (
@@ -260,26 +397,31 @@ func TestATouchedNoteThatDoesNotExistFails(t *testing.T) {
 
 // A dry run's grant writes nothing, so there is no difference to account for
 // and nothing for its report to be held to — even a store and report that
-// would otherwise fail every check in both directions.
+// would otherwise fail every check in both directions. Nor does it clear the
+// candidates its report resolves: it is a preview of a ruling, not one.
 func TestADryRunIsNotHeldToItsReport(t *testing.T) {
 	const vanished = "20260902-where-render-lives"
 	report := curator.Report{CandidatesResolved: []string{pinsCandidate}, NotesTouched: []string{"never-written"}}
-	curate := func(opts curator.Options) error {
+	curate := func(opts curator.Options) (*project, curator.Result, error) {
 		p := newProject(t)
 		p.stage(t, pinsCandidate)
 		p.stage(t, vanished)
 		after := p.fork(t)
 		after.writeNote(t, pinsNote, false)
 		after.remove(t, after.candidatePath(vanished))
-		_, err := p.curate(t, after, report, opts)
-		return err
+		res, err := p.curate(t, after, report, opts)
+		return p, res, err
 	}
 
-	if err := curate(curator.Options{}); err == nil {
+	if _, _, err := curate(curator.Options{}); err == nil {
 		t.Fatal("the fixture passes verification as a real run, so it proves nothing about a dry run")
 	}
-	if err := curate(curator.Options{DryRun: true}); err != nil {
+	p, res, err := curate(curator.Options{DryRun: true})
+	if err != nil {
 		t.Fatalf("a dry run was held to its report: %v", err)
+	}
+	if !staged(t, p, pinsCandidate) || len(res.Cleared) != 0 {
+		t.Errorf("a dry run cleared a candidate its report resolved (Cleared = %v)", res.Cleared)
 	}
 }
 

@@ -929,24 +929,40 @@ func reportCurateCheck(env *Env, jsonOut bool, ready curator.Ready) error {
 // then contradicted, so it is printed — or carried in the JSON report — before
 // the error that names the mismatch is returned. Every other error returns
 // before Text is ever set, so its emptiness is what tells the two apart.
+//
+// The candidates agtk cleared after verification follow the curator's report,
+// one per line, or ride in the JSON report's `cleared` list. They are printed
+// because agtk, not the run, removed them: the curator's account does not
+// mention them, and a file vanishing from candidates/ with nothing on record
+// saying who took it reads as a lost finding.
 func reportCurateResult(env *Env, jsonOut, stale bool, res curator.Result, runErr error) error {
 	if runErr != nil && res.Text == "" {
 		return runErr
 	}
 
 	if jsonOut {
-		if err := writeJSON(env, memoryCurateJSON{
-			Version: jsonVersion,
-			Stale:   stale,
-			Failed:  runErr != nil || res.IsError,
-			Model:   res.Model,
-			CostUSD: res.CostUSD,
-			Report:  res.Text,
+		cleared := res.Cleared
+		if cleared == nil {
+			cleared = []string{}
+		}
+		if err := writeJSON(env, memoryCurateResultJSON{
+			memoryCurateJSON: memoryCurateJSON{
+				Version: jsonVersion,
+				Stale:   stale,
+				Failed:  runErr != nil || res.IsError,
+				Model:   res.Model,
+				CostUSD: res.CostUSD,
+				Report:  res.Text,
+			},
+			Cleared: cleared,
 		}); err != nil {
 			return err
 		}
 	} else {
 		fmt.Fprintln(env.Stdout, res.Text)
+		for _, id := range res.Cleared {
+			fmt.Fprintf(env.Stdout, "cleared: %s (resolved, left in candidates/ by the run)\n", id)
+		}
 	}
 	if runErr != nil {
 		return runErr
@@ -955,6 +971,15 @@ func reportCurateResult(env *Env, jsonOut, stale bool, res curator.Result, runEr
 		return errMemoryCurate
 	}
 	return nil
+}
+
+// memoryCurateResultJSON is `memory curate --json`'s output: memoryCurateJSON's
+// fields, flattened into the same object, and the candidates agtk cleared.
+// Cleared is never null, so a script iterates it without a nil check, and an
+// empty list is the ordinary case of a run that deleted what it resolved.
+type memoryCurateResultJSON struct {
+	memoryCurateJSON
+	Cleared []string `json:"cleared"`
 }
 
 // memoryAgent reads `memory.agent` from the entry manifest, the same way and
