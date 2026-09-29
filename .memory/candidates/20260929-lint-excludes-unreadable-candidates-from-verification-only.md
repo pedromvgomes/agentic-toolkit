@@ -7,7 +7,7 @@ saw:
   - source/toolkit/internal/curator/prompt.md
   - source/toolkit/internal/curator/tests/unreadable_test.go
   - source/toolkit/internal/cli/memory.go
-  - docs/adr/0021-agtk-clears-the-candidates-the-curator-processed.md
+  - docs/adr/0022-agtk-clears-the-candidates-the-curator-processed.md
 ---
 
 Why `Store.Lint` does not include unreadable candidates:
@@ -23,7 +23,7 @@ Why `Store.Lint` does not include unreadable candidates:
 - So the check lives in a separate method, `Store.LintCandidates` (`memory/lint.go:108-117`), and
   the CLI adds it after `Store.Lint` (`cli/memory.go:472`). Test
   `memory/tests/candidate_test.go` `TestLintSaysNothingAboutAnUnreadableCandidate` pins that
-  `Lint`'s output does not change when one is present. ADR 0021 records the decision.
+  `Lint`'s output does not change when one is present. ADR 0022 records the decision.
 
 The curator's grant includes `Bash(agtk memory lint*)` (`curator.go:327`) and `prompt.md:127` tells
 it to run `agtk memory lint` and "fix anything it reports". That is the CLI command, which does

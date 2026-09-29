@@ -5,7 +5,7 @@ saw:
   - source/toolkit/internal/curator/curator.go
   - source/toolkit/internal/curator/prompt.md
   - source/toolkit/internal/curator/tests/verify_test.go
-  - docs/adr/0021-agtk-clears-the-candidates-the-curator-processed.md
+  - docs/adr/0022-agtk-clears-the-candidates-the-curator-processed.md
 targets: curate-verification-is-bidirectional
 verdict: now-false
 ---
@@ -39,5 +39,5 @@ What holds now:
   candidates that do not parse; the backlog check excludes them (`verify.go:215`) and clearing
   skips them (`curator.go:624`).
 - Deletion by the curator itself is still prose plus grant (`prompt.md:146-150`,
-  `curator.go:362-364`); ADR 0021 records that `agtk` clearing is the deterministic backstop and
+  `curator.go:362-364`); ADR 0022 records that `agtk` clearing is the deterministic backstop and
   the grant stays.
