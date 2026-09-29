@@ -237,21 +237,33 @@ _Avoid_: profile, preset, tier
 **Block**:
 A **Provider** declining to serve the credential it was given, rather than attempting the run
 and failing — reported by `agentic-driver` as `Result.Blocked`, distinct from every other bad
-verdict a run can return. It is the one outage `agtk` routes around instead of surfacing: a
-**Panel** that stayed unavailable because every run on it was blocked retries once on its
-**Fallback panel**, and if that also comes back blocked, the review reports "no verdict" to the
-caller without posting anything to the pull request — a block is a credential/quota condition,
-not a defect the review invariant exists to surface. An ordinary failure (a bad schema, a
-sandbox refusal, a timeout) is not a Block and always posts, same as before.
+verdict a run can return. It is the one outage `agtk` both routes around and keeps off the pull
+request: a **Panel** that stayed unavailable because every run on it was blocked retries once on
+its **Fallback panel**, and if that also comes back blocked, the review reports "no verdict" to
+the caller without posting anything to the pull request — a block is a credential/quota
+condition, not a defect the review invariant exists to surface. An ordinary failure (a bad
+schema, a sandbox refusal, a timeout) is not a Block and always posts.
 
 Only `claudecode`'s dialect can report one as of this writing; `codex`'s cannot, so a panel that
 runs on `codex` fails ordinarily under load rather than triggering a fallback.
 _Avoid_: rate limit, throttle, outage (an outage posts; a Block does not)
 
+**Missing provider**:
+A run whose **Provider** could not be started on this machine at all — its CLI is not on `PATH`,
+or the binary it resolved to is absent, empty, a directory or not executable — so nothing was
+attempted. Like a **Block**, a different provider can fix it, so it counts toward trying the
+**Fallback panel**. Unlike a **Block**, it never keeps the review off the pull request: a review
+that is still unavailable after the fallback, or that has no fallback to try, posts its "no
+verdict" like any other outage, because a missing binary is a setup problem somebody has to
+see. A provider that started and then failed — timed out, was cancelled, crashed, emitted an
+unreadable stream — is an ordinary failure, not a Missing provider, even though
+`agentic-driver` reports all of them with the same error.
+_Avoid_: not installed, uninstalled, unavailable (every run that did not answer is unavailable)
+
 **Fallback panel**:
 The **Panel** named in another's `fallback:` field, tried once, whole, when every run of the
-first panel that did not answer was **Block**ed. A run that answered, or a failure with any
-other cause sitting alongside a **Block**, is not this condition: the review's unavailability
+first panel that did not answer was **Block**ed or hit a **Missing provider**. A run that
+answered, or a failure with any other cause sitting alongside them, is not this condition: the review's unavailability
 then has a cause a different provider cannot fix, and it must stay as visible as any other
 outage. Explicit per panel rather than inferred from a naming convention, because a **Panel**
 carries no provider of its own — each **Runner** in it does — and inference would silently

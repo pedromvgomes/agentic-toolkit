@@ -165,9 +165,12 @@ type Panel struct {
 	Validator *Runner `yaml:"validator,omitempty" agtkdoc:"Validator for reviews this panel produces, instead of the manifest's. Unset uses the manifest's."`
 
 	// Fallback names the panel to retry, whole, when every run this panel
-	// made was blocked — a provider declining to serve the credential rather
-	// than attempting the run and failing at it, e.g. a spent quota or a
-	// rejected token. Explicit rather than inferred from a naming
+	// made that did not answer was blocked or found its provider missing.
+	// A block is a provider declining to serve the credential rather than
+	// attempting the run and failing at it, e.g. a spent quota or a rejected
+	// token; a missing provider is a CLI that could not be started on this
+	// machine at all. A run that started and then failed does not count.
+	// Explicit rather than inferred from a naming
 	// convention, because a panel carries no provider of its own; only its
 	// reviewers do.
 	//
@@ -184,7 +187,7 @@ type Panel struct {
 	// (Providers). "On a different provider" is not this field's own
 	// convention to keep; a fallback that shares a provider would repeat
 	// the identical block the moment it was actually needed.
-	Fallback string `yaml:"fallback,omitempty" agtkdoc:"Panel to retry, on a different provider, when every run this panel made was blocked (a provider declining to serve the credential — spent quota or a rejected token). Tried once; a manifest naming its panels' own twins on each provider is the usual shape. Refused if it costs less than this panel (fewer reviewers times quorum), or if it shares any provider with this panel — the block would only recur."`
+	Fallback string `yaml:"fallback,omitempty" agtkdoc:"Panel to retry, on a different provider, when every run this panel made that did not answer was blocked (a provider declining to serve the credential — spent quota or a rejected token) or found its provider missing (its CLI is not installed). A run that started and then failed does not count. Tried once; a manifest naming its panels' own twins on each provider is the usual shape. Refused if it costs less than this panel (fewer reviewers times quorum), or if it shares any provider with this panel — the block or missing provider would only recur."`
 }
 
 // EffectiveJudge is the judge that reconciles a review the named panel

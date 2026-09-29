@@ -261,15 +261,20 @@ func Prepare(opts Options) (*Plan, *review.Manifest, *review.Selection, *Root, e
 //
 // A review left unavailable because every run that did not answer was
 // blocked — a provider declining to serve the credential, rather than
-// attempting the run and failing at it — is retried once, whole, on the
-// panel's own declared Fallback, before Run gives up. It is a single hop
-// rather than a chain: the retry calls runPanel directly, so nothing
-// re-enters this wrapper and a manifest whose fallback pointers formed a
-// cycle still costs exactly one extra panel rather than spending forever.
-// An ordinary failure (a bad schema, a sandbox refusal, a timeout) is not a
-// block and is never retried here — it is left exactly as visible as it
-// always was, even when a block happened to hit an unrelated run in the
-// same panel.
+// attempting the run and failing at it — or found its provider missing from
+// this machine is retried once, whole, on the panel's own declared Fallback,
+// before Run gives up. It is a single hop rather than a chain: the retry
+// calls runPanel directly, so nothing re-enters this wrapper and a manifest
+// whose fallback pointers formed a cycle still costs exactly one extra panel
+// rather than spending forever.
+// An ordinary failure (a bad schema, a sandbox refusal, a timeout) is neither
+// and is never retried here — it is left exactly as visible as it always
+// was, even when a block happened to hit an unrelated run in the same panel.
+//
+// Only a block keeps the review Blocked, and so off the pull request. A
+// missing provider triggers the same retry but never that silence: a review
+// still unavailable because of one posts its "no verdict" like any other
+// outage (ADR 0021).
 func Run(ctx context.Context, opts Options) (*Review, error) {
 	pm, err := prepareMaterial(opts)
 	if err != nil {
@@ -286,13 +291,14 @@ func Run(ctx context.Context, opts Options) (*Review, error) {
 		return nil, err
 	}
 	tagPanel(out.Reports, out.Panel)
-	if out.Available || !onlyBlocked(out.Reports) {
+	reroutable, blocked := unansweredCause(out.Reports)
+	if out.Available || !reroutable {
 		return out, nil
 	}
 
 	panel, ok := pm.m.Panels[out.Panel]
 	if !ok || panel.Fallback == "" || panel.Fallback == out.Panel {
-		out.Blocked = true
+		out.Blocked = blocked
 		return out, nil
 	}
 
@@ -302,6 +308,16 @@ func Run(ctx context.Context, opts Options) (*Review, error) {
 	}
 	tagPanel(alt.Reports, alt.Panel)
 	alt.FallbackFrom = out.Panel
+	// A fallback panel that blocked too means neither provider could serve
+	// this review, and that is still a block rather than an ordinary failure
+	// to surface. Read off the fallback panel's own runs, because the first
+	// panel's runs already answered this question by triggering the retry,
+	// and a missing provider there says nothing about what the fallback's
+	// provider did. A fallback that failed for any other reason, a missing
+	// provider included, is left to post visibly, same as any other outage.
+	if !alt.Available {
+		_, alt.Blocked = unansweredCause(alt.Reports)
+	}
 	// The first attempt's runs and spend are not lost with its Review: every
 	// run actually made belongs in the record and in the total, whichever
 	// panel it ran under.
@@ -317,13 +333,6 @@ func Run(ctx context.Context, opts Options) (*Review, error) {
 	if alt.Available {
 		alt.Findings, alt.ReattachedIDs = mergeCarriedInjections(alt.Findings, alt.ReattachedIDs, out.injectedCarry)
 	}
-	// The fallback panel blocked too: neither provider could serve this
-	// review, and that is still a block rather than an ordinary failure to
-	// surface. A fallback that failed for an unrelated reason is left to
-	// post visibly, same as any other outage.
-	if !alt.Available && onlyBlocked(alt.Reports) {
-		alt.Blocked = true
-	}
 	return alt, nil
 }
 
@@ -335,24 +344,33 @@ func tagPanel(reports []RunReport, panel string) {
 	}
 }
 
-// onlyBlocked reports whether every run in reports that did not answer was
-// blocked by its provider, with at least one such run present. A run that
-// answered is ignored either way; a run that failed for any other reason
-// makes this false, because the review's unavailability then has a cause a
-// different provider cannot fix, and a block elsewhere in the same panel
-// must not make that failure invisible.
-func onlyBlocked(reports []RunReport) bool {
-	sawBlocked := false
+// unansweredCause reads what the runs in reports that did not answer have in
+// common, and is false on both counts when every run answered.
+//
+// reroutable is whether every one of them was blocked or found its provider
+// missing: a cause a different provider can fix, so the panel's fallback is
+// worth trying. blocked is whether every one of them was blocked, the one
+// cause that keeps a review off the pull request. A run that answered is
+// ignored either way; a run that failed for any other reason makes both
+// false, because the review's unavailability then has a cause a different
+// provider cannot fix, and a block or a missing provider elsewhere in the
+// same panel must not make that failure invisible.
+func unansweredCause(reports []RunReport) (reroutable, blocked bool) {
+	reroutable, blocked = true, true
+	unanswered := false
 	for _, r := range reports {
 		if r.Report.Available {
 			continue
 		}
+		unanswered = true
 		if !r.Report.Blocked {
-			return false
+			blocked = false
+			if !r.Report.Missing {
+				reroutable = false
+			}
 		}
-		sawBlocked = true
 	}
-	return sawBlocked
+	return reroutable && unanswered, blocked && unanswered
 }
 
 // mergeCarriedInjections appends the carried, prompt-injection findings not
@@ -758,7 +776,7 @@ func runJudge(ctx context.Context, opts Options, inv invoker, sched *scheduler,
 	// field named for quoted code.
 	release, err := sched.acquire(ctx, judge)
 	if err != nil {
-		out.Report = Unavailable("the judge was never started: %v", err)
+		out.Report = neverStarted("the judge", err)
 		return nil, nil, nil, nil, out
 	}
 	res, invokeErr := inv.Invoke(ctx, judge, req)

@@ -2,6 +2,7 @@ package reviewrun
 
 import (
 	"context"
+	"errors"
 	"sync"
 
 	"github.com/pedromvgomes/agentic-toolkit/internal/review"
@@ -137,7 +138,9 @@ type scheduled struct {
 // A job that never acquires its slot reports that it could not answer, naming
 // why. It must not come back as a zero value: an empty report is a run that
 // found nothing, and "the review was cancelled" and "the code is clean" are
-// the two readings this package exists to keep apart.
+// the two readings this package exists to keep apart. Asking a provider for
+// its limit builds its driver, so a provider not installed on this machine
+// surfaces here, and reports as Missing rather than as an ordinary outage.
 func (s *scheduler) runAll(ctx context.Context, jobs []scheduled) []RunReport {
 	out := make([]RunReport, len(jobs))
 	var wg sync.WaitGroup
@@ -148,7 +151,7 @@ func (s *scheduler) runAll(ctx context.Context, jobs []scheduled) []RunReport {
 			release, err := s.acquire(ctx, jobs[i].runner)
 			if err != nil {
 				out[i] = jobs[i].proto
-				out[i].Report = Unavailable("%s was never started: %v", jobs[i].proto.Label, err)
+				out[i].Report = neverStarted(jobs[i].proto.Label, err)
 				return
 			}
 			defer release()
@@ -157,4 +160,14 @@ func (s *scheduler) runAll(ctx context.Context, jobs []scheduled) []RunReport {
 	}
 	wg.Wait()
 	return out
+}
+
+// neverStarted reports a run that never acquired its slot. A missing provider
+// is Missing, so it still counts toward the panel's fallback; anything else —
+// a cancelled review included — is an ordinary outage.
+func neverStarted(label string, err error) Report {
+	if errors.Is(err, errMissingProvider) {
+		return Missing("%s was never started: %v", label, err)
+	}
+	return Unavailable("%s was never started: %v", label, err)
 }

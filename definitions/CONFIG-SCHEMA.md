@@ -135,7 +135,7 @@ One configured model invocation. It says which CLI, which model and which prompt
 | `validate` | `bool` | no | Whether findings are put to the validator. Unset leaves it to the context, and a context that posts validates regardless: a false finding on a PR is published and blocks approval. |
 | `judge` | `Runner` | no | Judge for reviews this panel produces, instead of the manifest's. Unset uses the manifest's. |
 | `validator` | `Runner` | no | Validator for reviews this panel produces, instead of the manifest's. Unset uses the manifest's. |
-| `fallback` | `string` | no | Panel to retry, on a different provider, when every run this panel made was blocked (a provider declining to serve the credential — spent quota or a rejected token). Tried once; a manifest naming its panels' own twins on each provider is the usual shape. Refused if it costs less than this panel (fewer reviewers times quorum), or if it shares any provider with this panel — the block would only recur. |
+| `fallback` | `string` | no | Panel to retry, on a different provider, when every run this panel made that did not answer was blocked (a provider declining to serve the credential — spent quota or a rejected token) or found its provider missing (its CLI is not installed). A run that started and then failed does not count. Tried once; a manifest naming its panels' own twins on each provider is the usual shape. Refused if it costs less than this panel (fewer reviewers times quorum), or if it shares any provider with this panel — the block or missing provider would only recur. |
 
 ### `defaults`
 
