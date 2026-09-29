@@ -1,5 +1,5 @@
 ---
-about: `permissions` unions across settings definitions (allow/deny/ask); every other top-level settings key is still last-wins
+about: "`permissions` unions across settings definitions (allow/deny/ask); every other top-level settings key is still last-wins"
 saw:
   - source/toolkit/internal/adapters/claude/settings.go
   - source/toolkit/internal/adapters/claude/tests/permissions_compose_test.go

@@ -1,5 +1,5 @@
 ---
-about: a missing per-category scan directory under root: is silently empty, but a configured-but-missing context: file is a hard error — deliberately asymmetric
+about: "a missing per-category scan directory under root: is silently empty, but a configured-but-missing context: file is a hard error — deliberately asymmetric"
 saw:
   - source/toolkit/internal/resolver/entryscan.go
 ---

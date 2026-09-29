@@ -1,5 +1,5 @@
 ---
-about: EntryManifest has no per-category lists (skills:, instructions:, etc.) and no bare-name entry resolution at all — only stacks: (URL/./path only) and convention scanning under root:
+about: "EntryManifest has no per-category lists (skills:, instructions:, etc.) and no bare-name entry resolution at all — only stacks: (URL/./path only) and convention scanning under root:"
 saw:
   - source/toolkit/internal/stack/entrymanifest.go
   - source/toolkit/internal/resolver/entryscan.go

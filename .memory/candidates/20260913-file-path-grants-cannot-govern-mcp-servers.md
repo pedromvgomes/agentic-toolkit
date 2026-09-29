@@ -1,5 +1,5 @@
 ---
-about: a file-path permission grant cannot govern what an MCP server does in its own process
+about: "a file-path permission grant cannot govern what an MCP server does in its own process"
 saw:
   - definitions/settings/skill-permissions.yaml
   - source/toolkit/internal/curator/curator.go

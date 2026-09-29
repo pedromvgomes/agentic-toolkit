@@ -1,5 +1,5 @@
 ---
-about: everything the entry manifest contributes — scanned category files and the context: instruction alike — merges through the same per-category overlay loop as named stack entries, keyed by StackName = ""
+about: "everything the entry manifest contributes — scanned category files and the context: instruction alike — merges through the same per-category overlay loop as named stack entries, keyed by StackName = \"\""
 saw:
   - source/toolkit/internal/resolver/resolver.go
   - source/toolkit/internal/resolver/entryscan.go

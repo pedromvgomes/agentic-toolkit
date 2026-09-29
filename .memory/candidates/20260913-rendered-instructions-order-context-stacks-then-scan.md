@@ -1,5 +1,5 @@
 ---
-about: rendered instructions are ordered context: first, then stack-named (unchanged plan order), then locally scanned ones last by filename (EntryPath), not by their declared name:
+about: "rendered instructions are ordered context: first, then stack-named (unchanged plan order), then locally scanned ones last by filename (EntryPath), not by their declared name:"
 saw:
   - source/toolkit/internal/adapters/claude/instructions.go
   - source/toolkit/internal/adapters/codex/agentsmd.go
