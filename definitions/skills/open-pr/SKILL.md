@@ -111,10 +111,11 @@ writes to, and it is not `notes/`.
 (ADR 0003). Say in your output that candidates are waiting.
 
 Then record the reads this session made, so they travel with the branch. First check that the
-installed `agtk` knows the subcommand:
+installed `agtk` knows the subcommand. The probe asks for the `fold` help because an older `agtk`
+answers `memory hits --help` with the parent `memory` help and exits 0:
 
 ```bash
-agtk memory hits --help >/dev/null 2>&1
+agtk memory hits fold --help 2>&1 | grep -q -- '--check'
 ```
 
 If that fails, the binary predates it: skip the fold, say so in one line, and carry on. Otherwise:

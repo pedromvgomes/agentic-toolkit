@@ -1,6 +1,9 @@
 package tests
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -62,8 +65,8 @@ func TestOpenPRFoldsHitsBeforeTheCommitStep(t *testing.T) {
 	apply := renderDefaultStack(t)
 	skill := readRendered(t, apply, ".claude/skills/open-pr/SKILL.md")
 
-	const probe = "agtk memory hits --help >/dev/null 2>&1"
-	const fold = "agtk memory hits fold"
+	const probe = "agtk memory hits fold --help 2>&1 | grep -q -- '--check'"
+	const fold = "agtk memory hits fold\n```"
 	commit := strings.Index(skill, "## 3 — Commit and push")
 	if commit < 0 {
 		t.Fatalf("open-pr has no commit step:\n%s", skill)
@@ -104,6 +107,68 @@ func TestOpenPRChecksTheStoreIsCleanBeforePushing(t *testing.T) {
 	}
 	if !strings.Contains(skill[commit:open], "before pushing") {
 		t.Error("open-pr does not require the leftover store files to be handled before the push")
+	}
+}
+
+// An older agtk answers `memory hits --help` with the parent `memory` help and
+// exits 0, so the probe passes only if it asks for the `fold` help and looks for
+// a flag that help alone lists. The probe is run as the skill writes it, against
+// a fake agtk on PATH.
+func TestOpenPRProbeAcceptsOnlyAnAgtkThatKnowsHitsFold(t *testing.T) {
+	apply := renderDefaultStack(t)
+	skill := readRendered(t, apply, ".claude/skills/open-pr/SKILL.md")
+
+	intro := strings.Index(skill, "knows the subcommand")
+	if intro < 0 {
+		t.Fatalf("open-pr does not introduce a probe for the subcommand:\n%s", skill)
+	}
+	const fence = "```bash\n"
+	start := strings.Index(skill[intro:], fence)
+	if start < 0 {
+		t.Fatalf("open-pr has no probe block after its introduction:\n%s", skill)
+	}
+	block := skill[intro+start+len(fence):]
+	probe := strings.TrimSpace(block[:strings.Index(block, "```")])
+
+	const current = `#!/bin/sh
+if [ "$1 $2 $3" = "memory hits fold" ]; then
+	printf 'Usage: agtk memory hits fold [flags]\n\n      --check   report without writing\n'
+	exit 0
+fi
+exit 1
+`
+	const older = `#!/bin/sh
+if [ "$1" = "memory" ]; then
+	printf 'Usage: agtk memory <command>\n\nCommands:\n  stats\n  show\n  candidates\n'
+	exit 0
+fi
+exit 1
+`
+
+	tests := []struct {
+		name   string
+		script string
+		wantOK bool
+	}{
+		{"an agtk that knows hits fold", current, true},
+		{"an agtk that answers with the parent memory help", older, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			bin := t.TempDir()
+			if err := os.WriteFile(filepath.Join(bin, "agtk"), []byte(tc.script), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			cmd := exec.Command("sh", "-c", probe)
+			cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+			out, err := cmd.CombinedOutput()
+			if tc.wantOK && err != nil {
+				t.Errorf("the probe rejects an agtk that knows hits fold: %v\n%s", err, out)
+			}
+			if !tc.wantOK && err == nil {
+				t.Errorf("the probe accepts an agtk that answers with the parent memory help:\n%s", out)
+			}
+		})
 	}
 }
 
