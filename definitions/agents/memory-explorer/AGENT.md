@@ -92,7 +92,7 @@ Ask the store which notes bear on the question:
 agtk memory search --files <a,b> <words…>
 ```
 
-Pass the files the task names to `--files` (paths relative to `project_root`) and the words the
+Pass the files the task names to `--files` (paths relative to your working directory, or absolute; one outside `project_root` is rejected) and the words the
 question turns on as the rest of the arguments. Either alone is enough; with neither, the
 command is a usage error. Search as many times as it takes — once by files, once by words, or
 again with refined words when the first results miss.

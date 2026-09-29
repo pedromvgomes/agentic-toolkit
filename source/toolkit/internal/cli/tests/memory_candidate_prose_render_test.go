@@ -25,6 +25,21 @@ func TestTheExplorerQuotesAboutAndIsNotToldToRunLint(t *testing.T) {
 	}
 }
 
+// The command resolves a relative --files path against the working directory, so
+// telling the explorer they are relative to project_root sends a search from a
+// subdirectory to the wrong path, and it quietly returns nothing.
+func TestTheExplorerIsToldFilesAreRelativeToTheWorkingDirectory(t *testing.T) {
+	apply := renderDefaultStack(t)
+	explorer := readRendered(t, apply, ".claude/agents/memory-explorer/AGENT.md")
+
+	if strings.Contains(explorer, "(paths relative to `project_root`)") {
+		t.Error("the explorer is told --files paths are relative to project_root, but the command resolves them against the working directory")
+	}
+	if !strings.Contains(explorer, "paths relative to your working directory, or absolute") {
+		t.Error("the explorer is not told that --files paths are relative to the working directory, or absolute")
+	}
+}
+
 func TestOpenPRQuotesAboutAndLintsWhatItStaged(t *testing.T) {
 	apply := renderDefaultStack(t)
 	skill := readRendered(t, apply, ".claude/skills/open-pr/SKILL.md")
