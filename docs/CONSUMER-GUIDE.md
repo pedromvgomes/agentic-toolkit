@@ -327,14 +327,23 @@ agtk memory index               # regenerate INDEX.md (scaffolds the store)
 agtk memory anchor              # stamp blob hashes into note anchors
 agtk memory audit               # report notes whose anchored files changed
 agtk memory lint                # structural check for CI, notes and candidates
+agtk memory search [--files a,b] [words…]
+                                # rank notes against files and words, count no read
 agtk memory show <name>         # read one note, and count the read
 agtk memory stats               # size, staleness, hit rate
+agtk memory candidates          # list the findings staged for curation
 agtk memory curate              # rule on the staged candidates (calls a model)
 ```
 
 Every command takes `--json`. Nothing here calls a model except `curate`:
-`index`, `anchor`, `audit` and `lint` are deterministic, so they are safe in
-hooks and CI.
+every other subcommand is deterministic, so they are safe in hooks and CI.
+
+`search` is how the explorer finds the notes that bear on a question. It ranks
+them by the files and words you name, with a note anchoring a named file above
+any that matches on words alone, and it scans the notes on every call, so a
+result always reflects what is on disk. It records no read and marks a stale
+note without demoting it; open a result with `show`, which is the read that
+counts. See `docs/adr/0023-memory-retrieval-is-a-file-scan-behind-a-ranker.md`.
 
 `stats` also reports where the store is, which is how an agent finds it
 without re-deriving resolution from the manifest:
