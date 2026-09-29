@@ -55,6 +55,75 @@ func TestOpenPRQuotesAboutAndLintsWhatItStaged(t *testing.T) {
 	}
 }
 
+// The fold runs before the commit step so the shard lands in the same commit as
+// the candidates; an installed binary that predates the subcommand is probed
+// first so the skill skips the fold instead of failing.
+func TestOpenPRFoldsHitsBeforeTheCommitStep(t *testing.T) {
+	apply := renderDefaultStack(t)
+	skill := readRendered(t, apply, ".claude/skills/open-pr/SKILL.md")
+
+	const probe = "agtk memory hits --help >/dev/null 2>&1"
+	const fold = "agtk memory hits fold"
+	commit := strings.Index(skill, "## 3 — Commit and push")
+	if commit < 0 {
+		t.Fatalf("open-pr has no commit step:\n%s", skill)
+	}
+	probeAt := strings.Index(skill, probe)
+	foldAt := strings.Index(skill, fold)
+	if probeAt < 0 {
+		t.Error("open-pr folds without probing whether the installed agtk knows the subcommand")
+	}
+	if foldAt < 0 {
+		t.Error("open-pr never folds the local hit log into a shard")
+	}
+	if probeAt > foldAt {
+		t.Error("open-pr folds before probing for the subcommand, so an older binary fails the skill")
+	}
+	if foldAt > commit {
+		t.Error("open-pr folds only after the commit step, so the shard misses the memory commit")
+	}
+	if !strings.Contains(skill, "never commits, so the shard is left for the next step") {
+		t.Error("open-pr does not say that the fold leaves the commit to the session")
+	}
+}
+
+// A fold or a staged candidate that is never committed is lost with the
+// container, so the commit step ends on a check that the store has nothing left.
+func TestOpenPRChecksTheStoreIsCleanBeforePushing(t *testing.T) {
+	apply := renderDefaultStack(t)
+	skill := readRendered(t, apply, ".claude/skills/open-pr/SKILL.md")
+
+	commit := strings.Index(skill, "## 3 — Commit and push")
+	open := strings.Index(skill, "## 4 — Open it")
+	guard := strings.Index(skill, "git status --short -- <root>")
+	if commit < 0 || open < 0 {
+		t.Fatalf("open-pr lacks its commit or open step:\n%s", skill)
+	}
+	if guard < commit || guard > open {
+		t.Error("open-pr does not check the store for uncommitted files within the commit step")
+	}
+	if !strings.Contains(skill[commit:open], "before pushing") {
+		t.Error("open-pr does not require the leftover store files to be handled before the push")
+	}
+}
+
+// A curate run always leaves tracked changes, so it only lists them; the
+// clean-tree guard belongs to the session that commits.
+func TestMemoryCurateHasNoCleanTreeGuard(t *testing.T) {
+	apply := renderDefaultStack(t)
+	command := readRendered(t, apply, ".claude/commands/memory-curate.md")
+
+	if strings.Contains(command, "git status --short -- <root>") {
+		t.Error("memory-curate carries the clean-tree guard, which a run that changed the store can never satisfy")
+	}
+	if strings.Contains(command, "must print nothing") {
+		t.Error("memory-curate demands an empty status, which a run that changed the store can never satisfy")
+	}
+	if strings.Contains(command, "agtk memory hits") {
+		t.Error("memory-curate takes on the hits fold, which belongs to open-pr")
+	}
+}
+
 // A curate run leaves its changes in the working tree; without the hand-off the
 // session that ran it never commits them.
 func TestMemoryCurateHandsTheStoreChangesToTheSessionToCommit(t *testing.T) {
