@@ -130,6 +130,32 @@ func TestTheRecordReportsWhatRanAndWhatItCost(t *testing.T) {
 	}
 }
 
+// The record counts what a fallback answered for by cause, so a missing
+// provider is not reported as a block.
+func TestTheRecordNamesWhatTheFallbackAnsweredFor(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		report Report
+		want   string
+	}{
+		{"blocked", Blocked("spent"), "1 blocked and answered by the fallback"},
+		{"missing", Missing("no codex on PATH"), "1 with a missing provider and answered by the fallback"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &Review{
+				Panel: "quick", FallbackFrom: "quick-codex", Available: true,
+				Reports: []RunReport{
+					{Label: "a", Panel: "quick-codex", Report: tc.report},
+					{Label: "b", Panel: "quick", Report: Answered(nil)},
+				},
+			}
+			if got := r.Record(); !strings.Contains(got, tc.want) {
+				t.Errorf("the record omits %q: %q", tc.want, got)
+			}
+		})
+	}
+}
+
 // A review that spent nothing says nothing about cost rather than claiming $0,
 // which would read as a real measurement.
 func TestTheRecordOmitsWhatDidNotHappen(t *testing.T) {

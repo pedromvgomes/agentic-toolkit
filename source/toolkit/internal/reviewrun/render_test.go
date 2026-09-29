@@ -104,6 +104,31 @@ func TestARecoveredFallbackNamesThePanelItFellBackFrom(t *testing.T) {
 	}
 }
 
+// The fallback line names what sent the review to its twin, read off the
+// first panel's own unanswered runs.
+func TestTheFallbackLineNamesTheCauseOfTheRetry(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		reports []RunReport
+		want    string
+	}{
+		{"blocked", []RunReport{{Panel: "quick-codex", Report: Blocked("spent")}}, "(provider blocked)"},
+		{"missing", []RunReport{{Panel: "quick-codex", Report: Missing("no codex on PATH")}}, "(provider missing)"},
+		{"both", []RunReport{
+			{Panel: "quick-codex", Report: Blocked("spent")},
+			{Panel: "quick-codex", Report: Missing("no codex on PATH")},
+		}, "(provider blocked and missing)"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			reports := append(tc.reports, RunReport{Panel: "quick", Report: Answered(nil)})
+			out := render(&Review{Panel: "quick", FallbackFrom: "quick-codex", Available: true, Reports: reports})
+			if want := "fallback: quick-codex -> quick " + tc.want; !strings.Contains(out, want) {
+				t.Errorf("the fallback line omits %q:\n%s", want, out)
+			}
+		})
+	}
+}
+
 func TestARegularReviewNamesNoFallback(t *testing.T) {
 	out := render(&Review{Panel: "quick", Available: true})
 	if strings.Contains(out, "fallback:") {

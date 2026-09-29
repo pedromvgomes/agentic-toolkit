@@ -142,6 +142,30 @@ func TestTheBodyDoesNotAlarmOverABlockTheFallbackAlreadyAnsweredFor(t *testing.T
 	}
 }
 
+// A missing provider is named as such, so a reader is not told a credential
+// was refused when a CLI was never installed.
+func TestTheBodyNamesAMissingProviderAsTheReasonForTheFallback(t *testing.T) {
+	r := reviewWith()
+	r.Panel = "standard"
+	r.FallbackFrom = "standard-codex"
+	r.Reports = []reviewrun.RunReport{
+		{Label: "correctness-codex", Role: reviewrun.RoleReviewer, Panel: "standard-codex", Report: reviewrun.Missing("codex is not installed")},
+		{Label: "correctness", Role: reviewrun.RoleReviewer, Panel: "standard", Report: reviewrun.Answered(nil)},
+	}
+	_, place := reviewpost.Build(r, pr, added)
+
+	body := reviewpost.Body(r, pr, place)
+	if !strings.Contains(body, "Retried here after every run on `standard-codex` found its provider missing") {
+		t.Errorf("the body does not name the missing provider:\n%s", body)
+	}
+	if strings.Contains(body, "was blocked") {
+		t.Errorf("the body calls a missing provider a block:\n%s", body)
+	}
+	if strings.Contains(body, "Could not answer") || strings.Contains(body, "is partial") {
+		t.Errorf("a missing provider the fallback answered for still reads as a gap:\n%s", body)
+	}
+}
+
 // What a review withheld is stated, so a reader can tell a quiet pull request
 // from one whose findings are all already on it.
 func TestTheBodyNamesWhatWasAlreadyOnThePullRequest(t *testing.T) {

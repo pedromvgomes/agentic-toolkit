@@ -15,7 +15,7 @@ func Render(w io.Writer, r *Review) {
 	fmt.Fprintf(w, "range:    %s\n", r.Range)
 	fmt.Fprintf(w, "panel:    %s\n", r.Panel)
 	if r.FallbackFrom != "" {
-		fmt.Fprintf(w, "fallback: %s -> %s (provider blocked)\n", r.FallbackFrom, r.Panel)
+		fmt.Fprintf(w, "fallback: %s -> %s (provider %s)\n", r.FallbackFrom, r.Panel, r.FallbackCause())
 	}
 	fmt.Fprintln(w)
 

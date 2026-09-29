@@ -148,8 +148,8 @@ type Review struct {
 	// visibly like an ordinary failure.
 	Blocked bool
 	// FallbackFrom names the panel this review's own Panel was tried in
-	// place of, after every run on it was blocked. Empty when no fallback
-	// was attempted.
+	// place of, after every run on it that did not answer was blocked or
+	// found its provider missing. Empty when no fallback was attempted.
 	FallbackFrom string
 
 	// injectedCarry holds this run's own prompt-injection candidates, kept
@@ -219,10 +219,10 @@ func (r *Review) Unanswered() []RunReport {
 	return out
 }
 
-// Superseded lists the blocked or missing runs a fallback already answered
-// for, and missing lists whatever is unanswered beyond that.
+// Superseded lists the blocked or missing-provider runs a fallback already
+// answered for, and missing lists whatever is unanswered beyond that.
 //
-// A block or a missing provider that triggered FallbackFrom was, by
+// The blocks and missing providers that triggered FallbackFrom were, by
 // construction, every unanswered run on the panel it replaced (Run's
 // unansweredCause check) — so once the fallback panel itself has a verdict,
 // those runs are not a gap in this review, they are the reason it ran on a
@@ -242,6 +242,35 @@ func (r *Review) Superseded() (superseded, missing []RunReport) {
 		missing = append(missing, run)
 	}
 	return superseded, missing
+}
+
+// FallbackCause names why FallbackFrom's panel was replaced: "blocked",
+// "missing", or "blocked and missing" when its unanswered runs held both. It
+// is empty when no fallback was attempted.
+//
+// It reads Reports itself rather than going through Superseded, which lists
+// nothing when the fallback panel did not answer either — the cause is still
+// true, and still worth naming, on a review that stayed unavailable.
+func (r *Review) FallbackCause() string {
+	if r.FallbackFrom == "" {
+		return ""
+	}
+	var blocked, missing bool
+	for _, run := range r.Unanswered() {
+		if run.Panel != r.FallbackFrom {
+			continue
+		}
+		blocked = blocked || run.Report.Blocked
+		missing = missing || run.Report.Missing
+	}
+	switch {
+	case blocked && missing:
+		return "blocked and missing"
+	case missing:
+		return "missing"
+	default:
+		return "blocked"
+	}
 }
 
 // Silent lists the reviewers that answered and had no opinion.
@@ -281,8 +310,19 @@ func (r *Review) Record() string {
 	if n := len(missing); n > 0 {
 		fmt.Fprintf(&b, ", %d could not answer", n)
 	}
-	if n := len(superseded); n > 0 {
-		fmt.Fprintf(&b, ", %d blocked and answered by the fallback", n)
+	var blocked, absent int
+	for _, run := range superseded {
+		if run.Report.Missing {
+			absent++
+		} else {
+			blocked++
+		}
+	}
+	if blocked > 0 {
+		fmt.Fprintf(&b, ", %d blocked and answered by the fallback", blocked)
+	}
+	if absent > 0 {
+		fmt.Fprintf(&b, ", %d with a missing provider and answered by the fallback", absent)
 	}
 	if r.DroppedByValidator > 0 {
 		fmt.Fprintf(&b, ", %d dropped by a validator", r.DroppedByValidator)
