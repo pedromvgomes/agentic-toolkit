@@ -1,29 +1,50 @@
 ---
 name: missing-provider-is-unavailable-not-blocked
 kind: gotcha
-description: A review provider missing from PATH or failing at exec is an ordinary Unavailable report, never Blocked, so it does not trigger the panel's declared fallback.
+description: A review provider missing from PATH triggers the panel's single-hop fallback (reported Missing) but never sets Blocked; Blocked alone suppresses posting, so the two flags stay separate.
 anchors:
   - path: source/toolkit/internal/reviewrun/invoke.go
-    blob: ae55e9629092
-  - path: source/toolkit/internal/review/capability.go
-    blob: b4a67453292c
-  - path: source/toolkit/internal/provider/provider.go
-    blob: 0c21a603ff46
+    blob: dc107d021fe6
+  - path: source/toolkit/internal/reviewrun/run.go
+    blob: ea6434ee6e7c
+  - path: source/toolkit/internal/reviewrun/report.go
+    blob: f8e5731b1ba5
+  - path: source/toolkit/internal/cli/codereview_pr.go
+    blob: 51aae07b3ca6
   - path: docs/adr/0015-a-block-tries-the-other-provider-and-never-posts.md
     blob: a361b3b6bdaa
+  - path: docs/adr/0021-a-missing-provider-tries-the-fallback-and-still-posts.md
+    blob: ed202cfdf51e
 confidence: verified
 ---
 
-`codex: executable file not found in $PATH` is expected on a machine without the codex CLI. The
-providers are resolved from PATH, and the lookup happens lazily in the driver per run, not in
-`review.CheckCapabilities` (`review/capability.go`), which checks only the declared capabilities
-against the provider's Go type, never whether its binary exists.
+`codex: executable file not found in $PATH` is expected on a machine without the codex CLI. A
+missing provider does trigger the fallback (ADR 0021) but is never `Blocked`; a bad schema, sandbox
+refusal or timeout is neither (ADR 0015).
 
-`classify` (`source/toolkit/internal/reviewrun/invoke.go:137`) maps any `err != nil` from
-`Invoke` (LookPath failure, fork/exec failure) to `Unavailable`; only `res.Blocked != nil`
-(`:139`, a quota/credential decline) becomes `Blocked`. The panel `fallback:` fires only on
-Blocked (ADR 0015 says a bad schema, sandbox refusal or timeout "is never blocked"), so a missing
-provider never degrades to the other one.
+A run is Missing (`Report.Missing`, `report.go:32`) only when the error arose before anything
+started: `build` returns `agentic.New`'s `ErrProviderUnavailable` wrapped in `errMissingProvider`
+(`invoke.go:57`), and every error from `drv.Ready()` (`invoke.go:112`) is wrapped the same way. The
+driver wraps timeouts, cancellations and stream errors in that same sentinel, so
+`errors.Is(err, agentic.ErrProviderUnavailable)` alone would misclassify them; errors from
+`drv.Run` are never wrapped. `classify` (`invoke.go:173`) and `neverStarted` (`schedule.go:168`)
+turn the marker into `Missing(...)`; anything else stays `Unavailable`.
 
-The cross-model property described in `review/default.yaml`'s header is roster design intent,
-not an enforced invariant; nothing refuses a single-provider manifest.
+`unansweredCause` (`run.go:358`) answers two questions over the unanswered runs: `reroutable` (all
+Blocked or Missing) gates the single-hop fallback (`run.go:294`), and `blocked` (all Blocked) alone
+sets `out.Blocked` (`run.go:301`) and `alt.Blocked` (`run.go:319`). A mixed Blocked plus ordinary
+failure panel is neither, so it posts visibly.
+
+`Blocked` has consumers a Missing run must not reach:
+- `deliverReview` (`cli/codereview_pr.go:763`): `result.Blocked` means nothing is posted; a missing
+  binary posts its no-verdict like any outage.
+- `Review.Superseded` (`report.go:235`) counts a Blocked or Missing run on the fallback's origin
+  panel as superseded once the twin answers; `Partial()` feeds `Complete` in the review marker
+  (`reviewpost/body.go`), which `reviewapprove` reads.
+- Rendering names the cause through `Review.FallbackCause` (`report.go:254`) and `fallbackCause`
+  (`reviewpost/body.go:276`).
+
+The Missing `Reason` is the driver's own message (the sentinel's text is empty), so the binary name
+and install hint show through. Provider lookup is lazy in the driver per run;
+`review.CheckCapabilities` never checks that a binary exists. The cross-model property in
+`review/default.yaml`'s header is roster intent, not an enforced invariant.
