@@ -1,34 +1,40 @@
 ---
 name: memory-config-is-entry-manifest-only
 kind: gotcha
-description: "A stack reached through extends: may set memory:, and it parses fine and is silently ignored — so a manifest's memory.root can disagree with agtk's."
+description: "A stack (via extends: or stacks:) that sets top-level memory: or platforms: fails to parse with ErrRepoOnlyField; only the entry manifest may set them, and docs/CONSUMER-GUIDE.md still says a stack's memory.root is silently ignored."
 anchors:
-  - path: source/toolkit/internal/resolver/resolver.go
-    blob: 022646e73709
-  - path: source/toolkit/internal/resolver/types.go
-    blob: f324cf4d5af4
-  - path: source/toolkit/internal/stack/types.go
-    blob: 31695294c268
+  - path: source/toolkit/internal/stack/parser.go
+    blob: c85fae1c0eb7
+  - path: source/toolkit/internal/stack/entrymanifest.go
+    blob: 7d07c11d4b26
+  - path: source/toolkit/internal/stack/tests/parser_test.go
+    blob: 26d8cf4b9e31
+  - path: docs/CONSUMER-GUIDE.md
+    blob: cefa5e21a515
 confidence: verified
 ---
 
-`memory:` is honoured only in the entry manifest, and the whole enforcement is one flag test
-in the resolver's traversal: `if ctx.Identifier != "" && st.Memory != nil` at
-`source/toolkit/internal/resolver/resolver.go:191`. The entry stack is the one built with `Identifier: ""`
-(`resolver.go:49`); every stack reached through `extends:` gets a non-empty identifier from
-its source URL.
+`stack.ParseBytes` calls `detectRepoOnlyFields` (`source/toolkit/internal/stack/parser.go:45`)
+before decoding. It walks `repoOnlyTopLevelKeys = {"platforms", "memory"}` (`parser.go:394`) and
+returns `ErrRepoOnlyField` (`parser.go:386-388`) the moment either appears at column zero,
+naming the field and pointing at the entry manifest. It is a hard error, not a warning or a
+silent drop; pinned by `TestParseBytes_PlatformsField_Rejected` and
+`TestParseBytes_MemoryField_Rejected` (`stack/tests/parser_test.go:103-128`).
 
-The consequence is quiet. An extended stack's `memory:` block parses successfully — the field
-exists on `stack.Stack` (`source/toolkit/internal/stack/types.go:66`) and the schema is strict, so nothing
-rejects it — and the only trace is one informational diagnostic, `DiagIgnoredMemoryConfig`
-(declared `source/toolkit/internal/resolver/types.go:142-146`, emitted `resolver.go:193`). It is never a hard
-error, by design: "a remote stack must not relocate a consumer's committed notes, and it must
-not hard-fail the consumer's build either."
+The entry manifest is its own type (ADR 0016): `ParseEntryManifestBytes`
+(`stack/entrymanifest.go:89`) runs only the legacy check and decodes `Memory` and `Platforms`
+into `EntryManifest` (`entrymanifest.go:32`). `stack.Stack` has no `Memory` field. The resolver
+no longer has an "ignored memory config" diagnostic; `grep -n Memory
+source/toolkit/internal/resolver/resolver.go` is empty.
 
-So **do not read `memory.root` out of a manifest to learn where the store is** — the YAML and
-`agtk` can disagree. Ask `agtk memory stats --json` for `root`.
+`MemoryRootFromBytes` (`parser.go:454`) reads `memory.root` from raw bytes without that check,
+but it serves the entry manifest, not a stack.
 
-`(*Stack).MemoryRoot()` (`source/toolkit/internal/stack/types.go:85`) has no notion of entry-vs-extended; it
-returns whatever `Memory.Root` is on the struct it is called on. Nothing below the resolver's
-traversal enforces the rule, so a subsystem that mirrors this convention needs its own
-equivalent of the `ctx.Identifier != ""` test at the same point.
+Stale text: `docs/CONSUMER-GUIDE.md:354-356` still says a `memory.root` in a stack reached through
+`stacks:` "is deliberately ignored, so YAML and `agtk` disagree". That describes the older
+behaviour; a stack setting it now errors. Asking `agtk memory stats --json` for `root` remains
+the safe way to locate the store.
+
+The key match is a line-anchored regex (`topLevelKeyRE`, `parser.go:400`), so a column-zero
+`memory:` inside a block scalar would also trip it. See
+[[stack-schema-is-strict-and-legacy-keys-are-intercepted]].

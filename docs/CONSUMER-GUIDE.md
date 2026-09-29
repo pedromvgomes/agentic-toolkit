@@ -352,8 +352,9 @@ source tree.
 
 Both are relative to the working directory when they sit below it, and
 absolute otherwise. Do not read `memory.root` out of the manifest instead:
-a `memory.root` in a stack reached through `stacks:` is deliberately
-ignored, so YAML and `agtk` disagree.
+`--source` changes where `root` is derived from, so a value read out of
+the manifest by hand can name a different directory than the one `agtk`
+uses.
 
 A note is a markdown file with frontmatter:
 
