@@ -326,14 +326,15 @@ only where your stack already pre-approves something — a deny-only
 agtk memory index               # regenerate INDEX.md (scaffolds the store)
 agtk memory anchor              # stamp blob hashes into note anchors
 agtk memory audit               # report notes whose anchored files changed
-agtk memory lint                # structural check for CI
+agtk memory lint                # structural check for CI, notes and candidates
 agtk memory show <name>         # read one note, and count the read
 agtk memory stats               # size, staleness, hit rate
+agtk memory curate              # rule on the staged candidates (calls a model)
 ```
 
-Every command takes `--json`. Nothing here calls a model: `index`,
-`anchor`, `audit` and `lint` are deterministic, so they are safe in hooks
-and CI.
+Every command takes `--json`. Nothing here calls a model except `curate`:
+`index`, `anchor`, `audit` and `lint` are deterministic, so they are safe in
+hooks and CI.
 
 `stats` also reports where the store is, which is how an agent finds it
 without re-deriving resolution from the manifest:
@@ -381,7 +382,42 @@ rejected rather than silently truncated.
 `audit` never writes: staleness is recomputed from your working tree on
 every run, so `confidence:` stays your own judgment about whether the claim
 was checked. `lint` is the CI command, and it deliberately passes on a
-stale store — a rename in an unrelated PR should not go red.
+stale store — a rename in an unrelated PR should not go red. It also reports
+each staged candidate whose frontmatter does not parse, with the file and
+the YAML error, and fails on it: such a candidate is otherwise dropped from
+the backlog in silence. An unquoted colon inside `about:` is the usual cause.
+
+### Curating candidates
+
+`agtk memory curate` runs the curator over the candidates staged in
+`candidates/`, or over stale notes with `--stale`, through the provider that
+`memory.agent` names in the entry manifest. It is the one memory command that
+calls a model, and it has no default provider. Naming notes scopes the run to
+them and the candidates that target them, `--limit N` points it at the oldest
+`N` candidates, and `--dry-run` reports what it would do and writes nothing.
+
+When the run ends, `agtk` checks the curator's completion report against the
+store, in both directions: what the report claims happened did, and everything
+that happened is in the report. Only if that check passes does `agtk` itself
+delete every candidate the report names as resolved that is still in
+`candidates/`, and print each one as a `cleared:` line (a `cleared` list under
+`--json`). No model is involved in that step, and nothing is cleared when the
+check fails or under `--dry-run`. A candidate the curator already deleted is
+simply not listed.
+
+`curate` exits non-zero when:
+
+- the completion report does not match the store. Nothing is rolled back and
+  nothing is cleared, so the store is as the run left it.
+- the run is the backlog job — no notes named, no `--limit`, no `--stale`, no
+  `--dry-run` — and a readable candidate is still in `candidates/` without
+  having been reported resolved. A scoped, limited, stale or dry run is not
+  expected to rule on every candidate, so a candidate that remains there is
+  not an error.
+- a candidate in `candidates/` cannot be parsed. Each is listed at the end of
+  the run as an `unreadable:` line (an `unreadable` list under `--json`), and
+  is never cleared. The curator cannot repair one, so it is yours to fix;
+  `agtk memory lint` names the file and the error.
 
 To put the store somewhere else, set it in your entry manifest:
 

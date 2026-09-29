@@ -139,6 +139,13 @@ A finding an explorer staged during a session, with no quality bar applied. Live
 write: an explorer never authors, stamps or deletes a **Note**.
 _Avoid_: draft note, proposal
 
+**Unreadable candidate**:
+A **Candidate** whose file cannot be parsed, so it is absent from the backlog a **Curator** can
+rule on. It is a finding nobody has ruled on, made invisible rather than resolved, and only a person
+can repair it: `agtk memory lint` names it, and a **Curate** run fails while one remains. Never
+subject to **Clearing**.
+_Avoid_: malformed candidate, broken candidate, invalid candidate
+
 **Verdict**:
 What an explorer concluded about an existing **Note** it re-checked because that note was
 **Stale**: `still-true | now-false | unchecked`. Recorded on a **Candidate** so the curator
@@ -177,6 +184,14 @@ One run of the **Curator** over the staged **Candidate**s, or with `--stale` ove
 **Note**s. The one `agtk` subcommand that invokes a model; every other one is deterministic
 and safe on the path of a hook.
 _Avoid_: promote, sweep
+
+**Clearing**:
+Removing a **Candidate** once a **Curate** run has ruled on it. Done by `agtk` after it has checked
+the **Curator**'s report against the store, and never by a model call, so a ruled-on **Candidate**
+does not come back for a second ruling whatever the **Curator** did or could not do about it. Not
+the ruling itself: promoting, merging or rejecting is the **Curator**'s judgment, and **Clearing**
+only files away what that judgment finished.
+_Avoid_: sweep, purge, cleanup
 
 **Seed**:
 One proactive sweep over a codebase whose **Memory store** holds no **Note**s yet, staging
