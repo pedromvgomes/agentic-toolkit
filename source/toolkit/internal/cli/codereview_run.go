@@ -43,6 +43,16 @@ func newCodeReviewRunCmd(env *Env) *cobra.Command {
 			"review, with event COMMENT. Nothing else is ever posted: approval is a\n" +
 			"separate act with its own subcommand, and no code path from here reaches it.\n" +
 			"\n" +
+			"On a machine holding no App registration at all, the panel still runs here,\n" +
+			"reading the pull request with a plain token instead of the App's; a relay\n" +
+			"named by AGTK_CODE_REVIEW_RELAY then posts the review this machine already\n" +
+			"computed, through a separate, already-registered machine's own `code-review\n" +
+			"post`, and this command waits on that run instead. A token's reads never\n" +
+			"carry this installation's own verdicts, so this path always reviews the pull\n" +
+			"request whole, exactly as --force and --full ask for whether or not either is\n" +
+			"passed; --json still refuses to relay, since a relayed run reports only how\n" +
+			"the relay's run ended, not the review --json promises.\n" +
+			"\n" +
 			"--dry-run prints the assembled prompts and the runs that would be made, and\n" +
 			"spends nothing. --no-post runs the panel for real and prints the exact\n" +
 			"request it would have made instead of making it.\n" +
@@ -131,6 +141,7 @@ func runCodeReviewRun(cmd *cobra.Command, env *Env, target reviewTarget, flags r
 		return nil
 	}
 
+	scrubDispatchSecrets()
 	result, err := reviewrun.Run(cmd.Context(), opts)
 	if err != nil {
 		return err

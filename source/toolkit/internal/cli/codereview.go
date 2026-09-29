@@ -22,7 +22,8 @@ import (
 // bare `explain` is safe on the path of a hook and `explain --pr` is not: it
 // needs the App registration or, on a machine holding none, a token in
 // GH_TOKEN or GITHUB_TOKEN, and it fails without either before a panel has run
-// rather than after. Posting and approving take the registration alone.
+// rather than after. Posting and approving take the registration, or, on a
+// machine holding none, a relay named by AGTK_CODE_REVIEW_RELAY.
 //
 // `run` is the one subcommand that invokes a model, and it reaches one through
 // internal/reviewrun rather than by constructing a driver here.
@@ -48,6 +49,7 @@ func newCodeReviewCmd(env *Env) *cobra.Command {
 	cmd.AddCommand(
 		newCodeReviewRunCmd(env),
 		newCodeReviewApproveCmd(env),
+		newCodeReviewPostCmd(env),
 		newCodeReviewInitializeCmd(env),
 		newCodeReviewInitCmd(env),
 		newCodeReviewExplainCmd(env),

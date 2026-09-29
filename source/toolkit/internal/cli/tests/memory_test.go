@@ -2,10 +2,14 @@ package tests
 
 import (
 	"encoding/json"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/pedromvgomes/agentic-toolkit/internal/cli"
 )
 
 // memoryProject lays out a minimal consumer repo and returns its root: a
@@ -258,19 +262,70 @@ func TestMemorySourceModeUsesConsumerConfig(t *testing.T) {
 }
 
 // TestMemoryWarnsOnUnreadableNote: a note that fails to parse drops out of
-// the index, so every command says so rather than silently narrowing the
-// store.
+// the index, so index fails the run and names it once, in full — not also as
+// a per-note warning during loading, which unreadableNotesErr would only
+// repeat.
 func TestMemoryWarnsOnUnreadableNote(t *testing.T) {
 	work := memoryProject(t, "stacks: []\n")
 	writeFile(t, filepath.Join(work, ".memory/notes/pins-shas.md"), memoryNote)
 	writeFile(t, filepath.Join(work, ".memory/notes/broken.md"), "not a note\n")
 
-	_, stderr, err := runCLI(t, work, "memory", "index")
+	stdout, stderr, err := runCLI(t, work, "memory", "index")
+	if err == nil {
+		t.Fatal("memory index: want a non-zero exit for an unreadable note, got nil error")
+	}
+	if !strings.Contains(err.Error(), "broken.md") {
+		t.Errorf("index error does not name the unreadable note: %v", err)
+	}
+	if strings.Contains(stderr, "broken.md") {
+		t.Errorf("index warned about the unreadable note before also failing on it in full: %q", stderr)
+	}
+	if !strings.Contains(stdout, "1 note") {
+		t.Errorf("index did not still regenerate the index for the note that did parse: %q", stdout)
+	}
+}
+
+// TestMemoryAuditFailsOnUnreadableNote: audit reports staleness for the
+// notes that did parse, but still fails the run when another note in the
+// same store could not be read at all — an unreadable note is not "fresh" —
+// and names it once, in full, not also as a per-note warning during loading.
+func TestMemoryAuditFailsOnUnreadableNote(t *testing.T) {
+	work := memoryProject(t, "stacks: []\n")
+	writeFile(t, filepath.Join(work, ".memory/notes/pins-shas.md"), memoryNote)
+	if _, _, err := runCLI(t, work, "memory", "anchor", "--all"); err != nil {
+		t.Fatalf("memory anchor: %v", err)
+	}
+	writeFile(t, filepath.Join(work, ".memory/notes/broken.md"), "not a note\n")
+
+	stdout, stderr, err := runCLI(t, work, "memory", "audit")
+	if err == nil {
+		t.Fatal("memory audit: want a non-zero exit for an unreadable note, got nil error")
+	}
+	if !strings.Contains(err.Error(), "broken.md") {
+		t.Errorf("audit error does not name the unreadable note: %v", err)
+	}
+	if strings.Contains(stderr, "broken.md") {
+		t.Errorf("audit warned about the unreadable note before also failing on it in full: %q", stderr)
+	}
+	if !strings.Contains(stdout, "fresh") {
+		t.Errorf("audit did not still report on the note that did parse: %q", stdout)
+	}
+}
+
+// TestMemoryStatsToleratesUnreadableNote: stats' exit code means "the store
+// itself could not be read", a different and stricter contract than one
+// note's frontmatter being bad, so it warns and keeps its zero exit.
+func TestMemoryStatsToleratesUnreadableNote(t *testing.T) {
+	work := memoryProject(t, "stacks: []\n")
+	writeFile(t, filepath.Join(work, ".memory/notes/pins-shas.md"), memoryNote)
+	writeFile(t, filepath.Join(work, ".memory/notes/broken.md"), "not a note\n")
+
+	_, stderr, err := runCLI(t, work, "memory", "stats")
 	if err != nil {
-		t.Fatalf("memory index: %v", err)
+		t.Fatalf("memory stats: want a zero exit for one unreadable note, got %v", err)
 	}
 	if !strings.Contains(stderr, "broken.md") {
-		t.Errorf("index did not warn about the unreadable note: %q", stderr)
+		t.Errorf("stats did not warn about the unreadable note: %q", stderr)
 	}
 }
 
@@ -556,6 +611,30 @@ func TestMemoryAnchorSelectsNamedNotes(t *testing.T) {
 
 	if _, _, err := runCLI(t, work, "memory", "anchor", "no-such-note"); err == nil {
 		t.Error("expected an error for a name that is not in the store")
+	}
+}
+
+// TestMemoryAnchorResolvesNamesIndependently: a named note that fails to
+// parse must not stop another named note in the same call from being
+// stamped, and the failure must be reported as a parse problem rather than
+// as an unknown note.
+func TestMemoryAnchorResolvesNamesIndependently(t *testing.T) {
+	work := memoryProject(t, "stacks: []\n")
+	writeFile(t, filepath.Join(work, ".memory/notes/pins-shas.md"), memoryNote)
+	writeFile(t, filepath.Join(work, ".memory/notes/broken.md"), "not a note\n")
+
+	_, _, err := runCLI(t, work, "memory", "anchor", "pins-shas", "broken")
+	if err == nil {
+		t.Fatal("expected a non-zero exit when a named note cannot be resolved")
+	}
+	if got := readFile(t, filepath.Join(work, ".memory/notes/pins-shas.md")); !strings.Contains(got, "blob:") {
+		t.Error("a name that failed to resolve prevented the other named note from being stamped")
+	}
+	if !strings.Contains(err.Error(), "broken") || !strings.Contains(err.Error(), "does not parse") {
+		t.Errorf("error should name %q specifically as a parse failure: %v", "broken", err)
+	}
+	if strings.Contains(err.Error(), `no note named "broken"`) {
+		t.Errorf("a note that exists but fails to parse must not be reported as unknown: %v", err)
 	}
 }
 
@@ -854,6 +933,65 @@ func TestMemoryCurateCheckRefusesWithNoProviderConfigured(t *testing.T) {
 	}
 }
 
+// TestMemoryCurateLimitRefusesWithNamedNotes: --limit narrows the backlog by
+// count, and naming notes already narrows it by name — honouring both would
+// leave one of the two silently ignored.
+func TestMemoryCurateLimitRefusesWithNamedNotes(t *testing.T) {
+	work := memoryProject(t, "stacks: []\n")
+
+	_, _, err := runCLI(t, work, "memory", "curate", "--limit", "2", "some-note")
+	if err == nil {
+		t.Fatal("--limit was accepted alongside a named note")
+	}
+	if !strings.Contains(err.Error(), "--limit") {
+		t.Errorf("the refusal does not name --limit: %v", err)
+	}
+}
+
+// TestMemoryCurateLimitRefusesWithStale: --limit shapes the non-stale backlog
+// job, so combining it with --stale asks for two different jobs at once.
+func TestMemoryCurateLimitRefusesWithStale(t *testing.T) {
+	work := memoryProject(t, "stacks: []\n")
+
+	_, _, err := runCLI(t, work, "memory", "curate", "--limit", "2", "--stale")
+	if err == nil {
+		t.Fatal("--limit was accepted alongside --stale")
+	}
+	if !strings.Contains(err.Error(), "--limit") || !strings.Contains(err.Error(), "--stale") {
+		t.Errorf("the refusal does not name both conflicting flags: %v", err)
+	}
+}
+
+// TestMemoryCurateNamedNoteWithoutLimitIsNotTreatedAsConflicting: --limit's
+// zero value — unset — must not read as "--limit narrows the backlog by
+// count" alongside a named note. The two checks guard limit>0, not limit>=0.
+func TestMemoryCurateNamedNoteWithoutLimitIsNotTreatedAsConflicting(t *testing.T) {
+	work := memoryProject(t, "stacks: []\n")
+
+	_, _, err := runCLI(t, work, "memory", "curate", "someNote")
+	if err == nil {
+		t.Fatal("curate accepted a note this store does not have")
+	}
+	if strings.Contains(err.Error(), "--limit") {
+		t.Errorf("an unlimited run was refused as though --limit conflicted with the named note: %v", err)
+	}
+}
+
+// TestMemoryCurateStaleWithoutLimitIsNotTreatedAsConflicting: the --stale
+// counterpart — --limit's zero value must not read as conflicting with
+// --stale either.
+func TestMemoryCurateStaleWithoutLimitIsNotTreatedAsConflicting(t *testing.T) {
+	work := memoryProject(t, "stacks: []\n")
+
+	_, _, err := runCLI(t, work, "memory", "curate", "--stale")
+	if err == nil {
+		t.Fatal("a stale sweep with no provider configured should fail on the provider, not succeed")
+	}
+	if strings.Contains(err.Error(), "--limit") {
+		t.Errorf("an unlimited stale sweep was refused as though --limit conflicted: %v", err)
+	}
+}
+
 // TestMemoryAnchorRefusesToStampTheWholeStoreByAccident: stamping does not only
 // record hashes, it clears the staleness signal — the one thing telling the next
 // reader that nobody has checked a claim. A bare `anchor` after a refactor would
@@ -977,3 +1115,37 @@ func TestMemoryStatsReportsBothSidesOfTheLedger(t *testing.T) {
 		t.Errorf("cold = %v, want the one unread note", stats.Cold)
 	}
 }
+
+// TestMemoryIndexJSONReportsWhatItWrote: --json is the machine-readable form
+// of the same report, and a write that fails on the way out is an error, not
+// a silent success.
+func TestMemoryIndexJSONReportsWhatItWrote(t *testing.T) {
+	work := memoryProject(t, "stacks: []\n")
+	writeFile(t, filepath.Join(work, ".memory/notes/pins-shas.md"), memoryNote)
+
+	stdout, _, err := runCLI(t, work, "memory", "index", "--json")
+	if err != nil {
+		t.Fatalf("memory index --json: %v", err)
+	}
+	var got struct {
+		Notes   int  `json:"notes"`
+		Changed bool `json:"changed"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("output is not JSON: %v\n%s", err, stdout)
+	}
+	if got.Notes != 1 || !got.Changed {
+		t.Errorf("report = %+v, want one note and a rewritten index", got)
+	}
+
+	env := &cli.Env{Stdin: strings.NewReader(""), Stdout: failingStdout{}, Stderr: io.Discard, WorkDir: work}
+	root := cli.NewRootCmd(env)
+	root.SetArgs([]string{"memory", "index", "--json"})
+	if err := root.Execute(); err == nil {
+		t.Error("a JSON report that could not be written was reported as written")
+	}
+}
+
+type failingStdout struct{}
+
+func (failingStdout) Write([]byte) (int, error) { return 0, errors.New("write failed") }

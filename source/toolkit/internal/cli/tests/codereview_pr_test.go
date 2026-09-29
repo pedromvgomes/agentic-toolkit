@@ -47,10 +47,20 @@ func keyPEM(t *testing.T) string {
 
 // isolatedConfig points agtk's config directory at a temporary one, so a test
 // never reads or writes the operator's own registration.
+//
+// This package runs the CLI as a black box, through NewRootCmd, with no seam
+// to hand it a fake environment — every variable clientSeam falls back to
+// os.Getenv for is the operator's own, unless cleared here. Left set, a
+// GH_TOKEN or AGTK_CODE_REVIEW_RELAY the operator's own shell exports would
+// make a test that expects a plain refusal instead read a token or dispatch a
+// real relay.
 func isolatedConfig(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("GH_TOKEN", "")
+	t.Setenv("GITHUB_TOKEN", "")
+	t.Setenv("AGTK_CODE_REVIEW_RELAY", "")
 	return filepath.Join(dir, "agentic-toolkit")
 }
 

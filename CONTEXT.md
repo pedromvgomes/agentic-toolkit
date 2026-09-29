@@ -362,6 +362,12 @@ cleared by changing the code, and a wrong **Finding** by saying so on the PR, an
 only two ways: there is no flag that approves anyway, because one would make the whole of this
 a checklist rather than a control.
 
+A **Review** here is presumed to be what a panel actually produced. The one exception is a
+**Relay**'s `run --pr` leg, which posts a review this process computed elsewhere and never runs
+one itself — see **Relay**'s own note on the trust that requires and the condition it depends on.
+
+
+
 Never reachable from a review run. No model decides it, no tool grant contains it, and the
 **Judge** cannot reach it: a run that could approve the code it just reviewed is the hazard
 GitHub blocks `GITHUB_TOKEN` approvals to prevent. The person types the command.
@@ -424,21 +430,62 @@ _Avoid_: id, key, hash
 
 **App registration**:
 The GitHub App id and private key one machine holds, in agtk's own config directory. What a
-**Review** is posted as, and what posting or approving one always requires — no environment
-variable substitutes for it there. A read that only needs to see GitHub state, such as
-`explain --pr` or `run --pr` with `--dry-run`/`--no-post`, does not: on a machine holding no
-registration at all it falls back to a token in `GH_TOKEN` or `GITHUB_TOKEN`, while a broken
-or half-written registration still refuses rather than being read around. Registered once per
-machine rather than once per repository, and never written into a repository — a fork, a clone
-or a leaked secret scan has nothing to find. The key is readable by its owner alone, and one
-any other account can read is refused rather than used: the blast radius of an App key is one
-machine, and a key a second account can read makes that untrue.
+**Review** is posted as, and what posting or approving one always requires — on this machine, or
+on a **Relay**'s, since a relay posts through a registration of its own rather than around this
+requirement. A read that only needs to see GitHub state, such as `explain --pr` or `run --pr`
+with `--dry-run`/`--no-post`, needs neither: on a machine holding no registration at all it falls
+back to a token in `GH_TOKEN` or `GITHUB_TOKEN`, while a broken or half-written registration
+still refuses rather than being read around, or relayed around — the same rule both follow.
+Registered once per machine rather than once per repository, and never written into a
+repository — a fork, a clone or a leaked secret scan has nothing to find. The key is readable by
+its owner alone, and one any other account can read is refused rather than used: the blast
+radius of an App key is one machine, and a key a second account can read makes that untrue.
 
 The short-lived installation token minted from it is held in memory for one run and written
 nowhere. It reaches every repository the App is installed on, so it never enters a model's
 process — a **Reviewer** inherits the operator's environment, which is why the token is
 passed as an argument rather than placed in one.
 _Avoid_: secret, credential file, PAT
+
+**Relay**:
+The repository `AGTK_CODE_REVIEW_RELAY=owner/name` names, whose own GitHub Actions workflow
+holds an **App registration** of its own and posts or approves a **Review** through it when this
+machine holds none. What it is dispatched with differs by action. `approve` has no panel to run
+and hands the relay only the pull request; the relay's own run is `agtk code-review approve --pr
+N` from scratch, exactly as it would run on a registered machine. `run --pr`'s posting path runs
+the panel on *this* machine instead — reading the pull request through the same token fallback
+`explain --pr` uses — and hands the relay the review it already computed, as the JSON
+`code-review post` reads; the relay's own run is `code-review post`, which posts that review as
+the App and starts no model. Either way this process waits on the run it dispatched, reporting
+only whether it succeeded and where — never what it posted, which stays on the pull request and
+in a log this process never reads.
+
+The token that dispatches either (`GH_TOKEN` or `GITHUB_TOKEN`, the same variables a read falls
+back to) reaches only the relay repository — triggering and reading its own Actions runs, and
+for `run --pr` carrying the computed review in the dispatch's own input — and never the
+repository under review; the relay's own workflow is what reaches that repository, through its
+own installation token and the App id and key it holds. A broken or half-written registration on
+this machine still refuses rather than being relayed around, the same rule a read follows.
+
+`--force` and `--full` are accepted under a relay rather than refused: the token fallback that
+reads the pull request for `run --pr` always reports `ByViewer: false` (ADR 0019), so this path
+never finds a review by this installation to vouch for and already reviews the pull request
+whole, exactly what either flag asks for regardless of whether it is passed. `--json` still
+refuses: a relayed
+run reports only how the relay's run ended, not the review `--json` promises. Its own default
+branch must be named `main` — a dispatch names that branch directly rather than asking GitHub
+which one is the default, and a relay repository whose default branch is called anything else
+has every dispatch refused with GitHub's own "no ref found" error.
+
+Trusting the review a `run --pr` dispatch carries is a deliberate, narrower trust than trusting
+the relay's own registration: whoever holds a token that can dispatch the relay workflow can make
+it post any review body, under the App's real identity, for the pull request's current head —
+including a body that claims a clean verdict. `agtk code-review post`'s own check refuses a
+different event, a stale head, or a mismatched file-comment commit, but it does not, and cannot,
+verify that the body it is handed came from an actual panel run. See ADR 0020's Decision and
+Consequences for the accepted trade-off and the condition it depends on: a relay repository kept
+private to the people who are also the ones whose pull requests it posts to.
+_Avoid_: CI, pipeline, bot job
 
 **Fingerprint marker**:
 The HTML comment a posted inline comment carries its **Fingerprint** in, invisible in

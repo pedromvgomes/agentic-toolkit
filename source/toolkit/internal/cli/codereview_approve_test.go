@@ -215,3 +215,60 @@ func TestADeadlockedApprovalOffersNoWayPast(t *testing.T) {
 		t.Errorf("the deadlock does not say what the only remedy is:\n%s", out)
 	}
 }
+
+// A machine holding no registration hands an approval to the relay it names,
+// and approves nothing itself: every request goes to the relay repository,
+// under the caller's own token, and no panel is ever named for an approval.
+func TestAnUnregisteredMachineRelaysAnApproval(t *testing.T) {
+	work, _, headSHA := prRepo(t)
+	net := &relayNet{conclusion: "success"}
+	out, err := approvePR(t, work, clientSeam{dir: unregistered(t), doer: net, getenv: environment(relayed())})
+	if err != nil {
+		t.Fatalf("a relayed approval failed: %v\n%s", err, out)
+	}
+	for _, want := range []string{"approval of acme/widgets#7", "acme/relay", relayRunURL, "succeeded"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the relayed approval does not report %q:\n%s", want, out)
+		}
+	}
+	if got := net.relayCalls(); len(got) != len(net.calls) || len(got) != 2 {
+		t.Errorf("a relayed approval asked for %v, want only the relay's dispatch and its run", net.calls)
+	}
+	for _, call := range net.calls {
+		if !strings.HasSuffix(call, " Bearer ghp_env") {
+			t.Errorf("the relay was not reached with the caller's token: %s", call)
+		}
+	}
+	want := map[string]string{"repo": "acme/widgets", "pr": "7", "action": "approve"}
+	got := relayInputs(t, net)
+	if len(got) != len(want) {
+		t.Errorf("the relay was dispatched with %v, want %v", got, want)
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("input %s is %q, want %q", k, got[k], v)
+		}
+	}
+	if headFetched(t, work, headSHA) {
+		t.Error("a relayed approval fetched the head, so it read the pull request itself")
+	}
+}
+
+// A relayed approval the relay's run did not grant is a refusal, reported with
+// how the run ended and where its log is, and never as an approval.
+func TestARelayedApprovalThatDidNotSucceedIsNotReportedAsApproved(t *testing.T) {
+	work, _, _ := prRepo(t)
+	net := &relayNet{conclusion: "failure"}
+	out, err := approvePR(t, work, clientSeam{dir: unregistered(t), doer: net, getenv: environment(relayed())})
+	if err == nil {
+		t.Fatalf("a failed relayed approval was reported as a success:\n%s", out)
+	}
+	for _, want := range []string{"failure", relayRunURL, "approval of acme/widgets#7"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the failure does not name %q: %v", want, err)
+		}
+	}
+	if strings.Contains(out, "succeeded") || strings.Contains(out, "Approved") {
+		t.Errorf("a failed relayed approval reported success:\n%s", out)
+	}
+}

@@ -15,12 +15,36 @@ import (
 // The terminal `result` line of a run. Every provider streams, so a fake's
 // stdout is NDJSON and a whole turn fits on one line; the fields are trimmed to
 // the ones the provider reads.
-const curatedEnvelope = `{"type":"result","subtype":"success","is_error":false,"session_id":"s1","num_turns":4,"total_cost_usd":0.42,"result":"Promoted: lockfile-pins-shas-not-tags\nRejected: 20260905-where-render-lives — re-derivable\nStore: 9 notes, 0 stale","modelUsage":{"claude-opus-5[1m]":{"canonicalModel":"claude-opus-5","inputTokens":12,"cacheReadInputTokens":9000}}}`
+const curatedEnvelope = `{"type":"result","subtype":"success","is_error":false,"session_id":"s1","num_turns":4,"total_cost_usd":0.42,"result":"Promoted: lockfile-pins-shas-not-tags\nRejected: 20260905-where-render-lives — re-derivable\nStore: 9 notes, 0 stale","structured_output":{"candidatesResolved":[],"notesRetracted":[],"notesTouched":["lockfile-pins-shas-not-tags"]},"modelUsage":{"claude-opus-5[1m]":{"canonicalModel":"claude-opus-5","inputTokens":12,"cacheReadInputTokens":9000}}}`
 
-// A failing turn. The CLI reporting its own failure is a verdict, not an
-// outage: the report is populated and carries the explanation.
-const refusedEnvelope = `{"type":"result","subtype":"success","is_error":true,"session_id":"s2","result":"could not reach the store"}`
+// A failing turn that still filed the completion report it owes. The CLI
+// reporting its own failure is a verdict, not an outage: the report is
+// populated and carries the explanation, and the run's account of what it
+// resolved is exactly as empty as a run that did nothing should file.
+const refusedEnvelope = `{"type":"result","subtype":"success","is_error":true,"session_id":"s2","result":"could not reach the store","structured_output":{"candidatesResolved":[],"notesRetracted":[],"notesTouched":[]}}`
 
+// A turn that ends with no completion report at all, whatever the CLI's own
+// verdict on it. Missing entirely rather than null or empty: a run this
+// disconnected from the schema it was bound to could not be trusted to
+// distinguish those either.
+const noReportEnvelope = `{"type":"result","subtype":"success","is_error":false,"session_id":"s3","result":"done"}`
+
+// The same absence of a report, on a turn the CLI itself called a failure —
+// the state a real refusal reaches when it never gets far enough to file one.
+const refusedEnvelopeWithoutReport = `{"type":"result","subtype":"success","is_error":true,"session_id":"s5","result":"could not reach the store"}`
+
+// A well-formed report that resolved nothing, which is consistent with a store
+// the run left untouched.
+const emptyReportEnvelope = `{"type":"result","subtype":"success","is_error":false,"session_id":"s4","result":"nothing cleared the bar","structured_output":{"candidatesResolved":[],"notesRetracted":[],"notesTouched":[]}}`
+
+// curatedNote is the note curatedEnvelope reports touching.
+const curatedNote = "lockfile-pins-shas-not-tags"
+
+// run curates a project whose store already holds everything the envelopes
+// above report — curatedNote stamped and indexed, no candidates staged — and
+// which the fake leaves untouched, so every report here is consistent with the
+// store and a test about something else is not failed by the check against
+// disk.
 func run(t *testing.T, stdout string, opts curator.Options) (*agentictest.Fake, curator.Result, error) {
 	t.Helper()
 
@@ -32,6 +56,9 @@ func run(t *testing.T, stdout string, opts curator.Options) (*agentictest.Fake, 
 	if opts.WorkDir == "" {
 		opts.WorkDir = t.TempDir()
 	}
+	p := newProjectIn(t, opts.WorkDir)
+	p.writeNote(t, curatedNote, true)
+	p.reindex(t)
 	res, err := curator.Run(t.Context(), opts)
 	return fake, res, err
 }
@@ -53,11 +80,15 @@ func TestARunReturnsTheCuratorsReport(t *testing.T) {
 	if res.Model == "" {
 		t.Error("Model is empty; the run's cost is meaningless without the model it was charged for")
 	}
+	if !slices.Contains(res.Report.NotesTouched, "lockfile-pins-shas-not-tags") {
+		t.Errorf("Report.NotesTouched = %v, want the note the run wrote", res.Report.NotesTouched)
+	}
 }
 
 // The CLI declaring the turn a failure is a verdict from the provider, not an
 // error from running it. Discarding the report as an outage loses the only
-// explanation there is.
+// explanation there is — and the run still filed the completion report it
+// owes, which is what tells the two apart from a run that produced neither.
 func TestACuratorsOwnFailureCarriesItsReport(t *testing.T) {
 	_, res, err := run(t, refusedEnvelope, curator.Options{})
 	if err != nil {
@@ -71,10 +102,49 @@ func TestACuratorsOwnFailureCarriesItsReport(t *testing.T) {
 	}
 }
 
+// A run that ends with no completion report at all is refused outright,
+// whatever the CLI's own verdict on the turn says — a prose account of what
+// happened is not a substitute for the one thing a caller can act on.
+func TestARunWithNoCompletionReportFails(t *testing.T) {
+	for name, envelope := range map[string]string{
+		"the CLI called it a success": noReportEnvelope,
+		"the CLI called it a failure": refusedEnvelopeWithoutReport,
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, _, err := run(t, envelope, curator.Options{})
+			if err == nil {
+				t.Fatal("a run with no completion report was accepted")
+			}
+			if !strings.Contains(err.Error(), "no completion report") {
+				t.Errorf("error = %v, want it to name the missing report", err)
+			}
+		})
+	}
+}
+
+// Three empty arrays is a well-formed report: it says the run ruled on
+// nothing and changed nothing, which is a complete answer, and a true one
+// about a run that left the store as it found it.
+func TestAWellFormedEmptyReportIsAccepted(t *testing.T) {
+	_, res, err := run(t, emptyReportEnvelope, curator.Options{})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	for name, got := range map[string][]string{
+		"CandidatesResolved": res.Report.CandidatesResolved,
+		"NotesRetracted":     res.Report.NotesRetracted,
+		"NotesTouched":       res.Report.NotesTouched,
+	} {
+		if len(got) != 0 {
+			t.Errorf("Report.%s = %v, want empty", name, got)
+		}
+	}
+}
+
 // The grant is constructed here and passed on the command line, which is what
 // makes the single-writer rule enforcement rather than instruction. If it
 // stopped reaching the child, nothing else would notice.
-func TestTheGrantAndTheRosterReachTheChild(t *testing.T) {
+func TestTheGrantReachesTheChild(t *testing.T) {
 	fake, _, err := run(t, curatedEnvelope, curator.Options{})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -82,8 +152,6 @@ func TestTheGrantAndTheRosterReachTheChild(t *testing.T) {
 
 	argv := strings.Join(fake.Recorded(t).Args, "\x00")
 	for _, want := range []string{
-		"--agents",
-		curator.AgentName,
 		"--allowedTools",
 		"Bash(agtk memory anchor*)",
 	} {
@@ -107,6 +175,33 @@ func TestTheGrantAndTheRosterReachTheChild(t *testing.T) {
 	}
 }
 
+// The curator has no roster and is never told to delegate; the deny list is
+// what closes delegation instead, on every shape of run this package makes —
+// the default backlog run, the stale sweep, and a preview that writes
+// nothing.
+func TestNoRosterReachesTheChildAndTheDenyListAlwaysDoes(t *testing.T) {
+	for name, opts := range map[string]curator.Options{
+		"backlog run": {},
+		"stale sweep": {Stale: true},
+		"dry run":     {DryRun: true, CandidatesDir: "/repo/candidates"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			fake, _, err := run(t, curatedEnvelope, opts)
+			if err != nil {
+				t.Fatalf("Run: %v", err)
+			}
+			argv := strings.Join(fake.Recorded(t).Args, "\x00")
+
+			if strings.Contains(argv, "--agents") {
+				t.Errorf("the child was given a roster it was never told to delegate to: %q", argv)
+			}
+			if !strings.Contains(argv, "--disallowedTools\x00Agent,Task") {
+				t.Errorf("the child was not denied delegation: %q", argv)
+			}
+		})
+	}
+}
+
 // --stale is its own command rather than a flag on audit, and the two ask for
 // different work. A flag that reached the child identically would mean the
 // sweep never happened.
@@ -120,6 +215,8 @@ func TestTheStaleSweepAsksForDifferentWork(t *testing.T) {
 		t.Fatalf("Run --stale: %v", err)
 	}
 
+	// The prompt goes on stdin, never argv, so that is where the job the run
+	// was given has to be read from.
 	backlogPrompt := backlog.Stdin(t)
 	sweepPrompt := sweep.Stdin(t)
 	if backlogPrompt == sweepPrompt {
