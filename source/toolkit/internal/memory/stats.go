@@ -29,6 +29,8 @@ type Stats struct {
 	// generated yet.
 	IndexBytes int64
 
+	// Hits, NotesHit, HitRate, FirstHit, LastHit and Cold are computed over
+	// the union of the compacted file, the shards and the local log.
 	Hits     int
 	NotesHit int
 	HitRate  float64
@@ -43,6 +45,17 @@ type Stats struct {
 	// nothing about the notes in it. A reader of this field owes that
 	// comparison against Hits and Notes before treating it as a prune list.
 	Cold []string
+
+	// LocalHits is the part of Hits still in the gitignored local log, which
+	// no other checkout sees until it is folded into a shard.
+	LocalHits int
+	// Shards is how many shard files were read, and Compacted whether the
+	// compacted file was. With neither, every hit is this checkout's alone.
+	Shards    int
+	Compacted bool
+	// UnreadableHits names each committed hit record that could not be read
+	// and was left out of the counts above.
+	UnreadableHits []error
 }
 
 // Stats computes the store's shape, including a staleness pass over the
@@ -88,23 +101,36 @@ func (s *Store) Stats(notes []*Note) (Stats, error) {
 		}
 	}
 
-	hits, err := s.Hits()
+	shared, err := s.SharedHits()
 	if err != nil {
 		return st, err
 	}
+	st.Shards = shared.Shards
+	st.Compacted = shared.Compacted
+	st.UnreadableHits = shared.Skipped
+
+	local, err := s.Hits()
+	if err != nil {
+		return st, err
+	}
+	st.LocalHits = len(local)
+
+	counts := shared.Counts
+	counts.Add(TallyHits(local))
+
 	seen := map[string]bool{}
-	for _, h := range hits {
-		st.Hits++
-		if st.FirstHit.IsZero() || h.At.Before(st.FirstHit) {
-			st.FirstHit = h.At
+	for name, h := range counts {
+		st.Hits += h.Count
+		if !h.First.IsZero() && (st.FirstHit.IsZero() || h.First.Before(st.FirstHit)) {
+			st.FirstHit = h.First
 		}
-		if h.At.After(st.LastHit) {
-			st.LastHit = h.At
+		if h.Last.After(st.LastHit) {
+			st.LastHit = h.Last
 		}
 		// Only notes still in the store count toward the rate; a hit on a
 		// pruned note says nothing about whether today's index is repaid.
-		if known[h.Note] {
-			seen[h.Note] = true
+		if known[name] {
+			seen[name] = true
 		}
 	}
 	st.NotesHit = len(seen)

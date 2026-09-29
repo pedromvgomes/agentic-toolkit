@@ -246,6 +246,11 @@ type Result struct {
 	// is a finding still waiting on a person, and Run returns an error beside
 	// the Result whenever this is non-empty. Clearing never removes one.
 	Unreadable []error
+	// Compaction is the hit shards agtk folded into the compacted hit record
+	// after verification, and the shards it could not read and left in place.
+	// Empty for a dry run, for a run that failed verification, and for a store
+	// with no shards.
+	Compaction memory.Compaction
 }
 
 // Report is the curator's completion report: the run's own account of which
@@ -518,7 +523,9 @@ const permissionMode = ""
 // comes back beside the populated Result, whose Text is then the curator's own
 // account of the run the store contradicts. A report that holds up has every
 // candidate it resolved and the run left staged removed, named in
-// Result.Cleared.
+// Result.Cleared. The hit shards are then compacted into the store's hit
+// record — see memory.Store.CompactHits — and named in Result.Compaction; a
+// dry run and a run the store contradicts compact nothing.
 //
 // Every run, dry or not, ends by reading candidates/ again: a candidate that
 // does not parse is named in Result.Unreadable and fails the run, since
@@ -624,6 +631,14 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 		result.Cleared, err = clearResolved(store, withoutUnreadable(before, result.Unreadable), result.Report)
 		if err != nil {
 			return result, err
+		}
+		// Every job shape compacts, since the hit record grows with reads rather
+		// than with the backlog. It is filing, done here rather than by the
+		// model: which reads were recorded is already on disk, and summing them
+		// takes no judgement.
+		result.Compaction, err = store.CompactHits()
+		if err != nil {
+			return result, fmt.Errorf("curator: compact the hit record: %w", err)
 		}
 	}
 	if len(result.Unreadable) > 0 {

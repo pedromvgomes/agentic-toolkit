@@ -278,6 +278,12 @@ func ExecuteArgs(env *Env, args []string) int {
 		if errors.Is(err, errMemoryCurate) {
 			return 1
 		}
+		// `agtk memory hits fold --check` prints its own report, text or
+		// JSON, before returning errMemoryUnfolded, so stderr stays empty
+		// and a `--json` caller reads the whole report from stdout.
+		if errors.Is(err, errMemoryUnfolded) {
+			return 1
+		}
 		// `agtk guard footers` prints its own deny message before
 		// returning errGuardFootersDenied; the hook that invoked it reads
 		// exit code 2 as "denied" versus 1 for "the guard itself broke".

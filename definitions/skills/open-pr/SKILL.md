@@ -110,10 +110,37 @@ writes to, and it is not `notes/`.
 `agtk memory index`. `notes/` has exactly one writer and it runs from `/memory-curate`
 (ADR 0003). Say in your output that candidates are waiting.
 
+Then record the reads this session made, so they travel with the branch. First check that the
+installed `agtk` knows the subcommand:
+
+```bash
+agtk memory hits --help >/dev/null 2>&1
+```
+
+If that fails, the binary predates it: skip the fold, say so in one line, and carry on. Otherwise:
+
+```bash
+agtk memory hits fold
+```
+
+It moves the local hit log into one shard under `<root>/hits/` and empties the log. `agtk`
+never commits, so the shard is left for the next step.
+
 ## 3 — Commit and push
 
-Commit anything the steps above produced, as its own commit, conventional like the rest. Push
-the branch and set upstream if it has none.
+Commit anything the steps above produced, candidates and the hits shard included, as its own
+commit, conventional like the rest.
+
+If the memory store was in play, check that nothing under it is left behind:
+
+```bash
+git status --short -- <root>
+```
+
+It must print nothing. A fold or a staged candidate that was never committed is lost with the
+container, so commit what it lists, or say why you did not, before pushing.
+
+Push the branch and set upstream if it has none.
 
 ## 4 — Open it
 

@@ -1,14 +1,17 @@
 package tests
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/pedromvgomes/agentic-toolkit/internal/cli"
 )
@@ -1544,3 +1547,446 @@ func TestMemoryIndexJSONReportsWhatItWrote(t *testing.T) {
 type failingStdout struct{}
 
 func (failingStdout) Write([]byte) (int, error) { return 0, errors.New("write failed") }
+
+// hitsProject is a repo with one anchored note in its store.
+func hitsProject(t *testing.T) string {
+	t.Helper()
+	work := memoryProject(t, "stacks: []\n")
+	writeFile(t, filepath.Join(work, ".memory/notes/pins-shas.md"), memoryNote)
+	if _, _, err := runCLI(t, work, "memory", "anchor", "--all"); err != nil {
+		t.Fatalf("memory anchor: %v", err)
+	}
+	return work
+}
+
+// exitCode runs the CLI the way the binary does and returns its exit code and
+// stdout.
+func exitCode(t *testing.T, work string, args ...string) (int, string) {
+	t.Helper()
+	code, stdout, _ := exitCodeWithStderr(t, work, args...)
+	return code, stdout
+}
+
+// exitCodeWithStderr is exitCode that also returns what the run wrote to
+// stderr, for commands whose contract includes printing nothing there.
+func exitCodeWithStderr(t *testing.T, work string, args ...string) (int, string, string) {
+	t.Helper()
+	var out, errOut bytes.Buffer
+	env := &cli.Env{Stdin: strings.NewReader(""), Stdout: &out, Stderr: &errOut, WorkDir: work}
+	return cli.ExecuteArgs(env, args), out.String(), errOut.String()
+}
+
+type hitsFoldResult struct {
+	Version int    `json:"version"`
+	Check   bool   `json:"check"`
+	Log     string `json:"log"`
+	Hits    int    `json:"hits"`
+	Notes   int    `json:"notes"`
+	Shard   string `json:"shard"`
+}
+
+func foldJSON(t *testing.T, work string, args ...string) hitsFoldResult {
+	t.Helper()
+	stdout, _, err := runCLI(t, work, append([]string{"memory", "hits", "fold", "--json"}, args...)...)
+	if err != nil {
+		t.Fatalf("memory hits fold: %v", err)
+	}
+	var res hitsFoldResult
+	if err := json.Unmarshal([]byte(stdout), &res); err != nil {
+		t.Fatalf("fold json: %v (%s)", err, stdout)
+	}
+	return res
+}
+
+// TestMemoryHitsFoldSharesTheLog: a fold moves the checkout's reads into a
+// committed shard and empties the log, and `stats` then reports the same
+// reads as the store's rather than this checkout's.
+func TestMemoryHitsFoldSharesTheLog(t *testing.T) {
+	work := hitsProject(t)
+	for i := 0; i < 2; i++ {
+		if _, _, err := runCLI(t, work, "memory", "show", "pins-shas"); err != nil {
+			t.Fatalf("memory show: %v", err)
+		}
+	}
+
+	code, stdout, stderr := exitCodeWithStderr(t, work, "memory", "hits", "fold", "--check")
+	if code != 1 {
+		t.Errorf("--check over an unfolded log exited %d, want 1", code)
+	}
+	if stderr != "" {
+		t.Errorf("--check repeated its report on stderr: %q", stderr)
+	}
+	if !strings.Contains(stdout, "2 reads over 1 note not yet folded") {
+		t.Errorf("--check did not report what waits to be folded: %q", stdout)
+	}
+	if _, err := os.Stat(filepath.Join(work, ".memory/hits")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("--check wrote the shard directory (%v)", err)
+	}
+
+	res := foldJSON(t, work)
+	if res.Version != 1 || res.Check || res.Hits != 2 || res.Notes != 1 || res.Log != ".memory/.hits.jsonl" {
+		t.Errorf("fold = %+v, want 2 reads over 1 note from .memory/.hits.jsonl", res)
+	}
+	name := regexp.MustCompile(`^\.memory/hits/\d{4}-\d{2}-\d{2}-no-branch-[0-9a-f]{8}\.json$`)
+	if !name.MatchString(res.Shard) {
+		t.Errorf("shard = %q, want .memory/hits/<date>-no-branch-<suffix>.json outside a repository", res.Shard)
+	}
+	if _, err := os.Stat(filepath.Join(work, res.Shard)); err != nil {
+		t.Errorf("shard not written: %v", err)
+	}
+	if raw, err := os.ReadFile(filepath.Join(work, ".memory/.hits.jsonl")); err != nil || len(raw) != 0 {
+		t.Errorf("log after fold = %q (%v), want it empty", raw, err)
+	}
+
+	if code, stdout, stderr := exitCodeWithStderr(t, work, "memory", "hits", "fold", "--check"); code != 0 || !strings.Contains(stdout, "nothing to fold") || stderr != "" {
+		t.Errorf("--check after a fold exited %d with stdout %q, stderr %q, want 0, nothing to fold and empty stderr", code, stdout, stderr)
+	}
+
+	stats, _, err := runCLI(t, work, "memory", "stats")
+	if err != nil {
+		t.Fatalf("memory stats: %v", err)
+	}
+	if !strings.Contains(stats, "hits:        2 reads over 1 of 1 notes (100% hit rate)\n") {
+		t.Errorf("stats did not report the folded reads as the store's:\n%s", stats)
+	}
+	if strings.Contains(stats, "this checkout") || strings.Contains(stats, "unfolded:") {
+		t.Errorf("stats scoped a committed record to this checkout:\n%s", stats)
+	}
+
+	if _, _, err := runCLI(t, work, "memory", "show", "pins-shas"); err != nil {
+		t.Fatalf("memory show: %v", err)
+	}
+	stats, _, err = runCLI(t, work, "memory", "stats")
+	if err != nil {
+		t.Fatalf("memory stats: %v", err)
+	}
+	if !strings.Contains(stats, "hits:        3 reads over 1 of 1 notes (100% hit rate)\n") {
+		t.Errorf("stats did not add the log to the shard:\n%s", stats)
+	}
+	if !strings.Contains(stats, "  unfolded:  1 read in .hits.jsonl, this checkout only") {
+		t.Errorf("stats did not say which reads are still this checkout's:\n%s", stats)
+	}
+
+	stdout, _, err = runCLI(t, work, "memory", "stats", "--json")
+	if err != nil {
+		t.Fatalf("memory stats --json: %v", err)
+	}
+	var st struct {
+		Hits      int  `json:"hits"`
+		LocalHits int  `json:"local_hits"`
+		Shards    int  `json:"shards"`
+		Compacted bool `json:"compacted"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &st); err != nil {
+		t.Fatalf("stats json: %v (%s)", err, stdout)
+	}
+	if st.Hits != 3 || st.LocalHits != 1 || st.Shards != 1 || st.Compacted {
+		t.Errorf("stats json = %+v, want 3 hits, 1 local, 1 shard, not compacted", st)
+	}
+}
+
+// TestMemoryStatsKeepsTheLinesTheSessionHookParses: the session-start hook
+// reads `stats` by line prefix, so a committed hit record must not change
+// the notes, stale and candidates lines.
+func TestMemoryStatsKeepsTheLinesTheSessionHookParses(t *testing.T) {
+	work := hitsProject(t)
+	writeFile(t, filepath.Join(work, ".memory/candidates/staged.md"), "---\nname: staged\n---\n\nbody\n")
+	if _, _, err := runCLI(t, work, "memory", "show", "pins-shas"); err != nil {
+		t.Fatalf("memory show: %v", err)
+	}
+	_ = foldJSON(t, work)
+	writeFile(t, filepath.Join(work, ".memory/hits.json"),
+		`{"version": 1, "notes": {"pins-shas": {"count": 1, "first": "2026-01-01T00:00:00Z", "last": "2026-01-01T00:00:00Z"}}}`)
+
+	stdout, _, err := runCLI(t, work, "memory", "stats")
+	if err != nil {
+		t.Fatalf("memory stats: %v", err)
+	}
+	lines := strings.Split(stdout, "\n")
+	for _, want := range []string{"notes:       1", "stale:       0", "candidates:  1"} {
+		found := false
+		for _, l := range lines {
+			if l == want {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("stats has no line %q:\n%s", want, stdout)
+		}
+	}
+	if !strings.Contains(stdout, "hits:        2 reads over 1 of 1 notes (100% hit rate)\n") {
+		t.Errorf("stats did not add the compacted file to the shard:\n%s", stdout)
+	}
+	if !strings.Contains(stdout, "  window:    2026-01-01T00:00:00Z .. ") {
+		t.Errorf("stats window does not start at the compacted file's first read:\n%s", stdout)
+	}
+}
+
+// TestMemoryStatsWithACommittedRecordButNoHits: a committed record that holds
+// no reads still means the count is not this checkout's alone.
+func TestMemoryStatsWithACommittedRecordButNoHits(t *testing.T) {
+	work := hitsProject(t)
+	writeFile(t, filepath.Join(work, ".memory/hits.json"), `{"version": 1, "notes": {}}`)
+
+	stdout, _, err := runCLI(t, work, "memory", "stats")
+	if err != nil {
+		t.Fatalf("memory stats: %v", err)
+	}
+	if !strings.Contains(stdout, "hits:        none recorded\n") {
+		t.Errorf("stats with an empty committed record:\n%s", stdout)
+	}
+	if strings.Contains(stdout, "window:") {
+		t.Errorf("stats printed a window with no reads:\n%s", stdout)
+	}
+}
+
+// TestMemoryHitsFoldCheckWithNothingToFold: an empty or missing log is not a
+// failure for --check, and a fold over it writes no shard.
+func TestMemoryHitsFoldCheckWithNothingToFold(t *testing.T) {
+	work := hitsProject(t)
+
+	if code, stdout, stderr := exitCodeWithStderr(t, work, "memory", "hits", "fold", "--check"); code != 0 || stderr != "" {
+		t.Errorf("--check with no log exited %d with stdout %q, stderr %q, want 0 and empty stderr", code, stdout, stderr)
+	}
+	writeFile(t, filepath.Join(work, ".memory/.hits.jsonl"), "")
+	if code, stdout, stderr := exitCodeWithStderr(t, work, "memory", "hits", "fold", "--check"); code != 0 || stderr != "" {
+		t.Errorf("--check with an empty log exited %d with stdout %q, stderr %q, want 0 and empty stderr", code, stdout, stderr)
+	}
+
+	stdout, _, err := runCLI(t, work, "memory", "hits", "fold")
+	if err != nil {
+		t.Fatalf("fold with an empty log: %v", err)
+	}
+	if !strings.Contains(stdout, "nothing to fold") {
+		t.Errorf("fold with an empty log printed %q", stdout)
+	}
+	if res := foldJSON(t, work); res.Shard != "" || res.Hits != 0 {
+		t.Errorf("fold --json with an empty log = %+v, want no shard", res)
+	}
+	if _, err := os.Stat(filepath.Join(work, ".memory/hits")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("fold with an empty log created the shard directory (%v)", err)
+	}
+}
+
+// TestMemoryHitsFoldCheckJSON: --check --json reports what waits to be folded
+// and still exits non-zero, so a script can read the count and the verdict.
+func TestMemoryHitsFoldCheckJSON(t *testing.T) {
+	work := hitsProject(t)
+	if _, _, err := runCLI(t, work, "memory", "show", "pins-shas"); err != nil {
+		t.Fatalf("memory show: %v", err)
+	}
+
+	code, stdout, stderr := exitCodeWithStderr(t, work, "memory", "hits", "fold", "--check", "--json")
+	if code != 1 {
+		t.Errorf("--check --json over an unfolded log exited %d, want 1", code)
+	}
+	if stderr != "" {
+		t.Errorf("--check --json wrote to stderr, so stdout is not the whole report: %q", stderr)
+	}
+	var res hitsFoldResult
+	if err := json.Unmarshal([]byte(stdout), &res); err != nil {
+		t.Fatalf("check json: %v (%s)", err, stdout)
+	}
+	if !res.Check || res.Hits != 1 || res.Notes != 1 || res.Shard != "" {
+		t.Errorf("check = %+v, want 1 unfolded read and no shard", res)
+	}
+}
+
+// TestMemoryHitsFoldNamesTheShardFromTheBranch: the branch is in the shard's
+// name, slugged, and a detached HEAD still folds.
+func TestMemoryHitsFoldNamesTheShardFromTheBranch(t *testing.T) {
+	work := hitsProject(t)
+	runGit(t, work, "init", "-q", "-b", "feature/Fold_Me")
+	if _, _, err := runCLI(t, work, "memory", "show", "pins-shas"); err != nil {
+		t.Fatalf("memory show: %v", err)
+	}
+	if res := foldJSON(t, work); !strings.Contains(res.Shard, "-feature-fold-me-") {
+		t.Errorf("shard = %q, want the branch slug feature-fold-me in its name", res.Shard)
+	}
+
+	runGit(t, work, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "--allow-empty", "-m", "init")
+	runGit(t, work, "checkout", "-q", "--detach")
+	if _, _, err := runCLI(t, work, "memory", "show", "pins-shas"); err != nil {
+		t.Fatalf("memory show: %v", err)
+	}
+	if res := foldJSON(t, work); !strings.Contains(res.Shard, "-no-branch-") {
+		t.Errorf("shard = %q, want the no-branch fallback on a detached HEAD", res.Shard)
+	}
+}
+
+// TestMemoryHitsIsAProbeableGroup: `memory hits --help` is how a caller finds
+// out this binary can fold, and the group rejects a subcommand it lacks
+// rather than printing help and exiting 0.
+func TestMemoryHitsIsAProbeableGroup(t *testing.T) {
+	work := hitsProject(t)
+
+	stdout, _, err := runCLI(t, work, "memory", "hits", "--help")
+	if err != nil {
+		t.Fatalf("memory hits --help: %v", err)
+	}
+	if !strings.Contains(stdout, "fold") {
+		t.Errorf("help does not list fold:\n%s", stdout)
+	}
+	if _, _, err := runCLI(t, work, "memory", "hits"); err != nil {
+		t.Errorf("bare `memory hits` failed: %v", err)
+	}
+	if _, _, err := runCLI(t, work, "memory", "hits", "no-such-subcommand"); err == nil {
+		t.Error("an unknown hits subcommand succeeded")
+	}
+}
+
+// TestMemoryStatsWarnsOnAnUnreadableShard: a malformed shard is named on
+// stderr and skipped, and stats still exits 0.
+func TestMemoryStatsWarnsOnAnUnreadableShard(t *testing.T) {
+	work := hitsProject(t)
+	writeFile(t, filepath.Join(work, ".memory/hits/2026-01-01-main-bad.json"), "{")
+
+	stdout, stderr, err := runCLI(t, work, "memory", "stats")
+	if err != nil {
+		t.Fatalf("memory stats: %v", err)
+	}
+	if !strings.Contains(stderr, "warning: skipping unreadable hit record") || !strings.Contains(stderr, "2026-01-01-main-bad.json") {
+		t.Errorf("stats did not name the unreadable shard: %q", stderr)
+	}
+	if !strings.Contains(stdout, "none recorded in this checkout") {
+		t.Errorf("an unreadable shard counted as a committed record:\n%s", stdout)
+	}
+}
+
+// TestMemoryHitsFoldTextNamesTheShardAndTheLog: the text report says how many
+// reads were folded, into which shard, dated the day of the fold, and that the
+// log is now empty.
+func TestMemoryHitsFoldTextNamesTheShardAndTheLog(t *testing.T) {
+	work := hitsProject(t)
+	for i := 0; i < 2; i++ {
+		if _, _, err := runCLI(t, work, "memory", "show", "pins-shas"); err != nil {
+			t.Fatalf("memory show: %v", err)
+		}
+	}
+
+	before := time.Now().UTC().Format("2006-01-02")
+	stdout, _, err := runCLI(t, work, "memory", "hits", "fold")
+	after := time.Now().UTC().Format("2006-01-02")
+	if err != nil {
+		t.Fatalf("memory hits fold: %v", err)
+	}
+	line := regexp.MustCompile(`^folded 2 reads over 1 note into \.memory/hits/(\d{4}-\d{2}-\d{2})-no-branch-[0-9a-f]{8}\.json; \.memory/\.hits\.jsonl emptied\n$`)
+	m := line.FindStringSubmatch(stdout)
+	if m == nil {
+		t.Fatalf("fold printed %q, want the reads, the shard and the emptied log", stdout)
+	}
+	if m[1] != before && m[1] != after {
+		t.Errorf("shard dated %s, want the day of the fold (%s)", m[1], after)
+	}
+}
+
+// TestMemoryHitsHelpDescribesEachCommand: `memory --help` and `memory hits
+// --help` list each command with what it does, and fold takes no arguments.
+func TestMemoryHitsHelpDescribesEachCommand(t *testing.T) {
+	work := hitsProject(t)
+
+	stdout, _, err := runCLI(t, work, "memory", "--help")
+	if err != nil {
+		t.Fatalf("memory --help: %v", err)
+	}
+	if !strings.Contains(stdout, "Share the hit record beyond this checkout") {
+		t.Errorf("memory help does not describe hits:\n%s", stdout)
+	}
+	stdout, _, err = runCLI(t, work, "memory", "hits", "--help")
+	if err != nil {
+		t.Fatalf("memory hits --help: %v", err)
+	}
+	if !strings.Contains(stdout, "Move the local hits log into a committed shard") {
+		t.Errorf("hits help does not describe fold:\n%s", stdout)
+	}
+	if _, _, err := runCLI(t, work, "memory", "hits", "fold", "extra"); err == nil {
+		t.Error("fold accepted an argument")
+	}
+}
+
+// TestMemoryStatsJSONReportsTheCompactedFile: `compacted` says the compacted
+// file was read, so a JSON consumer can tell the store's reads from this
+// checkout's without a shard present.
+func TestMemoryStatsJSONReportsTheCompactedFile(t *testing.T) {
+	work := hitsProject(t)
+	writeFile(t, filepath.Join(work, ".memory/hits.json"),
+		`{"version": 1, "notes": {"pins-shas": {"count": 2, "first": "2026-01-01T00:00:00Z", "last": "2026-01-02T00:00:00Z"}}}`)
+
+	stdout, _, err := runCLI(t, work, "memory", "stats", "--json")
+	if err != nil {
+		t.Fatalf("memory stats --json: %v", err)
+	}
+	var st struct {
+		Hits      int  `json:"hits"`
+		Shards    int  `json:"shards"`
+		Compacted bool `json:"compacted"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &st); err != nil {
+		t.Fatalf("stats json: %v (%s)", err, stdout)
+	}
+	if st.Hits != 2 || st.Shards != 0 || !st.Compacted {
+		t.Errorf("stats json = %+v, want 2 hits read from the compacted file alone", st)
+	}
+}
+
+// TestMemoryStatsJSONListsAnUnreadableHitRecord: `unreadable_hits` names each
+// committed hit record that could not be read, so a JSON consumer can tell a
+// cold note from one whose only reads sit in a record the counts exclude. The
+// records that do read are still counted, and the stderr warning is kept.
+func TestMemoryStatsJSONListsAnUnreadableHitRecord(t *testing.T) {
+	work := hitsProject(t)
+	writeFile(t, filepath.Join(work, ".memory/hits.json"),
+		`{"version": 1, "notes": {"pins-shas": {"count": 2, "first": "2026-01-01T00:00:00Z", "last": "2026-01-02T00:00:00Z"}}}`)
+	writeFile(t, filepath.Join(work, ".memory/hits/2026-01-01-main-bad.json"), "{")
+
+	stdout, stderr, err := runCLI(t, work, "memory", "stats", "--json")
+	if err != nil {
+		t.Fatalf("memory stats --json: %v", err)
+	}
+	var st struct {
+		Hits           int      `json:"hits"`
+		Compacted      bool     `json:"compacted"`
+		UnreadableHits []string `json:"unreadable_hits"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &st); err != nil {
+		t.Fatalf("stats json: %v (%s)", err, stdout)
+	}
+	if len(st.UnreadableHits) != 1 || !strings.Contains(st.UnreadableHits[0], "2026-01-01-main-bad.json") {
+		t.Errorf("unreadable_hits = %q, want one entry naming 2026-01-01-main-bad.json", st.UnreadableHits)
+	}
+	if st.Hits != 2 || !st.Compacted {
+		t.Errorf("stats json = %+v, want the readable compacted file still counted", st)
+	}
+	if !strings.Contains(stderr, "warning: skipping unreadable hit record") || !strings.Contains(stderr, "2026-01-01-main-bad.json") {
+		t.Errorf("stats --json did not warn on stderr about the unreadable shard: %q", stderr)
+	}
+}
+
+// TestMemoryStatsJSONUnreadableHitsIsAnEmptyArrayWhenAllRead: with every hit
+// record readable `unreadable_hits` is present and `[]`, never null or absent,
+// so a consumer does not have to tell a missing field from an empty one.
+func TestMemoryStatsJSONUnreadableHitsIsAnEmptyArrayWhenAllRead(t *testing.T) {
+	work := hitsProject(t)
+	writeFile(t, filepath.Join(work, ".memory/hits.json"),
+		`{"version": 1, "notes": {"pins-shas": {"count": 2, "first": "2026-01-01T00:00:00Z", "last": "2026-01-02T00:00:00Z"}}}`)
+
+	stdout, stderr, err := runCLI(t, work, "memory", "stats", "--json")
+	if err != nil {
+		t.Fatalf("memory stats --json: %v", err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal([]byte(stdout), &raw); err != nil {
+		t.Fatalf("stats json: %v (%s)", err, stdout)
+	}
+	got, ok := raw["unreadable_hits"]
+	if !ok {
+		t.Fatalf("unreadable_hits is absent from %s", stdout)
+	}
+	arr, isArray := got.([]any)
+	if !isArray || len(arr) != 0 {
+		t.Errorf("unreadable_hits = %#v, want an empty array", got)
+	}
+	if strings.Contains(stderr, "unreadable hit record") {
+		t.Errorf("stats warned about an unreadable record with none present: %q", stderr)
+	}
+}

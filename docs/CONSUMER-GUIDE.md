@@ -331,6 +331,7 @@ agtk memory search [--files a,b] [words…]
                                 # rank notes against files and words, count no read
 agtk memory show <name>         # read one note, and count the read
 agtk memory stats               # size, staleness, hit rate
+agtk memory hits fold [--check] # move the local read log into a committed shard
 agtk memory candidates          # list the findings staged for curation
 agtk memory curate              # rule on the staged candidates (calls a model)
 ```
@@ -438,6 +439,45 @@ memory:
 `memory:` is an entry-manifest field only — a stack file has no such key,
 so one that sets `memory:` fails to parse. Where your repo commits its
 notes is not a shared stack's business.
+
+### Hit counts
+
+`show` appends each read to `<root>/.hits.jsonl`, which is gitignored and so
+belongs to one checkout. `agtk memory hits fold` writes those reads to one
+committed shard, `<root>/hits/<date>-<branch>-<suffix>.json`, holding each
+note's read count and its first and last read, and only then empties the
+local log; a fold that cannot write the shard leaves the log as it was. It
+never commits: the shard is left in the working tree for your own commit.
+Every fold names a file no other fold names, so branches that both fold do
+not conflict. With `--check` it writes nothing and exits non-zero while the
+local log holds reads that are not folded, and an empty or missing log writes
+nothing.
+
+`curate` compacts the shards into `<root>/hits.json` once its completion
+report has passed the check above, on every real run — backlog, `--stale`,
+scoped or limited — and never under `--dry-run` or when the check fails. The
+file is written through a temporary file and a rename, then the folded shards
+are removed, and no model is involved. A shard that cannot be read is left in
+place and reported as a `hits:` line; a `hits.json` that cannot be read fails
+the run and leaves the shards alone. A merge conflict in `hits.json` is
+resolved by taking either side, and the reads only the other side held are
+lost.
+
+`stats` reads the compacted file, the shards and the local log together. The
+hit rate is still the distinct notes read over the notes, and a read counts
+only for a note that still exists. `cold` lists every note with no read
+anywhere in that union, and the window runs from its earliest to its latest
+read. While no shard or compacted file exists, the count is labelled as this
+checkout's alone; once one does, only the reads not yet folded are, on an
+`unfolded:` line. Reads in a session that never folds, an unfolded
+`git checkout`, and a renamed note's earlier reads are not counted. See
+`docs/adr/0024-hit-counts-are-carried-in-committed-shards.md`.
+
+`open-pr` folds for you. It probes `agtk memory hits --help` and skips the
+fold when the installed `agtk` lacks it, folds before it commits the memory
+changes so the shard lands in that commit, and checks that nothing under the
+store root is left uncommitted before it pushes. `/memory-curate` carries no
+such check.
 
 ## Choosing where to apply from
 
