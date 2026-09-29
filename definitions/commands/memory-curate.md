@@ -37,10 +37,13 @@ stamping grant to those names — a scoped run cannot clear the staleness signal
 was not asked to check. Use it to work through a backlog in pieces, or to re-check one note
 after the code under it moved.
 
-Finish by listing what the run changed in the store:
+Finish by listing what the run changed in the store. The store's location is `memory.root` in
+the entry manifest, so read it from the `root:` line of `agtk memory stats` rather than
+assuming a path, then run `git status --short` on it:
 
 ```bash
-git status --short .memory
+agtk memory stats
+git status --short <root>
 ```
 
 Then commit those changes under the repo's git rules. The run leaves them uncommitted in the

@@ -46,8 +46,14 @@ func TestMemoryCurateHandsTheStoreChangesToTheSessionToCommit(t *testing.T) {
 	apply := renderDefaultStack(t)
 	command := readRendered(t, apply, ".claude/commands/memory-curate.md")
 
-	if !strings.Contains(command, "git status --short .memory") {
+	if !strings.Contains(command, "git status --short <root>") {
 		t.Errorf("memory-curate does not list the store's changes:\n%s", command)
+	}
+	if !strings.Contains(command, "agtk memory stats") {
+		t.Errorf("memory-curate assumes the store's location instead of reading it:\n%s", command)
+	}
+	if strings.Contains(command, "git status --short .memory") {
+		t.Errorf("memory-curate hardcodes the default store location:\n%s", command)
 	}
 	if !strings.Contains(command, "under the repo's git rules") {
 		t.Error("memory-curate does not hand the commit to the session under the repo's git rules")

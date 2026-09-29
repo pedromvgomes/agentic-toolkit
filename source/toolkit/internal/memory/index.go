@@ -34,7 +34,7 @@ func RenderIndex(notes []*Note) []byte {
 	if len(notes) == 1 {
 		noun = "note"
 	}
-	fmt.Fprintf(&b, "\n%d %s. Read one with `agtk memory show <name>`.\n", len(notes), noun)
+	fmt.Fprintf(&b, "\n%d %s. `agtk memory show <name>` opens one and records a hit; add `--no-hit` for a read that is not consulting the store.\n", len(notes), noun)
 	for _, n := range notes {
 		fmt.Fprintf(&b, "\n## %s  (%s, %s)\n%s\n\n", n.Name, n.Kind, n.Confidence, n.Description)
 		for _, a := range n.Anchors {
