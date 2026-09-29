@@ -134,9 +134,12 @@ func (s *Store) ensureGitignore() error {
 	return nil
 }
 
-// LoadNotes parses every *.md under notes/, sorted by name. Parse failures
-// are collected rather than returned as a single error: one malformed note
-// must not hide the rest of the store from index, audit or lint.
+// LoadNotes parses every *.md under notes/, sorted by name. Notes that share
+// a name (lint flags the duplicate) keep the order of their file names, which
+// os.ReadDir returns sorted, so the result is the same on every run. Parse
+// failures are collected rather than returned as a single error: one
+// malformed note must not hide the rest of the store from index, audit or
+// lint.
 func (s *Store) LoadNotes() ([]*Note, []error) {
 	entries, err := os.ReadDir(s.NotesPath())
 	if err != nil {
@@ -167,7 +170,7 @@ func (s *Store) LoadNotes() ([]*Note, []error) {
 		}
 		notes = append(notes, n)
 	}
-	sort.Slice(notes, func(i, j int) bool { return notes[i].Name < notes[j].Name })
+	sort.SliceStable(notes, func(i, j int) bool { return notes[i].Name < notes[j].Name })
 	return notes, errs
 }
 

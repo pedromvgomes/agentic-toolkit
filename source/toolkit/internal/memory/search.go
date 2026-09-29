@@ -128,7 +128,9 @@ type Result struct {
 //   - Words score by field: a term in the name weighs nameWeight, in the
 //     description descriptionWeight, in the body bodyWeight, each count
 //     capped at TermCountCap per term per field.
-//   - Ties break by name, ascending, so the order is total.
+//   - Ties break by name, ascending. Notes that share a name as well keep
+//     the order the corpus returned them in, which for a FileCorpus is file
+//     name order, so the list is the same on every run.
 //
 // Staleness is computed only for the notes returned, and never moves a
 // note's rank.
@@ -173,7 +175,7 @@ func Search(c Corpus, q Query, warn io.Writer) ([]Result, error) {
 		}
 		hits = append(hits, ranked{note: n, anchors: anchors, score: score})
 	}
-	sort.Slice(hits, func(i, j int) bool {
+	sort.SliceStable(hits, func(i, j int) bool {
 		if hits[i].score != hits[j].score {
 			return hits[i].score > hits[j].score // [lydite:exclude_from_mutation][conditional-boundary ">" -> ">=": this line runs only when the two scores differ, where > and >= agree]
 		}

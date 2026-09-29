@@ -3,6 +3,7 @@ package tests
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -32,6 +33,33 @@ func TestRenderIndexCarriesRoutingFieldsOnly(t *testing.T) {
 	// The glob is listed as the pattern, not as its expansion.
 	if strings.Contains(out, "internal/lockfile/parser.go") {
 		t.Error("index listed a glob's expansion rather than the pattern")
+	}
+}
+
+// TestLoadNotesKeepsNotesSharingANameInFileNameOrder: notes that tie on name
+// load in the order of their file names, so the result does not depend on the
+// sort's treatment of equal elements. The files are written in reverse so a
+// write-order artefact cannot pass for file-name order, and a differently named
+// note on either side shows the name sort still applies around them.
+func TestLoadNotesKeepsNotesSharingANameInFileNameOrder(t *testing.T) {
+	s := project(t, nil)
+	writeNote(t, s, "copy-c", searchNote("shared", "Third copy.", "", "Body."))
+	writeNote(t, s, "copy-b", searchNote("shared", "Second copy.", "", "Body."))
+	writeNote(t, s, "copy-a", searchNote("shared", "First copy.", "", "Body."))
+	writeNote(t, s, "zeta", searchNote("zeta", "After.", "", "Body."))
+	writeNote(t, s, "alpha", searchNote("alpha", "Before.", "", "Body."))
+
+	notes, errs := s.LoadNotes()
+	if len(errs) > 0 {
+		t.Fatalf("load notes: %v", errs)
+	}
+	var got []string
+	for _, n := range notes {
+		got = append(got, n.Description)
+	}
+	want := []string{"Before.", "First copy.", "Second copy.", "Third copy.", "After."}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("descriptions = %v, want %v", got, want)
 	}
 }
 
