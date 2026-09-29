@@ -127,11 +127,18 @@ The curator's judgment about whether a **Note**'s claim was checked: `verified |
 Independent of **Stale** — a note can be verified and stale, or fresh and suspect.
 
 **Index**:
-The generated `INDEX.md`, the routing table over the **Memory store**. One row per **Note**:
-name, **Kind**, description, **Anchor** paths. Never hand-authored, and never loaded into a
-session eagerly — an explorer reads it as its first step, so its cost is paid per delegation
-rather than per session.
+The generated `INDEX.md`, the listing of the **Memory store**. One row per **Note**: name,
+**Kind**, description, **Anchor** paths. Never hand-authored, and never loaded into a session
+eagerly. Committed and lint-checked, it is what the **Curator** and a person read to see the
+whole store at once; an **Explorer** routes by **Search** instead of reading it.
 _Avoid_: map, catalog, manifest
+
+**Search**:
+The ranked, deterministic matching of **Note**s against the files and words a question names, run
+by `agtk memory search` with no model call. A **Note** whose **Anchor** covers a named file outranks
+any that matches on words alone. It records no **Hit** — only reading a **Note** through `agtk
+memory show` does — and a **Stale** **Note** is labelled, never demoted.
+_Avoid_: query, lookup, retrieval
 
 **Candidate**:
 A finding an explorer staged during a session, with no quality bar applied. Lives in

@@ -25,8 +25,8 @@ func newMemoryCmd(env *Env) *cobra.Command {
 		Use:   "memory",
 		Short: "Manage the repo-resident memory store",
 		Long: "Deterministic operations on " + memory.DefaultRoot + ": regenerate the index,\n" +
-			"stamp anchors, report stale notes, lint the store, read a note, and report\n" +
-			"whether the store is paying for itself.\n" +
+			"stamp anchors, report stale notes, lint the store, search and read notes, and\n" +
+			"report whether the store is paying for itself.\n" +
 			"\n" +
 			"Staleness is never stored. It is recomputed from working-tree content on\n" +
 			"every run, so `audit` writes nothing and is safe to call from a hook.",
@@ -49,6 +49,7 @@ func newMemoryCmd(env *Env) *cobra.Command {
 		newMemoryAuditCmd(env),
 		newMemoryLintCmd(env),
 		newMemoryShowCmd(env),
+		newMemorySearchCmd(env),
 		newMemoryStatsCmd(env),
 		newMemoryCandidatesCmd(env),
 		newMemoryCurateCmd(env),
@@ -573,6 +574,137 @@ func newMemoryShowCmd(env *Env) *cobra.Command {
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit machine-readable JSON output")
 	cmd.Flags().BoolVar(&noHit, "no-hit", false, "do not record this read in "+memory.HitsFile)
 	return cmd
+}
+
+// ===== search =====
+
+// memorySearchJSON is `memory search --json`'s output. Results is never null,
+// so a script iterates it without a nil check and a query that matches nothing
+// is an empty list. Each entry carries what a caller needs to decide whether to
+// open the note — no timestamps and no hit counts, since a search records and
+// reports neither.
+type memorySearchJSON struct {
+	Version int                      `json:"version"`
+	Results []memorySearchResultJSON `json:"results"`
+}
+
+type memorySearchResultJSON struct {
+	Name        string `json:"name"`
+	Kind        string `json:"kind"`
+	Confidence  string `json:"confidence"`
+	Description string `json:"description"`
+	// Anchors are the note's own anchor paths that cover a queried file; never
+	// null, and empty for a note that matched on words alone.
+	Anchors []string `json:"anchors"`
+	Score   int      `json:"score"`
+	Stale   bool     `json:"stale"`
+	Show    string   `json:"show"`
+}
+
+func newMemorySearchCmd(env *Env) *cobra.Command {
+	var (
+		jsonOut bool
+		files   []string
+		limit   int
+	)
+	cmd := &cobra.Command{
+		Use:   "search [--files a,b] [words...]",
+		Short: "Rank notes against files and words, without recording a read",
+		Long: "Lists the notes that anchor the files you name and the notes that mention the\n" +
+			"words you give, best match first. A note anchoring a named file outranks any\n" +
+			"note matching on words alone.\n" +
+			"\n" +
+			"Reads the notes and nothing else: no model is invoked, no hit is recorded and\n" +
+			"nothing under the store is written, so it is safe on the path of a hook. Open\n" +
+			"a result with the `agtk memory show` command it prints — that read is the one\n" +
+			"that counts toward `stats`.\n" +
+			"\n" +
+			"--files takes paths relative to the working directory, or absolute, as a\n" +
+			"comma-separated list or repeated; a path outside the project root is refused.\n" +
+			"A `stale` label marks a note whose anchored content has changed; it does not\n" +
+			"move the note's rank.",
+		Args: cobra.ArbitraryArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if limit <= 0 {
+				return fmt.Errorf("--limit must be at least 1, got %d", limit)
+			}
+			if len(files) == 0 && len(args) == 0 {
+				return memory.ErrEmptyQuery
+			}
+
+			store, err := memoryStore(env)
+			if err != nil {
+				return err
+			}
+			projectRoot := memoryProjectRoot(env)
+			query := memory.Query{Words: args, Limit: limit}
+			for _, f := range files {
+				if f == "" {
+					continue
+				}
+				rel, err := memory.NormaliseSearchPath(projectRoot, env.WorkDir, f)
+				if err != nil {
+					return err
+				}
+				query.Files = append(query.Files, rel)
+			}
+
+			results, err := memory.Search(memory.NewFileCorpus(store), query, env.Stderr)
+			if err != nil {
+				return err
+			}
+			if jsonOut {
+				return writeJSON(env, memorySearchJSON{Version: jsonVersion, Results: searchJSONResults(results)})
+			}
+			printSearchResults(env, results)
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit machine-readable JSON output")
+	cmd.Flags().StringSliceVar(&files, "files", nil, "files to find anchoring notes for, comma-separated or repeated")
+	cmd.Flags().IntVar(&limit, "limit", memory.DefaultSearchLimit, "return at most this many notes")
+	return cmd
+}
+
+func searchJSONResults(results []memory.Result) []memorySearchResultJSON {
+	out := make([]memorySearchResultJSON, 0, len(results))
+	for _, r := range results {
+		anchors := r.Anchors
+		if anchors == nil {
+			anchors = []string{}
+		}
+		out = append(out, memorySearchResultJSON{
+			Name:        r.Name,
+			Kind:        string(r.Kind),
+			Confidence:  string(r.Confidence),
+			Description: r.Description,
+			Anchors:     anchors,
+			Score:       r.Score,
+			Stale:       r.Stale,
+			Show:        r.Show,
+		})
+	}
+	return out
+}
+
+func printSearchResults(env *Env, results []memory.Result) {
+	if len(results) == 0 {
+		fmt.Fprintln(env.Stdout, "no matching notes")
+		return
+	}
+	for _, r := range results {
+		fmt.Fprintf(env.Stdout, "%s\n", r.Name)
+		line := fmt.Sprintf("kind: %s   confidence: %s   score: %d", r.Kind, r.Confidence, r.Score)
+		if r.Stale {
+			line += "   stale"
+		}
+		fmt.Fprintf(env.Stdout, "  %s\n", line)
+		fmt.Fprintf(env.Stdout, "  %s\n", r.Description)
+		if len(r.Anchors) > 0 {
+			fmt.Fprintf(env.Stdout, "  anchors: %s\n", strings.Join(r.Anchors, ", "))
+		}
+		fmt.Fprintf(env.Stdout, "  show: %s\n", r.Show)
+	}
 }
 
 // ===== stats =====

@@ -175,6 +175,7 @@ func TestPreApprovedPermissionsNameCommandsThatExist(t *testing.T) {
 	for _, allowed := range []string{
 		"agtk memory stats",
 		"agtk memory show",
+		"agtk memory search",
 		"agtk memory candidates",
 	} {
 		if !strings.Contains(string(settings), allowed) {

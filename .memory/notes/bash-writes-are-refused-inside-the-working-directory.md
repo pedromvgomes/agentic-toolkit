@@ -1,43 +1,30 @@
 ---
 name: bash-writes-are-refused-inside-the-working-directory
 kind: gotcha
-description: A second guard, separate from the tool allowlist, can refuse a Bash command that creates a file inside the session's own working directory — so a constructed `Bash(...)` grant is necessary but not sufficient.
+description: A provider-side guard, separate from the tool allowlist, was once seen refusing Bash file creation inside the working directory; the curator's backlog clearing no longer depends on its rm grant.
 anchors:
   - path: source/toolkit/internal/curator/curator.go
-    blob: a8ac0f37cab8
-confidence: verified
+    blob: cb07c4d5ea3f
+  - path: source/toolkit/internal/curator/verify.go
+    blob: deee1e17d6ff
+confidence: suspect
 ---
 
-`allowedTools` builds grants scoped to the store's directories —
-`"Bash(rm "+candidatesDir+"/*)"` (`source/toolkit/internal/curator/curator.go:268`) and its notes-directory
-twin (`:276`), deliberately scoped rather than a bare `rm` so the one agent holding a
-constructed grant cannot remove anything else (see
-[[curator-write-grant-is-spelled-edit-with-no-mode]]).
+`allowedTools` scopes deletion to the store: `Bash(rm <candidatesDir>/*)` (`curator.go:362-364`)
+and its notes twin (`:370-372`), asserted by `curator/tests/curator_test.go:116-118`. The dirs come
+from `store.CandidatesPath()` (`memory/store.go:93`) made absolute (`store.go:31-38`), so the grant
+is an absolute pattern; unverified inference that a relative `rm`, `rm -f` or `git rm` may not match.
 
-**The allowlist is not the only gate.** The provider applies its own working-directory guard to
-Bash file operations, and that guard can refuse a path the grant permits *and* that lies inside
-the working directory it names as allowed. Reproduced in the worktree
-`.../agentic-toolkit/chore/stage-handoff-memory`, where a single `touch` refused with:
+Unreproduced report (suspect): the provider applies its own working-directory guard to Bash file
+operations. A `touch` inside `<worktree>/.agents/memory/candidates/` was refused ("may only create
+or modify files in the allowed working directories") though the path was inside; `touch docs/...`
+refused identically, no symlinks were involved, and the Write tool worked in the same session. An
+earlier report of `rm` being refused did not reproduce. Take "a `Bash(...)` grant is necessary, not
+sufficient" as the transferable shape.
 
-    touch in '<worktree>/.agents/memory/candidates/.rmprobe' was blocked. For security,
-    Claude Code may only create or modify files in the allowed working directories for this
-    session: '<worktree>'
-
-Three things narrow it, each checked in the same session:
-
-- It is **not specific to the memory store** — `touch <worktree>/docs/.rmprobe-docs` refused
-  identically.
-- It is **not a symlink or realpath mismatch** — no component of the path is a link.
-- It is **Bash-only** — the Write tool created files under `<worktree>/.agents/memory/notes/`
-  in that same session without complaint, so the guard sits on Bash rather than on the path.
-
-The cause was not established.
-
-What did **not** reproduce: an earlier session reported the same guard refusing `rm` under the
-staging directory ("may only remove files from the allowed working directories for this
-session"), leaving a curation run's backlog uncleared. Here `rm` on the same directory
-succeeded while `touch` was refused, so the guard's scope is narrower than that report — take
-"deletion is refused" as unconfirmed. The transferable part is the shape: **a constructed
-`Bash(...)` grant is necessary, not sufficient**, and a run can hold the grant and still be
-stopped. If a curation run's backlog survives, check `notes/` and `agtk memory lint` before
-concluding curation did not run, and clear the files from an ordinary shell.
+What is established: a refused candidate `rm` does not leave a resolved candidate staged. `Run`
+calls `clearResolved` after `verify` passes (`curator.go:620-627`), deleting with `os.Remove` from
+agtk's process (`verify.go:268`), only for ids reported resolved and staged at start
+(`verify.go:255-257`). An uncleared `candidates/` after a passing run means the report did not name
+it, or verification failed or it was a dry run. The notes twin has no backstop: a refused `rm` on a
+retracted note fails verification (`verify.go:168-173`). See [[curate-verification-is-bidirectional]].

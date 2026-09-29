@@ -36,6 +36,7 @@ func TestTheMemoryStackRendersOnItsOwn(t *testing.T) {
 	for _, want := range []string{
 		"Bash(agtk memory stats*)",
 		"Bash(agtk memory show *)",
+		"Bash(agtk memory search*)",
 		"Bash(agtk memory candidates*)",
 		"Read(**/" + memory.DefaultRoot + "/INDEX.md)",
 		"Edit(**/" + memory.DefaultRoot + "/candidates/**)",
@@ -63,6 +64,7 @@ func TestExtendingTheMemoryStackKeepsEveryDefaultGrant(t *testing.T) {
 		// From the memory stack, through extends.
 		"Bash(agtk memory stats*)",
 		"Bash(agtk memory show *)",
+		"Bash(agtk memory search*)",
 		"Bash(agtk memory candidates*)",
 		"Read(**/" + memory.DefaultRoot + "/INDEX.md)",
 		"Edit(**/" + memory.DefaultRoot + "/candidates/**)",

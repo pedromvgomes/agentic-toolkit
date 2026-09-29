@@ -6,6 +6,7 @@ value:
     allow:
       - "Bash(agtk memory stats*)"
       - "Bash(agtk memory show *)"
+      - "Bash(agtk memory search*)"
       # Reporting only. `curate` is not pre-approved: it spends money and
       # rewrites notes/, so it stays a prompt the user answers deliberately.
       - "Bash(agtk memory candidates*)"
