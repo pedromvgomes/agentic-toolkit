@@ -131,26 +131,39 @@ func TestTheRecordReportsWhatRanAndWhatItCost(t *testing.T) {
 }
 
 // The record counts what a fallback answered for by cause, so a missing
-// provider is not reported as a block.
+// provider is not reported as a block and a cause that did not occur is not
+// reported as zero.
 func TestTheRecordNamesWhatTheFallbackAnsweredFor(t *testing.T) {
+	const blocked = "1 blocked and answered by the fallback"
+	const missing = "1 with a missing provider and answered by the fallback"
 	for _, tc := range []struct {
-		name   string
-		report Report
-		want   string
+		name     string
+		reports  []Report
+		want     []string
+		unwanted []string
 	}{
-		{"blocked", Blocked("spent"), "1 blocked and answered by the fallback"},
-		{"missing", Missing("no codex on PATH"), "1 with a missing provider and answered by the fallback"},
+		{"blocked", []Report{Blocked("spent")}, []string{blocked}, []string{"missing provider"}},
+		{"missing", []Report{Missing("no codex on PATH")}, []string{missing}, []string{"blocked and answered"}},
+		{"both", []Report{Blocked("spent"), Missing("no codex on PATH")}, []string{blocked, missing}, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := &Review{
 				Panel: "quick", FallbackFrom: "quick-codex", Available: true,
-				Reports: []RunReport{
-					{Label: "a", Panel: "quick-codex", Report: tc.report},
-					{Label: "b", Panel: "quick", Report: Answered(nil)},
-				},
+				Reports: []RunReport{{Label: "b", Panel: "quick", Report: Answered(nil)}},
 			}
-			if got := r.Record(); !strings.Contains(got, tc.want) {
-				t.Errorf("the record omits %q: %q", tc.want, got)
+			for _, rep := range tc.reports {
+				r.Reports = append(r.Reports, RunReport{Label: "a", Panel: "quick-codex", Report: rep})
+			}
+			got := r.Record()
+			for _, want := range tc.want {
+				if !strings.Contains(got, want) {
+					t.Errorf("the record omits %q: %q", want, got)
+				}
+			}
+			for _, unwanted := range tc.unwanted {
+				if strings.Contains(got, unwanted) {
+					t.Errorf("the record claims %q: %q", unwanted, got)
+				}
 			}
 		})
 	}
