@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/pedromvgomes/agentic-toolkit/internal/cli"
 )
@@ -1835,5 +1836,81 @@ func TestMemoryStatsWarnsOnAnUnreadableShard(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "none recorded in this checkout") {
 		t.Errorf("an unreadable shard counted as a committed record:\n%s", stdout)
+	}
+}
+
+// TestMemoryHitsFoldTextNamesTheShardAndTheLog: the text report says how many
+// reads were folded, into which shard, dated the day of the fold, and that the
+// log is now empty.
+func TestMemoryHitsFoldTextNamesTheShardAndTheLog(t *testing.T) {
+	work := hitsProject(t)
+	for i := 0; i < 2; i++ {
+		if _, _, err := runCLI(t, work, "memory", "show", "pins-shas"); err != nil {
+			t.Fatalf("memory show: %v", err)
+		}
+	}
+
+	before := time.Now().UTC().Format("2006-01-02")
+	stdout, _, err := runCLI(t, work, "memory", "hits", "fold")
+	after := time.Now().UTC().Format("2006-01-02")
+	if err != nil {
+		t.Fatalf("memory hits fold: %v", err)
+	}
+	line := regexp.MustCompile(`^folded 2 reads over 1 note into \.memory/hits/(\d{4}-\d{2}-\d{2})-no-branch-[0-9a-f]{8}\.json; \.memory/\.hits\.jsonl emptied\n$`)
+	m := line.FindStringSubmatch(stdout)
+	if m == nil {
+		t.Fatalf("fold printed %q, want the reads, the shard and the emptied log", stdout)
+	}
+	if m[1] != before && m[1] != after {
+		t.Errorf("shard dated %s, want the day of the fold (%s)", m[1], after)
+	}
+}
+
+// TestMemoryHitsHelpDescribesEachCommand: `memory --help` and `memory hits
+// --help` list each command with what it does, and fold takes no arguments.
+func TestMemoryHitsHelpDescribesEachCommand(t *testing.T) {
+	work := hitsProject(t)
+
+	stdout, _, err := runCLI(t, work, "memory", "--help")
+	if err != nil {
+		t.Fatalf("memory --help: %v", err)
+	}
+	if !strings.Contains(stdout, "Share the hit record beyond this checkout") {
+		t.Errorf("memory help does not describe hits:\n%s", stdout)
+	}
+	stdout, _, err = runCLI(t, work, "memory", "hits", "--help")
+	if err != nil {
+		t.Fatalf("memory hits --help: %v", err)
+	}
+	if !strings.Contains(stdout, "Move the local hits log into a committed shard") {
+		t.Errorf("hits help does not describe fold:\n%s", stdout)
+	}
+	if _, _, err := runCLI(t, work, "memory", "hits", "fold", "extra"); err == nil {
+		t.Error("fold accepted an argument")
+	}
+}
+
+// TestMemoryStatsJSONReportsTheCompactedFile: `compacted` says the compacted
+// file was read, so a JSON consumer can tell the store's reads from this
+// checkout's without a shard present.
+func TestMemoryStatsJSONReportsTheCompactedFile(t *testing.T) {
+	work := hitsProject(t)
+	writeFile(t, filepath.Join(work, ".memory/hits.json"),
+		`{"version": 1, "notes": {"pins-shas": {"count": 2, "first": "2026-01-01T00:00:00Z", "last": "2026-01-02T00:00:00Z"}}}`)
+
+	stdout, _, err := runCLI(t, work, "memory", "stats", "--json")
+	if err != nil {
+		t.Fatalf("memory stats --json: %v", err)
+	}
+	var st struct {
+		Hits      int  `json:"hits"`
+		Shards    int  `json:"shards"`
+		Compacted bool `json:"compacted"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &st); err != nil {
+		t.Fatalf("stats json: %v (%s)", err, stdout)
+	}
+	if st.Hits != 2 || st.Shards != 0 || !st.Compacted {
+		t.Errorf("stats json = %+v, want 2 hits read from the compacted file alone", st)
 	}
 }

@@ -232,7 +232,7 @@ func WriteHitRecord(path string, counts HitCounts) error {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
 	if err := f.Close(); err != nil {
-		_ = os.Remove(path)
+		_ = os.Remove(path) // [lydite:exclude_from_mutation][remove-statement: close(2) of a regular file on a local filesystem does not fail once every write to it has succeeded, so no input a test can build reaches this line]
 		return fmt.Errorf("write %s: %w", path, err)
 	}
 	return nil
@@ -362,6 +362,11 @@ func (s *Store) SharedHits() (SharedHits, error) {
 	return out, nil
 }
 
+// removeShard is how CompactHits removes a folded shard. A test in this
+// package replaces it to refuse a removal, which no file on disk can force on
+// a process running as root.
+var removeShard = os.Remove
+
 // Compaction is what CompactHits did.
 type Compaction struct {
 	// Folded names, sorted, each shard whose reads are now in the compacted
@@ -427,7 +432,7 @@ func (s *Store) CompactHits() (Compaction, error) {
 	var left []string
 	var errs []error
 	for _, p := range out.Folded {
-		if err := os.Remove(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		if err := removeShard(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			left = append(left, p)
 			errs = append(errs, err)
 		}

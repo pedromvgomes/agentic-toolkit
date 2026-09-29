@@ -358,3 +358,97 @@ func TestHitShardsListsOnlyShardFiles(t *testing.T) {
 		t.Errorf("shards = %v, want %v", got, want)
 	}
 }
+
+// TestFoldThatCannotEmptyTheLogRemovesItsShard: a log that cannot be emptied
+// after its shard is written has that shard removed again, so no read is
+// counted twice, and the error does not send anyone to remove it by hand.
+func TestFoldThatCannotEmptyTheLogRemovesItsShard(t *testing.T) {
+	s := stampedStore(t)
+	recordHits(t, s, memory.Hit{Note: "pins-shas", At: day(1, 0)})
+	// The suffix is drawn after the log is read and before it is emptied; a
+	// directory in the log's place then cannot be truncated, however
+	// privileged the test runs.
+	suffix := func() string {
+		if err := os.Remove(s.HitsPath()); err != nil {
+			t.Fatalf("remove the log: %v", err)
+		}
+		if err := os.Mkdir(s.HitsPath(), 0o755); err != nil {
+			t.Fatalf("mkdir in the log's place: %v", err)
+		}
+		return "aaaa"
+	}
+
+	_, err := s.FoldHits(memory.FoldOptions{Now: day(2, 0), Branch: "main", Suffix: suffix})
+	if err == nil {
+		t.Fatal("fold succeeded with a log it could not empty")
+	}
+	if !strings.Contains(err.Error(), s.HitsPath()) || strings.Contains(err.Error(), "by hand") {
+		t.Errorf("error %q, want it to name the log and nothing left to remove", err)
+	}
+	if shards, err := s.HitShards(); err != nil || len(shards) != 0 {
+		t.Errorf("shards = %v (%v), want the fold's shard removed", shards, err)
+	}
+}
+
+// TestSharedHitsPresent: a committed record is present when a shard or the
+// compacted file was read, and absent only when neither was.
+func TestSharedHitsPresent(t *testing.T) {
+	for _, tc := range []struct {
+		shards    int
+		compacted bool
+		want      bool
+	}{
+		{0, false, false},
+		{1, false, true},
+		{0, true, true},
+		{2, true, true},
+	} {
+		h := memory.SharedHits{Shards: tc.shards, Compacted: tc.compacted}
+		if got := h.Present(); got != tc.want {
+			t.Errorf("Present() with %d shards, compacted %v = %v, want %v", tc.shards, tc.compacted, got, tc.want)
+		}
+	}
+}
+
+// TestSharedHitsReportsACompactedFileItCannotStat: a compacted file that is
+// there but cannot be looked at is reported and left out, while the shards
+// still count; a compacted file that is simply absent reports nothing.
+func TestSharedHitsReportsACompactedFileItCannotStat(t *testing.T) {
+	s := stampedStore(t)
+	writeRecord(t, shardPath(s, "1.json"), memory.HitCounts{"a": {Count: 2, First: day(1, 0), Last: day(1, 0)}})
+
+	absent, err := s.SharedHits()
+	if err != nil {
+		t.Fatalf("shared hits: %v", err)
+	}
+	if len(absent.Skipped) != 0 || absent.Compacted {
+		t.Errorf("with no compacted file: skipped = %v, compacted = %v; want nothing", absent.Skipped, absent.Compacted)
+	}
+
+	// A symlink to itself fails stat with ELOOP, not with fs.ErrNotExist.
+	if err := os.Symlink(memory.CompactedHitsFile, s.CompactedHitsPath()); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+	got, err := s.SharedHits()
+	if err != nil {
+		t.Fatalf("shared hits: %v", err)
+	}
+	if len(got.Skipped) != 1 || !strings.Contains(got.Skipped[0].Error(), s.CompactedHitsPath()) {
+		t.Errorf("skipped = %v, want the compacted file named", got.Skipped)
+	}
+	if got.Compacted || got.Shards != 1 || got.Counts["a"].Count != 2 {
+		t.Errorf("shared = %+v, want the one shard's reads alone", got)
+	}
+}
+
+// TestWriteHitRecordWritesANilRecordAsEmpty: a nil record is written with an
+// empty notes object, never null, so every record on disk has the same shape.
+func TestWriteHitRecordWritesANilRecordAsEmpty(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "empty.json")
+	if err := memory.WriteHitRecord(path, nil); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if got, want := read(t, path), "{\n  \"version\": 1,\n  \"notes\": {}\n}\n"; got != want {
+		t.Errorf("record = %q, want %q", got, want)
+	}
+}

@@ -300,3 +300,23 @@ func TestReplaceHitRecordCleansUpAFailedWrite(t *testing.T) {
 		t.Errorf("target contents = %q, want them untouched", got)
 	}
 }
+
+// TestCompactHitsWithNoShardsLeavesAnUnreadableCompactedFileAlone: with
+// nothing to fold, compaction does not read the compacted file, so a merge
+// conflict in it does not fail a run that would change nothing.
+func TestCompactHitsWithNoShardsLeavesAnUnreadableCompactedFileAlone(t *testing.T) {
+	s := stampedStore(t)
+	conflicted := "<<<<<<< HEAD\n{}\n=======\n{}\n>>>>>>> other\n"
+	write(t, s.CompactedHitsPath(), conflicted)
+
+	c, err := s.CompactHits()
+	if err != nil {
+		t.Fatalf("compact with no shards: %v", err)
+	}
+	if len(c.Folded) != 0 || len(c.Skipped) != 0 {
+		t.Errorf("compaction = %+v, want nothing done", c)
+	}
+	if got := read(t, s.CompactedHitsPath()); got != conflicted {
+		t.Errorf("compacted file = %q, want it untouched", got)
+	}
+}
