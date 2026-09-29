@@ -84,33 +84,46 @@ nothing — you still have no trustworthy `root`. The difference that matters is
 the coordinator: "this repo has no memory" is wrong here, and it is what stops anyone fixing
 the manifest.
 
-## Step 2 — Read the index, and only the index
+## Step 2 — Search the store, and only search it
 
-Use the `Read` tool on `<root>/INDEX.md` — not `cat`. The store's index read is pre-approved
-for `Read`, so reading it any other way prompts for permission on the first step of every
-delegation.
+Ask the store which notes bear on the question:
 
-This is a routing table, not content. One row per note: name, kind, description, anchor paths.
-Reading it is the whole cost of consulting memory — keep it that way.
+```bash
+agtk memory search --files <a,b> <words…>
+```
+
+Pass the files the task names to `--files` (paths relative to `project_root`) and the words the
+question turns on as the rest of the arguments. Either alone is enough; with neither, the
+command is a usage error. Search as many times as it takes — once by files, once by words, or
+again with refined words when the first results miss.
+
+Each result is a routing entry, not content: the note's name, its `kind/confidence/score` line
+(and `stale`), its description, and its anchor paths. A note that anchors a file you named
+ranks above any note that matched on words alone. Search is deterministic, records no hit and
+writes nothing, so searching again costs nothing but the call. `no matching notes` is a valid
+answer: the store holds nothing on this, and you explore normally.
+
+Do not read `<root>/INDEX.md` to route. Search is the route.
 
 ## Step 3 — Open a note only when it is on your path
 
-Select a note when **either**:
+Select a result when **either**:
 
 - one of its anchor paths intersects a file the task is about (anchor paths are relative to
   `project_root`), **or**
 - the task names no files yet, and its description bears on the question.
 
-Anchors are the stronger signal; prefer them when you have file names. Then read each selected
-note **through the CLI**:
+Anchors are the stronger signal; prefer them when you have file names. Then open each selected
+note **through the CLI**, and only through it:
 
 ```bash
 agtk memory show <name>
 ```
 
 Never `cat` or `Read` a file under `<root>/notes/`. Reading through `show` is what records the
-hit, and the hit rate is the only evidence that the store is worth its cost. A note read behind
-the CLI's back makes the store look useless and gets it pruned.
+hit and prints the `stale:` field Step 4 depends on, and the hit rate is the only evidence that
+the store is worth its cost. A note read behind the CLI's back makes the store look useless
+and gets it pruned.
 
 Do not open notes you did not select. Four notes read is a good session; all of them is a sign
 you routed on nothing.
@@ -216,7 +229,7 @@ Answer:
 - Do not `Read` or `cat` a file under `notes/` — always `agtk memory show`.
 - Do not write, edit, delete or anchor a note. Candidates only.
 - Do not run `agtk memory anchor`, `index`, or any command that writes to the store.
-- Do not read notes the index did not route you to.
+- Do not read notes `agtk memory search` did not route you to.
 - Do not use a stale note without re-checking its pointers.
 - Do not stage what grep answers in seconds, however true it is.
 - Do not set `confidence:` or compute a blob hash. Ever.
