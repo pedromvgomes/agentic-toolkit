@@ -613,11 +613,12 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	// a run the store contradicts leaves every candidate where it was.
 	//
 	// Unreadable candidates are read ahead of verification so they reach the
-	// caller whichever way it goes, and are withheld from clearing: a report
+	// caller whichever way it goes, are not held against a backlog run as
+	// leftovers it failed to rule on, and are withheld from clearing: a report
 	// naming one as resolved cannot have ruled on a finding nobody could parse.
 	_, result.Unreadable = store.LoadCandidates()
 	if !opts.DryRun {
-		if err := verify(store, before, result.Report, opts.backlog()); err != nil {
+		if err := verify(store, before, result.Report, opts.backlog(), result.Unreadable); err != nil {
 			return result, err
 		}
 		result.Cleared, err = clearResolved(store, withoutUnreadable(before, result.Unreadable), result.Report)

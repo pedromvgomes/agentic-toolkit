@@ -35,10 +35,26 @@ func wantUnreadable(t *testing.T, p *project, res curator.Result) {
 	}
 }
 
+// wantUnreadableErr fails the test unless err is the unreadable-candidate
+// failure alone: it names the file, and verification did not also refuse the
+// run.
+func wantUnreadableErr(t *testing.T, err error) {
+	t.Helper()
+	if err == nil {
+		t.Fatal("a run that ended with an unreadable candidate in candidates/ succeeded")
+	}
+	if !strings.Contains(err.Error(), unreadableCandidate+memory.NoteExt) || !strings.Contains(err.Error(), "cannot repair") {
+		t.Errorf("error is not the unreadable-candidate failure: %v", err)
+	}
+	if strings.Contains(err.Error(), "does not match the store") {
+		t.Errorf("verification refused a run over a store holding an unreadable candidate: %v", err)
+	}
+}
+
 // The curator cannot repair a candidate that does not parse — its grant only
 // deletes candidates — so one left in candidates/ is a finding still waiting
-// on a person. Every job shape reports it and fails, with the curator's own
-// account still on the Result for the caller to print.
+// on a person. Every job shape reports it and fails for it alone, with the
+// curator's own account still on the Result for the caller to print.
 func TestAnUnreadableCandidateIsReportedAndFailsEveryJob(t *testing.T) {
 	for name, opts := range map[string]curator.Options{
 		"the backlog run": {},
@@ -52,9 +68,7 @@ func TestAnUnreadableCandidateIsReportedAndFailsEveryJob(t *testing.T) {
 			p.stageUnreadable(t, unreadableCandidate)
 
 			res, err := p.curate(t, nil, curator.Report{}, opts)
-			if err == nil {
-				t.Fatal("a run that ended with an unreadable candidate in candidates/ succeeded")
-			}
+			wantUnreadableErr(t, err)
 			wantUnreadable(t, p, res)
 			if res.Text == "" {
 				t.Error("the curator's own account was dropped from a run failed for an unreadable candidate")
@@ -117,6 +131,50 @@ func TestClearingNeverRemovesAnUnreadableCandidate(t *testing.T) {
 	}
 	if !slices.Equal(res.Cleared, []string{pinsCandidate}) {
 		t.Errorf("Cleared = %v, want only the readable candidate the report resolved", res.Cleared)
+	}
+	wantUnreadable(t, p, res)
+}
+
+// The backlog run is told to leave unreadable candidates out of its report, so
+// one still staged is not a leftover the run failed to rule on: verification
+// passes, the readable candidate the report resolved is cleared, and the run
+// fails for the unreadable candidate alone.
+func TestTheBacklogRunIsNotFailedForLeavingAnUnreadableCandidateUnreported(t *testing.T) {
+	p := newProject(t)
+	p.stage(t, pinsCandidate)
+	p.stageUnreadable(t, unreadableCandidate)
+
+	res, err := p.curate(t, p.fork(t), curator.Report{CandidatesResolved: []string{pinsCandidate}}, curator.Options{})
+	wantUnreadableErr(t, err)
+	if staged(t, p, pinsCandidate) {
+		t.Error("the readable candidate the report resolved is still in candidates/")
+	}
+	if !slices.Equal(res.Cleared, []string{pinsCandidate}) {
+		t.Errorf("Cleared = %v, want the readable candidate the report resolved", res.Cleared)
+	}
+	if !staged(t, p, unreadableCandidate) {
+		t.Error("the unreadable candidate was removed from candidates/")
+	}
+	wantUnreadable(t, p, res)
+}
+
+// An unreadable candidate is excused from the backlog run's report, and only
+// it: a readable candidate beside it, left staged and unreported, still fails
+// the run and leaves every candidate staged.
+func TestAReadableLeftoverStillFailsTheBacklogRunBesideAnUnreadableCandidate(t *testing.T) {
+	const leftover = "20260902-where-render-lives"
+	p := newProject(t)
+	p.stage(t, pinsCandidate)
+	p.stage(t, leftover)
+	p.stageUnreadable(t, unreadableCandidate)
+
+	res, err := p.curate(t, p.fork(t), curator.Report{CandidatesResolved: []string{pinsCandidate}}, curator.Options{})
+	wantRefused(t, err, `candidate "`+leftover+`" is still in candidates/ but was not reported resolved`)
+	if err != nil && strings.Contains(err.Error(), `candidate "`+unreadableCandidate+`" is still in candidates/`) {
+		t.Errorf("the unreadable candidate was named as a leftover: %v", err)
+	}
+	if len(res.Cleared) != 0 || !staged(t, p, pinsCandidate) {
+		t.Errorf("a run that failed verification cleared a candidate (Cleared = %v)", res.Cleared)
 	}
 	wantUnreadable(t, p, res)
 }

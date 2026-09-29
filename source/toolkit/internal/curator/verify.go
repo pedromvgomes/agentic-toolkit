@@ -137,12 +137,14 @@ func storeFiles(dir string) ([]string, error) {
 // A resolved candidate still staged is not a failure: clearResolved removes it
 // once verify passes, so whether the run deleted it itself does not matter.
 // backlog says the run is the backlog job, which rules on every staged
-// candidate, and holds it to having left none staged unreported.
+// candidate, and holds it to having left none staged unreported — none but
+// those in unreadable, the candidates LoadCandidates could not parse once the
+// run ended.
 //
 // It writes nothing. A failing store is left exactly as the run left it, and
 // the error names every check that failed, with the command that repairs it
 // where one does.
-func verify(store *memory.Store, before snapshot, r Report, backlog bool) error {
+func verify(store *memory.Store, before snapshot, r Report, backlog bool, unreadable []error) error {
 	after, err := takeSnapshot(store)
 	if err != nil {
 		return err
@@ -205,9 +207,12 @@ func verify(store *memory.Store, before snapshot, r Report, backlog bool) error 
 	// staged and unreported is a candidate nobody ruled on, behind a run that
 	// reads as a finished pass over the backlog. A scoped, limited or stale job
 	// is pointed at some candidates or none, so a candidate left staged is what
-	// it was asked to do.
+	// it was asked to do. An unreadable candidate is not the run's to rule on —
+	// it is told to leave those out of its report, and Run fails on them
+	// separately. Counted here, one would fail every backlog run over a store
+	// that holds it, and so clear nothing the run did resolve.
 	if backlog {
-		for _, id := range sortedKeys(after.candidates) {
+		for _, id := range sortedKeys(withoutUnreadable(after, unreadable).candidates) {
 			if !resolved[id] {
 				fail("candidate %q is still in candidates/ but was not reported resolved; the backlog run rules on every candidate, so re-run curate", id)
 			}
