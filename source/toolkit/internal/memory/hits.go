@@ -218,10 +218,7 @@ func ReadHitRecord(path string) (HitCounts, error) {
 // a taken name fails here instead of discarding the reads already in it. A
 // write that fails part-way removes the partial file.
 func WriteHitRecord(path string, counts HitCounts) error {
-	if counts == nil {
-		counts = HitCounts{}
-	}
-	raw, err := json.MarshalIndent(hitRecord{Version: HitRecordVersion, Notes: counts}, "", "  ")
+	raw, err := marshalHitRecord(counts)
 	if err != nil {
 		return err
 	}
@@ -229,7 +226,7 @@ func WriteHitRecord(path string, counts HitCounts) error {
 	if err != nil {
 		return err
 	}
-	if _, err := f.Write(append(raw, '\n')); err != nil {
+	if _, err := f.Write(raw); err != nil {
 		_ = f.Close()
 		_ = os.Remove(path)
 		return fmt.Errorf("write %s: %w", path, err)
@@ -239,6 +236,59 @@ func WriteHitRecord(path string, counts HitCounts) error {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
 	return nil
+}
+
+// ReplaceHitRecord writes counts to path, replacing any record already there.
+// The record is written to a temporary file in path's directory and renamed
+// over path, so a failure at any point leaves path holding the old record or
+// the new one, never a partial one. The temporary file is removed on every
+// failure.
+func ReplaceHitRecord(path string, counts HitCounts) error {
+	raw, err := marshalHitRecord(counts)
+	if err != nil {
+		return err
+	}
+	f, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*.tmp")
+	if err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	tmp := f.Name()
+	fail := func(err error) error {
+		_ = f.Close()
+		_ = os.Remove(tmp)
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	if _, err := f.Write(raw); err != nil {
+		return fail(err)
+	}
+	// The record is committed, and CreateTemp creates the file owner-only.
+	if err := f.Chmod(0o644); err != nil { // #nosec G302 -- committed hit record in the store the invoker named
+		return fail(err)
+	}
+	if err := f.Sync(); err != nil {
+		return fail(err)
+	}
+	if err := f.Close(); err != nil {
+		return fail(err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	return nil
+}
+
+// marshalHitRecord is counts in the on-disk form, newline-terminated. A nil
+// counts is an empty record.
+func marshalHitRecord(counts HitCounts) ([]byte, error) {
+	if counts == nil {
+		counts = HitCounts{}
+	}
+	raw, err := json.MarshalIndent(hitRecord{Version: HitRecordVersion, Notes: counts}, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(raw, '\n'), nil
 }
 
 // HitShards lists the shard files in HitsDir, sorted by name. A missing
@@ -308,6 +358,84 @@ func (s *Store) SharedHits() (SharedHits, error) {
 		}
 		out.Counts.Add(c)
 		out.Shards++
+	}
+	return out, nil
+}
+
+// Compaction is what CompactHits did.
+type Compaction struct {
+	// Folded names, sorted, each shard whose reads are now in the compacted
+	// file. Each is removed from HitsDir; one whose removal failed is also
+	// named in the error CompactHits returns.
+	Folded []string
+	// Skipped is each shard that could not be read. It is left in HitsDir
+	// and its reads are left out of the compacted file: removing it would
+	// discard reads nobody has counted.
+	Skipped []error
+}
+
+// CompactHits folds every readable shard into the compacted file and removes
+// the shards it folded. The compacted file afterwards holds its own reads and
+// every folded shard's, merged as HitCounts.Add merges them, so SharedHits
+// reports the same counts before and after.
+//
+// The order is what keeps a read from being lost. The union is written to a
+// temporary file and renamed over the compacted file, and only once that
+// rename has landed are the shards removed; a failure before it leaves the
+// compacted file and every shard as they were.
+//
+// A shard still in HitsDir after the rename — its removal failed, or the
+// process stopped between the rename and the removals — has its reads in the
+// compacted file as well, and nothing records which shards the compacted file
+// already holds. SharedHits and `stats` count that shard's reads twice, and
+// the next compaction folds them in a second time, until the shard is removed
+// by hand. The removals follow the rename with nothing in between to keep that
+// window short, and the error names every shard left in it.
+//
+// No shards, or none that can be read, writes nothing: the compacted file is
+// neither created nor rewritten. A compacted file that exists and cannot be
+// read is an error, and nothing is written or removed, since replacing it
+// would discard the reads it holds. A merge conflict in it is resolved by
+// keeping either side; the reads only the other side held are lost.
+func (s *Store) CompactHits() (Compaction, error) {
+	shards, err := s.HitShards()
+	if err != nil || len(shards) == 0 {
+		return Compaction{}, err
+	}
+	counts, err := ReadHitRecord(s.CompactedHitsPath())
+	if err != nil {
+		return Compaction{}, fmt.Errorf("%w; resolve it into a readable record, then compact again", err)
+	}
+
+	var out Compaction
+	for _, p := range shards {
+		c, err := ReadHitRecord(p)
+		if err != nil {
+			out.Skipped = append(out.Skipped, err)
+			continue
+		}
+		counts.Add(c)
+		out.Folded = append(out.Folded, p)
+	}
+	if len(out.Folded) == 0 {
+		return out, nil
+	}
+	if err := ReplaceHitRecord(s.CompactedHitsPath(), counts); err != nil {
+		return Compaction{Skipped: out.Skipped}, err
+	}
+
+	var left []string
+	var errs []error
+	for _, p := range out.Folded {
+		if err := os.Remove(p); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			left = append(left, p)
+			errs = append(errs, err)
+		}
+	}
+	if len(left) > 0 {
+		return out, fmt.Errorf(
+			"%s holds the reads of %s, which could not be removed and are counted twice until removed by hand: %w",
+			s.CompactedHitsPath(), strings.Join(left, ", "), errors.Join(errs...))
 	}
 	return out, nil
 }

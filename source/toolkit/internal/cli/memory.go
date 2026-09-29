@@ -1223,6 +1223,11 @@ func reportCurateCheck(env *Env, jsonOut bool, ready curator.Ready) error {
 // JSON report's `unreadable` list. The curator cannot repair one, so each is
 // a finding waiting on a person, and curator.Run fails the run while any
 // remain — the error it returns is what makes the command exit non-zero.
+//
+// The hit shards agtk compacted follow, as one count, then each shard that
+// could not be read and was left in place; the JSON report carries them as
+// `compactedShards` and `unreadableShards`. Both change files under the store
+// that the session commits, and the curator's account mentions neither.
 func reportCurateResult(env *Env, jsonOut, stale bool, res curator.Result, runErr error) error {
 	if runErr != nil && res.Text == "" {
 		return runErr
@@ -1242,8 +1247,10 @@ func reportCurateResult(env *Env, jsonOut, stale bool, res curator.Result, runEr
 				CostUSD: res.CostUSD,
 				Report:  res.Text,
 			},
-			Cleared:    cleared,
-			Unreadable: unreadableJSONEntries(res.Unreadable),
+			Cleared:          cleared,
+			Unreadable:       unreadableJSONEntries(res.Unreadable),
+			CompactedShards:  len(res.Compaction.Folded),
+			UnreadableShards: unreadableJSONEntries(res.Compaction.Skipped),
 		}); err != nil {
 			return err
 		}
@@ -1254,6 +1261,12 @@ func reportCurateResult(env *Env, jsonOut, stale bool, res curator.Result, runEr
 		}
 		for _, e := range res.Unreadable {
 			fmt.Fprintf(env.Stdout, "unreadable: %v\n", e)
+		}
+		if n := len(res.Compaction.Folded); n > 0 {
+			fmt.Fprintf(env.Stdout, "hits: compacted %d shard(s) into %s\n", n, memory.CompactedHitsFile)
+		}
+		for _, e := range res.Compaction.Skipped {
+			fmt.Fprintf(env.Stdout, "hits: unreadable shard left in place: %v\n", e)
 		}
 	}
 	if runErr != nil {
@@ -1271,10 +1284,14 @@ func reportCurateResult(env *Env, jsonOut, stale bool, res curator.Result, runEr
 // without a nil check, and an empty list is the ordinary case of a run that
 // deleted what it resolved. Unreadable is never null for the same reason, and
 // its entries read exactly as `memory candidates --json` reports them.
+// CompactedShards counts the hit shards folded into the compacted hit record,
+// and UnreadableShards, never null, names each shard left in place unread.
 type memoryCurateResultJSON struct {
 	memoryCurateJSON
-	Cleared    []string `json:"cleared"`
-	Unreadable []string `json:"unreadable"`
+	Cleared          []string `json:"cleared"`
+	Unreadable       []string `json:"unreadable"`
+	CompactedShards  int      `json:"compactedShards"`
+	UnreadableShards []string `json:"unreadableShards"`
 }
 
 // memoryAgent reads `memory.agent` from the entry manifest, the same way and
