@@ -1,33 +1,40 @@
 ---
 name: settings-merge-is-shallow-last-wins
 kind: gotcha
-description: Two setting definitions writing the same top-level key resolve by stack order then definition name, silently and with no override diagnostic.
+description: Setting definitions merge shallow last-wins per top-level key by stack order then name, silently; only `permissions` is unioned (allow/deny/ask), so narrowing must be spelled deny.
 anchors:
   - path: source/toolkit/internal/adapters/claude/settings.go
-    blob: a76ce7243f96
+    blob: c5a0bf32cef5
   - path: source/toolkit/internal/resolver/resolver.go
-    blob: 022646e73709
+    blob: 74ae65027f11
 confidence: verified
 ---
 
-`collectSettingFragments` (`source/toolkit/internal/adapters/claude/settings.go:263`) merges every `setting`
-definition's `Value` into one map with a plain `for k, v := range c.Value { out[k] = v }`
-(`:297-301`) — a shallow, whole-value overwrite per top-level key, not a deep merge. A
-definition setting `permissions:` replaces another's `permissions:` entirely rather than
-combining them.
+`collectSettingFragments` (`source/toolkit/internal/adapters/claude/settings.go:431`) merges every
+`setting` definition's `Value` into one map. For every top-level key except `permissions` it is
+a plain whole-value overwrite (`out[k] = v`, `:475`), not a deep merge: two definitions writing
+`model:` resolve by the sort at `:458-463` (`plan.StackOrder` index first, then definition name
+alphabetically), so within one stack the later *name* wins, not the more specific one.
 
-Who wins is decided by the sort at `:290-295`: `plan.StackOrder` index first (depth-first
-post-order, later index applied later), then definition name alphabetically as a tiebreak
-within one stack. So two definitions in the same stack both writing `model:` resolve by whose
-*name* sorts later — not by which is more specific.
+`permissions` is the exception. `:467-473` calls `composePermissions` (`:498`), which unions
+`allow`, `deny` and `ask` (`permissionListKeys`, `:547`) member by member, deduplicated on the
+exact rule string and ordered by the same sort, so a render stays reproducible. Any other
+member of `permissions` is still last-wins (`:516-518`). A non-list member, or a non-mapping
+`permissions`, is an error naming the definition (`permissionList`, `:558`), which propagates out
+of `renderSettings` (`:61-64`) rather than dropping grants.
 
-One key does not play by these rules. `hooks` is claimed by the hook renderer before setting
-fragments are applied, and a setting contribution to an already-claimed key is dropped
-outright (`settings.go:64-72`, `if managed[key] { continue }`) — so a `setting` definition
-writing `hooks:` loses to rendered hooks regardless of stack order, which is the one place the
-merge is first-wins rather than last-wins. Separately, every previously-managed key is deleted
-before the merge (`:54-57`), so a key that stops being rendered does not linger.
+Consequence: because `allow` only grows, a definition cannot take `permissions` back from a
+stack it is layered with. The only way to restrict something another stack allowed is to add
+it to `deny`, which Claude Code resolves ahead of `allow` (doc comment at `:481-497`). Also,
+`addMemoryGrants` (`:299`) appends the store-path `Read`/`Edit` grants only when some
+definition already contributed `permissions.allow`; `memory-permissions.yaml` guarantees that
+for a consumer extending only `stacks/memory.yaml`.
 
-And it is silent. The (category, name) override path in the resolver emits a `DiagOverride`
-diagnostic (`source/toolkit/internal/resolver/resolver.go:216`); nothing in settings collection notices that
-two definitions touched the same key, so no warning is ever produced.
+`hooks` is claimed by the hook renderer first, and a setting contribution to an already-claimed
+key is dropped (`:91-96`, `if managed[key] { continue }`), the one first-wins case. Previously
+managed keys are deleted before the merge (`:79-84`), so a key that stops being rendered does
+not linger.
+
+It is silent for every key: the (category, name) override path emits a `DiagOverride`
+(`source/toolkit/internal/resolver/resolver.go:263`), but nothing in settings collection
+notices two definitions touching the same key.

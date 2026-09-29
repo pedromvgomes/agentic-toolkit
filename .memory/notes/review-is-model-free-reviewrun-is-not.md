@@ -6,7 +6,7 @@ anchors:
   - path: source/toolkit/internal/review/*.go
     matches:
       - path: source/toolkit/internal/review/builtin.go
-        blob: 04e622ab978f
+        blob: 8015fb662a58
       - path: source/toolkit/internal/review/capability.go
         blob: b4a67453292c
       - path: source/toolkit/internal/review/change.go
@@ -14,9 +14,9 @@ anchors:
       - path: source/toolkit/internal/review/condition.go
         blob: 22557cc37b26
       - path: source/toolkit/internal/review/detect.go
-        blob: 1a74bc0afffc
+        blob: 4d6e563e2d83
       - path: source/toolkit/internal/review/errors.go
-        blob: e261fd4d030a
+        blob: 198ebc645dfe
       - path: source/toolkit/internal/review/exclude.go
         blob: 449a1d7261d1
       - path: source/toolkit/internal/review/explain.go
@@ -24,13 +24,13 @@ anchors:
       - path: source/toolkit/internal/review/fuzz_test.go
         blob: 2a065f2b84ec
       - path: source/toolkit/internal/review/git.go
-        blob: d8a37c56f1b1
+        blob: fdd731d68717
       - path: source/toolkit/internal/review/glob.go
         blob: 4ade8fb042ce
       - path: source/toolkit/internal/review/language.go
-        blob: 25e2c11ca203
+        blob: 96f327522ba1
       - path: source/toolkit/internal/review/manifest.go
-        blob: b720da152793
+        blob: 7a1ca075f74e
       - path: source/toolkit/internal/review/parse.go
         blob: bc3bb102eadd
       - path: source/toolkit/internal/review/pr.go
@@ -40,19 +40,19 @@ anchors:
       - path: source/toolkit/internal/review/severity.go
         blob: 54af318571d6
       - path: source/toolkit/internal/review/signal.go
-        blob: bb4456a5a6e2
+        blob: c1c201c11bdb
       - path: source/toolkit/internal/review/symbols.go
-        blob: cacc56c152e8
+        blob: b59d967e2722
       - path: source/toolkit/internal/review/untracked.go
         blob: 8b0a17e460d1
   - path: source/toolkit/internal/reviewrun/run.go
-    blob: d4cdd11b4fc6
+    blob: 6f4a731b4d87
   - path: source/toolkit/internal/cli/codereview.go
-    blob: 3601595c0eaa
+    blob: 5cc6de117edf
   - path: source/toolkit/internal/cli/tests/credential_surface_test.go
-    blob: 8e777fd5dfaf
+    blob: 553d921a7471
   - path: source/toolkit/internal/cli/tests/deterministic_surface_test.go
-    blob: ceeec7395429
+    blob: 66cbe3c97291
 confidence: verified
 ---
 
@@ -94,6 +94,12 @@ anchor could never notice appearing.
 (`source/toolkit/internal/reviewrun/run.go:1-11`): "It is the only package in code-review that invokes a
 model... Nothing here talks to GitHub." It imports `source/toolkit/internal/review` one way, never back. The
 driver import inside it lives in `source/toolkit/internal/reviewrun/invoke.go`.
+
+`source/toolkit/internal/reviewpost` is the layer between them that may know GitHub exists:
+`reviewpost/threads.go` and `reviewpost/payload.go` import `internal/githubapp`, and
+`reviewpost/threads.go` says it translates beside the transport "because internal/reviewrun never
+learns that GitHub exists". New GitHub-side behaviour driven by a finished review's findings
+belongs in `reviewpost` or the CLI above it, never inside `reviewrun`.
 
 **Consequence for anything credential-shaped:** a GitHub App credential belongs above
 `reviewrun`, in the CLI layer that calls it — never in `Options`, never through the `invoker`
