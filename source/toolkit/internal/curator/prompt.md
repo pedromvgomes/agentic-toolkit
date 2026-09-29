@@ -11,7 +11,9 @@ conversation whose budget was already spent.
 ## What you are given
 
 - `agtk memory candidates --json` — the staged findings, each with `about`, `saw`, `body`, and
-  for a re-check of an existing note, `targets` and `verdict`.
+  for a re-check of an existing note, `targets` and `verdict`. Its `unreadable` list names
+  candidates that could not be parsed: you cannot fix those, so leave them alone and out of
+  your report — agtk reports them after your run.
 - `agtk memory stats --json` — `root` (the store) and `project_root` (what anchor paths
   resolve against). Use them as given. Never read `memory.root` from a manifest: a value
   reached through `extends:` is deliberately ignored, so the YAML and `agtk` disagree.
