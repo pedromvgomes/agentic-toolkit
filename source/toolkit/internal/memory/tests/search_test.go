@@ -103,6 +103,51 @@ func TestSearchRanksAFileAnchorAboveEveryWordMatch(t *testing.T) {
 	}
 }
 
+// TestSearchRanksAFileAnchorAboveANoteSaturatingEveryField: one covered file
+// outweighs the most a note can score on the words, reached when every term
+// hits the cap in the name, the description and the body at once.
+func TestSearchRanksAFileAnchorAboveANoteSaturatingEveryField(t *testing.T) {
+	s := project(t, nil)
+	writeNote(t, s, "anchored", searchNote("anchored", "Unrelated wording.",
+		"  - path: internal/resolver/graph.go\n", "Nothing here."))
+	writeNote(t, s, "throttle-throttle-throttle", searchNote("throttle-throttle-throttle",
+		"Throttle throttle throttle.", "", "throttle throttle throttle"))
+
+	got := search(t, s, memory.Query{
+		Files: []string{"internal/resolver/graph.go"},
+		Words: []string{"throttle"},
+	})
+	want := []string{"anchored", "throttle-throttle-throttle"}
+	if !reflect.DeepEqual(names(got), want) {
+		t.Fatalf("order = %v, want %v (%+v)", names(got), want, got)
+	}
+	// Name, description and body weigh 3, 2 and 1.
+	if ceiling := memory.TermCountCap * (3 + 2 + 1); got[1].Score != ceiling {
+		t.Errorf("saturated note score = %d, want the words-only ceiling %d", got[1].Score, ceiling)
+	}
+}
+
+// TestSearchKeepsNotesSharingANameInFileOrder: two files carrying the same
+// `name:` — a copied note lint has not yet caught — tie on score and name, so
+// neither sorts ahead of the other and they keep the order their files load in.
+func TestSearchKeepsNotesSharingANameInFileOrder(t *testing.T) {
+	s := project(t, nil)
+	writeNote(t, s, "copy-a", searchNote("shared", "First copy.", "", "The throttle."))
+	writeNote(t, s, "copy-b", searchNote("shared", "Second copy.", "", "The throttle."))
+
+	got := search(t, s, memory.Query{Words: []string{"throttle"}})
+	var descriptions []string
+	for _, r := range got {
+		descriptions = append(descriptions, r.Description)
+	}
+	if want := []string{"First copy.", "Second copy."}; !reflect.DeepEqual(descriptions, want) {
+		t.Fatalf("descriptions = %v, want %v (%+v)", descriptions, want, got)
+	}
+	if got[0].Score != got[1].Score {
+		t.Fatalf("scores differ, so this does not exercise the tie: %+v", got)
+	}
+}
+
 // TestSearchCapsRepeatedTermsSoALongNoteCannotWin: a note that says a word
 // five hundred times is not five hundred times as relevant as one named for
 // it.
@@ -292,6 +337,10 @@ func TestNormaliseSearchPath(t *testing.T) {
 			got, err := memory.NormaliseSearchPath(root, c.cwd, c.path)
 			if !errors.Is(err, memory.ErrOutsideProject) {
 				t.Errorf("normalise %q from %s = %q, %v; want ErrOutsideProject", c.path, c.cwd, got, err)
+			}
+			// A caller that drops the error must not be left holding a path.
+			if got != "" {
+				t.Errorf("normalise %q from %s = %q alongside the error, want no path", c.path, c.cwd, got)
 			}
 		})
 	}

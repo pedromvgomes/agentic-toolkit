@@ -175,11 +175,11 @@ func Search(c Corpus, q Query, warn io.Writer) ([]Result, error) {
 	}
 	sort.Slice(hits, func(i, j int) bool {
 		if hits[i].score != hits[j].score {
-			return hits[i].score > hits[j].score
+			return hits[i].score > hits[j].score // [lydite:exclude_from_mutation][conditional-boundary ">" -> ">=": this line runs only when the two scores differ, where > and >= agree]
 		}
 		return hits[i].note.Name < hits[j].note.Name
 	})
-	if len(hits) > limit {
+	if len(hits) > limit { // [lydite:exclude_from_mutation][conditional-boundary ">" -> ">=": at len(hits) == limit, hits[:limit] is hits itself, so the two operators return the same results]
 		hits = hits[:limit]
 	}
 

@@ -737,6 +737,25 @@ func TestMemorySearchFileAnchorReturnsTheAnchoringNote(t *testing.T) {
 	}
 }
 
+// TestMemorySearchTextBlockForAWordsOnlyMatch: each result is a block headed
+// by the note's name on a line of its own, and a note matched on words alone
+// has no covering anchor, so its block carries no anchors line at all.
+func TestMemorySearchTextBlockForAWordsOnlyMatch(t *testing.T) {
+	work := searchProject(t)
+
+	stdout, _, err := runCLI(t, work, "memory", "search", "nobody", "reached")
+	if err != nil {
+		t.Fatalf("memory search: %v", err)
+	}
+	want := "never-read\n" +
+		"  kind: gotcha   confidence: verified   score: 4\n" +
+		"  A note nobody has reached for.\n" +
+		"  show: agtk memory show never-read\n"
+	if stdout != want {
+		t.Errorf("search output =\n%s\nwant\n%s", stdout, want)
+	}
+}
+
 // TestMemorySearchTakesFilesCommaSeparatedOrRepeated: both spellings name the
 // same query, and a path the shell resolved to absolute is taken as it is.
 func TestMemorySearchTakesFilesCommaSeparatedOrRepeated(t *testing.T) {
