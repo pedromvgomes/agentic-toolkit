@@ -150,13 +150,22 @@ func verify(store *memory.Store, before snapshot, r Report) error {
 		problems = append(problems, fmt.Sprintf(format, args...))
 	}
 
+	// Absence afterwards proves nothing about something that was never there,
+	// so a resolved candidate or retracted note has to have been in the store
+	// the run started from.
 	for _, id := range r.CandidatesResolved {
-		if after.candidates[strings.TrimSuffix(id, memory.NoteExt)] {
+		stem := strings.TrimSuffix(id, memory.NoteExt)
+		switch {
+		case !before.candidates[stem]:
+			fail("candidate %q is reported resolved but was never staged; re-run curate", id)
+		case after.candidates[stem]:
 			fail("candidate %q is reported resolved but is still in candidates/; re-run curate", id)
 		}
 	}
 	for _, name := range r.NotesRetracted {
-		if !ResolveNote(store, notes, parseErrs, name).Missing() {
+		if _, was := before.notes[strings.TrimSuffix(name, memory.NoteExt)]; !was {
+			fail("note %q is reported retracted but was never in notes/; re-run curate", name)
+		} else if !ResolveNote(store, notes, parseErrs, name).Missing() {
 			fail("note %q is reported retracted but is still in notes/; re-run curate", name)
 		}
 	}

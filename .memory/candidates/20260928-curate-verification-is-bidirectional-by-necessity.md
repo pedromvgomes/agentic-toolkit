@@ -19,15 +19,19 @@ both directions:
   absent from `notesTouched`/`notesRetracted` fails verification; a
   candidate that vanished but is absent from `candidatesResolved` fails too.
 
-The second direction is not a nice-to-have. An earlier design (rejected
-during review of this change) checked only claim → disk, and a run cut off
-partway — the exact failure mode this whole mechanism exists to catch —
-writes unstamped notes and then, having stopped before its final turn,
-reports nothing at all. `{candidatesResolved: [], notesTouched: []}` passes
-every claim → disk check trivially. Only the disk → claim direction catches
-a report that under-states what happened, as opposed to one that lies about
-overstating it. Weakening `verify()` back to claims-only reopens exactly the
-bug this mechanism was built to close.
+The second direction is not a nice-to-have. A check of claim → disk alone
+passes a run cut off partway — the exact failure mode this mechanism exists
+to catch. Such a run writes unstamped notes and then, having stopped before
+its final turn, reports nothing at all: `{candidatesResolved: [],
+notesTouched: []}` satisfies every claim → disk check trivially. Only the
+disk → claim direction catches a report that under-states what happened, as
+opposed to one that overstates it. Reducing `verify()` to claims-only
+reopens exactly the gap this mechanism closes.
+
+The claim → disk direction also requires what a report names to have been in
+the store the run started from: a candidate reported resolved must have been
+staged and a note reported retracted must have been in `notes/`, because
+absence afterwards is trivially true of something that never existed.
 
 A `--dry-run` skips verification entirely (no snapshot is taken): it grants
 no writing tools, so there is nothing on disk to diff and no report to

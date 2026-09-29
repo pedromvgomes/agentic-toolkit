@@ -4,8 +4,8 @@ description: "A function that can fail after producing output a caller needs mus
 
 # Don't let a returned error discard output produced before the failure
 
-A command whose only failure mode used to be "nothing ran" can grow a second one — "it ran and
-produced something worth showing, and *then* a later check on that output failed." Collapsing
+A command can fail in two ways: "nothing ran", and "it ran and produced something worth showing,
+and *then* a later check on that output failed." Collapsing
 both into the same `if err != nil { return err }` silently drops whatever the first mode had
 that the second mode doesn't: the operator loses the one account of what a run actually did, at
 exactly the moment they need it most to understand why the check that came after it failed.

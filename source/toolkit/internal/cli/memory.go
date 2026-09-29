@@ -826,19 +826,7 @@ func newMemoryCurateCmd(env *Env) *cobra.Command {
 				if err != nil {
 					return err
 				}
-				if jsonOut {
-					return writeJSON(env, memoryCurateCheckJSON{
-						Version:         jsonVersion,
-						Provider:        ready.Provider,
-						Binary:          ready.Binary,
-						Mode:            ready.Mode,
-						Tools:           ready.Tools,
-						DisallowedTools: ready.DisallowedTools,
-					})
-				}
-				fmt.Fprintf(env.Stdout, "provider:  %s\nbinary:    %s\nmode:      %s\ntools:     %s\ndeny:      %s\n",
-					ready.Provider, ready.Binary, describeMode(ready.Mode), describeTools(ready.Tools), describeDenyList(ready.DisallowedTools))
-				return nil
+				return reportCurateCheck(env, jsonOut, ready)
 			}
 
 			res, err := curator.Run(cmd.Context(), curator.Options{
@@ -914,6 +902,25 @@ func selfPath(env *Env) string {
 		return ""
 	}
 	return exe
+}
+
+// reportCurateCheck prints what a curate run would be given, and starts
+// nothing: the provider, the binary, the permission mode, the tool grant and
+// the delegation deny list.
+func reportCurateCheck(env *Env, jsonOut bool, ready curator.Ready) error {
+	if jsonOut {
+		return writeJSON(env, memoryCurateCheckJSON{
+			Version:         jsonVersion,
+			Provider:        ready.Provider,
+			Binary:          ready.Binary,
+			Mode:            ready.Mode,
+			Tools:           ready.Tools,
+			DisallowedTools: ready.DisallowedTools,
+		})
+	}
+	fmt.Fprintf(env.Stdout, "provider:  %s\nbinary:    %s\nmode:      %s\ntools:     %s\ndeny:      %s\n",
+		ready.Provider, ready.Binary, describeMode(ready.Mode), describeTools(ready.Tools), describeDenyList(ready.DisallowedTools))
+	return nil
 }
 
 // reportCurateResult prints what a curate run produced and decides what the

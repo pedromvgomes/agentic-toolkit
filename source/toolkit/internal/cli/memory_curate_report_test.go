@@ -97,3 +97,69 @@ func TestReportCurateResult_CuratorsOwnFailureReturnsSentinel(t *testing.T) {
 		t.Errorf("error = %v, want errMemoryCurate", err)
 	}
 }
+
+type failingWriter struct{}
+
+func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("write failed") }
+
+// The JSON report is the only place the curator's own account reaches a
+// script, so a write that fails has to surface instead of vanishing behind
+// the verification error it was meant to accompany.
+func TestReportCurateResult_JSONWriteFailureIsReturned(t *testing.T) {
+	env := &Env{Stdout: failingWriter{}}
+	res := curator.Result{Text: "curated"}
+
+	err := reportCurateResult(env, true, false, res, errors.New("curator: mismatch"))
+
+	if err == nil || !strings.Contains(err.Error(), "write failed") {
+		t.Errorf("error = %v, want the write failure", err)
+	}
+}
+
+func TestReportCurateCheck_TextNamesEveryPartOfTheGrant(t *testing.T) {
+	var out bytes.Buffer
+	env := &Env{Stdout: &out}
+	ready := curator.Ready{
+		Provider:        "claudecode",
+		Binary:          "/opt/claude",
+		Tools:           []string{"Read", "Grep"},
+		DisallowedTools: []string{"Agent", "Task"},
+	}
+
+	if err := reportCurateCheck(env, false, ready); err != nil {
+		t.Fatalf("reportCurateCheck: %v", err)
+	}
+	for _, want := range []string{"claudecode", "/opt/claude", "none passed", "Read, Grep", "deny:      Agent, Task"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("--check output is missing %q:\n%s", want, out.String())
+		}
+	}
+}
+
+func TestReportCurateCheck_JSONCarriesTheDenyList(t *testing.T) {
+	var out bytes.Buffer
+	env := &Env{Stdout: &out}
+
+	err := reportCurateCheck(env, true, curator.Ready{Provider: "claudecode", DisallowedTools: []string{"Agent", "Task"}})
+
+	if err != nil {
+		t.Fatalf("reportCurateCheck: %v", err)
+	}
+	if !strings.Contains(out.String(), `"disallowed_tools"`) || !strings.Contains(out.String(), `"Agent"`) {
+		t.Errorf("json output does not carry the deny list:\n%s", out.String())
+	}
+	if err := reportCurateCheck(&Env{Stdout: failingWriter{}}, true, curator.Ready{}); err == nil {
+		t.Error("a JSON write failure was swallowed")
+	}
+}
+
+// A provider with no per-tool vocabulary has no deny list, and a blank field
+// there would read as nothing confining the run at all.
+func TestDescribeDenyList_EmptyIsSaidPlainly(t *testing.T) {
+	if got := describeDenyList(nil); !strings.Contains(got, "cannot deny a tool") {
+		t.Errorf("describeDenyList(nil) = %q, want the empty case explained", got)
+	}
+	if got := describeDenyList([]string{"Agent", "Task"}); got != "Agent, Task" {
+		t.Errorf("describeDenyList = %q, want the tools listed", got)
+	}
+}

@@ -2,10 +2,14 @@ package tests
 
 import (
 	"encoding/json"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/pedromvgomes/agentic-toolkit/internal/cli"
 )
 
 // memoryProject lays out a minimal consumer repo and returns its root: a
@@ -1111,3 +1115,37 @@ func TestMemoryStatsReportsBothSidesOfTheLedger(t *testing.T) {
 		t.Errorf("cold = %v, want the one unread note", stats.Cold)
 	}
 }
+
+// TestMemoryIndexJSONReportsWhatItWrote: --json is the machine-readable form
+// of the same report, and a write that fails on the way out is an error, not
+// a silent success.
+func TestMemoryIndexJSONReportsWhatItWrote(t *testing.T) {
+	work := memoryProject(t, "stacks: []\n")
+	writeFile(t, filepath.Join(work, ".memory/notes/pins-shas.md"), memoryNote)
+
+	stdout, _, err := runCLI(t, work, "memory", "index", "--json")
+	if err != nil {
+		t.Fatalf("memory index --json: %v", err)
+	}
+	var got struct {
+		Notes   int  `json:"notes"`
+		Changed bool `json:"changed"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("output is not JSON: %v\n%s", err, stdout)
+	}
+	if got.Notes != 1 || !got.Changed {
+		t.Errorf("report = %+v, want one note and a rewritten index", got)
+	}
+
+	env := &cli.Env{Stdin: strings.NewReader(""), Stdout: failingStdout{}, Stderr: io.Discard, WorkDir: work}
+	root := cli.NewRootCmd(env)
+	root.SetArgs([]string{"memory", "index", "--json"})
+	if err := root.Execute(); err == nil {
+		t.Error("a JSON report that could not be written was reported as written")
+	}
+}
+
+type failingStdout struct{}
+
+func (failingStdout) Write([]byte) (int, error) { return 0, errors.New("write failed") }

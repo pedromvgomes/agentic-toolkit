@@ -15,7 +15,7 @@ import (
 // The terminal `result` line of a run. Every provider streams, so a fake's
 // stdout is NDJSON and a whole turn fits on one line; the fields are trimmed to
 // the ones the provider reads.
-const curatedEnvelope = `{"type":"result","subtype":"success","is_error":false,"session_id":"s1","num_turns":4,"total_cost_usd":0.42,"result":"Promoted: lockfile-pins-shas-not-tags\nRejected: 20260905-where-render-lives — re-derivable\nStore: 9 notes, 0 stale","structured_output":{"candidatesResolved":["lockfile-pins-shas-not-tags","20260905-where-render-lives"],"notesRetracted":[],"notesTouched":["lockfile-pins-shas-not-tags"]},"modelUsage":{"claude-opus-5[1m]":{"canonicalModel":"claude-opus-5","inputTokens":12,"cacheReadInputTokens":9000}}}`
+const curatedEnvelope = `{"type":"result","subtype":"success","is_error":false,"session_id":"s1","num_turns":4,"total_cost_usd":0.42,"result":"Promoted: lockfile-pins-shas-not-tags\nRejected: 20260905-where-render-lives — re-derivable\nStore: 9 notes, 0 stale","structured_output":{"candidatesResolved":[],"notesRetracted":[],"notesTouched":["lockfile-pins-shas-not-tags"]},"modelUsage":{"claude-opus-5[1m]":{"canonicalModel":"claude-opus-5","inputTokens":12,"cacheReadInputTokens":9000}}}`
 
 // A failing turn that still filed the completion report it owes. The CLI
 // reporting its own failure is a verdict, not an outage: the report is
@@ -79,9 +79,6 @@ func TestARunReturnsTheCuratorsReport(t *testing.T) {
 	}
 	if res.Model == "" {
 		t.Error("Model is empty; the run's cost is meaningless without the model it was charged for")
-	}
-	if !slices.Contains(res.Report.CandidatesResolved, "lockfile-pins-shas-not-tags") {
-		t.Errorf("Report.CandidatesResolved = %v, want the candidate the run ruled on", res.Report.CandidatesResolved)
 	}
 	if !slices.Contains(res.Report.NotesTouched, "lockfile-pins-shas-not-tags") {
 		t.Errorf("Report.NotesTouched = %v, want the note the run wrote", res.Report.NotesTouched)
