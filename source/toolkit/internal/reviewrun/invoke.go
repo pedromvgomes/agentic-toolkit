@@ -3,6 +3,7 @@ package reviewrun
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -39,7 +40,33 @@ type driverInvoker struct {
 	binary string
 }
 
+// errMissingProvider marks a run whose provider could not be started on this
+// machine at all: its CLI is not on PATH, or the binary it resolved to is
+// absent, empty, a directory or not executable. Nothing was attempted, so a
+// different provider can fix it and the panel's fallback is worth trying.
+//
+// Recognised by where the error arises — constructing the driver or its
+// readiness check — never by agentic.ErrProviderUnavailable alone. The driver
+// wraps timeouts, cancellations, crashes and stream failures in that same
+// sentinel, and those come from a provider that started: ordinary failures
+// ADR 0015 keeps visible. See ADR 0021.
+//
+// Its own text is empty and it is joined to the driver's error with no
+// separator, so a report's Reason reads as the driver's message, which names
+// the binary and how to install it.
+var errMissingProvider = errors.New("")
+
+// missingProvider wraps err so it satisfies errors.Is for both
+// errMissingProvider and whatever err already wraps.
+func missingProvider(err error) error {
+	return fmt.Errorf("%w%w", errMissingProvider, err)
+}
+
 // build constructs the driver for one runner.
+//
+// A binary that cannot be found comes back as a missing provider. An unknown
+// provider name does not: that is a manifest naming something agtk cannot
+// run anywhere, which no other machine or provider fixes.
 func (d driverInvoker) build(r review.Runner, timeout time.Duration, workDir string) (*agentic.Driver, error) {
 	p, err := provider.New(r.Provider)
 	if err != nil {
@@ -52,7 +79,11 @@ func (d driverInvoker) build(r review.Runner, timeout time.Duration, workDir str
 	if d.binary != "" {
 		opts = append(opts, agentic.WithBinary(d.binary))
 	}
-	return agentic.New(p, opts...)
+	drv, err := agentic.New(p, opts...)
+	if errors.Is(err, agentic.ErrProviderUnavailable) {
+		return nil, missingProvider(err)
+	}
+	return drv, err
 }
 
 // Limit asks the provider how many of its runs may share one credential.
@@ -75,8 +106,11 @@ func (d driverInvoker) Invoke(ctx context.Context, r review.Runner, req agentic.
 	if err != nil {
 		return agentic.Result{}, err
 	}
+	// Ready fails only on its stat checks, before anything is started, so
+	// every error from it is a missing provider. An error from Run is not,
+	// whatever it wraps: the provider started.
 	if err := drv.Ready(); err != nil {
-		return agentic.Result{}, err
+		return agentic.Result{}, missingProvider(err)
 	}
 	return drv.Run(ctx, req)
 }
@@ -116,7 +150,9 @@ func request(r review.Runner, prompt string, schema json.RawMessage, root *Root,
 //
 // Five outcomes, four of which are "could not answer":
 //
-//   - an error is an outage: the run could not be carried out.
+//   - an error is an outage: the run could not be carried out. One that
+//     marks a missing provider is reported as Missing, which a different
+//     provider can fix; any other stays an ordinary outage.
 //   - Blocked is a run whose provider declined to serve the credential
 //     rather than attempting and failing at it — a quota exhausted or a
 //     credential rejected. Checked ahead of IsError, which the driver's
@@ -134,6 +170,8 @@ func request(r review.Runner, prompt string, schema json.RawMessage, root *Root,
 //     which is the one failure a review must never make silently.
 func classify(res agentic.Result, err error, label string) (json.RawMessage, Report) {
 	switch {
+	case errors.Is(err, errMissingProvider):
+		return nil, Missing("%s could not be run: %v", label, err)
 	case err != nil:
 		return nil, Unavailable("%s could not be run: %v", label, err)
 	case res.Blocked != nil:

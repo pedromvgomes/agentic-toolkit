@@ -24,6 +24,7 @@ before writing about any of those concepts. Terms there are precise and words li
 - **Build**: `make build` (writes `./bin/agtk`, stamped with `git describe`)
 - **Install**: `make install`
 - **Test**: `make test` (`go -C source/toolkit test ./...`)
+- **Single test / package**: `go -C source/toolkit test ./internal/cli/tests -run TestName`
 - **Format**: `make fmt` (`gofmt -s -w .`)
 - **Regenerate the schema docs**: `make generate` — `definitions/SCHEMA.md` and
   `definitions/CONFIG-SCHEMA.md` are generated from the structs and committed

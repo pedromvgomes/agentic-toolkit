@@ -42,6 +42,12 @@ type scripted struct {
 	// blocked, ahead of any fail* script — the provider declined to serve
 	// the credential rather than the run being made and failing.
 	blockedProviders map[string]bool
+	// providerLimitErr makes asking the named provider for its limit fail,
+	// and providerInvokeErr makes every run on it fail, ahead of any fail*
+	// script. Keyed by provider rather than role, so a panel on one provider
+	// can fail while its fallback on the other answers.
+	providerLimitErr  map[string]error
+	providerInvokeErr map[string]error
 
 	// seen records every prompt, in call order.
 	seen []string
@@ -52,6 +58,9 @@ type scripted struct {
 func (s *scripted) Limit(r review.Runner) (int, error) {
 	if s.limitErr != nil {
 		return 0, s.limitErr
+	}
+	if err := s.providerLimitErr[r.Provider]; err != nil {
+		return 0, err
 	}
 	return s.limits[r.Provider], nil
 }
@@ -82,6 +91,9 @@ func (s *scripted) Invoke(_ context.Context, r review.Runner, req agentic.Reques
 
 	if s.blockedProviders[r.Provider] {
 		return agentic.Result{IsError: true, Text: "quota exhausted", Blocked: &agentic.Block{Reason: agentic.BlockExhausted}}, nil
+	}
+	if err := s.providerInvokeErr[r.Provider]; err != nil {
+		return agentic.Result{}, err
 	}
 
 	switch role {

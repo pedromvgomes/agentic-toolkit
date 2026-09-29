@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -324,5 +325,210 @@ func TestAFallbackDoesNotDropAnInjectionTheFirstPanelCaught(t *testing.T) {
 	}
 	if len(out.ReattachedIDs) != 1 {
 		t.Errorf("the carried injection is not recorded as reattached: %v", out.ReattachedIDs)
+	}
+}
+
+// errProviderMissing is the shape driverInvoker returns for a provider whose
+// binary is not on this machine.
+func errProviderMissing(provider string) error {
+	return missingProvider(fmt.Errorf("%w: %s is not installed at /usr/local/bin/%s",
+		agentic.ErrProviderUnavailable, provider, provider))
+}
+
+// A panel whose provider is not installed retries on its declared twin, and a
+// twin that answers fully leaves no gap behind.
+func TestAMissingProviderFallsBackToItsDeclaredTwin(t *testing.T) {
+	r, base := repoWithManifest(t, testManifestWithFallback)
+	inv := &scripted{
+		limits:           map[string]int{"codex": 1},
+		providerLimitErr: map[string]error{"claudecode": errProviderMissing("claude")},
+		reviewer:         []string{findingJSONFor("a.go", "correctness", "AMBER", "panic(\\\"boom\\\")")},
+		judge:            `{"findings":[{"id":"f1","severity":"AMBER","issue":"a defect"}]}`,
+	}
+	out, err := Run(context.Background(), Options{
+		Dir: r.dir, Base: base, Context: review.ContextWorktree, invoker: inv,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !out.Available {
+		t.Fatalf("the fallback panel did not reach a verdict: %s", out.Reason)
+	}
+	if out.Panel != "quick-codex" || out.FallbackFrom != "quick" {
+		t.Errorf("the review does not report the fallback: panel %q, from %q", out.Panel, out.FallbackFrom)
+	}
+	if out.Blocked {
+		t.Error("a review that recovered on its fallback is marked blocked")
+	}
+	if out.Partial() {
+		_, missing := out.Superseded()
+		t.Errorf("a review whose twin answered fully reports a gap: %+v", missing)
+	}
+	superseded, _ := out.Superseded()
+	if len(superseded) == 0 {
+		t.Error("the missing run that caused the fallback is not recorded as superseded")
+	}
+	for _, run := range superseded {
+		if !run.Report.Missing || run.Report.Blocked {
+			t.Errorf("run %q is not reported as a missing provider: %+v", run.Label, run.Report)
+		}
+	}
+}
+
+// A provider missing at Invoke rather than at the limit query takes the same
+// route to the twin.
+func TestAProviderMissingAtInvokeFallsBack(t *testing.T) {
+	r, base := repoWithManifest(t, testManifestWithFallback)
+	inv := &scripted{
+		limits:            map[string]int{"claudecode": 0, "codex": 1},
+		providerInvokeErr: map[string]error{"claudecode": errProviderMissing("claude")},
+		judge:             `{"findings":[]}`,
+	}
+	out, err := Run(context.Background(), Options{
+		Dir: r.dir, Base: base, Context: review.ContextWorktree, invoker: inv,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !out.Available || out.FallbackFrom != "quick" {
+		t.Fatalf("a provider missing at invoke did not fall back: available %v, from %q, reason %s",
+			out.Available, out.FallbackFrom, out.Reason)
+	}
+}
+
+// A provider that started and then timed out carries the driver's
+// ErrProviderUnavailable too, and is still an ordinary failure that never
+// falls back.
+func TestATimeoutIsNotAMissingProvider(t *testing.T) {
+	r, base := repoWithManifest(t, testManifestWithFallback)
+	inv := &scripted{
+		limits: map[string]int{"claudecode": 0, "codex": 1},
+		providerInvokeErr: map[string]error{
+			"claudecode": fmt.Errorf("%w: timed out", agentic.ErrProviderUnavailable),
+		},
+	}
+	out, err := Run(context.Background(), Options{
+		Dir: r.dir, Base: base, Context: review.ContextWorktree, invoker: inv,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Available || out.Blocked || out.FallbackFrom != "" {
+		t.Errorf("a timeout was routed like a missing provider: available %v, blocked %v, from %q",
+			out.Available, out.Blocked, out.FallbackFrom)
+	}
+}
+
+// A missing provider with no fallback to try stays unavailable, and is not
+// Blocked, so the review still posts its "no verdict".
+func TestAMissingProviderWithNoFallbackIsNotBlocked(t *testing.T) {
+	r, base := reviewedRepo(t)
+	inv := &scripted{
+		providerLimitErr: map[string]error{"claudecode": errProviderMissing("claude")},
+	}
+	out, err := Run(context.Background(), Options{
+		Dir: r.dir, Base: base, Context: review.ContextWorktree, invoker: inv,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Available {
+		t.Fatal("a panel whose provider is missing reached a verdict")
+	}
+	if out.Blocked {
+		t.Error("a missing provider with no fallback is reported as blocked, which keeps it off the pull request")
+	}
+	if out.FallbackFrom != "" {
+		t.Errorf("no fallback was declared, but FallbackFrom is %q", out.FallbackFrom)
+	}
+	if !out.Partial() {
+		t.Error("a missing provider with no fallback is not reported as a gap")
+	}
+}
+
+// A missing provider whose twin is blocked is Blocked: neither provider could
+// serve the review, and the one that tried declined the credential.
+func TestAMissingProviderWhoseTwinIsBlockedIsBlocked(t *testing.T) {
+	r, base := repoWithManifest(t, testManifestWithFallback)
+	inv := &scripted{
+		limits:           map[string]int{"codex": 1},
+		providerLimitErr: map[string]error{"claudecode": errProviderMissing("claude")},
+		blockedProviders: map[string]bool{"codex": true},
+	}
+	out, err := Run(context.Background(), Options{
+		Dir: r.dir, Base: base, Context: review.ContextWorktree, invoker: inv,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Available {
+		t.Fatal("a review whose twin was blocked reached a verdict")
+	}
+	if !out.Blocked {
+		t.Error("a missing provider whose twin is blocked is not reported as blocked")
+	}
+	if out.FallbackFrom != "quick" {
+		t.Errorf("the fallback attempt is not recorded: %q", out.FallbackFrom)
+	}
+}
+
+// A missing provider whose twin fails ordinarily is not Blocked: the review
+// posts its "no verdict" like any other outage.
+func TestAMissingProviderWhoseTwinFailsOrdinarilyIsNotBlocked(t *testing.T) {
+	r, base := repoWithManifest(t, testManifestWithFallback)
+	inv := &scripted{
+		limits:            map[string]int{"codex": 1},
+		providerLimitErr:  map[string]error{"claudecode": errProviderMissing("claude")},
+		providerInvokeErr: map[string]error{"codex": errors.New("the codex CLI crashed")},
+	}
+	out, err := Run(context.Background(), Options{
+		Dir: r.dir, Base: base, Context: review.ContextWorktree, invoker: inv,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Available {
+		t.Fatal("a review whose twin crashed reached a verdict")
+	}
+	if out.Blocked {
+		t.Error("a missing provider whose twin failed ordinarily is reported as blocked")
+	}
+	if out.FallbackFrom != "quick" {
+		t.Errorf("the fallback attempt is not recorded: %q", out.FallbackFrom)
+	}
+	if !out.Partial() {
+		t.Error("a review with no verdict is not reported as partial")
+	}
+}
+
+// unansweredCause decides both whether a panel falls back and whether the
+// review stays Blocked, so it is total over every mix of causes.
+func TestUnansweredCause(t *testing.T) {
+	answered := RunReport{Label: "a", Report: Answered(nil)}
+	blocked := RunReport{Label: "b", Report: Blocked("declined")}
+	missing := RunReport{Label: "m", Report: Missing("not installed")}
+	ordinary := RunReport{Label: "o", Report: Unavailable("timed out")}
+
+	for _, tc := range []struct {
+		name                string
+		reports             []RunReport
+		reroutable, blocked bool
+	}{
+		{"nothing ran", nil, false, false},
+		{"every run answered", []RunReport{answered}, false, false},
+		{"only blocked", []RunReport{answered, blocked}, true, true},
+		{"only missing", []RunReport{answered, missing}, true, false},
+		{"missing and blocked", []RunReport{missing, blocked}, true, false},
+		{"missing and an ordinary failure", []RunReport{missing, ordinary}, false, false},
+		{"blocked and an ordinary failure", []RunReport{blocked, ordinary}, false, false},
+		{"only an ordinary failure", []RunReport{ordinary}, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			reroutable, blocked := unansweredCause(tc.reports)
+			if reroutable != tc.reroutable || blocked != tc.blocked {
+				t.Errorf("unansweredCause = (reroutable %v, blocked %v), want (%v, %v)",
+					reroutable, blocked, tc.reroutable, tc.blocked)
+			}
+		})
 	}
 }

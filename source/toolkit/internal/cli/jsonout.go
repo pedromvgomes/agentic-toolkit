@@ -839,7 +839,8 @@ type reviewPostJSON struct {
 	// because posting itself failed.
 	Blocked bool `json:"blocked,omitempty"`
 	// FallbackFrom names the panel this review's Panel was tried in place
-	// of, after a block. Empty when no fallback was attempted.
+	// of, after its unanswered runs were all blocked or found their provider
+	// missing. Empty when no fallback was attempted.
 	FallbackFrom string `json:"fallback_from,omitempty"`
 	// Partial reports that some run could not answer, so what it would have
 	// found is unknown rather than absent.

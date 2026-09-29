@@ -27,8 +27,8 @@ func Body(r *reviewrun.Review, pr githubapp.PullRequest, place Placement) string
 	}
 
 	if r.FallbackFrom != "" {
-		fmt.Fprintf(&b, "_Retried here after every run on `%s` was blocked; what follows is from `%s`._\n\n",
-			r.FallbackFrom, r.Panel)
+		fmt.Fprintf(&b, "_Retried here after every run on `%s` %s; what follows is from `%s`._\n\n",
+			r.FallbackFrom, fallbackCause(r), r.Panel)
 	}
 
 	if !r.Available {
@@ -269,4 +269,17 @@ func writeThreads(b *strings.Builder, r *reviewrun.Review) {
 func writeRecord(b *strings.Builder, r *reviewrun.Review, pr githubapp.PullRequest, place Placement) {
 	fmt.Fprintf(b, "<sub>%s · range `%s` · manifest `%s`</sub>\n", r.Record(), r.Range, r.Manifest)
 	fmt.Fprintf(b, "\n%s\n", reviewMarker(r, pr, place))
+}
+
+// fallbackCause words why the first panel was replaced, to follow "every run
+// on `panel`".
+func fallbackCause(r *reviewrun.Review) string {
+	switch r.FallbackCause() {
+	case "missing":
+		return "found its provider missing"
+	case "blocked and missing":
+		return "was blocked or found its provider missing"
+	default:
+		return "was blocked"
+	}
 }
