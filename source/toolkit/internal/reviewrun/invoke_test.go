@@ -1,13 +1,19 @@
 package reviewrun
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	agentic "github.com/pedromvgomes/agentic-driver"
+
+	"github.com/pedromvgomes/agentic-toolkit/internal/review"
 )
 
 // An outage: the run could not be carried out at all.
@@ -212,5 +218,65 @@ func TestAccountTrimsOnARuneBoundary(t *testing.T) {
 	}
 	if !strings.HasSuffix(got, "…") {
 		t.Errorf("a trimmed account does not say it was trimmed: %q", got)
+	}
+}
+
+// A binary that is absent or is a directory fails the driver's readiness
+// check before anything starts, which is a missing provider, and its report
+// carries the driver's own message naming the binary.
+func TestAnUnrunnableBinaryIsAMissingProvider(t *testing.T) {
+	absent := filepath.Join(t.TempDir(), "claude")
+	dir := t.TempDir()
+
+	for _, tc := range []struct {
+		name, binary string
+	}{
+		{"absent", absent},
+		{"a directory", dir},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			inv := driverInvoker{binary: tc.binary}
+			runner := review.Runner{Provider: "claudecode", Model: "sonnet"}
+			_, err := inv.Invoke(context.Background(), runner, agentic.Request{
+				Prompt: "review this", Timeout: time.Minute, WorkDir: t.TempDir(),
+			})
+			if !errors.Is(err, errMissingProvider) {
+				t.Fatalf("an unrunnable binary is not a missing provider: %v", err)
+			}
+			if !errors.Is(err, agentic.ErrProviderUnavailable) {
+				t.Errorf("the driver's own error does not survive the wrapping: %v", err)
+			}
+
+			_, report := classify(agentic.Result{}, err, "correctness")
+			if !report.Missing || report.Blocked || report.Available {
+				t.Errorf("the run is not reported as a missing provider: %+v", report)
+			}
+			if !strings.Contains(report.Reason, tc.binary) {
+				t.Errorf("the reason does not name the binary %s: %q", tc.binary, report.Reason)
+			}
+			if !strings.HasPrefix(report.Reason, "correctness could not be run: "+agentic.ErrProviderUnavailable.Error()) {
+				t.Errorf("the reason is not the driver's message: %q", report.Reason)
+			}
+		})
+	}
+}
+
+// The driver wraps failures of a provider that started — a timeout among them
+// — in the same ErrProviderUnavailable, and those stay ordinary failures.
+func TestAStartedProviderFailureIsNotAMissingProvider(t *testing.T) {
+	_, report := classify(agentic.Result{}, fmt.Errorf("%w: timed out", agentic.ErrProviderUnavailable), "correctness")
+	if report.Missing || report.Blocked || report.Available {
+		t.Errorf("a timeout is not an ordinary failure: %+v", report)
+	}
+}
+
+// A provider missing when the scheduler asks for its limit never starts, and
+// reports as a missing provider; a cancelled review stays an ordinary outage.
+func TestANeverStartedRunKeepsItsCause(t *testing.T) {
+	if r := neverStarted("correctness", missingProvider(errors.New("claude is not installed"))); !r.Missing {
+		t.Errorf("a missing provider at the limit query is not reported as missing: %+v", r)
+	}
+	if r := neverStarted("correctness", context.Canceled); r.Missing || r.Blocked {
+		t.Errorf("a cancelled run is reported as more than an ordinary outage: %+v", r)
 	}
 }

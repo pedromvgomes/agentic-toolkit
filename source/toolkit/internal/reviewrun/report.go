@@ -24,6 +24,12 @@ type Report struct {
 	// caller may route around by trying a different provider. False for
 	// every other reason a run did not answer.
 	Blocked bool
+	// Missing reports that the run's provider could not be started on this
+	// machine at all, so nothing was attempted. A different provider can fix
+	// it, as it can a Block, but unlike a Block it never keeps a review off
+	// the pull request: a missing binary is a setup problem somebody has to
+	// see.
+	Missing bool
 
 	findings []Finding
 }
@@ -43,6 +49,13 @@ func Unavailable(format string, args ...interface{}) Report {
 // attempting the run and failing at it.
 func Blocked(format string, args ...interface{}) Report {
 	return Report{Reason: fmt.Sprintf(format, args...), Blocked: true}
+}
+
+// Missing builds a Report for a run whose provider could not be started on
+// this machine — its binary is not on PATH, or is absent, empty, a directory
+// or not executable — so nothing was attempted.
+func Missing(format string, args ...interface{}) Report {
+	return Report{Reason: fmt.Sprintf(format, args...), Missing: true}
 }
 
 // Findings returns what the run reported and whether it reported at all.
@@ -206,21 +219,23 @@ func (r *Review) Unanswered() []RunReport {
 	return out
 }
 
-// Superseded lists the blocked runs a fallback already answered for, and
-// Missing lists whatever is unanswered beyond that.
+// Superseded lists the blocked or missing runs a fallback already answered
+// for, and missing lists whatever is unanswered beyond that.
 //
-// A block that triggered FallbackFrom was, by construction, every run on the
-// panel it replaced (Run's onlyBlocked check) — so once the fallback panel
-// itself has a verdict, those blocked runs are not a gap in this review, they
-// are the reason it ran on a different panel. Presenting them with the same
-// "this review is partial" alarm as a run that is still actually missing
-// would say the retry did not work when it did; a reader that saw that once
-// is a reader who no longer trusts the review ran at all. A run left
+// A block or a missing provider that triggered FallbackFrom was, by
+// construction, every unanswered run on the panel it replaced (Run's
+// unansweredCause check) — so once the fallback panel itself has a verdict,
+// those runs are not a gap in this review, they are the reason it ran on a
+// different panel. Presenting them with the same "this review is partial"
+// alarm as a run that is still actually missing would say the retry did not
+// work when it did; a reader that saw that once is a reader who no longer
+// trusts the review ran at all. A run left
 // unanswered for an ordinary reason, or on the fallback panel's own attempt,
 // is still a real gap and keeps the full treatment.
 func (r *Review) Superseded() (superseded, missing []RunReport) {
 	for _, run := range r.Unanswered() {
-		if r.Available && r.FallbackFrom != "" && run.Panel == r.FallbackFrom && run.Report.Blocked {
+		if r.Available && r.FallbackFrom != "" && run.Panel == r.FallbackFrom &&
+			(run.Report.Blocked || run.Report.Missing) {
 			superseded = append(superseded, run)
 			continue
 		}
