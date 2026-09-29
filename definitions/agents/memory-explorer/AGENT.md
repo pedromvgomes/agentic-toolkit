@@ -151,7 +151,7 @@ One finding per file, at `<root>/candidates/<YYYYMMDD>-<short-slug>.md`:
 
 ```markdown
 ---
-about: nothing in CI regenerates the schema docs
+about: "nothing in CI regenerates the schema docs"
 saw:
   - .github/workflows/*.yml
   - Makefile
@@ -167,7 +167,10 @@ Nothing regenerates or diffs `definitions/SCHEMA.md`, so the claim holds.
 The body pointer said `internal/stack/types.go:33`; the directive is at `:35`.
 ```
 
-- `about` — one line, what you learned.
+- `about` — one line, what you learned. Always wrap it in double quotes: the front matter is
+  YAML, and an unquoted colon inside the value (`about: the flag: off by default`) makes the
+  candidate unparseable, so it drops out of the backlog and is never curated. Escape any
+  double quote inside it as `\"`.
 - `saw` — the paths the finding came from. The curator turns these into anchors; you do not.
 - `targets` — the existing note this concerns. Omit for a new finding.
 - `verdict` — only with `targets`. Omit for a new finding.

@@ -79,6 +79,19 @@ One file per finding, at `<root>/candidates/<YYYYMMDD>-<short-slug>.md`, carryin
 and a body with a pointer for every claim. No `targets` or `verdict`: these are new findings,
 not re-checks.
 
+Always wrap `about` in double quotes (escape any double quote inside as `\"`). The front matter
+is YAML, and an unquoted colon inside the value (`about: the flag: off by default`) makes the
+candidate unparseable, so it drops out of the backlog and is never curated.
+
+After staging, run:
+
+```bash
+agtk memory lint
+```
+
+It reports every candidate it cannot read, with the file and the YAML error, and exits non-zero
+while any remains. Fix what it names before committing.
+
 Then look at what is **already** in `candidates/`. A finding staged before this branch was
 written was staged against code that has since moved, and a branch that renames or deletes what
 one names leaves a finding that still reads as true. The curator is fed the candidates and the

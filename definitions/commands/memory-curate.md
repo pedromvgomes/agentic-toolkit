@@ -36,3 +36,13 @@ Naming notes scopes a run to them and to the candidates targeting them, and narr
 stamping grant to those names — a scoped run cannot clear the staleness signal on a note it
 was not asked to check. Use it to work through a backlog in pieces, or to re-check one note
 after the code under it moved.
+
+Finish by listing what the run changed in the store:
+
+```bash
+git status --short .memory
+```
+
+Then commit those changes under the repo's git rules. The run leaves them uncommitted in the
+working tree, so curation that is not committed is lost with the checkout. A `--dry-run`
+changes nothing and has nothing to commit.
