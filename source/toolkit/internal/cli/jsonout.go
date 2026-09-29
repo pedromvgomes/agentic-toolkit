@@ -336,6 +336,12 @@ type memoryStatsJSON struct {
 	// Shards and Compacted say which committed hit records were read.
 	Shards    int  `json:"shards"`
 	Compacted bool `json:"compacted"`
+	// UnreadableHits names each committed hit record, a shard or the compacted
+	// file, that could not be read. Hits, NotesHit, HitRate and Cold exclude
+	// its reads, so a note read only there appears cold and looks prunable
+	// while the counts look complete. Never null: an empty array says every
+	// record was read.
+	UnreadableHits []string `json:"unreadable_hits"`
 }
 
 func anchorJSONNotes(results []memory.StampResult) []memoryAnchorNoteJSON {
@@ -399,6 +405,8 @@ func statsJSON(env *Env, store *memory.Store, st memory.Stats) memoryStatsJSON {
 		LocalHits:    st.LocalHits,
 		Shards:       st.Shards,
 		Compacted:    st.Compacted,
+
+		UnreadableHits: unreadableJSONEntries(st.UnreadableHits),
 	}
 	if out.Cold == nil {
 		// A JSON consumer branching on this must not have to distinguish null

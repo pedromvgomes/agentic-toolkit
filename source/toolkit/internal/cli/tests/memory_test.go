@@ -1928,3 +1928,65 @@ func TestMemoryStatsJSONReportsTheCompactedFile(t *testing.T) {
 		t.Errorf("stats json = %+v, want 2 hits read from the compacted file alone", st)
 	}
 }
+
+// TestMemoryStatsJSONListsAnUnreadableHitRecord: `unreadable_hits` names each
+// committed hit record that could not be read, so a JSON consumer can tell a
+// cold note from one whose only reads sit in a record the counts exclude. The
+// records that do read are still counted, and the stderr warning is kept.
+func TestMemoryStatsJSONListsAnUnreadableHitRecord(t *testing.T) {
+	work := hitsProject(t)
+	writeFile(t, filepath.Join(work, ".memory/hits.json"),
+		`{"version": 1, "notes": {"pins-shas": {"count": 2, "first": "2026-01-01T00:00:00Z", "last": "2026-01-02T00:00:00Z"}}}`)
+	writeFile(t, filepath.Join(work, ".memory/hits/2026-01-01-main-bad.json"), "{")
+
+	stdout, stderr, err := runCLI(t, work, "memory", "stats", "--json")
+	if err != nil {
+		t.Fatalf("memory stats --json: %v", err)
+	}
+	var st struct {
+		Hits           int      `json:"hits"`
+		Compacted      bool     `json:"compacted"`
+		UnreadableHits []string `json:"unreadable_hits"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &st); err != nil {
+		t.Fatalf("stats json: %v (%s)", err, stdout)
+	}
+	if len(st.UnreadableHits) != 1 || !strings.Contains(st.UnreadableHits[0], "2026-01-01-main-bad.json") {
+		t.Errorf("unreadable_hits = %q, want one entry naming 2026-01-01-main-bad.json", st.UnreadableHits)
+	}
+	if st.Hits != 2 || !st.Compacted {
+		t.Errorf("stats json = %+v, want the readable compacted file still counted", st)
+	}
+	if !strings.Contains(stderr, "warning: skipping unreadable hit record") || !strings.Contains(stderr, "2026-01-01-main-bad.json") {
+		t.Errorf("stats --json did not warn on stderr about the unreadable shard: %q", stderr)
+	}
+}
+
+// TestMemoryStatsJSONUnreadableHitsIsAnEmptyArrayWhenAllRead: with every hit
+// record readable `unreadable_hits` is present and `[]`, never null or absent,
+// so a consumer does not have to tell a missing field from an empty one.
+func TestMemoryStatsJSONUnreadableHitsIsAnEmptyArrayWhenAllRead(t *testing.T) {
+	work := hitsProject(t)
+	writeFile(t, filepath.Join(work, ".memory/hits.json"),
+		`{"version": 1, "notes": {"pins-shas": {"count": 2, "first": "2026-01-01T00:00:00Z", "last": "2026-01-02T00:00:00Z"}}}`)
+
+	stdout, stderr, err := runCLI(t, work, "memory", "stats", "--json")
+	if err != nil {
+		t.Fatalf("memory stats --json: %v", err)
+	}
+	var raw map[string]any
+	if err := json.Unmarshal([]byte(stdout), &raw); err != nil {
+		t.Fatalf("stats json: %v (%s)", err, stdout)
+	}
+	got, ok := raw["unreadable_hits"]
+	if !ok {
+		t.Fatalf("unreadable_hits is absent from %s", stdout)
+	}
+	arr, isArray := got.([]any)
+	if !isArray || len(arr) != 0 {
+		t.Errorf("unreadable_hits = %#v, want an empty array", got)
+	}
+	if strings.Contains(stderr, "unreadable hit record") {
+		t.Errorf("stats warned about an unreadable record with none present: %q", stderr)
+	}
+}
