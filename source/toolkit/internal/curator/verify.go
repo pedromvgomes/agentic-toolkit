@@ -127,17 +127,24 @@ func storeFiles(dir string) ([]string, error) {
 // in both directions.
 //
 // Claim to disk: everything the report says happened did — a resolved
-// candidate is gone, a retracted note is gone, a touched note is stamped and
+// candidate was staged, a retracted note is gone, a touched note is stamped and
 // lints clean. Disk to claim: everything that happened is in the report —
 // every note that appeared, changed or vanished, and every candidate that
 // vanished, is named. Checking only the first direction verifies what a run
 // chose to say, so a run cut off half-way, having written unstamped notes and
 // reported nothing, passes it; the second direction is what catches that run.
 //
+// A resolved candidate still staged is not a failure: clearResolved removes it
+// once verify passes, so whether the run deleted it itself does not matter.
+// backlog says the run is the backlog job, which rules on every staged
+// candidate, and holds it to having left none staged unreported — none but
+// those in unreadable, the candidates LoadCandidates could not parse once the
+// run ended.
+//
 // It writes nothing. A failing store is left exactly as the run left it, and
 // the error names every check that failed, with the command that repairs it
 // where one does.
-func verify(store *memory.Store, before snapshot, r Report) error {
+func verify(store *memory.Store, before snapshot, r Report, backlog bool, unreadable []error) error {
 	after, err := takeSnapshot(store)
 	if err != nil {
 		return err
@@ -154,12 +161,8 @@ func verify(store *memory.Store, before snapshot, r Report) error {
 	// so a resolved candidate or retracted note has to have been in the store
 	// the run started from.
 	for _, id := range r.CandidatesResolved {
-		stem := strings.TrimSuffix(id, memory.NoteExt)
-		switch {
-		case !before.candidates[stem]:
+		if !before.candidates[strings.TrimSuffix(id, memory.NoteExt)] {
 			fail("candidate %q is reported resolved but was never staged; re-run curate", id)
-		case after.candidates[stem]:
-			fail("candidate %q is reported resolved but is still in candidates/; re-run curate", id)
 		}
 	}
 	for _, name := range r.NotesRetracted {
@@ -200,6 +203,21 @@ func verify(store *memory.Store, before snapshot, r Report) error {
 			fail("candidate %q was removed but was not reported resolved; restore it from git if it was not ruled on", id)
 		}
 	}
+	// The backlog job is pointed at every staged candidate, so one it leaves
+	// staged and unreported is a candidate nobody ruled on, behind a run that
+	// reads as a finished pass over the backlog. A scoped, limited or stale job
+	// is pointed at some candidates or none, so a candidate left staged is what
+	// it was asked to do. An unreadable candidate is not the run's to rule on —
+	// it is told to leave those out of its report, and Run fails on them
+	// separately. Counted here, one would fail every backlog run over a store
+	// that holds it, and so clear nothing the run did resolve.
+	if backlog {
+		for _, id := range sortedKeys(withoutUnreadable(after, unreadable).candidates) {
+			if !resolved[id] {
+				fail("candidate %q is still in candidates/ but was not reported resolved; the backlog run rules on every candidate, so re-run curate", id)
+			}
+		}
+	}
 
 	// A store that is not there after the run was not there before it either,
 	// since the run's grant cannot remove the directory: there is nothing to
@@ -220,6 +238,43 @@ func verify(store *memory.Store, before snapshot, r Report) error {
 	return fmt.Errorf(
 		"curator: the run's completion report does not match the store; nothing is rolled back, so the store is as the run left it:\n  - %s",
 		strings.Join(problems, "\n  - "))
+}
+
+// clearResolved removes every candidate r reports resolved that is still in
+// candidates/, and returns the ids it removed. A candidate the run already
+// deleted is skipped, so clearing after a run that cleared its own backlog
+// removes nothing.
+//
+// It is called only once verify has passed, and it makes no model call: which
+// candidates are done is already settled by the verified report, and deleting
+// them is filing, not judgement. The run's own `rm` grant is not enough on its
+// own — the provider can refuse a deletion the grant permits, or the model can
+// spell the command so the grant does not match — and a candidate left staged
+// after it was ruled on is ruled on again by the next run.
+//
+// Only ids in before are removed. Those are filenames read straight out of
+// candidates/, so an id in the report naming a path anywhere else — `../notes/x`
+// — matches nothing and is never joined into a path to delete.
+func clearResolved(store *memory.Store, before snapshot, r Report) ([]string, error) {
+	resolved := make(map[string]bool, len(r.CandidatesResolved))
+	for _, id := range r.CandidatesResolved {
+		resolved[strings.TrimSuffix(id, memory.NoteExt)] = true
+	}
+	var cleared []string
+	for _, id := range sortedKeys(before.candidates) {
+		if !resolved[id] {
+			continue
+		}
+		err := os.Remove(filepath.Join(store.CandidatesPath(), id+memory.NoteExt))
+		switch {
+		case errors.Is(err, fs.ErrNotExist):
+		case err != nil:
+			return cleared, fmt.Errorf("curator: clear resolved candidate %q: %w", id, err)
+		default:
+			cleared = append(cleared, id)
+		}
+	}
+	return cleared, nil
 }
 
 // touchedProblems is why a note reported touched does not hold up: it has to

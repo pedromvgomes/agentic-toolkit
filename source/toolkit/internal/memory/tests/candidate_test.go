@@ -2,6 +2,7 @@ package tests
 
 import (
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -174,5 +175,64 @@ func TestAnAbsentCandidatesDirectoryIsAnEmptyBacklog(t *testing.T) {
 	got, errs := s.LoadCandidates()
 	if len(errs) > 0 || len(got) != 0 {
 		t.Fatalf("LoadCandidates = %d candidates, %v; want an empty backlog", len(got), errs)
+	}
+}
+
+// An unquoted colon inside `about:` is invalid YAML, so the candidate is
+// dropped from the backlog; lint has to name it or the finding vanishes.
+func TestLintCandidatesNamesAnUnreadableCandidateAndItsError(t *testing.T) {
+	s := project(t, nil)
+	writeCandidate(t, s, "20260905-good", candidate)
+	bad := writeCandidate(t, s, "20260905-colon",
+		"---\nabout: the flag is set: it is ignored\nsaw:\n  - x.go\n---\n\nevidence\n")
+
+	issues := s.LintCandidates()
+	if len(issues) != 1 {
+		t.Fatalf("issues = %+v, want exactly the unreadable candidate", issues)
+	}
+	if issues[0].File != bad {
+		t.Errorf("File = %q, want %q", issues[0].File, bad)
+	}
+	if !strings.Contains(issues[0].Message, "unreadable candidate") || !strings.Contains(issues[0].Message, "frontmatter") {
+		t.Errorf("Message = %q, want it to say the candidate is unreadable and carry the YAML error", issues[0].Message)
+	}
+}
+
+func TestLintCandidatesReportsEveryUnreadableCandidate(t *testing.T) {
+	s := project(t, nil)
+	writeCandidate(t, s, "20260905-a", "no frontmatter at all\n")
+	writeCandidate(t, s, "20260905-b", "---\nabout: a\ntarget: n\n---\n\nbody\n")
+
+	if issues := s.LintCandidates(); len(issues) != 2 {
+		t.Fatalf("issues = %+v, want one per unreadable candidate", issues)
+	}
+}
+
+func TestLintCandidatesIsCleanForReadableCandidatesAndAnEmptyBacklog(t *testing.T) {
+	s := project(t, nil)
+	if issues := s.LintCandidates(); len(issues) != 0 {
+		t.Errorf("empty backlog reported issues: %+v", issues)
+	}
+
+	writeCandidate(t, s, "20260905-good", candidate)
+	if issues := s.LintCandidates(); len(issues) != 0 {
+		t.Errorf("readable candidate reported issues: %+v", issues)
+	}
+}
+
+// The curator runs Lint on its own work and can only delete candidates, so an
+// unreadable candidate reported by Lint would push it to delete the file.
+func TestLintSaysNothingAboutAnUnreadableCandidate(t *testing.T) {
+	s := stampedStore(t)
+	notes, parseErrs := s.LoadNotes()
+	if _, err := s.WriteIndex(notes); err != nil {
+		t.Fatalf("write index: %v", err)
+	}
+	before := s.Lint(notes, parseErrs)
+
+	writeCandidate(t, s, "20260905-colon", "---\nabout: set: ignored\n---\n\nevidence\n")
+
+	if after := s.Lint(notes, parseErrs); !reflect.DeepEqual(after, before) {
+		t.Errorf("Lint changed with an unreadable candidate present:\nbefore %+v\nafter  %+v", before, after)
 	}
 }

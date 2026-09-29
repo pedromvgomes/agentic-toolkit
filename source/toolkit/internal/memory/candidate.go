@@ -98,11 +98,25 @@ func ParseCandidate(file string, raw []byte) (*Candidate, error) {
 	return &c, nil
 }
 
+// UnreadableCandidateError is a candidate file that could not be read or
+// parsed. It carries the file separately so a caller can attribute the failure
+// without picking the path back out of the message, which stays exactly the
+// wrapped error's.
+type UnreadableCandidateError struct {
+	File string
+	Err  error
+}
+
+func (e *UnreadableCandidateError) Error() string { return e.Err.Error() }
+
+func (e *UnreadableCandidateError) Unwrap() error { return e.Err }
+
 // LoadCandidates parses every *.md under candidates/, sorted by filename.
 //
 // Parse failures are collected rather than returned as one error, for the
 // reason LoadNotes collects them: one malformed candidate must not hide the
-// rest of the backlog from a curator.
+// rest of the backlog from a curator. Each failure is an
+// *UnreadableCandidateError naming its file.
 func (s *Store) LoadCandidates() ([]*Candidate, []error) {
 	entries, err := os.ReadDir(s.CandidatesPath())
 	if err != nil {
@@ -123,12 +137,12 @@ func (s *Store) LoadCandidates() ([]*Candidate, []error) {
 		file := filepath.Join(s.CandidatesPath(), e.Name())
 		raw, err := os.ReadFile(file) // #nosec G304 -- reads candidates from the store the invoker pointed at
 		if err != nil {
-			errs = append(errs, fmt.Errorf("read %s: %w", file, err))
+			errs = append(errs, &UnreadableCandidateError{File: file, Err: fmt.Errorf("read %s: %w", file, err)})
 			continue
 		}
 		c, err := ParseCandidate(file, raw)
 		if err != nil {
-			errs = append(errs, err)
+			errs = append(errs, &UnreadableCandidateError{File: file, Err: err})
 			continue
 		}
 		candidates = append(candidates, c)

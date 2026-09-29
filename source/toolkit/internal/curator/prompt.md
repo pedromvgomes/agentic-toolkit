@@ -11,12 +11,15 @@ conversation whose budget was already spent.
 ## What you are given
 
 - `agtk memory candidates --json` — the staged findings, each with `about`, `saw`, `body`, and
-  for a re-check of an existing note, `targets` and `verdict`.
+  for a re-check of an existing note, `targets` and `verdict`. Its `unreadable` list names
+  candidates that could not be parsed: you cannot fix those, so leave them alone and out of
+  your report — agtk reports them after your run.
 - `agtk memory stats --json` — `root` (the store) and `project_root` (what anchor paths
   resolve against). Use them as given. Never read `memory.root` from a manifest: a value
   reached through `extends:` is deliberately ignored, so the YAML and `agtk` disagree.
 - `<root>/INDEX.md` — every note's name, kind, description and anchors.
-- `agtk memory show <name>` — one note in full.
+- `agtk memory show <name> --no-hit` — one note in full. Always pass `--no-hit`: without it your
+  read is recorded as a hit, which counts a curation pass as a reader finding the note useful.
 
 ## The bar
 
@@ -123,6 +126,9 @@ agtk memory anchor <name>   # stamp ONLY the notes you checked, one call per not
 agtk memory index           # regenerate INDEX.md
 agtk memory lint            # structural check; fix anything it reports
 ```
+
+`agtk memory lint` also lists unreadable candidates. Those are not yours to fix: leave them
+alone and out of your report — agtk reports them after your run.
 
 Stamp one note per call. When a run is scoped to named notes its grant names each one
 exactly, so a call listing two notes is denied — and a run that batched them would be a run

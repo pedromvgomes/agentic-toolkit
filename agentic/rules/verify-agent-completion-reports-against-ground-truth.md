@@ -23,7 +23,9 @@ run, snapshot after, then check claim-to-disk (everything reported happened) and
 
 Good: `verify` in `curator.go`/`verify.go` diffs `snapshot` taken before and after the child
 runs, and fails if a note changed on disk with no matching entry in `Report.NotesTouched`, *and*
-fails if a reported candidate is still sitting in `candidates/`.
+fails if a backlog run leaves a candidate in `candidates/` that the report does not resolve. A
+candidate the report resolves and the run left staged is not a failure: `clearResolved` removes
+it once `verify` has passed.
 
 Bad: only checking that every name in the report resolves to something true (e.g. a "touched"
 note parses and lints clean) — a run that wrote three notes and reported one would pass, because

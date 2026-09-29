@@ -453,7 +453,9 @@ func newMemoryLintCmd(env *Env) *cobra.Command {
 		Long: "Checks that notes parse, that names are kebab-case and match their filenames,\n" +
 			"that kind and confidence are in range, that every note has a description, a\n" +
 			"body and at least one stamped anchor, and that INDEX.md matches what `agtk\n" +
-			"memory index` would generate.\n" +
+			"memory index` would generate. It also reports each candidate in candidates/\n" +
+			"that cannot be parsed, with the file and the error, since such a candidate\n" +
+			"is otherwise dropped from the backlog in silence.\n" +
 			"\n" +
 			"It says nothing about whether a note is still TRUE — that is `audit`. Failing\n" +
 			"CI on staleness would turn every rename in an unrelated PR red, and the path\n" +
@@ -465,6 +467,9 @@ func newMemoryLintCmd(env *Env) *cobra.Command {
 				return err
 			}
 			issues := store.Lint(notes, parseErrs)
+			// Unreadable candidates are reported here and not by Lint, which
+			// the curator runs on its own work and cannot act on them.
+			issues = append(issues, store.LintCandidates()...)
 
 			if jsonOut {
 				if err := writeJSON(env, memoryLintJSON{
@@ -787,6 +792,9 @@ func newMemoryCurateCmd(env *Env) *cobra.Command {
 			"runs under has no writing tools at all, so this is a property of the run\n" +
 			"rather than a promise the model keeps.\n" +
 			"\n" +
+			"A candidate whose frontmatter does not parse is listed at the end and fails\n" +
+			"the run, since the curator cannot repair it; `agtk memory lint` names the error.\n" +
+			"\n" +
 			"Names its provider through `memory.agent` in the entry manifest. There is no\n" +
 			"default: this is the only memory command that costs anything.",
 		Args: cobra.ArbitraryArgs,
@@ -929,24 +937,49 @@ func reportCurateCheck(env *Env, jsonOut bool, ready curator.Ready) error {
 // then contradicted, so it is printed — or carried in the JSON report — before
 // the error that names the mismatch is returned. Every other error returns
 // before Text is ever set, so its emptiness is what tells the two apart.
+//
+// The candidates agtk cleared after verification follow the curator's report,
+// one per line, or ride in the JSON report's `cleared` list. They are printed
+// because agtk, not the run, removed them: the curator's account does not
+// mention them, and a file vanishing from candidates/ with nothing on record
+// saying who took it reads as a lost finding.
+//
+// The candidates that did not parse come last, one per line, or ride in the
+// JSON report's `unreadable` list. The curator cannot repair one, so each is
+// a finding waiting on a person, and curator.Run fails the run while any
+// remain — the error it returns is what makes the command exit non-zero.
 func reportCurateResult(env *Env, jsonOut, stale bool, res curator.Result, runErr error) error {
 	if runErr != nil && res.Text == "" {
 		return runErr
 	}
 
 	if jsonOut {
-		if err := writeJSON(env, memoryCurateJSON{
-			Version: jsonVersion,
-			Stale:   stale,
-			Failed:  runErr != nil || res.IsError,
-			Model:   res.Model,
-			CostUSD: res.CostUSD,
-			Report:  res.Text,
+		cleared := res.Cleared
+		if cleared == nil {
+			cleared = []string{}
+		}
+		if err := writeJSON(env, memoryCurateResultJSON{
+			memoryCurateJSON: memoryCurateJSON{
+				Version: jsonVersion,
+				Stale:   stale,
+				Failed:  runErr != nil || res.IsError,
+				Model:   res.Model,
+				CostUSD: res.CostUSD,
+				Report:  res.Text,
+			},
+			Cleared:    cleared,
+			Unreadable: unreadableJSONEntries(res.Unreadable),
 		}); err != nil {
 			return err
 		}
 	} else {
 		fmt.Fprintln(env.Stdout, res.Text)
+		for _, id := range res.Cleared {
+			fmt.Fprintf(env.Stdout, "cleared: %s (resolved, left in candidates/ by the run)\n", id)
+		}
+		for _, e := range res.Unreadable {
+			fmt.Fprintf(env.Stdout, "unreadable: %v\n", e)
+		}
 	}
 	if runErr != nil {
 		return runErr
@@ -955,6 +988,18 @@ func reportCurateResult(env *Env, jsonOut, stale bool, res curator.Result, runEr
 		return errMemoryCurate
 	}
 	return nil
+}
+
+// memoryCurateResultJSON is `memory curate --json`'s output: memoryCurateJSON's
+// fields, flattened into the same object, the candidates agtk cleared and the
+// candidates that did not parse. Cleared is never null, so a script iterates it
+// without a nil check, and an empty list is the ordinary case of a run that
+// deleted what it resolved. Unreadable is never null for the same reason, and
+// its entries read exactly as `memory candidates --json` reports them.
+type memoryCurateResultJSON struct {
+	memoryCurateJSON
+	Cleared    []string `json:"cleared"`
+	Unreadable []string `json:"unreadable"`
 }
 
 // memoryAgent reads `memory.agent` from the entry manifest, the same way and

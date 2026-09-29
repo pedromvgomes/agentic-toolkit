@@ -17,6 +17,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strconv"
@@ -211,6 +212,14 @@ func (o Options) scope() grantScope {
 	return grantScope{dryRun: o.DryRun, notes: o.Notes}
 }
 
+// backlog reports whether this run is the backlog job: unscoped, unlimited,
+// not the stale job and not a dry run. It is the one job pointed at every
+// staged candidate, so it is the one verify holds to leaving none staged
+// unreported — every other shape may leave a candidate staged by design.
+func (o Options) backlog() bool {
+	return len(o.Notes) == 0 && o.Limit <= 0 && !o.Stale && !o.DryRun
+}
+
 // Result is what a run produced.
 type Result struct {
 	// Text is the curator's report.
@@ -225,6 +234,18 @@ type Result struct {
 	// Report is the run's own account of what it resolved, parsed from the
 	// completion report every run is required to end on. See completionSchema.
 	Report Report
+	// Cleared names, by id, every candidate agtk removed after verification
+	// because the report resolved it and the run left it in candidates/.
+	// Empty when the run deleted every candidate it resolved, and always empty
+	// for a dry run or a run that failed verification, neither of which clears
+	// anything.
+	Cleared []string
+	// Unreadable is every candidate in candidates/ that did not parse once the
+	// run ended, each an *memory.UnreadableCandidateError naming its file. The
+	// curator cannot repair one — its grant only deletes candidates — so each
+	// is a finding still waiting on a person, and Run returns an error beside
+	// the Result whenever this is non-empty. Clearing never removes one.
+	Unreadable []error
 }
 
 // Report is the curator's completion report: the run's own account of which
@@ -495,7 +516,14 @@ const permissionMode = ""
 // against a snapshot taken before the child started, and a report that does
 // not account for the difference in both directions is an error. That error
 // comes back beside the populated Result, whose Text is then the curator's own
-// account of the run the store contradicts.
+// account of the run the store contradicts. A report that holds up has every
+// candidate it resolved and the run left staged removed, named in
+// Result.Cleared.
+//
+// Every run, dry or not, ends by reading candidates/ again: a candidate that
+// does not parse is named in Result.Unreadable and fails the run, since
+// nothing the curator can do repairs it and a run that passed over it in
+// silence would read as a backlog handled.
 func Run(ctx context.Context, opts Options) (Result, error) {
 	provider, err := newProvider(opts.Provider)
 	if err != nil {
@@ -581,13 +609,74 @@ func Run(ctx context.Context, opts Options) (Result, error) {
 	}
 	// A report is the run's account of itself, and a run that stopped part-way
 	// or skipped a step reports as confidently as one that finished. Only the
-	// store says which it was.
+	// store says which it was. Clearing follows only a report that held up, so
+	// a run the store contradicts leaves every candidate where it was.
+	//
+	// Unreadable candidates are read ahead of verification so they reach the
+	// caller whichever way it goes, are not held against a backlog run as
+	// leftovers it failed to rule on, and are withheld from clearing: a report
+	// naming one as resolved cannot have ruled on a finding nobody could parse.
+	_, result.Unreadable = store.LoadCandidates()
 	if !opts.DryRun {
-		if err := verify(store, before, result.Report); err != nil {
+		if err := verify(store, before, result.Report, opts.backlog(), result.Unreadable); err != nil {
+			return result, err
+		}
+		result.Cleared, err = clearResolved(store, withoutUnreadable(before, result.Unreadable), result.Report)
+		if err != nil {
 			return result, err
 		}
 	}
+	if len(result.Unreadable) > 0 {
+		return result, unreadableErr(result.Unreadable)
+	}
 	return result, nil
+}
+
+// withoutUnreadable is s with every unreadable candidate's id removed from its
+// candidates, so nothing handed it can reach those files.
+func withoutUnreadable(s snapshot, unreadable []error) snapshot {
+	if len(unreadable) == 0 {
+		return s
+	}
+	out := snapshot{notes: s.notes, candidates: make(map[string]bool, len(s.candidates))}
+	for id := range s.candidates {
+		out.candidates[id] = true
+	}
+	for _, err := range unreadable {
+		var bad *memory.UnreadableCandidateError
+		if errors.As(err, &bad) {
+			delete(out.candidates, strings.TrimSuffix(filepath.Base(bad.File), memory.NoteExt))
+		}
+	}
+	return out
+}
+
+// unreadableErr is the error a run that ends with unreadable candidates
+// returns. It names each file but not its parse error: the caller prints
+// Result.Unreadable in full, and `agtk memory lint` reports the same errors.
+func unreadableErr(unreadable []error) error {
+	names := make([]string, 0, len(unreadable))
+	for _, err := range unreadable {
+		var bad *memory.UnreadableCandidateError
+		if errors.As(err, &bad) {
+			names = append(names, filepath.Base(bad.File))
+			continue
+		}
+		names = append(names, err.Error())
+	}
+	return fmt.Errorf(
+		"curator: candidates/ holds %s the curator cannot repair (%s); "+
+			"fix the frontmatter `agtk memory lint` reports for each, then re-run curate",
+		countCandidates(len(unreadable), "unreadable"), strings.Join(names, ", "))
+}
+
+// countCandidates spells n candidates, described by adj, with the noun
+// agreeing with the count.
+func countCandidates(n int, adj string) string {
+	if n == 1 {
+		return "1 " + adj + " candidate"
+	}
+	return strconv.Itoa(n) + " " + adj + " candidates"
 }
 
 // task is the instruction the run itself receives. It says which of the two
@@ -622,13 +711,17 @@ func task(opts Options, store *memory.Store) string {
 			" memory audit --json` for the list, then re-check each stale note's claim against " +
 			"the code its pointers name and update, re-stamp or reject it. "
 	case opts.Limit > 0:
-		ids := limitedCandidateIDs(store, opts.Limit)
+		ids, unreadable := limitedCandidateIDs(store, opts.Limit)
 		if len(ids) == 0 {
-			job = "The backlog has nothing staged. There is nothing to curate this run. "
-			break
+			job = "The backlog has no candidate you can curate. There is nothing to curate this run. "
+		} else {
+			job = "Curate exactly these " + strconv.Itoa(len(ids)) + " staged candidates, the oldest in the " +
+				"backlog: " + strings.Join(ids, ", ") + ". Leave every other candidate alone. "
 		}
-		job = "Curate exactly these " + strconv.Itoa(len(ids)) + " staged candidates, the oldest in the " +
-			"backlog: " + strings.Join(ids, ", ") + ". Leave every other candidate alone. "
+		if len(unreadable) > 0 {
+			job += "The backlog also holds " + countCandidates(len(unreadable), "unreadable") +
+				", not counted among these; leave them alone, since agtk reports them after your run. "
+		}
 	default:
 		job = "Curate the memory store's staged candidates: run `" + agtk +
 			" memory candidates --json` for the backlog. "
@@ -655,20 +748,20 @@ func task(opts Options, store *memory.Store) string {
 
 // limitedCandidateIDs names the oldest at most n staged candidates by id,
 // ascending by filename — the store's candidate filenames are date-prefixed,
-// so filename order is age order. A candidate that fails to parse is dropped
-// rather than named: LoadCandidates already excludes it, the same as it does
-// for every other reader of the backlog. Fewer than n staged candidates names
-// however many exist; it never pads and never errors.
-func limitedCandidateIDs(store *memory.Store, n int) []string {
-	candidates, _ := store.LoadCandidates()
+// so filename order is age order. A candidate that fails to parse is never
+// named and never counts towards n, since the curator cannot rule on it; it is
+// returned in unreadable instead, as LoadCandidates reported it. Fewer than n
+// staged candidates names however many exist; it never pads.
+func limitedCandidateIDs(store *memory.Store, n int) (ids []string, unreadable []error) {
+	candidates, unreadable := store.LoadCandidates()
 	if n > len(candidates) { // [lydite:exclude_from_mutation][n == len(candidates) reassigns n to the value it already holds, so > and >= clamp identically; no observable output differs]
 		n = len(candidates)
 	}
-	ids := make([]string, 0, n)
+	ids = make([]string, 0, n)
 	for _, c := range candidates[:n] {
 		ids = append(ids, c.Stem())
 	}
-	return ids
+	return ids, unreadable
 }
 
 // newProvider resolves `memory.agent` to a provider, naming the setting in its
