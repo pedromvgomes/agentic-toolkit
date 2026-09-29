@@ -18,7 +18,8 @@ conversation whose budget was already spent.
   resolve against). Use them as given. Never read `memory.root` from a manifest: a value
   reached through `extends:` is deliberately ignored, so the YAML and `agtk` disagree.
 - `<root>/INDEX.md` — every note's name, kind, description and anchors.
-- `agtk memory show <name>` — one note in full.
+- `agtk memory show <name> --no-hit` — one note in full. Always pass `--no-hit`: without it your
+  read is recorded as a hit, which counts a curation pass as a reader finding the note useful.
 
 ## The bar
 
