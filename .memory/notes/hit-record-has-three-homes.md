@@ -1,10 +1,17 @@
 ---
-about: "The hit record lives in three places at once, and stats sums all three"
-saw:
-  - source/toolkit/internal/memory/hits.go
-  - source/toolkit/internal/memory/stats.go
-  - source/toolkit/internal/curator/curator.go
-  - source/toolkit/internal/cli/memory.go
+name: hit-record-has-three-homes
+kind: gotcha
+description: The hit record lives in the local log, committed shards and hits.json at once, and stats sums all three.
+anchors:
+  - path: source/toolkit/internal/memory/hits.go
+    blob: 55841d9cd15f
+  - path: source/toolkit/internal/memory/stats.go
+    blob: e3c5800ed85e
+  - path: source/toolkit/internal/curator/curator.go
+    blob: fef6b70ee3ee
+  - path: source/toolkit/internal/cli/memory.go
+    blob: ab6ee22918af
+confidence: verified
 ---
 
 A note that says the hit log is local to one checkout describes only one of the three places a
@@ -25,8 +32,7 @@ hit counts only for a note that still exists.
 
 The hit-rate line says "this checkout only" only while no shard or compacted file exists. Once
 either is read, that line reports the union, and reads still in the log are shown on a separate
-`unfolded:` line that keeps the wording for them alone (`cli/memory.go:780-795`). `notes:`, `candidates:` and `stale:` lines are parsed by prefix by the
-session-start hook and must not change.
+`unfolded:` line that keeps the wording for them alone (`cli/memory.go:780-795`). `notes:`,
+`candidates:` and `stale:` lines are parsed by prefix by the session-start hook and must not change.
 
-Established by reading `memory/hits.go`, `memory/stats.go` and `curator/curator.go`, and by
-`agtk memory stats` on a store with an unfolded log.
+See also [[memory-hits-are-recorded-only-by-show]] and [[hit-fold-and-compaction-ordering]].

@@ -1,9 +1,15 @@
 ---
-about: "Tests here run as root, so permission bits cannot force an I/O failure; use RLIMIT_FSIZE or a package-level seam"
-saw:
-  - source/toolkit/internal/memory/tests/hits_write_failure_linux_test.go
-  - source/toolkit/internal/memory/hits.go
-  - source/toolkit/internal/memory/hits_compact_remove_test.go
+name: failure-injection-as-root-needs-rlimit-or-a-seam
+kind: gotcha
+description: Tests run as root, so permission bits cannot force an I/O failure; use RLIMIT_FSIZE or a package-level seam.
+anchors:
+  - path: source/toolkit/internal/memory/tests/hits_write_failure_linux_test.go
+    blob: c26812467695
+  - path: source/toolkit/internal/memory/hits.go
+    blob: 55841d9cd15f
+  - path: source/toolkit/internal/memory/hits_compact_remove_test.go
+    blob: beadd357c45a
+confidence: verified
 ---
 
 A read-only directory or a `chmod 0` file does not make a write or a remove fail in the cloud
@@ -20,6 +26,3 @@ container this repo is developed in, because the test process is root. Two seams
 
 The `_linux_test.go` suffix restricts the rlimit file to Linux by filename, and the file reads
 `/proc/self/fd` to prove no descriptor leaks after a failed write.
-
-Established by reading both tests and `id -u` in the container (0). The permission-bit route was
-ruled out because root bypasses it; the two seams above are what the tests use instead.

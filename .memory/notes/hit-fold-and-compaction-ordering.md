@@ -1,8 +1,13 @@
 ---
-about: "Fold and compaction each order their two writes so a failure never loses a read, and each has one named window"
-saw:
-  - source/toolkit/internal/memory/hits.go
-  - source/toolkit/internal/memory/hits_compact_remove_test.go
+name: hit-fold-and-compaction-ordering
+kind: invariant
+description: Hit fold and compaction each write the durable copy before the destructive step, so a failure never loses a read, and each has one named window.
+anchors:
+  - path: source/toolkit/internal/memory/hits.go
+    blob: 55841d9cd15f
+  - path: source/toolkit/internal/memory/hits_compact_remove_test.go
+    blob: beadd357c45a
+confidence: verified
 ---
 
 Both operations write the durable copy first and the destructive step second.
