@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -634,6 +635,334 @@ func TestMemoryShowJSON(t *testing.T) {
 	}
 	if !strings.Contains(out.Body, "graph.go:88") {
 		t.Errorf("body missing its pointer: %q", out.Body)
+	}
+}
+
+// searchProject is a stamped store holding both fixture notes.
+func searchProject(t *testing.T) string {
+	t.Helper()
+	work := memoryProject(t, "stacks: []\n")
+	writeFile(t, filepath.Join(work, ".memory/notes/pins-shas.md"), memoryNote)
+	writeFile(t, filepath.Join(work, ".memory/notes/never-read.md"), secondMemoryNote)
+	if _, _, err := runCLI(t, work, "memory", "anchor", "--all"); err != nil {
+		t.Fatalf("memory anchor: %v", err)
+	}
+	if _, _, err := runCLI(t, work, "memory", "index"); err != nil {
+		t.Fatalf("memory index: %v", err)
+	}
+	return work
+}
+
+type searchResult struct {
+	Name        string   `json:"name"`
+	Kind        string   `json:"kind"`
+	Confidence  string   `json:"confidence"`
+	Description string   `json:"description"`
+	Anchors     []string `json:"anchors"`
+	Score       int      `json:"score"`
+	Stale       bool     `json:"stale"`
+	Show        string   `json:"show"`
+}
+
+func searchJSON(t *testing.T, work string, args ...string) []searchResult {
+	t.Helper()
+	stdout, stderr, err := runCLI(t, work, append([]string{"memory", "search", "--json"}, args...)...)
+	if err != nil {
+		t.Fatalf("memory search --json %v: %v\n%s", args, err, stderr)
+	}
+	var out struct {
+		Version int            `json:"version"`
+		Results []searchResult `json:"results"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &out); err != nil {
+		t.Fatalf("search json: %v (%s)", err, stdout)
+	}
+	if out.Version != 1 {
+		t.Errorf("version = %d, want 1", out.Version)
+	}
+	return out.Results
+}
+
+// TestMemorySearchRefusesAnEmptyQuery: with no file and no word there is
+// nothing to rank against, so the run fails rather than listing the store.
+func TestMemorySearchRefusesAnEmptyQuery(t *testing.T) {
+	work := searchProject(t)
+
+	stdout, _, err := runCLI(t, work, "memory", "search")
+	if err == nil {
+		t.Fatalf("an empty query succeeded and printed:\n%s", stdout)
+	}
+	if !strings.Contains(err.Error(), "file") || !strings.Contains(err.Error(), "word") {
+		t.Errorf("the refusal does not say what a query needs: %v", err)
+	}
+	if _, _, err := runCLI(t, work, "memory", "search", "--json"); err == nil {
+		t.Error("an empty query with --json succeeded")
+	}
+	if _, _, err := runCLI(t, work, "memory", "search", "--files", ","); err == nil {
+		t.Error("a query whose only file is blank succeeded")
+	}
+}
+
+// TestMemorySearchFileAnchorReturnsTheAnchoringNote: a note is found through
+// an anchor that covers the queried file, and the covering anchor is named.
+func TestMemorySearchFileAnchorReturnsTheAnchoringNote(t *testing.T) {
+	work := searchProject(t)
+
+	got := searchJSON(t, work, "--files", "internal/lockfile/types.go")
+	if len(got) != 1 || got[0].Name != "pins-shas" {
+		t.Fatalf("results = %+v, want only pins-shas", got)
+	}
+	if len(got[0].Anchors) != 1 || got[0].Anchors[0] != "internal/lockfile/*.go" {
+		t.Errorf("anchors = %v, want the glob that covers the file", got[0].Anchors)
+	}
+
+	stdout, _, err := runCLI(t, work, "memory", "search", "--files", "internal/lockfile/types.go")
+	if err != nil {
+		t.Fatalf("memory search: %v", err)
+	}
+	for _, want := range []string{
+		"pins-shas",
+		"kind: invariant",
+		"confidence: verified",
+		"Lock resolution pins commit SHAs",
+		"anchors: internal/lockfile/*.go",
+		"show: agtk memory show pins-shas",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("search output missing %q:\n%s", want, stdout)
+		}
+	}
+	if strings.Contains(stdout, "never-read") {
+		t.Errorf("search listed a note that does not anchor the file:\n%s", stdout)
+	}
+}
+
+// TestMemorySearchTakesFilesCommaSeparatedOrRepeated: both spellings name the
+// same query, and a path the shell resolved to absolute is taken as it is.
+func TestMemorySearchTakesFilesCommaSeparatedOrRepeated(t *testing.T) {
+	work := searchProject(t)
+	graph := "internal/resolver/graph.go"
+	types := "internal/lockfile/types.go"
+
+	comma := searchJSON(t, work, "--files", graph+","+types)
+	repeated := searchJSON(t, work, "--files", graph, "--files", types)
+	absolute := searchJSON(t, work, "--files", filepath.Join(work, graph)+","+"./"+types)
+	for name, got := range map[string][]searchResult{"comma": comma, "repeated": repeated, "absolute": absolute} {
+		if len(got) != 2 || got[0].Name != "pins-shas" || got[1].Name != "never-read" {
+			t.Errorf("%s: results = %+v, want pins-shas (covers both files) then never-read", name, got)
+		}
+	}
+}
+
+// TestMemorySearchWordsMatchNotes: positional arguments are the words.
+func TestMemorySearchWordsMatchNotes(t *testing.T) {
+	work := searchProject(t)
+
+	got := searchJSON(t, work, "nobody", "reached")
+	if len(got) != 1 || got[0].Name != "never-read" {
+		t.Fatalf("results = %+v, want never-read", got)
+	}
+	if len(got[0].Anchors) != 0 {
+		t.Errorf("anchors = %v, want none for a words-only match", got[0].Anchors)
+	}
+}
+
+// TestMemorySearchNoMatchIsAnEmptySuccess: a query that matches nothing is not
+// a failure, and its JSON is an empty list rather than null.
+func TestMemorySearchNoMatchIsAnEmptySuccess(t *testing.T) {
+	work := searchProject(t)
+
+	stdout, _, err := runCLI(t, work, "memory", "search", "zzzunmatched")
+	if err != nil {
+		t.Fatalf("memory search: %v", err)
+	}
+	if strings.TrimSpace(stdout) != "no matching notes" {
+		t.Errorf("stdout = %q, want the one-line no-match message", stdout)
+	}
+
+	jsonOut, _, err := runCLI(t, work, "memory", "search", "--json", "zzzunmatched")
+	if err != nil {
+		t.Fatalf("memory search --json: %v", err)
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(jsonOut), &raw); err != nil {
+		t.Fatalf("search json: %v (%s)", err, jsonOut)
+	}
+	if string(raw["results"]) != "[]" {
+		t.Errorf("results = %s, want an empty array", raw["results"])
+	}
+}
+
+// TestMemorySearchLimit: --limit caps the list, and a limit that admits
+// nothing is refused instead of silently falling back to the default.
+func TestMemorySearchLimit(t *testing.T) {
+	work := searchProject(t)
+
+	if got := searchJSON(t, work, "--files", "internal/resolver/graph.go"); len(got) != 2 {
+		t.Fatalf("default limit: results = %+v, want both notes", got)
+	}
+	if got := searchJSON(t, work, "--files", "internal/resolver/graph.go", "--limit", "1"); len(got) != 1 {
+		t.Errorf("--limit 1: results = %+v, want one", got)
+	}
+	for _, bad := range []string{"0", "-1"} {
+		_, _, err := runCLI(t, work, "memory", "search", "--files", "internal/resolver/graph.go", "--limit", bad)
+		if err == nil {
+			t.Errorf("--limit %s was accepted", bad)
+			continue
+		}
+		if !strings.Contains(err.Error(), "--limit") {
+			t.Errorf("--limit %s: the refusal does not name the flag: %v", bad, err)
+		}
+	}
+}
+
+// TestMemorySearchJSONShape: the fields an agent decides on, versioned like
+// the other memory commands, and nothing that a read records — no timestamps
+// and no hit counts.
+func TestMemorySearchJSONShape(t *testing.T) {
+	work := searchProject(t)
+	writeFile(t, filepath.Join(work, "internal/resolver/graph.go"), "package resolver // changed\n")
+
+	stdout, _, err := runCLI(t, work, "memory", "search", "--json", "--files", "internal/resolver/graph.go")
+	if err != nil {
+		t.Fatalf("memory search --json: %v", err)
+	}
+	var out struct {
+		Version int              `json:"version"`
+		Results []map[string]any `json:"results"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &out); err != nil {
+		t.Fatalf("search json: %v (%s)", err, stdout)
+	}
+	if out.Version != 1 || len(out.Results) != 2 {
+		t.Fatalf("output = %+v, want version 1 and two results", out)
+	}
+	wantKeys := []string{"anchors", "confidence", "description", "kind", "name", "score", "show", "stale"}
+	for _, r := range out.Results {
+		var keys []string
+		for k := range r {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		if strings.Join(keys, ",") != strings.Join(wantKeys, ",") {
+			t.Errorf("result keys = %v, want %v", keys, wantKeys)
+		}
+		if r["stale"] != true {
+			t.Errorf("%v: stale = %v, want true after the anchored file changed", r["name"], r["stale"])
+		}
+	}
+
+	text, _, err := runCLI(t, work, "memory", "search", "--files", "internal/resolver/graph.go")
+	if err != nil {
+		t.Fatalf("memory search: %v", err)
+	}
+	if !strings.Contains(text, "   stale") {
+		t.Errorf("text output does not label a stale note:\n%s", text)
+	}
+}
+
+// TestMemorySearchRefusesAPathOutsideTheProject: anchors never point outside
+// the project root, so such a path could only match nothing and reading it as
+// an empty result would hide the typo.
+func TestMemorySearchRefusesAPathOutsideTheProject(t *testing.T) {
+	work := searchProject(t)
+
+	for name, path := range map[string]string{
+		"climbing": "../outside.go",
+		"absolute": filepath.Join(t.TempDir(), "outside.go"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			stdout, _, err := runCLI(t, work, "memory", "search", "--files", path)
+			if err == nil {
+				t.Fatalf("a path outside the project succeeded and printed:\n%s", stdout)
+			}
+			if !strings.Contains(err.Error(), "outside the project root") {
+				t.Errorf("the refusal does not say why: %v", err)
+			}
+		})
+	}
+}
+
+// TestMemorySearchWritesNothing: a search is not a read, so it records no hit
+// and leaves every file under the store as it found it.
+func TestMemorySearchWritesNothing(t *testing.T) {
+	work := searchProject(t)
+	before := snapshotTree(t, filepath.Join(work, ".memory"))
+
+	if _, _, err := runCLI(t, work, "memory", "search", "--files", "internal/resolver/graph.go", "lock"); err != nil {
+		t.Fatalf("memory search: %v", err)
+	}
+	if _, _, err := runCLI(t, work, "memory", "search", "--json", "lock"); err != nil {
+		t.Fatalf("memory search --json: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(work, ".memory/.hits.jsonl")); err == nil {
+		t.Error("search recorded a hit")
+	}
+	after := snapshotTree(t, filepath.Join(work, ".memory"))
+	if len(after) != len(before) {
+		t.Errorf("store has %d files after a search, %d before", len(after), len(before))
+	}
+	for path, content := range before {
+		if after[path] != content {
+			t.Errorf("search changed %s", path)
+		}
+	}
+}
+
+// snapshotTree maps every file under root, by relative path, to its content.
+func snapshotTree(t *testing.T, root string) map[string]string {
+	t.Helper()
+	out := map[string]string{}
+	err := filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		rel, err := filepath.Rel(root, p)
+		if err != nil {
+			return err
+		}
+		out[rel] = readFile(t, p)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk %s: %v", root, err)
+	}
+	return out
+}
+
+// TestMemorySearchWarnsOnUnreadableNote: a note that cannot be read is named on
+// stderr and the search carries on over the rest.
+func TestMemorySearchWarnsOnUnreadableNote(t *testing.T) {
+	work := searchProject(t)
+	writeFile(t, filepath.Join(work, ".memory/notes/broken.md"), "not a note\n")
+
+	stdout, stderr, err := runCLI(t, work, "memory", "search", "--files", "internal/lockfile/types.go")
+	if err != nil {
+		t.Fatalf("memory search: %v", err)
+	}
+	if !strings.Contains(stderr, "broken.md") {
+		t.Errorf("search did not warn about the unreadable note: %q", stderr)
+	}
+	if !strings.Contains(stdout, "pins-shas") {
+		t.Errorf("search dropped the notes that did parse:\n%s", stdout)
+	}
+}
+
+// TestMemorySearchIsListedAndTheGuardStillHolds: `search` is a registered
+// subcommand, and the unknown-subcommand guard still refuses its neighbours.
+func TestMemorySearchIsListedAndTheGuardStillHolds(t *testing.T) {
+	work := searchProject(t)
+
+	stdout, _, err := runCLI(t, work, "memory")
+	if err != nil {
+		t.Fatalf("bare `memory` failed: %v", err)
+	}
+	if !strings.Contains(stdout, "search") {
+		t.Errorf("help does not list search:\n%s", stdout)
+	}
+	if _, _, err := runCLI(t, work, "memory", "no-such-subcommand"); err == nil {
+		t.Error("an unknown subcommand succeeded")
 	}
 }
 
