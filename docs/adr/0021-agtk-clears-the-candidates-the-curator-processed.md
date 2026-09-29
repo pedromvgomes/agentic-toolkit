@@ -39,11 +39,16 @@ the report names it: a file that cannot be read has no id the run can be trusted
 `agtk memory lint` reports each one with its file and
 the parse error, because such a candidate is otherwise dropped from the backlog in silence.
 
-**`Store.Lint` does not report them.** `verify` calls `Store.Lint` and the curator's prompt tells
-it to run `agtk memory lint` on its own work and fix what it reports. The curator can only delete
-candidates; it has no `Edit` grant on `candidates/`. An unreadable-candidate issue in that lint
-would push it to delete the file, which either fails verification as an unreported removal or makes
-the finding vanish. The check lives in `Store.LintCandidates`, which only the `lint` command calls.
+**`Store.Lint` does not report them.** The curator can only delete candidates; it has no `Edit`
+grant on `candidates/`. `verify` calls `Store.Lint`, and an unreadable-candidate issue there would
+fail a run over a file the curator cannot repair. The check lives in `Store.LintCandidates`, which
+only the `lint` command calls.
+
+**The prompt tells the curator those lines are not its to fix.** The curator's grant includes
+`agtk memory lint` and its prompt says to fix what that reports, so its own lint run lists the
+unreadable candidates the `lint` command appends. The prompt states at the lint step that they are
+not the curator's to fix and stay out of its report. Deleting one would either fail verification as
+an unreported removal or make the finding vanish.
 
 ## Considered options
 

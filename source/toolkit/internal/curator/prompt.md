@@ -127,6 +127,9 @@ agtk memory index           # regenerate INDEX.md
 agtk memory lint            # structural check; fix anything it reports
 ```
 
+`agtk memory lint` also lists unreadable candidates. Those are not yours to fix: leave them
+alone and out of your report — agtk reports them after your run.
+
 Stamp one note per call. When a run is scoped to named notes its grant names each one
 exactly, so a call listing two notes is denied — and a run that batched them would be a run
 whose grant could not tell the notes apart.

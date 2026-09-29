@@ -195,6 +195,33 @@ func TestThePromptTellsTheCuratorToLeaveUnreadableCandidatesAlone(t *testing.T) 
 	}
 }
 
+// The lint command lists unreadable candidates, and the prompt sends the
+// curator to it with "fix anything it reports". The prompt says at that step
+// that those lines are not the curator's to fix: a curator that obeyed the
+// blanket instruction would delete the file, which loses the finding.
+func TestThePromptTellsTheCuratorItsLintRunsUnreadableCandidatesAreNotItsToFix(t *testing.T) {
+	fake, _, err := run(t, curatedEnvelope, curator.Options{})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	prompt := fake.Stdin(t)
+	step := strings.Index(prompt, "agtk memory lint            #")
+	if step < 0 {
+		t.Fatal("the prompt the run received has no lint step")
+	}
+	after := strings.Join(strings.Fields(prompt[step:]), " ")
+	for _, want := range []string{
+		"`agtk memory lint` also lists unreadable candidates",
+		"not yours to fix",
+		"leave them alone and out of your report",
+		"agtk reports them after your run",
+	} {
+		if !strings.Contains(after, want) {
+			t.Errorf("the prompt does not say %q after the lint step", want)
+		}
+	}
+}
+
 // A limited run counts only candidates that parse towards its limit, and tells
 // the curator the unreadable ones are there and not its to touch.
 func TestALimitedRunSkipsAndNamesTheUnreadableCount(t *testing.T) {
