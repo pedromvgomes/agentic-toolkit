@@ -162,7 +162,17 @@ _Avoid_: status, result
 
 **Hit**:
 One read of a **Note** through `agtk memory show`. The numerator that says whether the
-**Memory store**'s cost is being repaid.
+**Memory store**'s cost is being repaid. Recorded in a log local to one checkout until a fold moves
+it into a **Hit shard**.
+
+**Hit shard**:
+A committed record of the **Hit**s one fold moved out of a checkout's local log: per **Note**, how
+many reads and the first and last of them. Written by `agtk memory hits fold`, which never commits
+it, so it travels with the branch that committed it. A **Curate** run compacts the shards into one
+committed file, and the hit rate and the **Cold** list are computed over those together with the
+reads not yet folded. Telemetry, not content: it is never a **Note**, and a lost one costs a count,
+not a claim.
+_Avoid_: hit file, hit log, counter, hit count (for the committed thing)
 
 **Memory store**:
 The directory holding the **Index**, `notes/` and `candidates/`, located by `memory.root` in the
@@ -208,9 +218,9 @@ it asks instead what a competent reader would get wrong. A **Seed** never author
 _Avoid_: bootstrap, backfill, import
 
 **Cold**:
-A **Note** with no recorded **Hit**. The prune signal, once there have been at least as many
-**Hit**s as there are **Note**s: a low hit rate says the store is not being repaid, and the
-cold list says which **Note**s to drop. Below that threshold the list is non-empty by
+A **Note** with no recorded **Hit** in the committed record or the local log. The prune signal,
+once there have been at least as many **Hit**s as there are **Note**s: a low hit rate says the
+store is not being repaid, and the cold list says which **Note**s to drop. Below that threshold the list is non-empty by
 arithmetic and says nothing about the notes in it.
 _Avoid_: unused, dead, orphaned
 
@@ -720,10 +730,13 @@ for that, and qualify the other two.
 **quantification** over a file set — *every*, *only*, *no* — because a member that does not
 exist yet is what falsifies such a claim. See `docs/adr/0005-glob-anchors-mark-quantified-claims.md`.
 
-**"Hit rate"** — reads as a property of the **Memory store**, but the **Hit** log is local to
-one checkout and never committed, so a fresh clone reports zero. Resolution: it is a fact about
-one working copy's usage, and any claim that the store is or is not repaying its cost has to
-say whose. It carries a second scope that reads the same way: *n* **Hit**s can warm at most *n*
+**"Hit rate"** — reads as a property of the **Memory store**, and once **Hit shard**s are
+committed it is: distinct **Note**s hit over **Note**s, computed across the committed record and
+the reads not yet folded, so a fresh clone reports what the branch carries. Resolution: until a
+shard or compacted file exists, every **Hit** is one checkout's alone and the rate is a fact about
+that working copy, so any claim that the store is or is not repaying its cost has to say which
+record it rests on. Reads that were never folded, or were lost with a container, are absent from it.
+It carries a second scope that reads the same way: *n* **Hit**s can warm at most *n*
 **Note**s, so a rate below one read per note is bounded by how much reading has happened rather
 than by how good the notes are, and **Cold** is empty of information over the same range. Both
 scopes have to hold before a rate is evidence for pruning.
