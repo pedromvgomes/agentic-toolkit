@@ -19,6 +19,5 @@ components:
 excludes:
   - "install.sh"
 
-# The hook script of the attribution probe, a fixture for manual experiments that
-# no suite runs.
-  - "docs/spikes/skill-attribution-probe/hook.sh"
+# Spike probes are scripts for manual experiments that no suite runs.
+  - "docs/spikes/**"
