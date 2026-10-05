@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "notes": {
+    "code-review-app-credential-is-machine-local": {
+      "count": 1,
+      "first": "2026-10-05T07:40:28.606280091Z",
+      "last": "2026-10-05T07:40:28.606280091Z"
+    },
+    "credential-guards-are-hand-maintained-lists": {
+      "count": 1,
+      "first": "2026-10-05T07:40:28.554252604Z",
+      "last": "2026-10-05T07:40:28.554252604Z"
+    },
+    "hook-commands-need-no-bash-grant": {
+      "count": 2,
+      "first": "2026-10-05T07:40:28.533524103Z",
+      "last": "2026-10-05T08:07:39.59087384Z"
+    },
+    "hook-fail-closed-is-never-rendered": {
+      "count": 2,
+      "first": "2026-10-05T07:40:28.487361101Z",
+      "last": "2026-10-05T08:07:39.567232458Z"
+    },
+    "hook-must-tolerate-an-older-agtk": {
+      "count": 2,
+      "first": "2026-10-05T07:40:28.508512125Z",
+      "last": "2026-10-05T08:07:39.610854183Z"
+    },
+    "new-memory-subcommand-touchpoints": {
+      "count": 1,
+      "first": "2026-10-05T07:40:28.653736686Z",
+      "last": "2026-10-05T07:40:28.653736686Z"
+    },
+    "nonzero-exit-needs-a-sentinel-in-execute": {
+      "count": 1,
+      "first": "2026-10-05T07:40:28.731779805Z",
+      "last": "2026-10-05T07:40:28.731779805Z"
+    },
+    "only-lock-resolves-refs": {
+      "count": 1,
+      "first": "2026-10-05T07:40:28.68208578Z",
+      "last": "2026-10-05T07:40:28.68208578Z"
+    },
+    "relay-dispatch-ref-is-hardcoded-main": {
+      "count": 1,
+      "first": "2026-10-05T07:40:28.625436936Z",
+      "last": "2026-10-05T07:40:28.625436936Z"
+    },
+    "settings-merge-is-shallow-last-wins": {
+      "count": 1,
+      "first": "2026-10-05T08:07:39.541885807Z",
+      "last": "2026-10-05T08:07:39.541885807Z"
+    },
+    "token-read-client-cannot-post-by-type": {
+      "count": 1,
+      "first": "2026-10-05T07:40:28.584781225Z",
+      "last": "2026-10-05T07:40:28.584781225Z"
+    },
+    "user-config-errors-are-swallowed-by-root": {
+      "count": 1,
+      "first": "2026-10-05T07:40:28.702973641Z",
+      "last": "2026-10-05T07:40:28.702973641Z"
+    }
+  }
+}
