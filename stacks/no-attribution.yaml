@@ -1,0 +1,3 @@
+description: No-attribution stack — switches off the commit trailer, pull-request line and session link Claude Code adds to published text.
+settings:
+  - no-attribution

@@ -119,10 +119,12 @@ Three constraints, all of them consequences of a stack being its own type:
 - A bare name resolves inside the stack file's *own* source, so a bare name in a stack you
   fetched from another repo means a definition in that repo, not in yours.
 
-## 3b. Suppress attribution in cloud sessions
+## 3b. Suppress attribution
 
-List `github.com/pedromvgomes/agentic-toolkit.git/stacks/cloud.yaml@main` under `stacks:`. It
-lists the `no-attribution` setting, which renders
+The default stack extends `stacks/no-attribution.yaml`, so a consumer on the default stack gets
+it in cloud and local sessions alike. To adopt it without the default stack, list
+`github.com/pedromvgomes/agentic-toolkit.git/stacks/no-attribution.yaml@main` under `stacks:`.
+It lists the `no-attribution` setting, which renders
 `attribution: {commit: false, pr: false, sessionUrl: false}` into `.claude/settings.json`. It is
 Claude-only (`platforms: [claude]`). Limits: a higher-precedence settings scope that sets
 `attribution` overrides it (whether a cloud platform does is not verified); a fresh cloud

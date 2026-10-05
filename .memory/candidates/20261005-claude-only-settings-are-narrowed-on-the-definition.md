@@ -4,7 +4,7 @@ saw:
   - definitions/settings/no-attribution.yaml
   - source/toolkit/internal/stack/parser.go
   - source/toolkit/internal/adapters/codex/config.go
-  - source/toolkit/internal/cli/tests/cloud_stack_render_test.go
+  - source/toolkit/internal/cli/tests/no_attribution_stack_render_test.go
 ---
 
 The codex adapter merges every settings definition that targets it into `.codex/config.toml`,
@@ -19,15 +19,15 @@ and `memory`), because both are properties of the consuming repo and belong to t
 manifest. So a stack that lists a Claude-only setting is only as safe as that definition's own
 `platforms`.
 
-Testing it needs a second contributor. `stacks/cloud.yaml` lists only the claude-only setting, so
+Testing it needs a second contributor. `stacks/no-attribution.yaml` lists only the claude-only setting, so
 on its own it writes nothing to codex and `.codex/config.toml` does not exist at all; an assertion
 that `attribution` is absent from a file that was never written proves nothing.
-`cloud_stack_render_test.go` stages a fixture `shared` stack whose setting both platforms read
+`no_attribution_stack_render_test.go` stages a fixture `shared` stack whose setting both platforms read
 (`model: gpt-5-codex`), asserts `config.toml` exists and carries it, and only then asserts
 `attribution` is absent.
 
 Established by deleting `platforms: [claude]` from `no-attribution.yaml` and running
-`go -C source/toolkit test ./internal/cli/tests -run Cloud`: the codex test failed with an
+`go -C source/toolkit test ./internal/cli/tests -run NoAttribution`: the codex test failed with an
 `[attribution]` table in `config.toml`; restoring the line made it pass. A render through
 `--source/--stack` showed no `.codex/` directory even with both platforms requested, which is why
 the test goes through an entry manifest instead.

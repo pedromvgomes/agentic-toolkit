@@ -7,13 +7,13 @@ import (
 	"testing"
 )
 
-// The cloud stack exists to keep a cloud session's commits and pull requests
-// free of authoring footers. That depends on the `attribution` key reaching
+// The no-attribution stack exists to keep commits and pull requests free of
+// authoring footers. That depends on the `attribution` key reaching
 // Claude's settings.json with every switch off, and on it staying out of
 // Codex's config.toml, where an unknown top-level key becomes a stray table.
 
-func TestTheCloudStackTurnsEveryAttributionOffInClaudeSettings(t *testing.T) {
-	apply := renderStack(t, "cloud")
+func TestTheNoAttributionStackTurnsEveryAttributionOffInClaudeSettings(t *testing.T) {
+	apply := renderStack(t, "no-attribution")
 
 	var settings map[string]any
 	raw := readFile(t, filepath.Join(apply, ".claude/settings.json"))
@@ -31,8 +31,8 @@ func TestTheCloudStackTurnsEveryAttributionOffInClaudeSettings(t *testing.T) {
 	}
 }
 
-func TestTheCloudStacksAttributionSettingDoesNotReachCodex(t *testing.T) {
-	work, cache := cloudAndSharedWorkdir(t)
+func TestTheNoAttributionStacksSettingDoesNotReachCodex(t *testing.T) {
+	work, cache := noAttributionAndSharedWorkdir(t)
 
 	if _, stderr, err := runCLI(t, work, "render", "--cache", cache); err != nil {
 		t.Fatalf("render: %v\nstderr:\n%s", err, stderr)
@@ -55,26 +55,36 @@ func TestTheCloudStacksAttributionSettingDoesNotReachCodex(t *testing.T) {
 	}
 }
 
-// The default stack does not bundle the no-attribution setting, so a consumer
-// adopts it only by naming the cloud stack.
-func TestTheDefaultStackCarriesNoAttributionSetting(t *testing.T) {
+// The default stack extends the no-attribution stack, so a consumer on the
+// default stack gets the setting in cloud and local sessions alike.
+func TestTheDefaultStackTurnsEveryAttributionOff(t *testing.T) {
 	apply := renderStack(t, "default")
 
-	settings := readFile(t, filepath.Join(apply, ".claude/settings.json"))
-	if strings.Contains(settings, "attribution") {
-		t.Errorf("the default stack's settings.json carries an attribution key:\n%s", settings)
+	var settings map[string]any
+	raw := readFile(t, filepath.Join(apply, ".claude/settings.json"))
+	if err := json.Unmarshal([]byte(raw), &settings); err != nil {
+		t.Fatalf("settings.json is not JSON: %v\n%s", err, raw)
+	}
+	attribution, ok := settings["attribution"].(map[string]any)
+	if !ok {
+		t.Fatalf("the default stack's settings.json has no attribution object:\n%s", raw)
+	}
+	for _, key := range []string{"commit", "pr", "sessionUrl"} {
+		if got, ok := attribution[key]; !ok || got != false {
+			t.Errorf("attribution.%s = %v (present=%v), want false:\n%s", key, got, ok, raw)
+		}
 	}
 }
 
-// cloudAndSharedWorkdir stages the real cloud stack and its setting beside a
+// noAttributionAndSharedWorkdir stages the real no-attribution stack and its setting beside a
 // fixture stack carrying a setting both platforms read, as a consumer opted
 // into both platforms.
-func cloudAndSharedWorkdir(t *testing.T) (work, cache string) {
+func noAttributionAndSharedWorkdir(t *testing.T) (work, cache string) {
 	t.Helper()
 
 	repo := repoRoot(t)
 	src := t.TempDir()
-	writeFile(t, filepath.Join(src, "stacks/cloud.yaml"), readFile(t, filepath.Join(repo, "stacks/cloud.yaml")))
+	writeFile(t, filepath.Join(src, "stacks/no-attribution.yaml"), readFile(t, filepath.Join(repo, "stacks/no-attribution.yaml")))
 	writeFile(t, filepath.Join(src, "definitions/settings/no-attribution.yaml"),
 		readFile(t, filepath.Join(repo, "definitions/settings/no-attribution.yaml")))
 	writeFile(t, filepath.Join(src, "stacks/shared.yaml"), "description: A setting both platforms read.\nsettings:\n  - base\n")
@@ -85,7 +95,7 @@ func cloudAndSharedWorkdir(t *testing.T) (work, cache string) {
 	work = t.TempDir()
 	cache = t.TempDir()
 	writeFile(t, filepath.Join(work, ".agentic-toolkit.yaml"),
-		"stacks:\n  - "+url+"/stacks/cloud.yaml@main\n  - "+url+"/stacks/shared.yaml@main\n"+
+		"stacks:\n  - "+url+"/stacks/no-attribution.yaml@main\n  - "+url+"/stacks/shared.yaml@main\n"+
 			"platforms:\n  - claude\n  - codex\n")
 	writeLockfile(t, filepath.Join(work, ".agentic-toolkit.lock.yaml"), url, "main", sha)
 	return work, cache
