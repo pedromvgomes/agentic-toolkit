@@ -1,0 +1,14 @@
+name: no-attribution
+description: Omit the commit trailer, the pull-request line and the claude.ai session link that Claude Code adds to published text, so a cloud session's commits and PRs carry no authoring footer.
+platforms: [claude]
+value:
+  # `sessionUrl` is the key that suppresses the claude.ai session link a cloud
+  # or Remote Control session appends to commits; `commit` and `pr` cover the
+  # co-author trailer and the pull-request line.
+  #
+  # Claude-only: the codex adapter copies every top-level key into
+  # .codex/config.toml, which would turn `attribution` into a stray table there.
+  attribution:
+    commit: false
+    pr: false
+    sessionUrl: false
