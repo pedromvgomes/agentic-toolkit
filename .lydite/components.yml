@@ -18,3 +18,7 @@ components:
 # would have lydite try to build a Go module that isn't one.
 excludes:
   - "install.sh"
+
+# The hook script of the attribution probe, a fixture for manual experiments that
+# no suite runs.
+  - "docs/spikes/skill-attribution-probe/hook.sh"
