@@ -1,0 +1,84 @@
+{
+ "hooks": {
+  "SessionStart": [
+   {
+    "hooks": [
+     {
+      "type": "command",
+      "command": "$CLAUDE_PROJECT_DIR/hook.sh SessionStart"
+     }
+    ]
+   }
+  ],
+  "UserPromptSubmit": [
+   {
+    "hooks": [
+     {
+      "type": "command",
+      "command": "$CLAUDE_PROJECT_DIR/hook.sh UserPromptSubmit"
+     }
+    ]
+   }
+  ],
+  "UserPromptExpansion": [
+   {
+    "hooks": [
+     {
+      "type": "command",
+      "command": "$CLAUDE_PROJECT_DIR/hook.sh UserPromptExpansion"
+     }
+    ]
+   }
+  ],
+  "PreToolUse": [
+   {
+    "hooks": [
+     {
+      "type": "command",
+      "command": "$CLAUDE_PROJECT_DIR/hook.sh PreToolUse"
+     }
+    ]
+   }
+  ],
+  "PostToolUse": [
+   {
+    "hooks": [
+     {
+      "type": "command",
+      "command": "$CLAUDE_PROJECT_DIR/hook.sh PostToolUse"
+     }
+    ]
+   }
+  ],
+  "SubagentStart": [
+   {
+    "hooks": [
+     {
+      "type": "command",
+      "command": "$CLAUDE_PROJECT_DIR/hook.sh SubagentStart"
+     }
+    ]
+   }
+  ],
+  "SubagentStop": [
+   {
+    "hooks": [
+     {
+      "type": "command",
+      "command": "$CLAUDE_PROJECT_DIR/hook.sh SubagentStop"
+     }
+    ]
+   }
+  ],
+  "Stop": [
+   {
+    "hooks": [
+     {
+      "type": "command",
+      "command": "$CLAUDE_PROJECT_DIR/hook.sh Stop"
+     }
+    ]
+   }
+  ]
+ }
+}
