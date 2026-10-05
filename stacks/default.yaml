@@ -35,8 +35,6 @@ agents:
   - task-implementer
 commands:
   - plan-feature
-mcp:
-  - context7
 instructions:
   - comments-describe-code-not-its-history
   - git
