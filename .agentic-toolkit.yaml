@@ -7,7 +7,6 @@
 stacks:
   - ./stacks/default.yaml
   - ./stacks/plannotator.yaml
-  - ./stacks/serena.yaml
   - ./stacks/rtk.yaml
 
 # Both platforms, so a Codex reviewer on the panel reads the same

@@ -58,7 +58,7 @@ Requires Go 1.26+. The module lives at `source/toolkit/go.mod`, not the repo roo
   `no-attribution.yaml`), `memory.yaml` (the store, its commands and the memory-first
   instruction, adoptable on its own), `no-attribution.yaml` (switches off Claude Code's
   commit, PR and session-link attribution; Claude-only, adoptable on its own), plus one stack
-  per integration (`serena.yaml`, `rtk.yaml`, `plannotator.yaml`)
+  per integration (`context7.yaml`, `serena.yaml`, `rtk.yaml`, `plannotator.yaml`)
 - `docs/adr/` — architecture decision records; consult before changing something an ADR already
   settled
 - `docs/FEATURE-FLOW.md` — the two-stage feature flow (`/plan-feature` → handoff → implement →
