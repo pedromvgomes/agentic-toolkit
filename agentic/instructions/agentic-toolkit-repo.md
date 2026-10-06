@@ -53,9 +53,11 @@ Requires Go 1.26+. The module lives at `source/toolkit/go.mod`, not the repo roo
   defines and this repo currently ships none of. See
   [`definitions/SCHEMA.md`](definitions/SCHEMA.md) for the shape each category's files must take.
 - `stacks/` — shareable manifests consumer repos `extends:`: `default.yaml` (the feature flow,
-  workflow-agnostic skills and the plan-approval instruction, extending `memory.yaml`),
-  `memory.yaml` (the store, its commands and the memory-first instruction, adoptable on its
-  own), plus one stack per integration (`serena.yaml`, `rtk.yaml`, `plannotator.yaml`)
+  workflow-agnostic skills and the plan-approval instruction, extending `memory.yaml` and
+  `no-attribution.yaml`), `memory.yaml` (the store, its commands and the memory-first
+  instruction, adoptable on its own), `no-attribution.yaml` (switches off Claude Code's
+  commit, PR and session-link attribution; Claude-only, adoptable on its own), plus one stack
+  per integration (`serena.yaml`, `rtk.yaml`, `plannotator.yaml`)
 - `docs/adr/` — architecture decision records; consult before changing something an ADR already
   settled
 - `docs/FEATURE-FLOW.md` — the two-stage feature flow (`/plan-feature` → handoff → implement →
