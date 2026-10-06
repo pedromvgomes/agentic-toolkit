@@ -29,14 +29,24 @@ var credentialSurface = []string{
 	"source/toolkit/internal/reviewapprove",
 }
 
-// environmentSurface is every package a token passes through: the credential
+// environmentSurface is every package a secret passes through: the credential
 // surface, the command layer, which reads a token from GH_TOKEN or
-// GITHUB_TOKEN on a machine holding no App registration, and the relay, which
-// that token dispatches.
+// GITHUB_TOKEN on a machine holding no App registration, the relay, which
+// that token dispatches, and cloud init, which reads an SSH signing key from
+// AGTK_SIGNING_KEY_B64.
 var environmentSurface = append(append([]string{}, credentialSurface...),
 	"source/toolkit/internal/cli",
 	"source/toolkit/internal/relay",
+	cloudInitPackage,
 )
+
+// cloudInitPackage writes the SSH signing key commits are signed with, as a
+// path from the repo root.
+const cloudInitPackage = "source/toolkit/internal/cloudinit"
+
+// cloudInitImportPath is the same package as an import path. Spelled out for
+// the reason approvalImportPath is: the module root is source/toolkit.
+const cloudInitImportPath = "github.com/pedromvgomes/agentic-toolkit/internal/cloudinit"
 
 // mustResolve fails the calling test unless importPath names a package that
 // resolves.
@@ -200,6 +210,86 @@ func TestNoInstallationTokenIsWrittenAnywhere(t *testing.T) {
 	if len(offenders) > 0 {
 		t.Errorf("the credential surface writes to disk outside %s; an installation token that reached disk would outlive the run that minted it: %v",
 			registrationWriter, offenders)
+	}
+}
+
+// signingKeyMode is the permission every file cloud init writes carries. ssh
+// refuses a private key that anyone but its owner can read, and a wider mode
+// hands the key to every other account on the machine.
+const signingKeyMode = 0o600
+
+// Cloud init is the opposite of the credential surface: writing the signing
+// key to ~/.ssh is the whole point of the command, so it sits outside
+// credentialSurface, whose guard bans every disk write. What holds instead is
+// that the write exists and is owner-only.
+//
+// Every os.OpenFile and os.WriteFile in the package must name signingKeyMode
+// as a literal, and os.Create, which always opens at 0666 before the umask, is
+// refused outright. At least one os.OpenFile must be found, so a write moved
+// behind a helper this walk does not recognise fails the test rather than
+// leaving it asserting nothing.
+func TestCloudInitWritesTheSigningKeyOwnerOnly(t *testing.T) {
+	mustResolve(t, cloudInitImportPath)
+	repo := repoRoot(t)
+	var offenders []string
+	openFiles := 0
+	fset := token.NewFileSet()
+	err := filepath.Walk(filepath.Join(repo, cloudInitPackage), func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return err
+		}
+		f, parseErr := parser.ParseFile(fset, path, nil, parser.ParseComments)
+		if parseErr != nil {
+			return parseErr
+		}
+		rel := filepath.ToSlash(mustRel(t, repo, path))
+		ast.Inspect(f, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			sel, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok {
+				return true
+			}
+			pkg, ok := sel.X.(*ast.Ident)
+			if !ok || pkg.Name != "os" {
+				return true
+			}
+			at := rel + ":" + strconv.Itoa(fset.Position(call.Pos()).Line)
+			switch sel.Sel.Name {
+			case "Create":
+				offenders = append(offenders, at+" calls os.Create, which opens at 0666")
+			case "OpenFile", "WriteFile":
+				if sel.Sel.Name == "OpenFile" {
+					openFiles++
+				}
+				if len(call.Args) != 3 {
+					return true
+				}
+				lit, ok := call.Args[2].(*ast.BasicLit)
+				if !ok || lit.Kind != token.INT {
+					offenders = append(offenders, at+" calls os."+sel.Sel.Name+" with a mode that is not a literal")
+					return true
+				}
+				mode, parseErr := strconv.ParseInt(lit.Value, 0, 64)
+				if parseErr != nil || mode != signingKeyMode {
+					offenders = append(offenders, at+" calls os."+sel.Sel.Name+" with mode "+lit.Value)
+				}
+			}
+			return true
+		})
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk %s: %v", cloudInitPackage, err)
+	}
+	if openFiles == 0 {
+		t.Fatalf("%s has no os.OpenFile call, so the signing key write this guard checks is not where it looks", cloudInitPackage)
+	}
+	if len(offenders) > 0 {
+		t.Errorf("cloud init writes a file wider than %#o; a signing key anyone else can read is a key they can sign as you with: %v",
+			signingKeyMode, offenders)
 	}
 }
 
