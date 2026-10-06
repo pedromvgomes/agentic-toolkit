@@ -3,7 +3,8 @@ description: |
   sonnet, review in a capped loop, open the PR and loop its review too), the workflow-agnostic
   skills around it, the plan-approval instruction, the session agents and the upstream
   skill-creator skill. The memory store and everything that reads it come from the memory stack
-  this extends.
+  this extends, and the setting that keeps Claude Code's authoring footers out of commits and
+  pull requests comes from the no-attribution stack it extends.
 
   It sets the session's default model to sonnet, because the implementing half of the flow is
   meant to land there and only /plan-feature's own frontmatter raises a session above it.
@@ -12,6 +13,8 @@ extends:
   # adopt memory on its own, and so the grants those definitions need travel
   # with them instead of living in a stack that knows nothing about them.
   - ./memory.yaml
+  # Extended rather than listed so a repo can adopt the setting on its own.
+  - ./no-attribution.yaml
 skills:
   - agents-md-creator
   - challenge
