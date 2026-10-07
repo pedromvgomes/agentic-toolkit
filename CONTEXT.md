@@ -98,6 +98,13 @@ Writing resolved **Definition**s into a consumer's layout for each of its opted-
 for `codex`), one **Adapter** run per Platform. The inverse direction of `fetch`.
 _Avoid_: install, apply, generate
 
+**Cloud session**:
+A coding-agent session that runs in a container a hosting platform provisions for the user,
+rather than on the user's own machine. The container starts from a fresh clone, so nothing
+the user configured locally is there until something puts it there, and the platform may
+supply an identity of its own for what the session commits. Distinct from a **Consumer**'s
+working copy on a developer machine, which keeps whatever was set up in it.
+
 ### Memory
 **Note**:
 One durable fact about the codebase, in one file, that cost real exploration to learn — an

@@ -88,7 +88,19 @@ type Env struct {
 	// pre-run hook posts background-check results to. The post-run
 	// hook drains it non-blockingly to surface a one-liner.
 	UpdateResult <-chan updatecheck.UpdateInfo
+
+	// StartUpdateCheck, when non-nil, replaces the gated background
+	// check the persistent pre-run starts. The default gates refuse a
+	// non-terminal stdout, so tests inject a recorder to observe which
+	// commands start a check at all.
+	StartUpdateCheck func(env *Env) <-chan updatecheck.UpdateInfo
 }
+
+// annotationSkipUpdateCheck, set on a command's Annotations, keeps the
+// persistent pre-run from starting the background update check for it.
+// An annotation rather than a name: subcommand names repeat across the
+// tree (`agtk init` and `agtk cloud init`), so a name match exempts both.
+const annotationSkipUpdateCheck = "agtk.skip-update-check"
 
 // ConfigFileName is the canonical filename for the consumer config in
 // the working directory. The filename is fixed in slice 2 — no global
@@ -158,8 +170,12 @@ func NewRootCmd(env *Env) *cobra.Command {
 			}
 			env.SourceDir = abs
 		}
-		if env.UpdateResult == nil && cmd.Name() != "update" {
-			env.UpdateResult = startBackgroundCheck(env)
+		if env.UpdateResult == nil && cmd.Name() != "update" && cmd.Annotations[annotationSkipUpdateCheck] == "" {
+			start := env.StartUpdateCheck
+			if start == nil {
+				start = startBackgroundCheck
+			}
+			env.UpdateResult = start(env)
 		}
 		return nil
 	}
@@ -172,6 +188,7 @@ func NewRootCmd(env *Env) *cobra.Command {
 		newInitCmd(env), newLockCmd(env), newFetchCmd(env), newPlanCmd(env),
 		newRenderCmd(env), newSyncCmd(env), newStatusCmd(env), newUpdateCmd(env),
 		newMemoryCmd(env), newCodeReviewCmd(env), newHandoffCmd(env), newGuardCmd(env),
+		newCloudCmd(env),
 	)
 	return root
 }
@@ -289,6 +306,12 @@ func ExecuteArgs(env *Env, args []string) int {
 		// exit code 2 as "denied" versus 1 for "the guard itself broke".
 		if errors.Is(err, errGuardFootersDenied) {
 			return GuardFootersExitCode
+		}
+		// `agtk cloud init` prints its own failure to stderr before
+		// returning errCloudInit, so the message is not repeated with the
+		// generic prefix.
+		if errors.Is(err, errCloudInit) {
+			return 1
 		}
 		// `agtk update --check` returns updateNewerErr when newer is
 		// available; map that to UpdateCheckExitCode without the

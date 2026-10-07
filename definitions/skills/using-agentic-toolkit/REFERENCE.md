@@ -134,6 +134,20 @@ removes (one issue report, claude-code issue 62791) and the Bash-only `no-author
 hook cannot stop it; settings keys are copied verbatim, so a wrong `attribution` shape renders
 and does nothing.
 
+## 3c. Cloud session identity and signing
+
+`agtk cloud init` gives a **Cloud session** your identity instead of the platform's, from three
+environment variables: `AGTK_GH_USER` (git `user.name`), `AGTK_GH_EMAIL` (`user.email`) and
+`AGTK_SIGNING_KEY_B64` (optional base64 OpenSSH private key, no passphrase, used to sign commits
+and tags). Each identity variable applies on its own, globally and in each checkout with no
+repo-local identity. With the key unset, no signing setting is touched and commits show as
+Unverified. With none of the three set, the command changes nothing, prints one line and exits 0.
+
+Nothing in a session calls the command yet, so no session reaches it on its own; the user's own
+environment setup script can call it meanwhile. The agent can read the signing key (the variable
+and the 0600 file `~/.ssh/agtk_signing_key`), so the key should be signing-only and rotated; see
+[ADR 0027](../../../docs/adr/0027-cloud-init-signs-with-the-users-own-key-when-one-is-supplied.md) and the fuller description in `docs/CONSUMER-GUIDE.md`.
+
 ## 4. Gotchas
 
 **Your own scanned content wins every collision.** The entry manifest's `stacks:` are walked

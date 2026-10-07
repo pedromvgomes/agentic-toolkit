@@ -479,6 +479,35 @@ changes so the shard lands in that commit, and checks that nothing under the
 store root is left uncommitted before it pushes. `/memory-curate` carries no
 such check.
 
+## Cloud sessions
+
+A **Cloud session** commits as the platform's own identity and signs through the platform's
+signer. `agtk cloud init` replaces that with yours, from three environment variables:
+
+| Variable | Effect |
+|---|---|
+| `AGTK_GH_USER` | git `user.name` |
+| `AGTK_GH_EMAIL` | git `user.email` |
+| `AGTK_SIGNING_KEY_B64` | optional base64 OpenSSH private key, no passphrase; commits and tags are signed with it |
+
+The identity is written globally and into each checkout that has no repo-local identity of its
+own; each identity variable applies on its own. With the key set, the command writes it to
+`~/.ssh/agtk_signing_key` (mode 0600, in a 0700 directory), validates it, configures git to sign
+commits and tags with `ssh-keygen` instead of the platform's signer, proves the setup by signing a
+throwaway blob, and prints the key's fingerprint, never the key. With the key unset it touches no
+signing setting and clears nothing an earlier run set; commits then show as Unverified on GitHub.
+
+With none of the three set the command changes nothing, prints one line saying so, and exits 0.
+It exports nothing to the environment and is exempt from the background update check.
+
+Nothing in a session calls the command yet, so no session reaches it on its own. Your own
+environment setup script can call `agtk cloud init` meanwhile.
+
+**Limit.** The agent runs as the same user as the command, so it can read the key, from the
+variable and from the file. The mitigation is blast radius, not secrecy: use a signing-only key,
+registered on GitHub only as a signing key, and rotate it. See
+[ADR 0027](adr/0027-cloud-init-signs-with-the-users-own-key-when-one-is-supplied.md) for the decision and the rejected alternatives.
+
 ## Choosing where to apply from
 
 By default every command reads `./.agentic-toolkit.yaml`, writes the
