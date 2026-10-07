@@ -677,9 +677,94 @@ reviews the diff instead. Denied the `Agent` tool, so "one implementer at a time
 about its tool set rather than a sentence it is asked to honour.
 _Avoid_: worker, executor, builder
 
+### Usage
+**Project**:
+The grouping a **Usage row** is costed under in the dashboard. Taken from an environment
+variable when one is set, otherwise derived from the repository the session ran in — so it
+defaults to the repo and is not the repo: several repos can share one **Project**, and one repo
+can be split across several. A drill-down by repo and a drill-down by **Project** are different
+groupings over the same rows.
+_Avoid_: repo (as a synonym), workspace, product
+
+**Usage row**:
+The stored record of one assistant message's token use: input, output, cache-creation and
+cache-read counts, the model that produced them, and the **Project**, repo, **Claude account**
+and **Span** it belongs to. Identified by `(session_id, message_id)`, so **Ingest** is an upsert
+and a re-sent row adds nothing. Holds counts and never a dollar amount; cost is computed from
+it at query time against the **Price table**.
+_Avoid_: event, record, entry, cost row
+
+**Span**:
+One **Skill run**'s window inside a session, identified by `(session_id, span_id, skill)`.
+Opens when the skill loads and has no recorded end: it closes at the next **Span** start in its
+session, the next user prompt, or the session's stop, as computed by the **Collector** from the
+transcript. The name alone is not an identity — the same skill runs many times and each run is
+costed separately. Spans nest across sessions through a **Link record**.
+_Avoid_: trace, segment, interval
+
+**Skill run**:
+One execution of a skill, costed as everything it causes — its own turns, its subagents, and
+the nested `agtk` runs and model sessions it starts. Its **Span** is the record of where it
+began and ended; the **Skill run** is the thing being costed.
+_Avoid_: invocation, call, skill usage
+
+**Root skill run**:
+The **Skill run** at the top of a chain of nested ones: the one with no parent **Span**.
+Every **Usage row** that is not **Unattributed** resolves to exactly one, and a dashboard's
+per-skill total is the sum of its roots, so a nested row is never counted twice. Per-skill totals
+plus the **Unattributed** share account for every row. The nested runs under a root are its
+children and are shown beneath it, not added to it again.
+_Avoid_: top-level skill, parent skill, outer run
+
+**Link record**:
+The record, written before a nested session starts, that ties that session's id to the **Span**
+that caused it. Written by `agtk` itself for a session it spawns, or by a `SessionStart` hook for
+one something else spawned that inherited the span. Without one, a nested session's rows say
+nothing about their parent.
+_Avoid_: parent pointer, correlation id, trace link
+
+**Unattributed**:
+The explicit bucket for a **Usage row** that does not resolve to any **Root skill run**: work
+done with no skill, a nested session nobody linked, or a parent chain that is cyclic or too deep.
+Its rows keep their cost, the reason they landed there and their session; they are never dropped
+and never spread across skills. Its share is reported on every skill view, because a rising share
+means a spawner is not propagating.
+_Avoid_: other, misc, unknown (for a row; an unknown **Claude account** is a different thing)
+
+**Collector**:
+The deterministic part of `agtk` that reads session transcripts and **Link record**s and posts
+**Usage row**s. Makes no model call and holds no model credential, no database credential and no
+credential to any repository — only the per-user ingest key.
+_Avoid_: agent, scraper, exporter, uploader
+
+**Ingest**:
+The act of posting a batch of **Usage row**s to the Worker, and the Worker's one route that
+accepts them. Authenticated by a per-user ingest key that can write rows and read nothing; the
+Worker stamps the row's owner and key id rather than trusting the body. The dashboard's query
+routes are a different surface with a different credential.
+_Avoid_: upload, sync (`agtk sync` is another thing), import, push
+
+**Claude account**:
+The Claude identity — an `account_uuid` and its `organization_uuid` — a session ran under, read
+by the **Collector** from the session's own records. A dimension of a **Usage row**, not an
+identity the Worker verifies: it grants nothing, one person can have several, and a drill-down by
+it groups within one person's rows. A missing value is stored as null and shown as unknown.
+_Avoid_: user, owner (the owner is the GitHub login the ingest key maps to), login, seat
+
+**Price table**:
+The mapping from a model to a rate per token kind, with effective dates. A query multiplies a
+**Usage row**'s counts by the rate in force for its model and timestamp, so correcting a price
+changes every total, past and future, without rewriting a row. A model with no entry is reported
+as unpriced with its token counts, never costed at zero.
+_Avoid_: pricing, rate card, cost table
+
 ## Flagged ambiguities
 **"Marker"** — the bare noun is a **Signal** synonym to avoid; the HTML comment that carries a
 **Fingerprint** is a **Fingerprint marker**, always both words.
+
+**"Root run" vs "Root skill run"** — ADR 0026 says "root run" in its prose and its Consequences
+list; the term is **Root skill run**, so that it cannot be read as the root of anything but a
+**Skill run** chain. The ADR's "root" and "root run" mean this.
 
 **"Exclusion" vs "Suppression"** — both withhold, and they withhold different things at
 different ends of a run. An **Exclusion** is about a *file*, decided before any reviewer runs:
