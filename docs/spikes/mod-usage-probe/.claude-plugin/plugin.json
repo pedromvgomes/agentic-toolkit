@@ -1,0 +1,1 @@
+{ "name": "usage-probe", "version": "0.1.0", "description": "Records what turn.complete, turn.step, session.append and $.session.usage() carry, without content or secrets." }
