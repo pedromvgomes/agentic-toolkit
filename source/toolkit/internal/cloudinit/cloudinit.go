@@ -19,7 +19,7 @@ import (
 const (
 	EnvUser       = "AGTK_GH_USER"
 	EnvEmail      = "AGTK_GH_EMAIL"
-	EnvSigningKey = "AGTK_SIGNING_KEY_B64"
+	EnvSigningKey = "AGTK_SIGNING_KEY_B64" // gitleaks:allow -- the variable's name, not a key
 )
 
 // NothingToDo is the one line Run prints when none of the variables is set.

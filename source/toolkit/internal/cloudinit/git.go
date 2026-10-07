@@ -93,7 +93,7 @@ func setGlobal(ctx context.Context, key, value string) error {
 // git runs git in dir and returns its stdout. The returned error wraps the
 // *exec.ExitError so callers can read the exit code.
 func git(ctx context.Context, dir string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd := exec.CommandContext(ctx, "git", args...) // #nosec G204 -- argv is fixed git subcommands built in this package; the identity values reach git as single argv entries, never through a shell
 	cmd.Dir = dir
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout

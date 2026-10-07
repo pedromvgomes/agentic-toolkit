@@ -43,7 +43,7 @@ func applySigning(ctx context.Context, opts Options, encoded string) error {
 	if err := os.MkdirAll(sshDir, 0o700); err != nil {
 		return fmt.Errorf("cloud init: create %s: %w", sshDir, err)
 	}
-	if err := os.Chmod(sshDir, 0o700); err != nil {
+	if err := os.Chmod(sshDir, 0o700); err != nil { // #nosec G302 -- ~/.ssh is a directory and needs its execute bit; 0700 is the owner-only mode ssh requires of it
 		return fmt.Errorf("cloud init: restrict %s to 0700: %w", sshDir, err)
 	}
 
@@ -116,7 +116,7 @@ func writeAtomic(dir, name string, data []byte, validate func(tmp string) error)
 		return fmt.Errorf("cloud init: name a temp file for %s: %w", name, err)
 	}
 	tmp := filepath.Join(dir, "."+name+".tmp-"+hex.EncodeToString(suffix))
-	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) // #nosec G304 -- a fresh random name inside the ~/.ssh directory this package created; O_EXCL refuses an existing file
 	if err != nil {
 		return fmt.Errorf("cloud init: create a temp file for %s: %w", name, err)
 	}
@@ -171,7 +171,7 @@ func proveSigning(ctx context.Context, timeout time.Duration, scrub func(string)
 func sshKeygen(ctx context.Context, timeout time.Duration, scrub func(string) string, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "ssh-keygen", args...)
+	cmd := exec.CommandContext(ctx, "ssh-keygen", args...) // #nosec G204 -- argv is fixed flags and paths built in this package, never taken from the environment or passed through a shell
 	cmd.Stdin = nil
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	var stdout, stderr bytes.Buffer
