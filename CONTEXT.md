@@ -741,7 +741,7 @@ The Claude identity — an `account_uuid` and its `organization_uuid` — a sess
 by the **Collector** from the session's own records. A dimension of a **Usage row**, not an
 identity the Worker verifies: it grants nothing, one person can have several, and a drill-down by
 it groups within one person's rows. A missing value is stored as null and shown as unknown.
-_Avoid_: user, owner (the **owner** is the GitHub login the ingest key maps to), login, seat
+_Avoid_: user, owner (the owner is the GitHub login the ingest key maps to), login, seat
 
 **Price table**:
 The mapping from a model to a rate per token kind, with effective dates. A query multiplies a
