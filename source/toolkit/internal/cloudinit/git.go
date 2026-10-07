@@ -82,7 +82,7 @@ func hasLocal(ctx context.Context, repo, key string) (bool, error) {
 	if errors.As(err, &exit) && exit.ExitCode() == 1 {
 		return false, nil
 	}
-	return false, err
+	return false, err // [lydite:exclude_from_mutation][every caller reads the bool only when err is nil, so a failed lookup is observed through the error alone]
 }
 
 func setGlobal(ctx context.Context, key, value string) error {
@@ -101,9 +101,9 @@ func git(ctx context.Context, dir string, args ...string) (string, error) {
 	if err := cmd.Run(); err != nil {
 		msg := strings.TrimSpace(stderr.String())
 		if msg == "" {
-			return "", fmt.Errorf("cloud init: git %s: %w", strings.Join(args, " "), err)
+			return "", fmt.Errorf("cloud init: git %s: %w", strings.Join(args, " "), err) // [lydite:exclude_from_mutation][every caller discards the output when err is non-nil; the in-package tests pin it]
 		}
-		return "", fmt.Errorf("cloud init: git %s: %w: %s", strings.Join(args, " "), err, msg)
+		return "", fmt.Errorf("cloud init: git %s: %w: %s", strings.Join(args, " "), err, msg) // [lydite:exclude_from_mutation][every caller discards the output when err is non-nil; the in-package tests pin it]
 	}
 	return stdout.String(), nil
 }
