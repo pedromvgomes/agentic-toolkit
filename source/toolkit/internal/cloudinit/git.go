@@ -56,7 +56,7 @@ func workTree(ctx context.Context, dir string) (string, error) {
 	if dir == "" {
 		wd, err := os.Getwd()
 		if err != nil {
-			return "", fmt.Errorf("cloud init: resolve the working directory: %w", err)
+			return "", fmt.Errorf("cloud init: resolve the working directory: %w", err) // [lydite:exclude_from_mutation][applyIdentity checks err before reading the path, so the value beside an error is never observed]
 		}
 		dir = wd
 	}
@@ -66,7 +66,7 @@ func workTree(ctx context.Context, dir string) (string, error) {
 	}
 	top, err := git(ctx, dir, "rev-parse", "--show-toplevel")
 	if err != nil {
-		return "", err
+		return "", err // [lydite:exclude_from_mutation][applyIdentity checks err before reading the path, so the value beside an error is never observed]
 	}
 	return strings.TrimSpace(top), nil
 }
