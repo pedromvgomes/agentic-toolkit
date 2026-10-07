@@ -703,9 +703,10 @@ _Avoid_: invocation, call, skill usage
 
 **Root skill run**:
 The **Skill run** at the top of a chain of nested ones: the one with no parent **Span**.
-Every **Usage row** resolves to exactly one, and a dashboard's per-skill total is the sum of
-its roots, so a nested row is never counted twice. The nested runs under it are its children
-and are shown beneath it, not added to it again.
+Every **Usage row** that is not **Unattributed** resolves to exactly one, and a dashboard's
+per-skill total is the sum of its roots, so a nested row is never counted twice. Per-skill totals
+plus the **Unattributed** share account for every row. The nested runs under a root are its
+children and are shown beneath it, not added to it again.
 _Avoid_: top-level skill, parent skill, outer run
 
 **Link record**:
