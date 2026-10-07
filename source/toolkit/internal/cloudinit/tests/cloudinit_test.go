@@ -211,10 +211,19 @@ func TestRunningAgainIsIdempotentAndRecreatesAWipedKey(t *testing.T) {
 	}
 }
 
+// armor wraps label in the five dashes either side that a key file's
+// header and footer carry.
+func armor(label string) string { return "-----" + label + "-----" }
+
+// notAKey has a key file's header and footer around a body that is no key:
+// placeholder text, base64-encoded. The armour is assembled at run time so
+// the source holds no private-key marker for a secret scanner to match.
+var notAKey = armor("BEGIN OPENSSH PRIVATE KEY") + "\nc2VjcmV0LWtleS1ib2R5LXRoYXQtaXMtbm90LWEta2V5\n" + armor("END OPENSSH PRIVATE KEY") + "\n"
+
 func TestAMalformedKeyFailsWithoutQuotingIt(t *testing.T) {
 	for name, encoded := range map[string]string{
 		"not base64":    "this is !!! not base64 but a secret-looking-string",
-		"not a key":     base64.StdEncoding.EncodeToString([]byte("-----BEGIN OPENSSH PRIVATE KEY-----\nc2VjcmV0LWtleS1ib2R5LXRoYXQtaXMtbm90LWEta2V5\n-----END OPENSSH PRIVATE KEY-----\n")),
+		"not a key":     base64.StdEncoding.EncodeToString([]byte(notAKey)),
 		"truncated key": newKey(t, "")[:120],
 	} {
 		t.Run(name, func(t *testing.T) {

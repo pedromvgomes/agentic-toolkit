@@ -113,6 +113,19 @@ func TestCloudRejectsAnUnknownSubcommand(t *testing.T) {
 	}
 }
 
+func TestCloudAlonePrintsHelpNamingInit(t *testing.T) {
+	clearCloudInitEnv(t)
+
+	code, stdout, stderr := runCloud(t, "cloud")
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr=%q", code, stderr)
+	}
+	if !strings.Contains(stdout, "agtk cloud [command]") || !strings.Contains(stdout, "init ") {
+		t.Errorf("stdout is not the cloud command's help naming init:\n%s", stdout)
+	}
+}
+
 func TestCloudInitFailurePrintsItsMessageOnceWithoutTheKey(t *testing.T) {
 	clearCloudInitEnv(t)
 	isolateGitConfig(t)

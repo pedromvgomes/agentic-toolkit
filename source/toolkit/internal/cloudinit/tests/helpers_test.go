@@ -54,16 +54,23 @@ func env(vars map[string]string) func(string) string {
 // a bound well above the run's own timeouts.
 func run(t *testing.T, home, dir string, vars map[string]string) (string, error) {
 	t.Helper()
+	return runWith(t, cloudinit.Options{
+		Getenv:  env(vars),
+		Home:    home,
+		Dir:     dir,
+		Timeout: 5 * time.Second,
+	})
+}
+
+// runWith invokes cloudinit.Run with opts as given, apart from Stdout, and
+// returns its stdout under the same bound as run.
+func runWith(t *testing.T, opts cloudinit.Options) (string, error) {
+	t.Helper()
 	var out bytes.Buffer
+	opts.Stdout = &out
 	done := make(chan error, 1)
 	go func() {
-		done <- cloudinit.Run(context.Background(), cloudinit.Options{
-			Stdout:  &out,
-			Getenv:  env(vars),
-			Home:    home,
-			Dir:     dir,
-			Timeout: 5 * time.Second,
-		})
+		done <- cloudinit.Run(context.Background(), opts)
 	}()
 	select {
 	case err := <-done:
@@ -72,6 +79,24 @@ func run(t *testing.T, home, dir string, vars map[string]string) (string, error)
 		t.Fatal("cloudinit.Run did not return")
 		return "", nil
 	}
+}
+
+// shadowTool puts a shell script named name ahead of the real tool on PATH.
+// The script finds the real binary in $REAL, so it can fail one invocation
+// and hand every other one on with `exec "$REAL" "$@"`.
+func shadowTool(t *testing.T, name, script string) {
+	t.Helper()
+	requireTool(t, "sh")
+	real, err := exec.LookPath(name)
+	if err != nil {
+		t.Fatalf("%s is required by these tests: %v", name, err)
+	}
+	dir := t.TempDir()
+	body := "#!/bin/sh\nREAL='" + real + "'\n" + script + "\n"
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 }
 
 // newKey generates an ed25519 key with the given passphrase and returns the
