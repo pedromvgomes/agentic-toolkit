@@ -31,7 +31,7 @@ before writing about any of those concepts. Terms there are precise and words li
 - **Vet**: `make vet`
 - **Full check** (fmt + vet + test + gofmt cleanliness): `make check`
 
-Requires Go 1.26+. The module lives at `source/toolkit/go.mod`, not the repo root, so a bare
+Requires Go 1.27+. The module lives at `source/toolkit/go.mod`, not the repo root, so a bare
 `go test ./...` from the root finds no module — use the Makefile, or `go -C source/toolkit`.
 
 ## Project structure

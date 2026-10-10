@@ -72,7 +72,7 @@ agentic-toolkit/
 
 ## Building from source
 
-Requires Go 1.26+. Use the Makefile so the binary is stamped with `git describe`:
+Requires Go 1.27+. Use the Makefile so the binary is stamped with `git describe`:
 
 ```bash
 make build      # writes ./bin/agtk
