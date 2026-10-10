@@ -500,8 +500,41 @@ signing setting and clears nothing an earlier run set; commits then show as Unve
 With none of the three set the command changes nothing, prints one line saying so, and exits 0.
 It exports nothing to the environment and is exempt from the background update check.
 
-Nothing in a session calls the command yet, so no session reaches it on its own. Your own
-environment setup script can call `agtk cloud init` meanwhile.
+The default stack's `SessionStart` hook (`cloud-init-claude-session-start`) runs
+`agtk cloud init --render` at every session start, on startup, resume, clear and compact. A
+session with none of the three variables set is left alone: the hook prints one line and exits
+before it touches `PATH` or runs any `agtk` command. With one set, a failing or missing `agtk`
+never blocks the session; a failure is reported in the session's context.
+
+`--render` runs `agtk render` in each checkout directly under `--render-root` (default
+`/home/user`) that holds an entry manifest and a lockfile committed at `HEAD`. Only directories
+directly under the root are considered. It never runs `agtk sync`, so no ref is resolved over the
+network. A render refused because a hand-placed file sits at a render target is reported per
+checkout; rerun `agtk render --force` in that checkout by hand.
+
+### Environment recipe
+
+Configure the environment, not the setup script's git commands. The platform overwrites git's
+global config at every session start, so a script that runs `git config --global` at build time
+does not hold; the hook reapplies the identity each session.
+
+1. Generate a key used only for signing, with no passphrase, and register its public half on
+   GitHub as a **signing** key (not an authentication key). Rotate it periodically.
+2. Set three environment variables on the environment:
+   - `AGTK_GH_USER` and `AGTK_GH_EMAIL`: your identity.
+   - `AGTK_SIGNING_KEY_B64`: the private key, base64-encoded on one line. On Linux:
+     `base64 -w0 < key`. On macOS: `base64 < key | tr -d '\n'`.
+3. List only `stacks/default.yaml` in the consumer repo's manifest. It brings the hook and the
+   `no-attribution` stack, which switches off Claude Code's attribution lines.
+4. Keep the setup script's install-agtk and `agtk render` lines, and drop its key block (the
+   step that wrote `~/.ssh/commit_signing_key`). Under the default policy `.claude/` is
+   gitignored, so a fresh checkout has none, and the hook cannot create the directory that holds
+   it. The setup script's `agtk render` is the first render; the hook is the per-session one. The
+   script may also call `agtk cloud init --render` itself.
+
+Whether the setup script re-runs at session start or only when the environment is built is not
+verified; the recipe does not depend on either. Without a key, commits show as Unverified on
+GitHub.
 
 **Limit.** The agent runs as the same user as the command, so it can read the key, from the
 variable and from the file. The mitigation is blast radius, not secrecy: use a signing-only key,
