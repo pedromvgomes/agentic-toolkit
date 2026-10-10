@@ -251,6 +251,16 @@ func TestCacheReadAndWriteTiersAreSeparate(t *testing.T) {
 	}
 }
 
+func TestMissingOrMalformedTimestampYieldsTheZeroTime(t *testing.T) {
+	res := parse(t, "timestamps_unusable.jsonl")
+	wantOutputs(t, res.Rows, map[string]int64{"msg_1": 7, "msg_2": 7})
+	for _, r := range res.Rows {
+		if !r.Timestamp.IsZero() {
+			t.Errorf("%s timestamp = %v, want the zero time", r.MessageID, r.Timestamp)
+		}
+	}
+}
+
 func TestRowCarriesTranscriptAndReaderFields(t *testing.T) {
 	r := parse(t, "trailing_stopped.jsonl").Rows[0]
 	if want := time.Date(2026, 10, 10, 6, 42, 53, 777_000_000, time.UTC); !r.Timestamp.Equal(want) || r.Timestamp.Location() != time.UTC {
