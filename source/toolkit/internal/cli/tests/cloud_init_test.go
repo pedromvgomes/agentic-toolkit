@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -178,5 +179,83 @@ func TestCloudInitStartsNoUpdateCheckWhileInitStillDoes(t *testing.T) {
 		if *calls != tc.want {
 			t.Errorf("agtk %s started the update check %d times, want %d", strings.Join(tc.args, " "), *calls, tc.want)
 		}
+	}
+}
+
+func TestCloudInitHelpNamesTheRenderFlags(t *testing.T) {
+	clearCloudInitEnv(t)
+
+	code, stdout, stderr := runCloud(t, "cloud", "init", "--help")
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr=%q", code, stderr)
+	}
+	if !regexp.MustCompile(`--render +run 'agtk render'`).MatchString(stdout) {
+		t.Errorf("`agtk cloud init --help` does not list --render as a bare flag:\n%s", stdout)
+	}
+	for _, want := range []string{"--render-root string", `(default "` + cloudinit.DefaultRenderRoot + `")`} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("`agtk cloud init --help` does not mention %q:\n%s", want, stdout)
+		}
+	}
+}
+
+// The render root holds no checkout, so the flags reach cloudinit.Run
+// without starting a render: under `go test` the binary a render runs is the
+// test binary itself.
+func TestCloudInitRenderSearchesTheGivenRoot(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Fatalf("git is required: %v", err)
+	}
+	clearCloudInitEnv(t)
+	isolateGitConfig(t)
+	t.Setenv(cloudinit.EnvUser, "Octo Cat")
+	root := t.TempDir()
+
+	code, stdout, stderr := runCloud(t, "cloud", "init", "--render", "--render-root", root)
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stdout=%q stderr=%q", code, stdout, stderr)
+	}
+	if want := "agtk cloud init: no checkout under " + root + " to render\n"; !strings.HasSuffix(stdout, want) {
+		t.Errorf("stdout =\n%s\nwant it to end %q", stdout, want)
+	}
+}
+
+func TestCloudInitRenderWithNothingSetPrintsOnlyTheOneLine(t *testing.T) {
+	clearCloudInitEnv(t)
+	isolateGitConfig(t)
+
+	code, stdout, stderr := runCloud(t, "cloud", "init", "--render", "--render-root", t.TempDir())
+
+	if code != 0 {
+		t.Fatalf("exit code = %d, want 0; stderr=%q", code, stderr)
+	}
+	if stdout != cloudinit.NothingToDo+"\n" {
+		t.Errorf("stdout = %q, want exactly %q", stdout, cloudinit.NothingToDo+"\n")
+	}
+}
+
+// A render's failures go to stderr, so a root that cannot be listed is
+// reported there once and the exit code is non-zero.
+func TestCloudInitRenderFailureExitsNonZero(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Fatalf("git is required: %v", err)
+	}
+	clearCloudInitEnv(t)
+	isolateGitConfig(t)
+	t.Setenv(cloudinit.EnvUser, "Octo Cat")
+	root := filepath.Join(t.TempDir(), "a-file")
+	if err := os.WriteFile(root, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	code, stdout, stderr := runCloud(t, "cloud", "init", "--render", "--render-root", root)
+
+	if code == 0 {
+		t.Fatalf("an unlistable render root succeeded; stdout=%q", stdout)
+	}
+	if !strings.HasPrefix(stderr, "agtk: cloud init: list "+root+": ") || strings.Count(stderr, "\n") != 1 {
+		t.Errorf("stderr = %q, want the one failure line", stderr)
 	}
 }

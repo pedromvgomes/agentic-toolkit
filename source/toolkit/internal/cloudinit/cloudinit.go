@@ -1,5 +1,7 @@
 // Package cloudinit points a cloud container's git at the user's own identity
-// and, when a key is supplied, at the user's own signing key.
+// and, when a key is supplied, at the user's own signing key. With
+// Options.Render it then renders each checkout's agent configuration, which a
+// fresh clone lacks because the rendered output is gitignored.
 //
 // Everything it reads comes from three environment variables, and nothing it
 // does is exported back to the environment: a child process cannot change its
@@ -50,6 +52,26 @@ type Options struct {
 
 	// Timeout bounds each ssh-keygen invocation. Zero means DefaultTimeout.
 	Timeout time.Duration
+
+	// Stderr receives one line per checkout whose render failed. Nil
+	// discards it.
+	Stderr io.Writer
+
+	// Render runs `agtk render` in each checkout under RenderRoot once the
+	// identity and the signing key are applied.
+	Render bool
+
+	// RenderRoot is the directory whose immediate subdirectories Render
+	// considers. Empty means DefaultRenderRoot.
+	RenderRoot string
+
+	// Executable is the agtk binary Render runs. Empty means os.Executable,
+	// so the render comes from the same build as the command running it.
+	Executable string
+
+	// RenderTimeout bounds each checkout's render. Zero means
+	// DefaultRenderTimeout.
+	RenderTimeout time.Duration
 }
 
 // Run applies whichever of the identity and the signing key the environment
@@ -59,6 +81,9 @@ type Options struct {
 // An unset identity variable leaves that key alone, and an unset signing key
 // leaves every gpg.* key and commit.gpgsign/tag.gpgsign as they are, including
 // values an earlier run set.
+//
+// With none of the variables set nothing else runs either, Render included:
+// a session the user has not configured is left exactly as it was.
 func Run(ctx context.Context, opts Options) error {
 	opts = withDefaults(opts)
 	name := opts.Getenv(EnvUser)
@@ -73,10 +98,15 @@ func Run(ctx context.Context, opts Options) error {
 	if err := applyIdentity(ctx, opts, name, email); err != nil {
 		return err
 	}
-	if key == "" {
+	if key != "" {
+		if err := applySigning(ctx, opts, key); err != nil {
+			return err
+		}
+	}
+	if !opts.Render {
 		return nil
 	}
-	return applySigning(ctx, opts, key)
+	return renderCheckouts(ctx, opts)
 }
 
 func withDefaults(opts Options) Options {
@@ -88,6 +118,15 @@ func withDefaults(opts Options) Options {
 	}
 	if opts.Timeout <= 0 {
 		opts.Timeout = DefaultTimeout
+	}
+	if opts.Stderr == nil {
+		opts.Stderr = io.Discard
+	}
+	if opts.RenderRoot == "" {
+		opts.RenderRoot = DefaultRenderRoot
+	}
+	if opts.RenderTimeout <= 0 {
+		opts.RenderTimeout = DefaultRenderTimeout
 	}
 	return opts
 }
