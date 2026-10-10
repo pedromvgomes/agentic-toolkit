@@ -503,8 +503,10 @@ It exports nothing to the environment and is exempt from the background update c
 The default stack's `SessionStart` hook (`cloud-init-claude-session-start`) runs
 `agtk cloud init --render` at every session start, on startup, resume, clear and compact. A
 session with none of the three variables set is left alone: the hook prints one line and exits
-before it touches `PATH` or runs any `agtk` command. With one set, a failing or missing `agtk`
-never blocks the session; a failure is reported in the session's context.
+before it touches `PATH` or runs any `agtk` command. With one set, the hook never blocks the
+session. An `agtk` that is missing, or too old to have `--render`, is skipped silently; an `agtk`
+whose `cloud init --render` run fails is reported in the session's context, in a `Note:` line
+carrying the command's output.
 
 `--render` runs `agtk render` in each checkout directly under `--render-root` (default
 `/home/user`) that holds an entry manifest and a lockfile committed at `HEAD`. Only directories
