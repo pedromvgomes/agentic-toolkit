@@ -67,6 +67,17 @@ func TestTrailingMessageWithoutStopReasonIsHeld(t *testing.T) {
 	}
 }
 
+func TestTrailingMessageWithoutStopReasonKeyIsHeld(t *testing.T) {
+	res := parse(t, "trailing_absent_stop.jsonl")
+	if len(res.Rows) != 0 {
+		t.Errorf("rows = %+v, want none", res.Rows)
+	}
+	want := []usage.MessageRef{{SessionID: "sess-1", MessageID: "msg_1"}}
+	if !reflect.DeepEqual(res.Held, want) {
+		t.Errorf("held = %v, want %v", res.Held, want)
+	}
+}
+
 func TestTrailingMessageWithStopReasonIsEmitted(t *testing.T) {
 	res := parse(t, "trailing_stopped.jsonl")
 	wantOutputs(t, res.Rows, map[string]int64{"msg_1": 7, "msg_2": 13})
@@ -130,6 +141,25 @@ func TestSessionWithMissingMainStillReturnsSubagentRows(t *testing.T) {
 	}
 	if len(res.Rows) != 2 {
 		t.Errorf("rows = %d, want the subagent's 2", len(res.Rows))
+	}
+}
+
+func TestSessionWhoseSubagentsPathIsNotADirectoryReturnsMainRowsAndError(t *testing.T) {
+	dir := t.TempDir()
+	copyFile(t, filepath.Join("testdata", "trailing_stopped.jsonl"), filepath.Join(dir, "s.jsonl"))
+	blocker := filepath.Join(dir, "s", "subagents")
+	if err := os.MkdirAll(filepath.Dir(blocker), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	res, err := usage.ParseSession(filepath.Join(dir, "s.jsonl"), opts)
+	if err == nil || !strings.Contains(err.Error(), blocker) {
+		t.Fatalf("err = %v, want one naming %s", err, blocker)
+	}
+	if len(res.Rows) != 2 {
+		t.Errorf("rows = %d, want the main transcript's 2", len(res.Rows))
 	}
 }
 
