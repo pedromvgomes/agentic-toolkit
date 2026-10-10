@@ -7,7 +7,7 @@
 // in /source/toolkit would also force release tags to carry that prefix.
 module github.com/pedromvgomes/agentic-toolkit
 
-go 1.27.2
+go 1.26.9
 
 require (
 	github.com/goccy/go-yaml v1.19.2
