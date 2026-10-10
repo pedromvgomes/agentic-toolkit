@@ -31,7 +31,7 @@ before writing about any of those concepts. Terms there are precise and words li
 - **Vet**: `make vet`
 - **Full check** (fmt + vet + test + gofmt cleanliness): `make check`
 
-Requires Go 1.26+. The module lives at `source/toolkit/go.mod`, not the repo root, so a bare
+Requires Go 1.27+. The module lives at `source/toolkit/go.mod`, not the repo root, so a bare
 `go test ./...` from the root finds no module — use the Makefile, or `go -C source/toolkit`.
 
 ## Project structure
@@ -54,7 +54,9 @@ Requires Go 1.26+. The module lives at `source/toolkit/go.mod`, not the repo roo
   defines and this repo currently ships none of. See
   [`definitions/SCHEMA.md`](definitions/SCHEMA.md) for the shape each category's files must take.
 - `stacks/` — shareable manifests consumer repos `extends:`: `default.yaml` (the feature flow,
-  workflow-agnostic skills and the plan-approval instruction, extending `memory.yaml` and
+  workflow-agnostic skills, the plan-approval instruction and a session-start hook that runs
+  `agtk cloud init --render` (one line and nothing else unless one of `AGTK_GH_USER`,
+  `AGTK_GH_EMAIL` or `AGTK_SIGNING_KEY_B64` is set), extending `memory.yaml` and
   `no-attribution.yaml`), `memory.yaml` (the store, its commands and the memory-first
   instruction, adoptable on its own), `no-attribution.yaml` (switches off Claude Code's
   commit, PR and session-link attribution; Claude-only, adoptable on its own), plus one stack
