@@ -129,6 +129,7 @@ func renderable(ctx context.Context, dir string) bool {
 func renderOne(ctx context.Context, agtk, dir string, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+	// nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	cmd := exec.CommandContext(ctx, agtk, "render") // #nosec G204 G702 -- agtk is this process's own os.Executable unless a caller names one, the argv is fixed, and no shell is involved
 	cmd.Dir = dir
 	cmd.WaitDelay = renderWaitDelay
