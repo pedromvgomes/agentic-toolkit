@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
 	"time"
 )
 
@@ -98,7 +99,7 @@ type pending struct {
 // written is read up to its last complete line. Only failing to open or
 // read the file is an error.
 func ParseFile(path string, opts Options) (Result, error) {
-	f, err := os.Open(path)
+	f, err := os.Open(filepath.Clean(path))
 	if err != nil {
 		return Result{}, err
 	}
