@@ -53,10 +53,6 @@ type Options struct {
 	// Timeout bounds each ssh-keygen invocation. Zero means DefaultTimeout.
 	Timeout time.Duration
 
-	// Stderr receives one line per checkout whose render failed. Nil
-	// discards it.
-	Stderr io.Writer
-
 	// Render runs `agtk render` in each checkout under RenderRoot once the
 	// identity and the signing key are applied.
 	Render bool
@@ -118,9 +114,6 @@ func withDefaults(opts Options) Options {
 	}
 	if opts.Timeout <= 0 {
 		opts.Timeout = DefaultTimeout
-	}
-	if opts.Stderr == nil {
-		opts.Stderr = io.Discard
 	}
 	if opts.RenderRoot == "" {
 		opts.RenderRoot = DefaultRenderRoot

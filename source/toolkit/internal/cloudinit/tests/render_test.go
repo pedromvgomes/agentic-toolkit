@@ -100,9 +100,10 @@ func fakeAgtk(t *testing.T, body string) string {
 	return path
 }
 
-// runRender runs cloudinit.Run with Render set and returns stdout and
-// stderr. opts supplies everything else; Getenv defaults to identityOnly and
-// Dir to a directory outside any checkout.
+// runRender runs cloudinit.Run with Render set and returns its stdout and
+// whatever the process wrote to os.Stderr meanwhile. opts supplies everything
+// else; Getenv defaults to identityOnly and Dir to a directory outside any
+// checkout.
 func runRender(t *testing.T, opts cloudinit.Options) (stdout, stderr string, err error) {
 	t.Helper()
 	if opts.Getenv == nil {
@@ -112,11 +113,51 @@ func runRender(t *testing.T, opts cloudinit.Options) (stdout, stderr string, err
 		opts.Dir = t.TempDir()
 	}
 	opts.Render = true
-	var errBuf bytes.Buffer
-	opts.Stderr = &errBuf
+	capture := captureStderr(t)
 	stdout, err = runWith(t, opts)
-	return stdout, errBuf.String(), err
+	return stdout, capture(), err
 }
+
+// captureStderr points os.Stderr at a pipe until the returned function is
+// called, which restores it and returns what was written. A test that stops
+// before calling it still gets os.Stderr restored.
+func captureStderr(t *testing.T) func() string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved := os.Stderr
+	os.Stderr = w
+	restore := func() {
+		os.Stderr = saved
+		_ = w.Close()
+	}
+	t.Cleanup(restore)
+	read := make(chan string, 1)
+	go func() {
+		var buf bytes.Buffer
+		_, _ = buf.ReadFrom(r)
+		_ = r.Close()
+		read <- buf.String()
+	}()
+	return func() string {
+		restore()
+		return <-read
+	}
+}
+
+// failUnlessGood is a stand-in agtk that renders nothing and succeeds in a
+// checkout whose name ends "-good"; anywhere else it prints "broke <name>" to
+// stderr and exits with the status the name's first letter maps to.
+const failUnlessGood = `name=$(basename "$PWD")
+case "$name" in
+  *-good) exit 0 ;;
+  a-*) code=1 ;;
+  *) code=4 ;;
+esac
+echo "broke $name" >&2
+exit $code`
 
 func TestTheCheckoutFileNamesAreTheOnesTheCLIReads(t *testing.T) {
 	if cloudinit.ManifestFileName != cli.ConfigFileName {
@@ -182,26 +223,24 @@ func TestOneFailingCheckoutIsReportedAndTheOthersStillRender(t *testing.T) {
 
 	stdout, stderr, err := runRender(t, cloudinit.Options{RenderRoot: root})
 
-	const wantErr = "cloud init: render failed in 1 of 2 checkouts"
-	if err == nil || err.Error() != wantErr {
-		t.Fatalf("Run = %v, want %q", err, wantErr)
+	if err == nil {
+		t.Fatal("Run succeeded over a failing checkout")
+	}
+	prefix := "cloud init: render failed in 1 of 2 checkouts:\n  " + broken + ": agtk render: exit status 1: "
+	if msg := err.Error(); !strings.HasPrefix(msg, prefix) || strings.Contains(strings.TrimPrefix(msg, prefix), "\n") ||
+		!strings.Contains(msg, "exists and is not tracked by agtk") {
+		t.Errorf("Run = %q, want it to start %q and end in render's own reason on that one line", msg, prefix)
 	}
 	if !rendered(good) {
 		t.Error("the checkout after the failing one was not rendered")
 	}
-	if !strings.Contains(stdout, "agtk cloud init: rendered "+good+"\n") {
-		t.Errorf("stdout does not report %s as rendered:\n%s", good, stdout)
+	want := "agtk cloud init: user.name set to \"Ada Lovelace\" globally\n" +
+		"agtk cloud init: rendered " + good + "\n"
+	if stdout != want {
+		t.Errorf("stdout =\n%s\nwant\n%s", stdout, want)
 	}
-	if strings.Contains(stdout, broken) {
-		t.Errorf("stdout names the failing checkout:\n%s", stdout)
-	}
-	lines := strings.Split(strings.TrimSuffix(stderr, "\n"), "\n")
-	if len(lines) != 1 {
-		t.Fatalf("stderr carries %d lines, want one for the one failure:\n%s", len(lines), stderr)
-	}
-	prefix := "agtk cloud init: render failed in " + broken + ": agtk render: exit status 1: "
-	if !strings.HasPrefix(lines[0], prefix) || !strings.Contains(lines[0], "exists and is not tracked by agtk") {
-		t.Errorf("stderr = %q, want a line starting %q with render's own reason", lines[0], prefix)
+	if stderr != "" {
+		t.Errorf("stderr = %q, want it empty: the returned error is the whole report", stderr)
 	}
 	if data, _ := os.ReadFile(filepath.Join(broken, renderedCommand)); string(data) != "mine\n" {
 		t.Errorf("the file render refused to overwrite was changed: %q", data)
@@ -364,6 +403,56 @@ func TestTheExecutableRunsRenderFromInsideEachCheckout(t *testing.T) {
 	}
 }
 
+// Two of three checkouts fail. The error lists them under its summary in
+// name order, the good one between them still renders, and nothing else
+// reports either failure.
+func TestEveryFailingCheckoutIsListedInNameOrderUnderOneSummary(t *testing.T) {
+	fakeHome(t)
+	root := t.TempDir()
+	first := newCommittedCheckout(t, root, "a-first")
+	good := newCommittedCheckout(t, root, "b-good")
+	last := newCommittedCheckout(t, root, "c-last")
+	agtk := fakeAgtk(t, failUnlessGood)
+
+	stdout, stderr, err := runRender(t, cloudinit.Options{RenderRoot: root, Executable: agtk})
+
+	want := "cloud init: render failed in 2 of 3 checkouts:\n" +
+		"  " + first + ": agtk render: exit status 1: broke a-first\n" +
+		"  " + last + ": agtk render: exit status 4: broke c-last"
+	if err == nil || err.Error() != want {
+		t.Fatalf("Run = %q, want %q", err, want)
+	}
+	wantOut := "agtk cloud init: user.name set to \"Ada Lovelace\" globally\n" +
+		"agtk cloud init: rendered " + good + "\n"
+	if stdout != wantOut {
+		t.Errorf("stdout =\n%s\nwant\n%s", stdout, wantOut)
+	}
+	if stderr != "" {
+		t.Errorf("stderr = %q, want it empty: the returned error is the whole report", stderr)
+	}
+}
+
+func TestOneFailingCheckoutOfOneIsReportedWithItsDirectoryAndReason(t *testing.T) {
+	fakeHome(t)
+	root := t.TempDir()
+	dir := newCommittedCheckout(t, root, "z-only")
+	agtk := fakeAgtk(t, failUnlessGood)
+
+	stdout, stderr, err := runRender(t, cloudinit.Options{RenderRoot: root, Executable: agtk})
+
+	want := "cloud init: render failed in 1 of 1 checkouts:\n" +
+		"  " + dir + ": agtk render: exit status 4: broke z-only"
+	if err == nil || err.Error() != want {
+		t.Fatalf("Run = %q, want %q", err, want)
+	}
+	if strings.Contains(stdout, dir) {
+		t.Errorf("stdout names the failing checkout:\n%s", stdout)
+	}
+	if stderr != "" {
+		t.Errorf("stderr = %q, want it empty: the returned error is the whole report", stderr)
+	}
+}
+
 func TestAMultiLineRenderFailureIsReportedOnOneLine(t *testing.T) {
 	fakeHome(t)
 	root := t.TempDir()
@@ -371,12 +460,14 @@ func TestAMultiLineRenderFailureIsReportedOnOneLine(t *testing.T) {
 	agtk := fakeAgtk(t, "printf 'first\\n\\n  second  \\n' >&2; exit 3")
 
 	_, stderr, err := runRender(t, cloudinit.Options{RenderRoot: root, Executable: agtk})
-	if err == nil {
-		t.Fatal("Run succeeded over a failing render")
+
+	want := "cloud init: render failed in 1 of 1 checkouts:\n" +
+		"  " + dir + ": agtk render: exit status 3: first; second"
+	if err == nil || err.Error() != want {
+		t.Fatalf("Run = %q, want %q", err, want)
 	}
-	want := "agtk cloud init: render failed in " + dir + ": agtk render: exit status 3: first; second\n"
-	if stderr != want {
-		t.Errorf("stderr = %q, want %q", stderr, want)
+	if stderr != "" {
+		t.Errorf("stderr = %q, want it empty", stderr)
 	}
 }
 
@@ -387,11 +478,14 @@ func TestASilentRenderFailureCarriesOnlyTheExitStatus(t *testing.T) {
 	agtk := fakeAgtk(t, "echo 'stdout is not the report'; exit 2")
 
 	_, stderr, err := runRender(t, cloudinit.Options{RenderRoot: root, Executable: agtk})
-	if err == nil {
-		t.Fatal("Run succeeded over a failing render")
+
+	want := "cloud init: render failed in 1 of 1 checkouts:\n" +
+		"  " + dir + ": agtk render: exit status 2"
+	if err == nil || err.Error() != want {
+		t.Fatalf("Run = %q, want %q", err, want)
 	}
-	if want := "agtk cloud init: render failed in " + dir + ": agtk render: exit status 2\n"; stderr != want {
-		t.Errorf("stderr = %q, want %q", stderr, want)
+	if stderr != "" {
+		t.Errorf("stderr = %q, want it empty", stderr)
 	}
 }
 
@@ -407,21 +501,23 @@ func TestARenderThatOutlivesItsTimeoutIsReportedAsSuch(t *testing.T) {
 		Executable:    agtk,
 		RenderTimeout: 200 * time.Millisecond,
 	})
-	if err == nil {
-		t.Fatal("Run succeeded over a render that never finished")
+	want := "cloud init: render failed in 1 of 1 checkouts:\n" +
+		"  " + dir + ": agtk render did not finish within 200ms"
+	if err == nil || err.Error() != want {
+		t.Fatalf("Run = %q, want %q", err, want)
 	}
-	if want := "agtk cloud init: render failed in " + dir + ": agtk render did not finish within 200ms\n"; stderr != want {
-		t.Errorf("stderr = %q, want %q", stderr, want)
+	if stderr != "" {
+		t.Errorf("stderr = %q, want it empty", stderr)
 	}
 	if elapsed := time.Since(start); elapsed > 20*time.Second {
 		t.Errorf("Run took %s, want it bounded by the render timeout", elapsed)
 	}
 }
 
-// With Stderr, RenderTimeout and Executable all zero, a failure is still
-// counted, the render gets DefaultRenderTimeout rather than a zero that
-// expires at once, and the binary is this one.
-func TestZeroRenderOptionsDiscardTheReportAndRenderWithThisBinary(t *testing.T) {
+// With RenderTimeout and Executable both zero, the render gets
+// DefaultRenderTimeout rather than a zero that expires at once, and the
+// binary is this one.
+func TestZeroRenderOptionsRenderWithThisBinaryUnderTheDefaultTimeout(t *testing.T) {
 	renderSetup(t)
 	root := t.TempDir()
 	broken := newCommittedCheckout(t, root, "a-broken")
@@ -434,8 +530,8 @@ func TestZeroRenderOptionsDiscardTheReportAndRenderWithThisBinary(t *testing.T) 
 		Render:     true,
 		RenderRoot: root,
 	})
-	if err == nil || err.Error() != "cloud init: render failed in 1 of 2 checkouts" {
-		t.Fatalf("Run = %v, want the one failure counted", err)
+	if err == nil || !strings.HasPrefix(err.Error(), "cloud init: render failed in 1 of 2 checkouts:\n  "+broken+": ") {
+		t.Fatalf("Run = %v, want the one failure reported", err)
 	}
 	if !rendered(good) {
 		t.Error("the default timeout and binary did not render the good checkout")

@@ -43,8 +43,11 @@ const (
 const renderWaitDelay = 5 * time.Second
 
 // renderCheckouts runs `agtk render` in every checkout under opts.RenderRoot.
-// A checkout that fails is reported on opts.Stderr and the rest still run;
-// the returned error counts the failures once every checkout was attempted.
+// A checkout that fails does not stop the rest. Once every checkout was
+// attempted, any failures come back as one error: a summary line counting
+// them, then one indented line per failed checkout, in name order, naming
+// its directory and render's reason. That error is the whole report of the
+// failures; nothing about them is written anywhere else.
 func renderCheckouts(ctx context.Context, opts Options) error {
 	dirs, err := checkouts(ctx, opts.RenderRoot)
 	if err != nil {
@@ -60,19 +63,25 @@ func renderCheckouts(ctx context.Context, opts Options) error {
 			return fmt.Errorf("cloud init: locate the agtk binary: %w", err)
 		}
 	}
-	failed := 0
+	var failures []string
 	for _, dir := range dirs {
 		if err := renderOne(ctx, agtk, dir, opts.RenderTimeout); err != nil {
-			failed++
-			fmt.Fprintf(opts.Stderr, "agtk cloud init: render failed in %s: %v\n", dir, err)
+			failures = append(failures, fmt.Sprintf("%s: %v", dir, err))
 			continue
 		}
 		fmt.Fprintf(opts.Stdout, "agtk cloud init: rendered %s\n", dir)
 	}
-	if failed > 0 {
-		return fmt.Errorf("cloud init: render failed in %d of %d checkouts", failed, len(dirs))
+	return renderFailures(failures, len(dirs))
+}
+
+// renderFailures builds renderCheckouts' error from one "<dir>: <reason>"
+// entry per failed checkout, or returns nil when there are none.
+func renderFailures(failures []string, attempted int) error {
+	if len(failures) == 0 {
+		return nil
 	}
-	return nil
+	return fmt.Errorf("cloud init: render failed in %d of %d checkouts:\n  %s",
+		len(failures), attempted, strings.Join(failures, "\n  "))
 }
 
 // checkouts returns, in name order, each directory directly under root that

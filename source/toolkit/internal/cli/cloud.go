@@ -65,7 +65,6 @@ func newCloudInitCmd(env *Env) *cobra.Command {
 func runCloudInit(cmd *cobra.Command, env *Env, render bool, renderRoot string) error {
 	err := cloudinit.Run(cmd.Context(), cloudinit.Options{
 		Stdout:     cmd.OutOrStdout(),
-		Stderr:     env.Stderr,
 		Dir:        env.WorkDir,
 		Render:     render,
 		RenderRoot: renderRoot,

@@ -58,7 +58,7 @@ func runCloudInitHook(t *testing.T, command, stub string, vars ...string) hookRu
 	for _, tool := range []string{"grep", "sed", "cat"} {
 		path, err := exec.LookPath(tool)
 		if err != nil {
-			t.Skipf("%s not on PATH: %v", tool, err)
+			t.Fatalf("%s not on PATH: %v", tool, err)
 		}
 		if err := os.Symlink(path, filepath.Join(bin, tool)); err != nil {
 			t.Fatal(err)
