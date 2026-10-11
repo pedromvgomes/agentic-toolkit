@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/pedromvgomes/agentic-toolkit/internal/githubapp"
+	"github.com/pedromvgomes/agentic-toolkit/internal/gitremote"
 	"github.com/pedromvgomes/agentic-toolkit/internal/review"
 )
 
@@ -73,7 +74,7 @@ func runCodeReviewPost(cmd *cobra.Command, env *Env, number int, seam clientSeam
 	if err != nil {
 		return fmt.Errorf("locate the repository: %w", err)
 	}
-	slug, err := review.RemoteSlug(root, review.DefaultRemote)
+	slug, err := gitremote.RemoteSlug(root, gitremote.DefaultRemote)
 	if err != nil {
 		return err
 	}
