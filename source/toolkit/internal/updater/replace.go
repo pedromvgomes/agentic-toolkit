@@ -1,6 +1,7 @@
 package updater
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -66,10 +67,7 @@ func checkDirWritable(target string) error {
 	if err != nil {
 		return err
 	}
-	name := probe.Name()
-	if err := probe.Close(); err != nil {
-		_ = os.Remove(name)
-		return err
-	}
-	return os.Remove(name)
+	closeErr := probe.Close()
+	removeErr := os.Remove(probe.Name())
+	return errors.Join(closeErr, removeErr)
 }
