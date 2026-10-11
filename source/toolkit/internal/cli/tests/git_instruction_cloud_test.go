@@ -18,7 +18,8 @@ func TestTheGitInstructionBranchesOnAgtkCloud(t *testing.T) {
 		"agtk cloud init",
 		"git var GIT_COMMITTER_IDENT",
 		"Do not hand the identity back",
-		"skip sections 1 and 2",
+		"1a. Working in a cloud session",
+		"Claude-Session:",
 	} {
 		if !strings.Contains(claude, want) {
 			t.Errorf("the rendered git instruction is missing %q", want)
