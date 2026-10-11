@@ -143,8 +143,19 @@ and tags). Each identity variable applies on its own, globally and in each check
 repo-local identity. With the key unset, no signing setting is touched and commits show as
 Unverified. With none of the three set, the command changes nothing, prints one line and exits 0.
 
-Nothing in a session calls the command yet, so no session reaches it on its own; the user's own
-environment setup script can call it meanwhile. The agent can read the signing key (the variable
+The default stack's `SessionStart` hook runs `agtk cloud init --render` every session; a session
+with none of the three variables set is left alone (one line printed, nothing changed).
+`--render` runs `agtk render` (never `sync`) in each directory directly under `--render-root`
+(default `/home/user`) that holds an entry manifest and a lockfile committed at `HEAD`; a render
+refused over a hand-placed file at a render target is reported per checkout, and `agtk render
+--force` is run by hand.
+
+Environment recipe: set `AGTK_GH_USER`, `AGTK_GH_EMAIL` and `AGTK_SIGNING_KEY_B64` as environment
+variables (the last from `base64 -w0 < key` on Linux, `base64 < key | tr -d '\n'` on macOS, of a
+passphrase-less signing-only key registered on GitHub as a signing key); list only
+`stacks/default.yaml`; keep the setup script's install-agtk and `agtk render` lines, since a fresh
+checkout has no gitignored `.claude/` for the hook to live in, and drop its `git config --global`
+and key-writing block. Whether the setup script re-runs per session is not verified. The agent can read the signing key (the variable
 and the 0600 file `~/.ssh/agtk_signing_key`), so the key should be signing-only and rotated; see
 [ADR 0027](../../../docs/adr/0027-cloud-init-signs-with-the-users-own-key-when-one-is-supplied.md) and the fuller description in `docs/CONSUMER-GUIDE.md`.
 
