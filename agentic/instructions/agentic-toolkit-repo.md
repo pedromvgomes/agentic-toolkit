@@ -47,7 +47,9 @@ Requires Go 1.26+. The module lives at `source/toolkit/go.mod`, not the repo roo
   `reviewapprove` (code-review flow), `curator`, `memory`, `githubapp`, `relay` (dispatches a
   registered repository's own workflow to post or approve on behalf of a machine holding no App
   registration; never imports `githubapp`), `cloudinit` (`agtk cloud init`: git identity and the
-  user's own SSH signing key from `AGTK_*` environment variables), `updater`/`updatecheck`, `adapters` (per-platform
+  user's own SSH signing key from `AGTK_*` environment variables), `usage` (parses Claude Code
+  session and subagent transcripts into token-count rows deterministically, with no model call),
+  `updater`/`updatecheck`, `adapters` (per-platform
   render targets, over the shared `adapters/fsops`)
 - `definitions/` — the catalog, one directory per category: `agents/`, `commands/`, `hooks/`,
   `instructions/`, `mcp/`, `settings/`, `skills/`. `rules/` is a valid category the schema

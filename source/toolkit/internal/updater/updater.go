@@ -8,8 +8,7 @@
 //  2. Download the archive and the release's `checksums.txt`.
 //  3. Verify the archive's SHA256 against the checksums file.
 //  4. Extract the `agtk` binary from the archive.
-//  5. Atomic-rename it over the current executable via
-//     github.com/minio/selfupdate.
+//  5. Atomic-rename it over the current executable.
 //
 // The Installer interface is the test seam: production calls
 // GitHubInstaller, tests inject stubs that exercise the CLI flow
@@ -18,6 +17,7 @@ package updater
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
@@ -26,12 +26,9 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"runtime"
 	"strings"
 	"time"
-
-	"github.com/minio/selfupdate"
 )
 
 // Installer applies the named version on top of the running binary.
@@ -114,10 +111,11 @@ func (g *GitHubInstaller) Install(version string) error {
 		return fmt.Errorf("updater: extract %s: %w", binary, err)
 	}
 
-	if err := selfupdate.Apply(strings.NewReader(string(binaryBytes)), selfupdate.Options{}); err != nil {
-		if rerr := selfupdate.RollbackError(err); rerr != nil {
-			return fmt.Errorf("updater: apply failed and rollback failed (%v): %w", rerr, err)
-		}
+	exe, err := executablePath()
+	if err != nil {
+		return fmt.Errorf("updater: %w", err)
+	}
+	if err := replaceFile(exe, bytes.NewReader(binaryBytes)); err != nil {
 		return fmt.Errorf("updater: apply: %w", err)
 	}
 	return nil
@@ -164,7 +162,7 @@ func lookupChecksum(body []byte, filename string) (string, error) {
 // extractTarGz returns the bytes of the named entry from a tar.gz
 // archive. Returns an error when no such entry exists.
 func extractTarGz(archive []byte, name string) ([]byte, error) {
-	gz, err := gzip.NewReader(strings.NewReader(string(archive)))
+	gz, err := gzip.NewReader(bytes.NewReader(archive))
 	if err != nil {
 		return nil, fmt.Errorf("gzip: %w", err)
 	}
@@ -204,12 +202,11 @@ func (e *Permission) Unwrap() error { return e.Err }
 // executable's directory is not writable by the current user. CLI
 // callers run this as a pre-flight before attempting Install.
 func CheckExecutableWritable() error {
-	exe, err := os.Executable()
+	exe, err := executablePath()
 	if err != nil {
-		return fmt.Errorf("updater: locate self: %w", err)
+		return fmt.Errorf("updater: %w", err)
 	}
-	opts := selfupdate.Options{TargetPath: exe}
-	if err := opts.CheckPermissions(); err != nil {
+	if err := checkDirWritable(exe); err != nil {
 		return &Permission{Path: exe, Err: err}
 	}
 	return nil
