@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "notes": {
+    "handoff-trust-is-asked-of-git": {
+      "count": 1,
+      "first": "2026-10-11T08:13:51.73875774Z",
+      "last": "2026-10-11T08:13:51.73875774Z"
+    },
+    "hook-must-tolerate-an-older-agtk": {
+      "count": 1,
+      "first": "2026-10-11T08:13:51.694611478Z",
+      "last": "2026-10-11T08:13:51.694611478Z"
+    }
+  }
+}
