@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "notes": {
+    "hook-must-tolerate-an-older-agtk": {
+      "count": 1,
+      "first": "2026-10-10T06:16:07.442512289Z",
+      "last": "2026-10-10T06:16:07.442512289Z"
+    }
+  }
+}

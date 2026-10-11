@@ -6,6 +6,10 @@ description: |
   this extends, and the setting that keeps Claude Code's authoring footers out of commits and
   pull requests comes from the no-attribution stack it extends.
 
+  A session-start hook points git at the user's identity and signing key from the AGTK_GH_USER,
+  AGTK_GH_EMAIL and AGTK_SIGNING_KEY_B64 variables (`agtk cloud init --render`). It does nothing
+  unless one of them is set.
+
   It sets the session's default model to sonnet, because the implementing half of the flow is
   meant to land there and only /plan-feature's own frontmatter raises a session above it.
 extends:
@@ -46,6 +50,7 @@ instructions:
   - plan-approval
   - rendered-output-stays-out-of-git
 hooks:
+  - cloud-init-claude-session-start
   - handoff-claude-session-start
   - no-authoring-footers-claude-pre-tool-use
 settings:

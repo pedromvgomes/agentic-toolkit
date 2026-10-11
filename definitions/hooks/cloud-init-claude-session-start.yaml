@@ -1,0 +1,39 @@
+name: cloud-init-claude-session-start
+description: Point git at the user's identity and signing key from AGTK_* variables when a cloud session starts, and do nothing when none is set.
+platforms: [claude]
+event: SessionStart
+matcher: "startup|resume|clear|compact"
+handler:
+  type: command
+  command: |
+    # Inert unless the session was given something to set up. This comes
+    # before everything else, including the PATH export and any agtk call, so
+    # a machine that never configured these variables is not touched. The line
+    # is cloudinit.NothingToDo.
+    if [ -z "$AGTK_GH_USER" ] && [ -z "$AGTK_GH_EMAIL" ] && [ -z "$AGTK_SIGNING_KEY_B64" ]; then
+      printf 'agtk cloud init: none of AGTK_GH_USER, AGTK_GH_EMAIL or AGTK_SIGNING_KEY_B64 is set; doing nothing\n'
+      exit 0
+    fi
+
+    export PATH="$HOME/.local/bin:$PATH"
+
+    # A --help probe alone cannot tell whether the installed agtk has the
+    # subcommand: a binary without `cloud init` answers with the parent help
+    # and exit 0. The flag only the capable binary prints is what separates
+    # them. A missing or older agtk is silent, since there is nothing to run.
+    agtk cloud init --help 2>&1 | grep -q -- '--render' || exit 0
+
+    # Fail open, but say so. A failure that passes silently leaves the agent
+    # committing under the wrong identity, or unsigned, with nobody told. A
+    # session that set an identity and no key has chosen not to sign, so that
+    # is not reported.
+    out="$(agtk cloud init --render 2>&1)" || {
+      printf 'Note: `agtk cloud init --render` failed, so git may not carry your identity or signing key in this session:\n'
+      printf '%s\n' "$out" | sed 's/^/  /'
+      exit 0
+    }
+# The command runs three ssh-keygen invocations of up to 15s each, then renders
+# each checkout under the session's repositories for up to 2m (see
+# cloudinit.DefaultRenderTimeout): 45s + N x 2m. 600s covers four checkouts
+# with margin; a typical run takes seconds.
+timeout: 600
