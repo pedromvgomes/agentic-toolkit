@@ -11,21 +11,16 @@ go 1.26.9
 
 require (
 	github.com/goccy/go-yaml v1.19.2
-	github.com/minio/selfupdate v0.6.0
-	github.com/pedromvgomes/agentic-driver v0.10.0
+	github.com/pedromvgomes/agentic-driver v0.10.1
 	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/spf13/cobra v1.10.2
-	golang.org/x/term v0.46.0
+	golang.org/x/term v0.47.0
 	mvdan.cc/sh/v3 v3.14.1
 )
 
 require (
-	aead.dev/minisign v0.2.0 // indirect
-	github.com/ProtonMail/go-crypto v1.4.1 // indirect
-	github.com/cloudflare/circl v1.6.5 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/spf13/pflag v1.0.9 // indirect
-	golang.org/x/crypto v0.56.0 // indirect
 	golang.org/x/mod v0.41.0 // indirect
-	golang.org/x/sys v0.48.0 // indirect
+	golang.org/x/sys v0.49.0 // indirect
 )

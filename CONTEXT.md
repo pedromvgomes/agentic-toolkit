@@ -737,6 +737,16 @@ The deterministic part of `agtk` that reads session transcripts and **Link recor
 credential to any repository — only the per-user ingest key.
 _Avoid_: agent, scraper, exporter, uploader
 
+**Harness**:
+The coding tool whose sessions the **Collector** reads — currently Claude Code. It decides where
+a session's **Transcript** is written and what the file contains.
+_Avoid_: client, runtime, provider
+
+**Transcript**:
+The file a **Harness** writes for one session, holding its messages and token counts. The
+**Collector** reads it and never writes to it.
+_Avoid_: log, history, session file
+
 **Ingest**:
 The act of posting a batch of **Usage row**s to the Worker, and the Worker's one route that
 accepts them. Authenticated by a per-user ingest key that can write rows and read nothing; the
