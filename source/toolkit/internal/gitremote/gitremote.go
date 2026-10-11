@@ -69,9 +69,9 @@ func RemoteSlug(dir, remote string) (Slug, error) {
 	return Slug{Owner: m[1], Repo: m[2]}, nil
 }
 
-// git runs one git command in dir and returns its stdout. Standard input is
-// closed and no terminal is attached, so a command that would prompt fails
-// instead of waiting.
+// git runs one git command in dir and returns its stdout, whether or not the
+// command succeeded. Standard input is closed and no terminal is attached, so
+// a command that would prompt fails instead of waiting.
 func git(dir string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), gitTimeout)
 	defer cancel()
@@ -86,7 +86,7 @@ func git(dir string, args ...string) (string, error) {
 		if msg == "" {
 			msg = err.Error()
 		}
-		return "", fmt.Errorf("git %s: %s", strings.Join(args, " "), msg)
+		return out.String(), fmt.Errorf("git %s: %s", strings.Join(args, " "), msg)
 	}
 	return out.String(), nil
 }
