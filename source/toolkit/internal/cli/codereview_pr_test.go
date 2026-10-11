@@ -20,13 +20,13 @@ import (
 	"time"
 
 	"github.com/pedromvgomes/agentic-toolkit/internal/githubapp"
-	"github.com/pedromvgomes/agentic-toolkit/internal/review"
+	"github.com/pedromvgomes/agentic-toolkit/internal/gitremote"
 	"github.com/pedromvgomes/agentic-toolkit/internal/reviewpost"
 	"github.com/pedromvgomes/agentic-toolkit/internal/reviewrun"
 )
 
 // mustSlug builds the repository a review would be posted to.
-func mustSlug(owner, repo string) review.Slug { return review.Slug{Owner: owner, Repo: repo} }
+func mustSlug(owner, repo string) gitremote.Slug { return gitremote.Slug{Owner: owner, Repo: repo} }
 
 // stubDoer answers by path, so the order calls are made in is not something
 // these tests assert; the client's own suite covers that.

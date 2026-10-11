@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/pedromvgomes/agentic-toolkit/internal/githubapp"
+	"github.com/pedromvgomes/agentic-toolkit/internal/gitremote"
 	"github.com/pedromvgomes/agentic-toolkit/internal/relay"
 	"github.com/pedromvgomes/agentic-toolkit/internal/review"
 	"github.com/pedromvgomes/agentic-toolkit/internal/reviewapprove"
@@ -25,7 +26,7 @@ import (
 // of it needs: where to post, which commits to measure between, and where
 // GitHub will accept an inline comment.
 type pullRequestTarget struct {
-	slug review.Slug
+	slug gitremote.Slug
 	pr   githubapp.PullRequest
 	// reader is what the pull request's reviews and threads are read through.
 	reader pullRequestReader
@@ -206,7 +207,7 @@ func (s clientSeam) options() []githubapp.Option {
 }
 
 // client builds the App's client from this machine's registration.
-func (s clientSeam) client(slug review.Slug) (*githubapp.Client, error) {
+func (s clientSeam) client(slug gitremote.Slug) (*githubapp.Client, error) {
 	dir := s.dir
 	if dir == "" {
 		resolved, err := githubapp.Dir()
@@ -230,7 +231,7 @@ func (s clientSeam) client(slug review.Slug) (*githubapp.Client, error) {
 // refusal comes before anything is read, so a run that could never post its
 // review never spends a panel on one.
 func resolvePullRequest(ctx context.Context, root string, number int, seam clientSeam) (*pullRequestTarget, error) {
-	slug, err := review.RemoteSlug(root, review.DefaultRemote)
+	slug, err := gitremote.RemoteSlug(root, gitremote.DefaultRemote)
 	if err != nil {
 		return nil, err
 	}
@@ -243,7 +244,7 @@ func resolvePullRequest(ctx context.Context, root string, number int, seam clien
 
 // readAsApp reads a pull request through the App's client, which the target
 // then both reads and posts through.
-func readAsApp(ctx context.Context, root string, number int, slug review.Slug, client *githubapp.Client) (*pullRequestTarget, error) {
+func readAsApp(ctx context.Context, root string, number int, slug gitremote.Slug, client *githubapp.Client) (*pullRequestTarget, error) {
 	pr, err := client.ReadPullRequest(ctx, number)
 	if err != nil {
 		return nil, err
@@ -264,7 +265,7 @@ func readAsApp(ctx context.Context, root string, number int, slug review.Slug, c
 // refused with what fixes it, because reading under another identity would
 // hide the breakage until the first command that posts.
 func readPullRequest(ctx context.Context, root string, number int, seam clientSeam) (*pullRequestTarget, error) {
-	slug, err := review.RemoteSlug(root, review.DefaultRemote)
+	slug, err := gitremote.RemoteSlug(root, gitremote.DefaultRemote)
 	if err != nil {
 		return nil, err
 	}
@@ -310,7 +311,7 @@ var relayNouns = map[string]string{
 // registration hands its post to, and what reaches it.
 type relayRoute struct {
 	// slug is the repository under review.
-	slug review.Slug
+	slug gitremote.Slug
 	// repo is the relay repository, and from is the variable that named it.
 	repo, from string
 	// token reaches the relay, and tokenFrom is the variable it came from.
@@ -337,7 +338,7 @@ func routeToRelay(root string, asJSON bool, seam clientSeam, refusal error) (*re
 	// resolvePullRequest read the same remote before it refused, so this
 	// fails only when the remote changed in between, and the refusal then
 	// stands as it was.
-	slug, err := review.RemoteSlug(root, review.DefaultRemote)
+	slug, err := gitremote.RemoteSlug(root, gitremote.DefaultRemote)
 	if err != nil {
 		return nil, refusal
 	}
@@ -455,7 +456,7 @@ func resolveToPost(ctx context.Context, root string, number int, flags runFlags,
 // A branch name is chosen by the change's author and can move between the read
 // and the review; a review is bound to a commit, so the commit is what the
 // whole run is anchored to.
-func anchorPullRequest(root string, number int, slug review.Slug, pr githubapp.PullRequest) (*pullRequestTarget, error) {
+func anchorPullRequest(root string, number int, slug gitremote.Slug, pr githubapp.PullRequest) (*pullRequestTarget, error) {
 	if _, err := review.FetchPullRequest(root, number, pr.HeadSHA); err != nil {
 		return nil, err
 	}
