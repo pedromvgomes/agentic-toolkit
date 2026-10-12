@@ -48,7 +48,8 @@ Requires Go 1.26+. The module lives at `source/toolkit/go.mod`, not the repo roo
   registered repository's own workflow to post or approve on behalf of a machine holding no App
   registration; never imports `githubapp`), `cloudinit` (`agtk cloud init`: git identity and the
   user's own SSH signing key from `AGTK_*` environment variables), `usage` (parses Claude Code
-  session and subagent transcripts into token-count rows deterministically, with no model call),
+  session and subagent transcripts into token-count rows deterministically, with no model call,
+  and stamps each row with the Project, repo, Claude account and host of the session's cwd),
   `gitremote` (stdlib-only strict `owner/repo` parser for a checkout's remote URL, shared by
   `review` and `cli`), `updater`/`updatecheck`, `adapters` (per-platform
   render targets, over the shared `adapters/fsops`)
