@@ -761,15 +761,15 @@ _Avoid_: upload, sync (`agtk sync` is another thing), import, push
 
 **Ledger**:
 The **Collector**'s per-machine record of which **Usage row**s it has already handed to **Ingest**
-or to the **Outbox**, kept per **Transcript** file. It only grows, and it exists so a repeated
-flush ships nothing twice; **Ingest** also de-duplicates, so the **Ledger** saves work and is not
+or to the **Outbox**, kept per **Transcript** file. It grows as rows are handed off and drops a **Transcript**'s entry once
+that file is deleted. It exists so a repeated flush ships nothing twice; **Ingest** also de-duplicates, so the **Ledger** saves work and is not
 what keeps a row from being counted twice. A message still being streamed is never in it.
 _Avoid_: cursor, checkpoint, offset, sent log
 
 **Outbox**:
 The **Collector**'s per-machine store of **Usage row**s that are recorded in the **Ledger** but
 which **Ingest** has not yet accepted. A flush drains it before sending anything new, and a
-batch that fails stays in it. Unlike the **Ledger** it shrinks, and it does not outlive a
+batch that fails stays in it. It empties as **Ingest** accepts batches, and it does not outlive a
 reclaimed cloud container.
 _Avoid_: queue, backlog (the curator's), retry buffer
 
