@@ -90,7 +90,7 @@ func batchFileName(number int) string {
 func batchNumber(name string) (int, bool) {
 	digits, ok := strings.CutSuffix(name, batchSuffix)
 	if !ok || digits == "" {
-		return 0, false
+		return 0, false // [lydite:exclude_from_mutation][every caller reads the number only when the bool is true, so the value returned beside false is never observed]
 	}
 	for _, c := range digits {
 		if c < '0' || c > '9' {
@@ -189,7 +189,7 @@ func readOutbox(dir string, mend, withRows bool) (ob *outbox, quarantined []stri
 		if !ok {
 			continue
 		}
-		if n > ob.highest {
+		if n > ob.highest { // [lydite:exclude_from_mutation][at n == ob.highest the assignment stores the value highest already holds, so > and >= behave identically]
 			ob.highest = n
 		}
 		path := filepath.Join(odir, e.Name())
@@ -218,7 +218,7 @@ func readOutbox(dir string, mend, withRows bool) (ob *outbox, quarantined []stri
 			ob.pending[k] = struct{}{}
 		}
 	}
-	sort.Slice(ob.batches, func(i, j int) bool { return ob.batches[i].Number < ob.batches[j].Number })
+	sort.Slice(ob.batches, func(i, j int) bool { return ob.batches[i].Number < ob.batches[j].Number }) // [lydite:exclude_from_mutation][the comparator differs between < and <= only for two batches with the same number, whose relative order sort.Slice leaves unspecified either way]
 	return ob, quarantined, nil
 }
 

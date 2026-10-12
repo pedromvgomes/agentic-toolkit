@@ -178,3 +178,87 @@ func TestFullOutboxStagesThePrefixThatFitsAndRecordsOnlyThose(t *testing.T) {
 	assertExactlyOnce(t, "ledger", ledgerOnDisk(t, stateDir)[file], ids)
 	assertExactlyOnce(t, "pending", pendingIDs(t, mustPending(t, s), file), ids[2:])
 }
+
+// outboxLimit mirrors the bound the package documents for the Outbox.
+const outboxLimit = 32 << 20
+
+// rowFillingTheOutbox returns a row with message id whose one-row batch
+// serialises to exactly the Outbox's bound. It measures the batch overhead by
+// staging and acknowledging a probe row with an id of the same length, so s's
+// Outbox is empty again when it returns.
+func rowFillingTheOutbox(t *testing.T, s *usagestate.Store, file, probeID, id string) usage.Row {
+	t.Helper()
+	if len(probeID) != len(id) {
+		t.Fatalf("probe id %q and id %q differ in length", probeID, id)
+	}
+	probe := row(probeID)
+	probe.Cwd = "x"
+	mustStage(t, s, file, []usage.Row{probe})
+	bs := mustPending(t, s)
+	if len(bs) != 1 {
+		t.Fatalf("pending after the probe = %d batches, want 1", len(bs))
+	}
+	overhead := int(bs[0].Bytes) - len(probe.Cwd)
+	if err := s.Ack(bs[0]); err != nil {
+		t.Fatalf("Ack: %v", err)
+	}
+	r := row(id)
+	r.Cwd = strings.Repeat("x", outboxLimit-overhead)
+	return r
+}
+
+func TestBatchOfExactlyTheOutboxBoundIsStaged(t *testing.T) {
+	s, _, tdir := newStore(t)
+	file := transcript(t, tdir, "a.jsonl")
+	r := rowFillingTheOutbox(t, s, file, "msg_0000", "msg_0001")
+
+	res, err := s.Stage(file, []usage.Row{r})
+	if err != nil {
+		t.Fatalf("Stage of a batch exactly at the bound: %v", err)
+	}
+	if res.Staged != 1 || res.Deferred != 0 {
+		t.Errorf("Stage = %+v, want the row staged", res)
+	}
+	bs := mustPending(t, s)
+	if len(bs) != 1 || bs[0].Bytes != outboxLimit {
+		t.Errorf("pending = %d batches, want 1 of %d bytes", len(bs), outboxLimit)
+	}
+}
+
+func TestPrefixOfExactlyTheOutboxBoundIsStagedAndTheRestDeferred(t *testing.T) {
+	s, stateDir, tdir := newStore(t)
+	file := transcript(t, tdir, "a.jsonl")
+	r := rowFillingTheOutbox(t, s, file, "msg_0000", "msg_0001")
+
+	res, err := s.Stage(file, []usage.Row{r, row("msg_0002")})
+	if !errors.Is(err, usagestate.ErrOutboxFull) {
+		t.Fatalf("Stage err = %v, want ErrOutboxFull", err)
+	}
+	if res.Staged != 1 || res.Deferred != 1 {
+		t.Errorf("Stage = %+v, want the first row staged and the second deferred", res)
+	}
+	got := ledgerOnDisk(t, stateDir)[file]
+	if !reflect.DeepEqual(got, []string{"msg_0000", "msg_0001"}) {
+		t.Errorf("Ledger = %v, want the probe and the staged row", got)
+	}
+}
+
+func TestStatsReportsAStateDirectoryItCannotList(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads a directory whatever its mode")
+	}
+	s, stateDir, tdir := newStore(t)
+	file := transcript(t, tdir, "a.jsonl")
+	mustStage(t, s, file, rows("msg_1"))
+
+	// Search permission without read: every file in the directory opens, but
+	// the directory itself cannot be listed.
+	if err := os.Chmod(stateDir, 0o300); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(stateDir, 0o700) })
+
+	if _, err := s.Stats(); err == nil {
+		t.Error("Stats over an unlistable state directory returned no error")
+	}
+}

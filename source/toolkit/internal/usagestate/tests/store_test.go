@@ -3,12 +3,14 @@
 package tests
 
 import (
+	"encoding/json"
 	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strconv"
 	"testing"
 
 	"github.com/pedromvgomes/agentic-toolkit/internal/usage"
@@ -355,4 +357,141 @@ func TestVanishedTranscriptIsPrunedFromTheLedger(t *testing.T) {
 	// The pruned transcript's rows are still pending: pruning touches the
 	// Ledger, not the Outbox.
 	assertExactlyOnce(t, "pending", pendingIDs(t, mustPending(t, s), gone), []string{"msg_1", "msg_2"})
+}
+
+func TestStageOverASoundLedgerQuarantinesNothing(t *testing.T) {
+	s, _, tdir := newStore(t)
+	file := transcript(t, tdir, "a.jsonl")
+
+	mustStage(t, s, file, rows("msg_1"))
+	res := mustStage(t, s, file, rows("msg_1", "msg_2"))
+	if len(res.Quarantined) != 0 {
+		t.Errorf("Stage over a sound Ledger quarantined %v, want nothing", res.Quarantined)
+	}
+	if st := mustStats(t, s); len(st.Quarantined) != 0 {
+		t.Errorf("Stats.Quarantined = %v, want nothing", st.Quarantined)
+	}
+}
+
+func TestStageWithNothingToRecordWritesNothing(t *testing.T) {
+	s, stateDir, tdir := newStore(t)
+	file := transcript(t, tdir, "a.jsonl")
+
+	res := mustStage(t, s, file, nil)
+	if res.Batch != 0 || res.Staged != 0 || res.Pruned != 0 {
+		t.Errorf("Stage of no rows = %+v, want nothing done", res)
+	}
+	for _, name := range []string{"ledger.json", "outbox"} {
+		if _, err := os.Stat(filepath.Join(stateDir, name)); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("Stage of no rows created %s: %v", name, err)
+		}
+	}
+}
+
+func TestUnsentLeavesOutRowsTheLedgerRecordsOnceTheirBatchIsAcknowledged(t *testing.T) {
+	s, _, tdir := newStore(t)
+	file := transcript(t, tdir, "a.jsonl")
+
+	mustStage(t, s, file, rows("msg_1", "msg_2"))
+	for _, b := range mustPending(t, s) {
+		if err := s.Ack(b); err != nil {
+			t.Fatalf("Ack: %v", err)
+		}
+	}
+	unsent, err := s.Unsent(file, rows("msg_1", "msg_2", "msg_3"))
+	if err != nil {
+		t.Fatalf("Unsent: %v", err)
+	}
+	if len(unsent) != 1 || unsent[0].MessageID != "msg_3" {
+		t.Errorf("Unsent = %v, want only msg_3", unsent)
+	}
+}
+
+// writeBatchFile writes a well-formed batch document named name into the
+// Outbox, holding one row of fileKey with message id.
+func writeBatchFile(t *testing.T, stateDir, name, id, fileKey, messageID string) {
+	t.Helper()
+	doc := map[string]any{
+		"version": 1,
+		"id":      id,
+		"keys":    []usagestate.Key{{FileKey: fileKey, MessageID: messageID}},
+		"rows":    []usage.Row{row(messageID)},
+	}
+	raw, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatalf("marshal batch: %v", err)
+	}
+	outbox := filepath.Join(stateDir, "outbox")
+	if err := os.MkdirAll(outbox, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(outbox, name), raw, 0o600); err != nil {
+		t.Fatalf("write batch: %v", err)
+	}
+}
+
+func TestOutboxFilesWithoutABatchNumberAreIgnoredAndKept(t *testing.T) {
+	s, stateDir, tdir := newStore(t)
+	file := transcript(t, tdir, "a.jsonl")
+	mustStage(t, s, file, rows("msg_1"))
+
+	// Well-formed batch documents under names that carry no batch number.
+	strays := []string{".json", "notes.txt"}
+	for i, name := range strays {
+		writeBatchFile(t, stateDir, name, "stray"+strconv.Itoa(i), file, "msg_stray"+strconv.Itoa(i))
+	}
+
+	bs := mustPending(t, s)
+	if got := pendingIDs(t, bs, file); !reflect.DeepEqual(got, []string{"msg_1"}) {
+		t.Errorf("pending beside stray files = %v, want only msg_1", got)
+	}
+	if st := mustStats(t, s); st.PendingBatches != 1 || len(st.Quarantined) != 0 {
+		t.Errorf("Stats = %+v, want 1 batch pending and nothing quarantined", st)
+	}
+	for _, name := range strays {
+		if _, err := os.Stat(filepath.Join(stateDir, "outbox", name)); err != nil {
+			t.Errorf("stray file %s was not left in place: %v", name, err)
+		}
+	}
+}
+
+func TestPendingOrdersBatchesByNumberNotByFileName(t *testing.T) {
+	s, stateDir, tdir := newStore(t)
+	file := transcript(t, tdir, "a.jsonl")
+	// "10.json" sorts before "2.json" by name.
+	writeBatchFile(t, stateDir, "10.json", "ten", file, "msg_10")
+	writeBatchFile(t, stateDir, "2.json", "two", file, "msg_2")
+
+	bs := mustPending(t, s)
+	var numbers []int
+	for _, b := range bs {
+		numbers = append(numbers, b.Number)
+	}
+	if !reflect.DeepEqual(numbers, []int{2, 10}) {
+		t.Errorf("pending batch numbers = %v, want [2 10]", numbers)
+	}
+	if res := mustStage(t, s, file, rows("msg_new")); res.Batch != 11 {
+		t.Errorf("new batch number = %d, want 11, one past the highest", res.Batch)
+	}
+}
+
+func TestStatsListsQuarantinedFilesSortedByPath(t *testing.T) {
+	s, stateDir, tdir := newStore(t)
+	file := transcript(t, tdir, "a.jsonl")
+	mustStage(t, s, file, rows("msg_1"))
+
+	// The state directory is listed before its Outbox, and this name sorts
+	// after every path under outbox/.
+	late := filepath.Join(stateDir, "zzz.corrupt-1")
+	if err := os.WriteFile(late, []byte("x"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(stateDir, "outbox", "00000099.json"), []byte("garbage"), 0o600); err != nil {
+		t.Fatalf("write batch: %v", err)
+	}
+
+	st := mustStats(t, s)
+	if len(st.Quarantined) != 2 || !sort.StringsAreSorted(st.Quarantined) {
+		t.Errorf("Stats.Quarantined = %v, want 2 paths in sorted order", st.Quarantined)
+	}
 }

@@ -174,3 +174,38 @@ func TestStageReturnsErrBusyWhileAnotherHolderKeepsTheLock(t *testing.T) {
 		t.Errorf("Stage once the lock is free = %+v, want 1 staged", res)
 	}
 }
+
+func TestWaitingForAHeldLockDoesNotSpin(t *testing.T) {
+	s, stateDir, tdir := newStore(t)
+	file := transcript(t, tdir, "a.jsonl")
+
+	f, err := os.OpenFile(filepath.Join(stateDir, "usage.lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		t.Fatalf("open lock: %v", err)
+	}
+	defer func() { _ = f.Close() }()
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		t.Fatalf("flock: %v", err)
+	}
+
+	before := cpuTime(t)
+	start := time.Now()
+	if _, err := s.Stage(file, rows("msg_1")); !errors.Is(err, usagestate.ErrBusy) {
+		t.Fatalf("Stage under a held lock: err = %v, want ErrBusy", err)
+	}
+	waited := time.Since(start)
+	// Retrying without a pause burns a whole CPU for the full wait.
+	if used := cpuTime(t) - before; used > waited/4 {
+		t.Errorf("waiting %v for the lock used %v of CPU, want it to sleep between attempts", waited, used)
+	}
+}
+
+// cpuTime is the user and system CPU time this process has used.
+func cpuTime(t *testing.T) time.Duration {
+	t.Helper()
+	var ru syscall.Rusage
+	if err := syscall.Getrusage(syscall.RUSAGE_SELF, &ru); err != nil {
+		t.Fatalf("getrusage: %v", err)
+	}
+	return time.Duration(ru.Utime.Nano() + ru.Stime.Nano())
+}
