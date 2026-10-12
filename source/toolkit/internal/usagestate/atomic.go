@@ -46,7 +46,7 @@ func writeFileAtomic(path string, data []byte) error {
 func quarantine(path string) (string, error) {
 	dst := fmt.Sprintf("%s.corrupt-%d", path, time.Now().UnixNano())
 	if err := os.Rename(path, dst); err != nil {
-		return "", fmt.Errorf("usagestate: quarantine %s: %w", path, err)
+		return "", fmt.Errorf("usagestate: quarantine %s: %w", path, err) // [lydite:exclude_from_mutation][every caller reads the returned name only when the error is nil, so the value returned beside an error is never observed]
 	}
 	return dst, nil
 }

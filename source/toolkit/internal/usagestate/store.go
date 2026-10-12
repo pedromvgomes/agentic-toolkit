@@ -174,7 +174,7 @@ func (s *Store) Stage(fileKey string, rows []usage.Row) (res StageResult, err er
 func fitBatch(id string, keys []Key, rows []usage.Row, room int64) (int, []byte, error) {
 	raw, err := marshalBatch(id, keys, rows)
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, err // [lydite:exclude_from_mutation][the count is read only when the error is nil, and the caller returns on error before using it]
 	}
 	if int64(len(raw)) <= room {
 		return len(rows), raw, nil
