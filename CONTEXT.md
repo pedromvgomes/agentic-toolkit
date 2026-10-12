@@ -767,9 +767,10 @@ what keeps a row from being counted twice. A message still being streamed is nev
 _Avoid_: cursor, checkpoint, offset, sent log
 
 **Outbox**:
-The **Collector**'s per-machine store of **Usage row**s that are recorded in the **Ledger** but
-which **Ingest** has not yet accepted. A flush drains it before sending anything new, and a
-batch that fails stays in it. It empties as **Ingest** accepts batches, and it does not outlive a
+The **Collector**'s per-machine store of **Usage row**s handed off for **Ingest** that it has not
+yet accepted. They are normally recorded in the **Ledger** as well; a crash between writing a batch
+and recording it can leave a row pending but unrecorded, and the next flush offered that row records
+it. A flush drains the **Outbox** before sending anything new, and a batch that fails stays in it. It empties as **Ingest** accepts batches, and it does not outlive a
 reclaimed cloud container.
 _Avoid_: queue, backlog (the curator's), retry buffer
 
