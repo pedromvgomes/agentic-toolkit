@@ -3,6 +3,7 @@ package tests
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -284,9 +285,200 @@ func TestRowJSONUsesSnakeCaseKeys(t *testing.T) {
 	}
 	for _, k := range []string{"harness", "harness_version", "session_id", "message_id", "timestamp", "model",
 		"input_tokens", "output_tokens", "thinking_tokens", "cache_read_tokens", "cache_write_5m_tokens",
-		"cache_write_1h_tokens", "is_sidechain", "entrypoint", "cwd", "git_branch", "agtk_version"} {
+		"cache_write_1h_tokens", "is_sidechain", "entrypoint", "cwd", "git_branch", "agtk_version",
+		"project", "repo", "account_uuid", "organization_uuid", "user_email", "host"} {
 		if _, ok := m[k]; !ok {
 			t.Errorf("missing key %q in %s", k, b)
+		}
+	}
+	if _, nested := m["Identity"]; nested {
+		t.Errorf("identity is nested rather than flat in %s", b)
+	}
+}
+
+// identityEnv sets every variable ResolveIdentity reads, so no test depends
+// on the environment it happens to run in.
+func identityEnv(t *testing.T, vars map[string]string) {
+	t.Helper()
+	for _, k := range []string{usage.ProjectEnv, usage.RemoteEnv, usage.AccountUUIDEnv,
+		usage.OrganizationUUIDEnv, usage.UserEmailEnv} {
+		t.Setenv(k, vars[k])
+	}
+}
+
+// transcript writes the lines of the fixture src to dst with every
+// "/work/example" cwd replaced by cwd, or the cwd key removed when cwd is "".
+func transcript(t *testing.T, src, dst, cwd string) {
+	t.Helper()
+	b, err := os.ReadFile(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const fixtureCwd = `"cwd":"/work/example",`
+	if !strings.Contains(string(b), fixtureCwd) {
+		t.Fatalf("%s carries no %s", src, fixtureCwd)
+	}
+	repl := ""
+	if cwd != "" {
+		repl = `"cwd":` + jsonString(t, cwd) + `,`
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dst, []byte(strings.ReplaceAll(string(b), fixtureCwd, repl)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func jsonString(t *testing.T, s string) string {
+	t.Helper()
+	b, err := json.Marshal(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+func TestSessionStampsMainAndSubagentRowsWithOneIdentity(t *testing.T) {
+	identityEnv(t, map[string]string{
+		usage.AccountUUIDEnv:      "acct-1",
+		usage.OrganizationUUIDEnv: "org-1",
+		usage.UserEmailEnv:        "dev@example.com",
+	})
+	res, err := usage.ParseSession(filepath.Join("testdata", "session", "main.jsonl"), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Rows) != 3 {
+		t.Fatalf("rows = %d, want 3", len(res.Rows))
+	}
+	var sidechains int
+	for _, r := range res.Rows {
+		if r.IsSidechain {
+			sidechains++
+		}
+		wantPtr(t, r.MessageID+" Project", r.Project, ptr("example"))
+		wantPtr(t, r.MessageID+" Repo", r.Repo, nil)
+		wantPtr(t, r.MessageID+" AccountUUID", r.AccountUUID, ptr("acct-1"))
+		wantPtr(t, r.MessageID+" OrganizationUUID", r.OrganizationUUID, ptr("org-1"))
+		wantPtr(t, r.MessageID+" UserEmail", r.UserEmail, ptr("dev@example.com"))
+		if r.Host != usage.HostLocal {
+			t.Errorf("%s Host = %q, want %q", r.MessageID, r.Host, usage.HostLocal)
+		}
+	}
+	if sidechains != 2 {
+		t.Errorf("sidechain rows = %d, want the 2 subagent rows", sidechains)
+	}
+}
+
+func TestSessionHostFollowsTheRemoteVariable(t *testing.T) {
+	for _, tc := range []struct {
+		remote, want string
+	}{
+		{"true", usage.HostCloud},
+		{"", usage.HostLocal},
+	} {
+		t.Run(tc.want, func(t *testing.T) {
+			identityEnv(t, map[string]string{usage.RemoteEnv: tc.remote})
+			res, err := usage.ParseSession(filepath.Join("testdata", "session", "main.jsonl"), opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(res.Rows) != 3 {
+				t.Fatalf("rows = %d, want 3", len(res.Rows))
+			}
+			for _, r := range res.Rows {
+				if r.Host != tc.want {
+					t.Errorf("%s Host = %q, want %q", r.MessageID, r.Host, tc.want)
+				}
+			}
+		})
+	}
+}
+
+func TestSessionRowsSerialiseAbsentIdentityAsNull(t *testing.T) {
+	identityEnv(t, nil)
+	dir := t.TempDir()
+	transcript(t, filepath.Join("testdata", "trailing_stopped.jsonl"), filepath.Join(dir, "s.jsonl"), "")
+	res, err := usage.ParseSession(filepath.Join(dir, "s.jsonl"), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Rows) != 2 {
+		t.Fatalf("rows = %d, want 2", len(res.Rows))
+	}
+	b, err := json.Marshal(res.Rows[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range []string{"project", "repo", "account_uuid", "organization_uuid", "user_email"} {
+		if v, ok := m[k]; !ok || v != nil {
+			t.Errorf("%s = %#v (present %v), want null in %s", k, v, ok, b)
+		}
+	}
+	if m["host"] != usage.HostLocal {
+		t.Errorf("host = %#v, want %q", m["host"], usage.HostLocal)
+	}
+}
+
+func TestSessionIdentityResolvesTheMainTranscriptsCwd(t *testing.T) {
+	identityEnv(t, nil)
+	repo := checkout(t, "work", "https://github.com/"+slug)
+	dir := t.TempDir()
+	transcript(t, filepath.Join("testdata", "trailing_stopped.jsonl"), filepath.Join(dir, "s.jsonl"), repo)
+	transcript(t, filepath.Join("testdata", "trailing_stopped.jsonl"),
+		filepath.Join(dir, "s", "subagents", "agent-a.jsonl"), filepath.Join(dir, "elsewhere"))
+	res, err := usage.ParseSession(filepath.Join(dir, "s.jsonl"), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Rows) != 4 {
+		t.Fatalf("rows = %d, want 4", len(res.Rows))
+	}
+	for i, r := range res.Rows {
+		wantPtr(t, fmt.Sprintf("row %d Repo", i), r.Repo, ptr(slug))
+		wantPtr(t, fmt.Sprintf("row %d Project", i), r.Project, ptr(slug))
+	}
+}
+
+func TestSessionIdentityFallsBackToASubagentsCwd(t *testing.T) {
+	identityEnv(t, nil)
+	repo := checkout(t, "work", "https://github.com/"+slug)
+	dir := t.TempDir()
+	transcript(t, filepath.Join("testdata", "trailing_stopped.jsonl"), filepath.Join(dir, "s.jsonl"), "")
+	transcript(t, filepath.Join("testdata", "trailing_stopped.jsonl"),
+		filepath.Join(dir, "s", "subagents", "agent-a.jsonl"), repo)
+	res, err := usage.ParseSession(filepath.Join(dir, "s.jsonl"), opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Rows) != 4 {
+		t.Fatalf("rows = %d, want 4", len(res.Rows))
+	}
+	for i, r := range res.Rows {
+		wantPtr(t, fmt.Sprintf("row %d Repo", i), r.Repo, ptr(slug))
+	}
+}
+
+func TestParseFileLeavesIdentityUnset(t *testing.T) {
+	identityEnv(t, map[string]string{
+		usage.ProjectEnv:          "billing",
+		usage.RemoteEnv:           "true",
+		usage.AccountUUIDEnv:      "acct-1",
+		usage.OrganizationUUIDEnv: "org-1",
+		usage.UserEmailEnv:        "dev@example.com",
+	})
+	rows := parse(t, "trailing_stopped.jsonl").Rows
+	if len(rows) != 2 {
+		t.Fatalf("rows = %d, want 2", len(rows))
+	}
+	for _, r := range rows {
+		if !reflect.DeepEqual(r.Identity, usage.Identity{}) {
+			t.Errorf("%s Identity = %+v, want the zero value", r.MessageID, r.Identity)
 		}
 	}
 }

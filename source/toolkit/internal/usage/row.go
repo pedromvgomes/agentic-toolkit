@@ -1,7 +1,9 @@
 // Package usage reads Claude Code session transcripts into Usage rows: one
 // row per assistant message, holding its token counts and the model that
-// produced them. It makes no model calls and reads nothing but the
-// transcript, so the same file always yields the same rows.
+// produced them. It makes no model calls. ParseFile reads nothing but the
+// transcript, so the same file always yields the same rows; ParseSession
+// also stamps each row with the session's Identity, which reads the
+// environment and the session's git checkout.
 package usage
 
 import "time"
@@ -38,6 +40,10 @@ type Row struct {
 	Cwd         string `json:"cwd"`
 	GitBranch   string `json:"git_branch"`
 	AgtkVersion string `json:"agtk_version"`
+	// Identity is stamped by ParseSession and left zero by ParseFile, which
+	// reads nothing but the transcript. Its fields serialise flat, beside
+	// the row's own.
+	Identity
 }
 
 // MessageRef identifies one assistant message within a session.

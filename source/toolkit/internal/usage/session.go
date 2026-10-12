@@ -21,6 +21,12 @@ import (
 // A file that cannot be read does not stop the others: the rows of every file
 // that parsed come back beside an error joining one failure per file, each
 // naming its path.
+//
+// Every returned row, main transcript and subagent alike, carries the one
+// Identity ResolveIdentity gives for the session's cwd under os.LookupEnv.
+// The session's cwd is the first non-empty Row.Cwd in row order, so the main
+// transcript's wins and a subagent's stands in only when the main transcript
+// yields none.
 func ParseSession(mainPath string, opts Options) (Result, error) {
 	var res Result
 	var errs []error
@@ -42,7 +48,22 @@ func ParseSession(mainPath string, opts Options) (Result, error) {
 		res.Held = append(res.Held, r.Held...)
 		res.Skipped += r.Skipped
 	}
+
+	id := ResolveIdentity(sessionCwd(res.Rows), os.LookupEnv)
+	for i := range res.Rows {
+		res.Rows[i].Identity = id
+	}
 	return res, errors.Join(errs...)
+}
+
+// sessionCwd is the first non-empty Cwd among rows, or "" when none has one.
+func sessionCwd(rows []Row) string {
+	for _, r := range rows {
+		if r.Cwd != "" {
+			return r.Cwd
+		}
+	}
+	return ""
 }
 
 // subagentPaths lists the subagent transcripts of the session in sessionDir,
