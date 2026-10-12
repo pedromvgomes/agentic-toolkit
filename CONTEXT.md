@@ -759,6 +759,20 @@ Worker stamps the row's owner and key id rather than trusting the body. The dash
 routes are a different surface with a different credential.
 _Avoid_: upload, sync (`agtk sync` is another thing), import, push
 
+**Ledger**:
+The **Collector**'s per-machine record of which **Usage row**s it has already handed to **Ingest**
+or to the **Outbox**, kept per **Transcript** file. It only grows, and it exists so a repeated
+flush ships nothing twice; **Ingest** also de-duplicates, so the **Ledger** saves work and is not
+what keeps a row from being counted twice. A message still being streamed is never in it.
+_Avoid_: cursor, checkpoint, offset, sent log
+
+**Outbox**:
+The **Collector**'s per-machine store of **Usage row**s that are recorded in the **Ledger** but
+which **Ingest** has not yet accepted. A flush drains it before sending anything new, and a
+batch that fails stays in it. Unlike the **Ledger** it shrinks, and it does not outlive a
+reclaimed cloud container.
+_Avoid_: queue, backlog (the curator's), retry buffer
+
 **Claude account**:
 The Claude identity — an `account_uuid`, its `organization_uuid` and a `user_email` — read by the
 **Collector** from `CLAUDE_CODE_ACCOUNT_UUID`, `CLAUDE_CODE_ORGANIZATION_UUID` and
