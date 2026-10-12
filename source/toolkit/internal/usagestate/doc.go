@@ -8,7 +8,7 @@
 //
 //	usage.lock    flock target serialising every reader and writer
 //	ledger.json   {"version": 1, "files": {"<transcript path>": {"sent": ["<message id>", ...]}}}
-//	outbox/       one file per queued batch
+//	outbox/       one file per pending batch
 //
 // The Ledger records which message ids of each Transcript have been recorded,
 // so a repeated flush ships nothing twice. It is an efficiency device only:

@@ -165,7 +165,7 @@ func TestFullOutboxStagesThePrefixThatFitsAndRecordsOnlyThose(t *testing.T) {
 	}
 	assertExactlyOnce(t, "ledger", ledgerOnDisk(t, stateDir)[file], ids[:2])
 
-	// Once Ingest accepts the queued batch, the deferred rows land.
+	// Once Ingest accepts the pending batch, the deferred rows land.
 	for _, b := range mustPending(t, s) {
 		if err := s.Ack(b); err != nil {
 			t.Fatalf("Ack: %v", err)

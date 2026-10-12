@@ -15,7 +15,7 @@ import (
 	"github.com/pedromvgomes/agentic-toolkit/internal/usagestate"
 )
 
-func TestFlushingTheSameRowsTwiceQueuesThemOnce(t *testing.T) {
+func TestFlushingTheSameRowsTwiceStagesThemOnce(t *testing.T) {
 	s, _, tdir := newStore(t)
 	file := transcript(t, tdir, "a.jsonl")
 	ids := idRange(0, 5)
@@ -47,7 +47,7 @@ func TestFlushingTheSameRowsTwiceQueuesThemOnce(t *testing.T) {
 	}
 }
 
-func TestRepeatedMessageIDInOneFlushIsQueuedOnce(t *testing.T) {
+func TestRepeatedMessageIDInOneFlushIsStagedOnce(t *testing.T) {
 	s, _, tdir := newStore(t)
 	file := transcript(t, tdir, "a.jsonl")
 

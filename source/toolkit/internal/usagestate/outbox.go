@@ -39,7 +39,7 @@ const (
 // with errors.Is.
 var ErrOutboxFull = errors.New("usagestate: the outbox is full")
 
-// Key identifies one queued row: the transcript it came from and its message
+// Key identifies one pending row: the transcript it came from and its message
 // id.
 type Key struct {
 	FileKey   string `json:"file"`
@@ -59,6 +59,10 @@ type Batch struct {
 	Rows []usage.Row
 	// Bytes is the batch file's serialised size.
 	Bytes int64
+
+	// rowCount is the number of rows in the file, set whether or not Rows was
+	// decoded.
+	rowCount int
 }
 
 // batchDoc is the on-disk form:
@@ -116,21 +120,40 @@ func marshalBatch(id string, keys []Key, rows []usage.Row) ([]byte, error) {
 	return append(raw, '\n'), nil
 }
 
-func parseBatch(number int, raw []byte) (Batch, error) {
-	var doc batchDoc
-	if err := json.Unmarshal(raw, &doc); err != nil {
+// batchHeadDoc is batchDoc with the rows left undecoded, for callers that need
+// a batch's id, keys and row count and not the rows themselves.
+type batchHeadDoc struct {
+	Version int               `json:"version"`
+	ID      string            `json:"id"`
+	Keys    []Key             `json:"keys"`
+	Rows    []json.RawMessage `json:"rows"`
+}
+
+// parseBatch decodes a batch file. The rows are decoded into Batch.Rows only
+// when withRows is true; the document is validated the same way either way.
+func parseBatch(number int, raw []byte, withRows bool) (Batch, error) {
+	var head batchHeadDoc
+	var rows []usage.Row
+	if withRows {
+		var doc batchDoc
+		if err := json.Unmarshal(raw, &doc); err != nil {
+			return Batch{}, err
+		}
+		head = batchHeadDoc{Version: doc.Version, ID: doc.ID, Keys: doc.Keys, Rows: make([]json.RawMessage, len(doc.Rows))}
+		rows = doc.Rows
+	} else if err := json.Unmarshal(raw, &head); err != nil {
 		return Batch{}, err
 	}
-	if doc.Version != batchVersion {
-		return Batch{}, fmt.Errorf("version %d, want %d", doc.Version, batchVersion)
+	if head.Version != batchVersion {
+		return Batch{}, fmt.Errorf("version %d, want %d", head.Version, batchVersion)
 	}
-	if doc.ID == "" {
+	if head.ID == "" {
 		return Batch{}, errors.New("no batch id")
 	}
-	if len(doc.Keys) != len(doc.Rows) {
-		return Batch{}, fmt.Errorf("%d keys for %d rows", len(doc.Keys), len(doc.Rows))
+	if len(head.Keys) != len(head.Rows) {
+		return Batch{}, fmt.Errorf("%d keys for %d rows", len(head.Keys), len(head.Rows))
 	}
-	return Batch{Number: number, ID: doc.ID, Keys: doc.Keys, Rows: doc.Rows, Bytes: int64(len(raw))}, nil
+	return Batch{Number: number, ID: head.ID, Keys: head.Keys, Rows: rows, Bytes: int64(len(raw)), rowCount: len(head.Rows)}, nil
 }
 
 // outbox is the Outbox as one scan of its directory found it.
@@ -146,8 +169,9 @@ type outbox struct {
 // quarantine name and returned in quarantined; when it is false the file is
 // left in place and skipped, so the scan writes nothing. Either way a corrupt
 // batch never stops the scan. A skipped or quarantined batch still counts
-// towards highest, so a new batch is never written over it.
-func readOutbox(dir string, mend bool) (ob *outbox, quarantined []string, err error) {
+// towards highest, so a new batch is never written over it. Batch.Rows is
+// filled only when withRows is true; the keys and row counts come either way.
+func readOutbox(dir string, mend, withRows bool) (ob *outbox, quarantined []string, err error) {
 	ob = &outbox{pending: map[Key]struct{}{}}
 	odir := outboxDir(dir)
 	entries, err := os.ReadDir(odir)
@@ -175,7 +199,7 @@ func readOutbox(dir string, mend bool) (ob *outbox, quarantined []string, err er
 		}
 		var b Batch
 		if rerr == nil {
-			b, rerr = parseBatch(n, raw)
+			b, rerr = parseBatch(n, raw, withRows)
 		}
 		if rerr != nil {
 			if !mend {
@@ -221,7 +245,7 @@ func removeBatch(dir string, b Batch) error {
 	if err != nil {
 		return fmt.Errorf("usagestate: read %s: %w", path, err)
 	}
-	on, perr := parseBatch(b.Number, raw)
+	on, perr := parseBatch(b.Number, raw, false)
 	if perr != nil || on.ID != b.ID {
 		return nil
 	}

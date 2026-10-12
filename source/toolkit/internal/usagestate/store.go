@@ -91,7 +91,7 @@ func (s *Store) Stage(fileKey string, rows []usage.Row) (res StageResult, err er
 	if q != "" {
 		res.Quarantined = append(res.Quarantined, q)
 	}
-	ob, qs, err := readOutbox(s.dir, true)
+	ob, qs, err := readOutbox(s.dir, true, false)
 	res.Quarantined = append(res.Quarantined, qs...)
 	if err != nil {
 		return res, err
@@ -216,7 +216,7 @@ func (s *Store) Pending() (batches []Batch, err error) {
 			err = fmt.Errorf("usagestate: release lock: %w", rerr)
 		}
 	}()
-	ob, _, err := readOutbox(s.dir, true)
+	ob, _, err := readOutbox(s.dir, true, true)
 	if err != nil {
 		return nil, err
 	}
@@ -270,7 +270,7 @@ func (s *Store) Stats() (st Stats, err error) {
 	if err != nil {
 		return st, err
 	}
-	ob, _, err := readOutbox(s.dir, true)
+	ob, _, err := readOutbox(s.dir, true, false)
 	if err != nil {
 		return st, err
 	}
@@ -278,7 +278,7 @@ func (s *Store) Stats() (st Stats, err error) {
 	st.SentIDs = led.sentCount()
 	st.PendingBatches = len(ob.batches)
 	for _, b := range ob.batches {
-		st.PendingRows += len(b.Rows)
+		st.PendingRows += b.rowCount
 	}
 	st.PendingBytes = ob.bytes
 	st.Quarantined, err = quarantinedFiles(s.dir)
@@ -288,7 +288,7 @@ func (s *Store) Stats() (st Stats, err error) {
 	return st, nil
 }
 
-// Unsent returns the rows of fileKey that a Stage would queue now: those whose
+// Unsent returns the rows of fileKey that a Stage would stage now: those whose
 // message id is neither in the Ledger nor pending in the Outbox, first
 // occurrence of each id only, in input order. It writes nothing: a corrupt
 // Ledger reads as empty and a corrupt batch is skipped, both left in place for
@@ -305,7 +305,7 @@ func (s *Store) Unsent(fileKey string, rows []usage.Row) (out []usage.Row, err e
 		}
 	}()
 	led := peekLedger(s.dir)
-	ob, _, err := readOutbox(s.dir, false)
+	ob, _, err := readOutbox(s.dir, false, false)
 	if err != nil {
 		return nil, err
 	}
