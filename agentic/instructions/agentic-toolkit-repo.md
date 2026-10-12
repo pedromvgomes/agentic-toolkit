@@ -50,9 +50,10 @@ Requires Go 1.26+. The module lives at `source/toolkit/go.mod`, not the repo roo
   user's own SSH signing key from `AGTK_*` environment variables), `usage` (parses Claude Code
   session and subagent transcripts into token-count rows deterministically, with no model call,
   and stamps each row with the Project, repo, Claude account and host of the session's cwd),
-  `gitremote` (stdlib-only strict `owner/repo` parser for a checkout's remote URL, shared by
-  `review` and `cli`), `updater`/`updatecheck`, `adapters` (per-platform
-  render targets, over the shared `adapters/fsops`)
+  `usagestate` (the Collector's per-machine Ledger and Outbox under the XDG state directory,
+  behind a flock lock; unix only), `gitremote` (stdlib-only strict `owner/repo` parser for a
+  checkout's remote URL, shared by `review` and `cli`), `updater`/`updatecheck`, `adapters`
+  (per-platform render targets, over the shared `adapters/fsops`)
 - `definitions/` — the catalog, one directory per category: `agents/`, `commands/`, `hooks/`,
   `instructions/`, `mcp/`, `settings/`, `skills/`. `rules/` is a valid category the schema
   defines and this repo currently ships none of. See
