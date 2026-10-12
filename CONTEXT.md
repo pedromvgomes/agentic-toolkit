@@ -679,17 +679,22 @@ _Avoid_: worker, executor, builder
 
 ### Usage
 **Project**:
-The grouping a **Usage row** is costed under in the dashboard. Taken from an environment
-variable when one is set, otherwise derived from the repository the session ran in — so it
-defaults to the repo and is not the repo: several repos can share one **Project**, and one repo
-can be split across several. A drill-down by repo and a drill-down by **Project** are different
-groupings over the same rows.
+The grouping a **Usage row** is costed under in the dashboard. Taken from `AGTK_PROJECT` when it
+is set to something other than whitespace, otherwise the origin remote's `owner/name`, otherwise
+the base name of the session's working directory — so it defaults to the repo and is not the
+repo: several repos can share one **Project**, and one repo can be split across several. A remote
+the strict `owner/repo` parser refuses (a GitLab subgroup, a nested GitHub Enterprise
+organisation, a local path, Claude Code's cloud proxy address) leaves the repo null and names the
+**Project** after the directory. A drill-down by repo and a drill-down by **Project** are
+different groupings over the same rows.
 _Avoid_: repo (as a synonym), workspace, product
 
 **Usage row**:
 The stored record of one assistant message's token use: input, output, cache-creation and
-cache-read counts, the model that produced them, and the **Project**, repo, **Claude account**
-and **Span** it belongs to. Identified by `(session_id, message_id)`, so **Ingest** is an upsert
+cache-read counts, the model that produced them, and the **Project**, repo, **Claude account**,
+host (`cloud` when `CLAUDE_CODE_REMOTE` is non-empty, otherwise `local`) and **Span** it belongs
+to. The **Project**, repo and **Claude account** fields are each null when they cannot be
+determined, never an empty string. Identified by `(session_id, message_id)`, so **Ingest** is an upsert
 and a re-sent row adds nothing. Holds counts and never a dollar amount; cost is computed from
 it at query time against the **Price table**.
 _Avoid_: event, record, entry, cost row
@@ -755,10 +760,13 @@ routes are a different surface with a different credential.
 _Avoid_: upload, sync (`agtk sync` is another thing), import, push
 
 **Claude account**:
-The Claude identity — an `account_uuid` and its `organization_uuid` — a session ran under, read
-by the **Collector** from the session's own records. A dimension of a **Usage row**, not an
-identity the Worker verifies: it grants nothing, one person can have several, and a drill-down by
-it groups within one person's rows. A missing value is stored as null and shown as unknown.
+The Claude identity — an `account_uuid`, its `organization_uuid` and a `user_email` — read by the
+**Collector** from `CLAUDE_CODE_ACCOUNT_UUID`, `CLAUDE_CODE_ORGANIZATION_UUID` and
+`CLAUDE_CODE_USER_EMAIL` in the environment of the process that parses the **Transcript**; the
+**Transcript** does not record it, so every row one process parses carries that process's account.
+A dimension of a **Usage row**, not an identity the Worker verifies: it grants nothing, one person
+can have several, and a drill-down by it groups within one person's rows. A missing value is
+stored as null and shown as unknown.
 _Avoid_: user, owner (the owner is the GitHub login the ingest key maps to), login, seat
 
 **Price table**:

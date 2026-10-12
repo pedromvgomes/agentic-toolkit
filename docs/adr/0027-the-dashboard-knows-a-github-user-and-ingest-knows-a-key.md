@@ -37,8 +37,9 @@ request body that carries an owner or a key id is ignored for those columns. A r
 says who the Worker authenticated, and revoking a key can find and remove what that key wrote.
 
 **The Claude account is a separate dimension and is data about the row.** A row also carries
-`account_uuid` and `organization_uuid`, the Claude account and organization the session ran under,
-which the collector reads from the session's own records. They are not an identity the Worker
+`account_uuid`, `organization_uuid` and `user_email`, the Claude account the session ran under,
+which the collector reads from the environment of the process that parses the transcript (see
+**Claude account** in `CONTEXT.md`). They are not an identity the Worker
 verifies and they grant nothing. One owner can have several Claude accounts, a personal one and an
 organization seat; a drill-down by Claude account is a grouping over this column within the owner's
 rows, and never a way to read another owner's. A missing value is stored as null and reported as
@@ -112,8 +113,10 @@ allowlist, and revoked by removing the login from it. The two credentials do not
 - A Worker's view of a cloud session's `GH_TOKEN` was not measured, and neither was how an
   environment secret behaves when masked. The key's delivery to `agtk` and hooks was observed with a
   non-secret variable only.
-- Account and organization UUIDs are reported by the collector. A holder of a key can write any
-  value into them, which is the same trust the owner's other row data already carries.
+- The account UUID, organization UUID and email are reported by the collector. A holder of a key
+  can write any value into them, which is the same trust the owner's other row data already
+  carries. Rows parsed by one process all carry that process's account, whichever account's
+  session they came from.
 
 ## Consequences
 
