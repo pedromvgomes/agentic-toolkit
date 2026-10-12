@@ -94,7 +94,7 @@ func batchNumber(name string) (int, bool) {
 	}
 	for _, c := range digits {
 		if c < '0' || c > '9' {
-			return 0, false
+			return 0, false // [lydite:exclude_from_mutation][every caller reads the number only when the bool is true, so the value returned beside false is never observed]
 		}
 	}
 	n, err := strconv.Atoi(digits)

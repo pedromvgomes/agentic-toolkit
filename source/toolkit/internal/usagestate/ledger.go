@@ -137,7 +137,7 @@ func loadLedger(dir string) (l *ledger, quarantined string, err error) {
 	}
 	q, qerr := quarantine(path)
 	if qerr != nil {
-		return nil, "", qerr
+		return nil, "", qerr // [lydite:exclude_from_mutation][every caller reads the quarantine name only when the error is nil, so the value returned beside an error is never observed]
 	}
 	return newLedger(), q, nil
 }
