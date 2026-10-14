@@ -676,7 +676,7 @@ per-category entries.
 ### Recipe 6 — suppress attribution
 
 The `no-attribution` stack lists the `no-attribution` setting, which renders
-`attribution: {commit: false, pr: false, sessionUrl: false}` into
+`attribution: {commit: "", pr: "", sessionUrl: false}` into
 `.claude/settings.json` so Claude Code adds no `Co-Authored-By` trailer, "Generated with"
 line or session link to commits and pull requests, in cloud and local sessions alike.
 

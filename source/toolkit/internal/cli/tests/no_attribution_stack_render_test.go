@@ -24,11 +24,7 @@ func TestTheNoAttributionStackTurnsEveryAttributionOffInClaudeSettings(t *testin
 	if !ok {
 		t.Fatalf("settings.json has no attribution object:\n%s", raw)
 	}
-	for _, key := range []string{"commit", "pr", "sessionUrl"} {
-		if got, ok := attribution[key]; !ok || got != false {
-			t.Errorf("attribution.%s = %v (present=%v), want false:\n%s", key, got, ok, raw)
-		}
-	}
+	assertEveryAttributionOff(t, attribution, raw)
 }
 
 func TestTheNoAttributionStacksSettingDoesNotReachCodex(t *testing.T) {
@@ -69,10 +65,20 @@ func TestTheDefaultStackTurnsEveryAttributionOff(t *testing.T) {
 	if !ok {
 		t.Fatalf("the default stack's settings.json has no attribution object:\n%s", raw)
 	}
-	for _, key := range []string{"commit", "pr", "sessionUrl"} {
-		if got, ok := attribution[key]; !ok || got != false {
-			t.Errorf("attribution.%s = %v (present=%v), want false:\n%s", key, got, ok, raw)
+	assertEveryAttributionOff(t, attribution, raw)
+}
+
+// assertEveryAttributionOff checks the shapes Claude Code's settings schema accepts: `commit`
+// and `pr` are strings, where an empty one omits the line, and `sessionUrl` is a boolean.
+func assertEveryAttributionOff(t *testing.T, attribution map[string]any, raw string) {
+	t.Helper()
+	for _, key := range []string{"commit", "pr"} {
+		if got, ok := attribution[key]; !ok || got != "" {
+			t.Errorf("attribution.%s = %#v (present=%v), want an empty string:\n%s", key, got, ok, raw)
 		}
+	}
+	if got, ok := attribution["sessionUrl"]; !ok || got != false {
+		t.Errorf("attribution.sessionUrl = %#v (present=%v), want false:\n%s", got, ok, raw)
 	}
 }
 
