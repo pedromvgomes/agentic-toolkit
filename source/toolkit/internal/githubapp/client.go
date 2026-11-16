@@ -92,8 +92,9 @@ func NewClient(cred *Credential, slug string, opts ...Option) *Client {
 	return c
 }
 
-// ReadClient reads one repository's pull requests with a token the caller
-// supplies, for a machine that holds no App registration.
+// ReadClient reads one repository's pull requests and issues with a token the
+// caller supplies: on a machine that holds no App registration, and for issue
+// reads, which are made with a token whether or not one is held.
 //
 // It has no method that writes, and the Client inside it is unexported, so it
 // cannot reach a call site that posts: reviewapprove.GitHub and a run's
