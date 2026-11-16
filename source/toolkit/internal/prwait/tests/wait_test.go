@@ -344,6 +344,53 @@ func TestAClosedPullRequestEndsTheWait(t *testing.T) {
 	}
 }
 
+func TestThePollThatFindsTheHeadMovedIsReported(t *testing.T) {
+	reader := &fakeReader{states: []state{
+		{pr: open(headA), runs: []githubapp.CheckRun{run("build", "queued", "")}},
+		{pr: open(headB)},
+	}}
+	var reports []prwait.PollReport
+	res := prwait.Wait(context.Background(), reader, prwait.Options{
+		Number: 7, Poll: time.Minute, Cap: time.Hour, Clock: newClock(),
+		Progress: func(r prwait.PollReport) { reports = append(reports, r) },
+	})
+	if res.Verdict != prwait.HeadMoved {
+		t.Fatalf("verdict %q, want head-moved", res.Verdict)
+	}
+	if len(reports) != 2 {
+		t.Fatalf("progress = %+v, want one report per poll", reports)
+	}
+	if last := reports[1]; last.Poll != 2 || last.Ended != prwait.HeadMoved || last.NewHeadSHA != headB {
+		t.Errorf("final report = %+v, want poll 2 ending head-moved to %s", last, headB)
+	}
+	if reports[0].Ended != "" {
+		t.Errorf("a judged poll reports an ending: %+v", reports[0])
+	}
+}
+
+func TestThePollThatFindsThePullRequestClosedIsReported(t *testing.T) {
+	closed := open(headA)
+	closed.State = "closed"
+	reader := &fakeReader{states: []state{
+		{pr: open(headA), runs: []githubapp.CheckRun{run("build", "queued", "")}},
+		{pr: closed},
+	}}
+	var reports []prwait.PollReport
+	res := prwait.Wait(context.Background(), reader, prwait.Options{
+		Number: 7, Poll: time.Minute, Cap: time.Hour, Clock: newClock(),
+		Progress: func(r prwait.PollReport) { reports = append(reports, r) },
+	})
+	if res.Verdict != prwait.Closed {
+		t.Fatalf("verdict %q, want closed", res.Verdict)
+	}
+	if len(reports) != 2 {
+		t.Fatalf("progress = %+v, want one report per poll", reports)
+	}
+	if last := reports[1]; last.Poll != 2 || last.Ended != prwait.Closed || last.State != "closed" {
+		t.Errorf("final report = %+v, want poll 2 ending closed", last)
+	}
+}
+
 func TestTheCapEndsAStillPendingWaitAfterAFinalPollAtTheCap(t *testing.T) {
 	reader := &fakeReader{states: []state{{pr: open(headA), runs: []githubapp.CheckRun{run("slow", "in_progress", "")}}}}
 	clock := newClock()

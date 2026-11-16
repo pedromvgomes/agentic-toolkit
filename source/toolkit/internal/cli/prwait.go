@@ -88,6 +88,7 @@ func newPRWaitCmd(env *Env, seam clientSeam) *cobra.Command {
 	var (
 		poll, capAfter time.Duration
 		jsonOut        bool
+		lyditeApp      string
 	)
 	cmd := &cobra.Command{
 		Use:   "wait owner/repo#N",
@@ -123,6 +124,9 @@ func newPRWaitCmd(env *Env, seam clientSeam) *cobra.Command {
 			"A poll whose reads fail is retried at the next poll. lydite's results\n" +
 			"comment is reported as detail beside an action-needed verdict or a clean\n" +
 			"one with a referral pending; the head's checks decide every verdict.\n" +
+			"Only a results comment written by the --lydite-app App's own bot account,\n" +
+			"<slug>[bot] compared without case, is read; one from any other author,\n" +
+			"github-actions[bot] included, is ignored.\n" +
 			"\n" +
 			"One line per poll goes to stderr, and the verdict to stdout. With --json,\n" +
 			"stdout is one object: {verdict, head_sha, polls, elapsed_seconds, failing,\n" +
@@ -137,6 +141,9 @@ func newPRWaitCmd(env *Env, seam clientSeam) *cobra.Command {
 			}
 			if poll <= 0 || capAfter <= 0 {
 				return fmt.Errorf("--poll and --cap must be positive durations, got %s and %s", poll, capAfter)
+			}
+			if strings.TrimSpace(lyditeApp) == "" {
+				return fmt.Errorf("--lydite-app must name a GitHub App slug")
 			}
 			token, _ := seam.token()
 			if token == "" {
@@ -156,7 +163,7 @@ func newPRWaitCmd(env *Env, seam clientSeam) *cobra.Command {
 				return &exitCodeError{code: prwait.ExitCouldNotRead, err: err}
 			}
 			res := prwait.Wait(cmd.Context(), reader, prwait.Options{
-				Number: number, Poll: poll, Cap: capAfter,
+				Number: number, Poll: poll, Cap: capAfter, LyditeApp: lyditeApp,
 				Progress: func(r prwait.PollReport) { printPollReport(env.Stderr, r) },
 			})
 			if jsonOut {
@@ -175,6 +182,8 @@ func newPRWaitCmd(env *Env, seam clientSeam) *cobra.Command {
 	cmd.Flags().DurationVar(&poll, "poll", 5*time.Minute, "the wait between polls")
 	cmd.Flags().DurationVar(&capAfter, "cap", 2*time.Hour, "how long after starting a still-pending wait ends")
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "emit the verdict as one JSON object on stdout")
+	cmd.Flags().StringVar(&lyditeApp, "lydite-app", prwait.DefaultLyditeApp,
+		"the slug of the GitHub App that writes lydite's results comment; only a comment by <slug>[bot] is read")
 	return cmd
 }
 
@@ -208,11 +217,19 @@ func prWaitResultJSON(res prwait.Result) prWaitJSON {
 	return out
 }
 
-// printPollReport writes one progress line. A read failure's message carries
-// text GitHub supplied, so it is quoted whole.
+// printPollReport writes one progress line. A read failure's message, the
+// state and the new head carry text GitHub supplied, so each is quoted whole.
 func printPollReport(w io.Writer, r prwait.PollReport) {
 	if r.ReadErr != nil {
 		fmt.Fprintf(w, "poll %d: could not read: %q\n", r.Poll, r.ReadErr.Error())
+		return
+	}
+	switch r.Ended {
+	case prwait.Closed:
+		fmt.Fprintf(w, "poll %d: the pull request is %q\n", r.Poll, r.State)
+		return
+	case prwait.HeadMoved:
+		fmt.Fprintf(w, "poll %d: the head moved to %q\n", r.Poll, r.NewHeadSHA)
 		return
 	}
 	fmt.Fprintf(w, "poll %d: %d pending, %d failing, %d waiting threads, %d answered\n",

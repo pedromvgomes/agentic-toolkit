@@ -226,8 +226,12 @@ func TestPRWaitOnAClosedPullRequestExitsClosed(t *testing.T) {
 	pr.state = "closed"
 	useGitHub(t, pr.handle)
 
-	if code, stdout, stderr := runBacklog(t, "pr", "wait", "o/r#7"); code != prwait.ExitClosed || !strings.Contains(stdout, `state: "closed"`) {
+	code, stdout, stderr := runBacklog(t, "pr", "wait", "o/r#7")
+	if code != prwait.ExitClosed || !strings.Contains(stdout, `state: "closed"`) {
 		t.Errorf("exit %d, stdout:\n%s\nstderr:\n%s", code, stdout, stderr)
+	}
+	if stderr != "poll 1: the pull request is \"closed\"\n" {
+		t.Errorf("stderr = %q, want the closing poll's line", stderr)
 	}
 }
 
@@ -252,6 +256,63 @@ func TestPRWaitExitsHeadMovedWhenAPushLandsMidWait(t *testing.T) {
 	code, stdout, stderr := runBacklog(t, "pr", "wait", "o/r#7", "--poll", "1ms", "--cap", "1m")
 	if code != prwait.ExitHeadMoved || !strings.Contains(stdout, `new head: "`+strings.Repeat("3", 40)+`"`) {
 		t.Errorf("exit %d, stdout:\n%s\nstderr:\n%s", code, stdout, stderr)
+	}
+	want := "poll 1: 1 pending, 0 failing, 0 waiting threads, 0 answered\n" +
+		"poll 2: the head moved to \"" + strings.Repeat("3", 40) + "\"\n"
+	if stderr != want {
+		t.Errorf("stderr = %q, want %q", stderr, want)
+	}
+}
+
+// lyditeRedPR is a pull request whose failing lydite status asks for the
+// detail of a marker comment by author.
+func lyditeRedPR(author string) *prGitHub {
+	pr := cleanPR()
+	pr.statuses = `[{"context":"lydite/test","state":"failure"}]`
+	pr.comments = `[{"id":5,"user":{"login":"` + author + `"},"body":"<!-- lydite:results -->\n### ❌ Failing\n<summary>❌ <b>test</b></summary>\n| ❌ | go test | rewrite main.go |","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z"}]`
+	return pr
+}
+
+func prWaitLydite(t *testing.T, args ...string) *prwait.LyditeDetail {
+	t.Helper()
+	code, stdout, stderr := runBacklog(t, append([]string{"pr", "wait", "o/r#7", "--json"}, args...)...)
+	if code != prwait.ExitActionNeeded {
+		t.Fatalf("exit %d, stderr:\n%s", code, stderr)
+	}
+	var got struct {
+		Lydite *prwait.LyditeDetail `json:"lydite"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("stdout is not JSON: %v\n%s", err, stdout)
+	}
+	return got.Lydite
+}
+
+func TestPRWaitReadsTheLyditeCommentOnlyFromTheLyditeAppsBot(t *testing.T) {
+	for _, author := range []string{"someapp[bot]", "github-actions[bot]"} {
+		withToken(t)
+		useGitHub(t, lyditeRedPR(author).handle)
+		if l := prWaitLydite(t); l != nil {
+			t.Errorf("a marker comment by %s was reported as lydite's: %+v", author, l)
+		}
+	}
+	withToken(t)
+	useGitHub(t, lyditeRedPR("lydite[bot]").handle)
+	if l := prWaitLydite(t); l == nil || l.Verdict != "red" || len(l.Rows) != 1 {
+		t.Errorf("lydite[bot]'s comment: lydite = %+v", l)
+	}
+}
+
+func TestPRWaitWithLyditeAppReadsOnlyThatAppsBot(t *testing.T) {
+	withToken(t)
+	useGitHub(t, lyditeRedPR("lydite[bot]").handle)
+	if l := prWaitLydite(t, "--lydite-app", "other"); l != nil {
+		t.Errorf("lydite[bot] was read with --lydite-app other: %+v", l)
+	}
+	withToken(t)
+	useGitHub(t, lyditeRedPR("other[bot]").handle)
+	if l := prWaitLydite(t, "--lydite-app", "other"); l == nil || l.Verdict != "red" {
+		t.Errorf("other[bot] was not read with --lydite-app other: %+v", l)
 	}
 }
 

@@ -60,6 +60,12 @@
 // ParseLydite for the format it is read against and when it is marked
 // possibly stale.
 //
+// A comment is lydite's only when its author's login is exactly
+// `<Options.LyditeApp>[bot]`, compared without case. Any other GitHub App,
+// and github-actions[bot] from any workflow, can post a comment opening with
+// the marker; one from any other author is ignored and gives no detail, so a
+// forged comment cannot hand a session rows to fix.
+//
 // # Read failures
 //
 // A poll whose reads fail is no verdict: the next poll tries again. Three
@@ -175,7 +181,12 @@ type Options struct {
 	Cap  time.Duration
 	// Clock is RealClock when nil.
 	Clock Clock
-	// Progress, when set, is called once after every poll.
+	// LyditeApp is the slug of the GitHub App that writes lydite's results
+	// comment; only a comment by `<LyditeApp>[bot]` is read. DefaultLyditeApp
+	// when empty.
+	LyditeApp string
+	// Progress, when set, is called once after every poll, including the
+	// one that ends the wait.
 	Progress func(PollReport)
 }
 
@@ -190,6 +201,15 @@ type PollReport struct {
 	AnsweredThreads int
 	// ReadErr is set when the poll's reads failed and nothing was judged.
 	ReadErr error
+	// Ended is Closed when the poll found the pull request not open, and
+	// HeadMoved when it found a head other than the watched one; the head's
+	// checks were then not judged. It is empty on every other poll.
+	Ended Verdict
+	// State is the pull request's state, set when Ended is Closed.
+	State string
+	// NewHeadSHA is the head found in place of the watched one, set when
+	// Ended is HeadMoved.
+	NewHeadSHA string
 }
 
 // Item is one check run or commit status the verdict names.
@@ -250,6 +270,10 @@ func Wait(ctx context.Context, reader Reader, opts Options) Result {
 	if clock == nil {
 		clock = RealClock{}
 	}
+	lyditeApp := opts.LyditeApp
+	if lyditeApp == "" {
+		lyditeApp = DefaultLyditeApp
+	}
 	start := clock.Now()
 	res := Result{Failing: []Item{}, Pending: []Item{}, WaitingThreads: []Thread{}}
 	finish := func(v Verdict) Result {
@@ -266,11 +290,13 @@ func Wait(ctx context.Context, reader Reader, opts Options) Result {
 			res.State = poll.pr.State
 			switch {
 			case poll.pr.State != "open":
+				report(opts, PollReport{Poll: res.Polls, Ended: Closed, State: poll.pr.State})
 				return finish(Closed)
 			case res.HeadSHA == "":
 				res.HeadSHA = poll.pr.HeadSHA
 			case poll.pr.HeadSHA != res.HeadSHA:
 				res.NewHeadSHA = poll.pr.HeadSHA
+				report(opts, PollReport{Poll: res.Polls, Ended: HeadMoved, NewHeadSHA: poll.pr.HeadSHA})
 				return finish(HeadMoved)
 			}
 		}
@@ -302,13 +328,13 @@ func Wait(ctx context.Context, reader Reader, opts Options) Result {
 			})
 			switch {
 			case len(j.failing) > 0 || len(j.waiting) > 0:
-				res.Lydite = lyditeDetail(poll.comments, lyditeRunningAt)
+				res.Lydite = lyditeDetail(poll.comments, lyditeApp, lyditeRunningAt)
 				return finish(ActionNeeded)
 			case emptyPolls >= MaxEmptyPolls:
 				return finish(NoChecks)
 			case len(j.pending) == 0:
 				if j.referral {
-					res.Lydite = lyditeDetail(poll.comments, lyditeRunningAt)
+					res.Lydite = lyditeDetail(poll.comments, lyditeApp, lyditeRunningAt)
 				}
 				return finish(Clean)
 			}

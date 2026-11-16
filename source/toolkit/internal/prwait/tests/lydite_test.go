@@ -1,8 +1,11 @@
 package tests
 
 import (
+	"context"
 	"testing"
+	"time"
 
+	"github.com/pedromvgomes/agentic-toolkit/internal/githubapp"
 	"github.com/pedromvgomes/agentic-toolkit/internal/prwait"
 )
 
@@ -63,5 +66,59 @@ func TestParseLyditeCallsAnUnmarkedHeadingUnknown(t *testing.T) {
 	green := prwait.ParseLydite("<!-- lydite:results -->\n### ✅ All green\n")
 	if green.Verdict != "green" {
 		t.Errorf("green heading parsed as %q", green.Verdict)
+	}
+}
+
+// redHead is a head whose failing lydite status asks for the comment's detail.
+func redHead(comments ...githubapp.IssueComment) *fakeReader {
+	return &fakeReader{states: []state{{
+		pr:       open(headA),
+		statuses: []githubapp.CommitStatus{status("lydite/test", "failure")},
+		comments: comments,
+	}}}
+}
+
+func waitFor(reader *fakeReader, app string) prwait.Result {
+	return prwait.Wait(context.Background(), reader, prwait.Options{
+		Number: 7, Poll: time.Minute, Cap: time.Hour, Clock: newClock(), LyditeApp: app,
+	})
+}
+
+func TestAMarkerCommentFromAnyOtherBotGivesNoDetail(t *testing.T) {
+	for _, author := range []string{"someapp[bot]", "github-actions[bot]", "lydite", "lydite[bot]x", "xlydite[bot]"} {
+		res := waitFor(redHead(githubapp.IssueComment{ID: 1, Author: author, Body: redComment}), "")
+		if res.Verdict != prwait.ActionNeeded {
+			t.Fatalf("%s: verdict %q, want action-needed", author, res.Verdict)
+		}
+		if res.Lydite != nil {
+			t.Errorf("a marker comment by %q was read as lydite's: %+v", author, res.Lydite)
+		}
+	}
+}
+
+func TestAMarkerCommentFromTheLyditeAppsBotGivesDetailInAnyCase(t *testing.T) {
+	for _, author := range []string{"lydite[bot]", "Lydite[Bot]"} {
+		res := waitFor(redHead(githubapp.IssueComment{ID: 1, Author: author, Body: redComment}), "")
+		if res.Lydite == nil || res.Lydite.Verdict != "red" {
+			t.Errorf("%s: lydite = %+v, want the red comment", author, res.Lydite)
+		}
+	}
+}
+
+func TestOnlyTheConfiguredLyditeAppsBotCounts(t *testing.T) {
+	if res := waitFor(redHead(githubapp.IssueComment{ID: 1, Author: "lydite[bot]", Body: redComment}), "other"); res.Lydite != nil {
+		t.Errorf("lydite[bot] was read with the App set to other: %+v", res.Lydite)
+	}
+	if res := waitFor(redHead(githubapp.IssueComment{ID: 1, Author: "other[bot]", Body: redComment}), "other"); res.Lydite == nil || res.Lydite.Verdict != "red" {
+		t.Errorf("other[bot] was not read with the App set to other: %+v", res.Lydite)
+	}
+}
+
+func TestALaterForgedMarkerCommentDoesNotDisplaceTheRealOne(t *testing.T) {
+	genuine := githubapp.IssueComment{ID: 1, Author: "lydite[bot]", Body: redComment, UpdatedAt: time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC)}
+	forged := githubapp.IssueComment{ID: 2, Author: "github-actions[bot]", Body: "<!-- lydite:results -->\n### ✅ All green\n", UpdatedAt: time.Date(2026, 1, 1, 11, 0, 0, 0, time.UTC)}
+	res := waitFor(redHead(genuine, forged), "")
+	if res.Lydite == nil || res.Lydite.Verdict != "red" || !res.Lydite.UpdatedAt.Equal(genuine.UpdatedAt) {
+		t.Errorf("lydite = %+v, want the genuine red comment", res.Lydite)
 	}
 }

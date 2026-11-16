@@ -11,6 +11,10 @@ import (
 // LyditeMarker opens every lydite results comment.
 const LyditeMarker = "<!-- lydite:results -->"
 
+// DefaultLyditeApp is the slug of the GitHub App that writes lydite's results
+// comment when Options.LyditeApp is empty.
+const DefaultLyditeApp = "lydite"
+
 // LyditeDetail is what lydite's results comment says, read as detail beside a
 // verdict the head's checks decided.
 type LyditeDetail struct {
@@ -39,13 +43,18 @@ type LyditeRow struct {
 }
 
 // lyditeDetail reads the latest lydite comment among comments, or returns
-// nil when there is none. lyditeRunningAt is the last time this wait saw a
-// lydite check still running on the head, zero when it never did.
-func lyditeDetail(comments []githubapp.IssueComment, lyditeRunningAt time.Time) *LyditeDetail {
+// nil when there is none. A comment is lydite's only when it opens with
+// LyditeMarker and its author is exactly app's bot account, `<app>[bot]`,
+// compared without case: any other App or workflow can write the marker,
+// and its rows would otherwise reach a session as findings to fix.
+// lyditeRunningAt is the last time this wait saw a lydite check still
+// running on the head, zero when it never did.
+func lyditeDetail(comments []githubapp.IssueComment, app string, lyditeRunningAt time.Time) *LyditeDetail {
+	author := app + "[bot]"
 	var latest *githubapp.IssueComment
 	for i := range comments {
 		c := &comments[i]
-		if !strings.HasSuffix(c.Author, "[bot]") || !strings.HasPrefix(strings.TrimSpace(c.Body), LyditeMarker) {
+		if !strings.EqualFold(c.Author, author) || !strings.HasPrefix(strings.TrimSpace(c.Body), LyditeMarker) {
 			continue
 		}
 		if latest == nil || lastWritten(*c).After(lastWritten(*latest)) {

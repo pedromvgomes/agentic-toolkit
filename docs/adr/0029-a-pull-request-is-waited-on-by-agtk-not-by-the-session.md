@@ -33,7 +33,10 @@ head's checks and statuses. Its `<!-- lydite:results -->` comment is rewritten o
 names neither the head it describes nor when that head was pushed, so it cannot say whether it is
 current. The command reports its failed and referred rows beside an action-needed verdict or a
 clean one with a referral pending, and marks them possibly stale when it saw lydite still running
-on the head after the comment was last written.
+on the head after the comment was last written. Only a comment whose author is exactly the lydite
+App's bot account, `<slug>[bot]` compared without case with the slug from `--lydite-app`
+(`lydite` by default), is read: any other App, or `github-actions[bot]` from any workflow, can
+post the marker, and its rows would reach a session that edits code as findings to fix.
 
 **A review thread waits unless the token's own account spoke last.** A resolved thread is done.
 An unresolved one is answered when its latest comment was written by the account the token
