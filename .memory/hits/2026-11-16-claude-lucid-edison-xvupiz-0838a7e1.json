@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "notes": {
+    "cloudinit-is-environment-surface-not-credential-surface": {
+      "count": 1,
+      "first": "2026-11-16T06:31:56.090181177Z",
+      "last": "2026-11-16T06:31:56.090181177Z"
+    },
+    "code-review-app-credential-is-machine-local": {
+      "count": 2,
+      "first": "2026-11-16T06:31:40.193441883Z",
+      "last": "2026-11-16T06:31:56.102003665Z"
+    },
+    "handoff-trust-is-asked-of-git": {
+      "count": 2,
+      "first": "2026-11-16T06:31:40.180692439Z",
+      "last": "2026-11-16T06:31:47.754648066Z"
+    },
+    "token-read-client-cannot-post-by-type": {
+      "count": 1,
+      "first": "2026-11-16T06:31:40.20699662Z",
+      "last": "2026-11-16T06:31:40.20699662Z"
+    }
+  }
+}
