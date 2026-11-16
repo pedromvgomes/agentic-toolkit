@@ -190,18 +190,18 @@ func TestOpenPRNeitherApprovesNorMerges(t *testing.T) {
 	}
 }
 
-// open-pr runs on branches that never had a handoff, so the bookkeeping for
-// one belongs to whatever read it. A skill that consumed the handoff itself
-// would strand a caller that stopped before the review converged.
-func TestOpenPRLeavesHandoffBookkeepingToItsCaller(t *testing.T) {
+// open-pr runs on branches that never had a backlog item, so the bookkeeping
+// for one belongs to whatever worked from it. A skill that changed the item's
+// state itself would strand a caller that stopped before the review converged.
+func TestOpenPRLeavesBacklogItemBookkeepingToItsCaller(t *testing.T) {
 	apply := renderFeatureFlowStack(t)
 
 	body, err := os.ReadFile(filepath.Join(apply, ".claude/skills/open-pr/SKILL.md"))
 	if err != nil {
 		t.Fatalf("open-pr did not reach the consumer: %v", err)
 	}
-	if !strings.Contains(string(body), "never marks a handoff consumed") {
-		t.Error("open-pr claims handoff bookkeeping that belongs to its caller")
+	if !strings.Contains(string(body), "never changes a backlog item's labels or state") {
+		t.Error("open-pr claims backlog item bookkeeping that belongs to its caller")
 	}
 }
 

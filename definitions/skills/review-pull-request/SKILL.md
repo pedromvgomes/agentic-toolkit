@@ -121,8 +121,8 @@ it hit the cap. The two call for different things from whoever reads the report.
 
 Stalled, capped and no-verdict are **failures to converge**. The pull request is open, and it is
 not ready. Name what is still waiting, with its file and line, and stop. Do not tell a caller
-that the pull request is done. `implement-handoff` treats anything but clean as a halt, and
-leaves its handoff where it is so the work can be picked up again.
+that the pull request is done. `implement-backlog-item` treats anything but clean as a halt, and
+leaves its backlog item where it is so the work can be picked up again.
 
 ## What this skill never does
 

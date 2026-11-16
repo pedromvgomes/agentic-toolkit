@@ -3,7 +3,7 @@ name: open-pr
 description: |
   Ship the current branch: update the documentation for the modules it touched, stage what the work taught into the memory store,
   push, open the pull request under the repo's git rules, and put it through a posted panel review that loops until every
-  thread is answered. Usable on its own for any finished branch, and the step `implement-handoff` forks to once its review loop
+  thread is answered. Usable on its own for any finished branch, and the step `implement-backlog-item` forks to once its review loop
   comes back clean. Trigger on "open a PR", "open the PR for this branch", "ship this branch", "raise a pull request", "let's get
   this reviewed".
 requires:
@@ -149,8 +149,10 @@ The title is a conventional-commit subject, because squash merge makes it a subj
 default branch and no commit message underneath can correct it. Take it from the argument if
 one was given; otherwise derive it from the branch's commits.
 
-The body says what the change does and why, and links whatever it closes. It carries no
-co-authorship trailer and no link back to the session that produced it.
+The body says what the change does and why, and links whatever it closes. When the caller names
+a backlog item, the body carries `Closes #<item>`; on a Feature's last slice it also carries
+`Closes #<feature>`. The caller says which applies, and this skill does not decide it. The body
+carries no co-authorship trailer and no link back to the session that produced it.
 
 Report the URL.
 
@@ -178,5 +180,5 @@ pull request is open and not ready, so say that and do not describe the branch a
 It never approves and never merges — approval is a separate act with its own subcommand, and
 no flag here reaches it.
 
-It never marks a handoff consumed. A caller that reads a handoff owns that bookkeeping, because
-this skill runs on branches that never had one.
+It never changes a backlog item's labels or state. A caller that works from a backlog item owns
+that bookkeeping, because this skill runs on branches that never had one.

@@ -29,7 +29,7 @@ default. The phases below still apply, with these differences:
   - `Already addressed`: reply naming the commit that addressed it.
   - A person's question gets a direct answer.
   - A request you cannot carry out inside this change gets a reply saying so and why.
-- **Phase 3 is skipped.** Do not enter plan mode and do not wait for approval. The handoff that
+- **Phase 3 is skipped.** Do not enter plan mode and do not wait for approval. The backlog item that
   started this work was the approved plan, and a loop that blocks on a person every pass is not
   a loop.
 - **Phase 4** runs the project's own checks before anything is committed. A fix that breaks

@@ -4,7 +4,7 @@ description: |
   Review a branch and fix what comes back, repeatedly, until a pass finds no defect or the cap is reached. Wraps `panel-code-review`
   on the local target with a five-pass ceiling and an early exit, so a change is reviewed-and-fixed as one act rather than as a
   sequence somebody has to keep restarting. Trigger on "review and fix my branch", "review until clean", "loop the review",
-  "fix what the review finds", and as the step `implement-handoff` runs after its last task lands.
+  "fix what the review finds", and as the step `implement-backlog-item` runs after its last task lands.
 requires:
   - skills/panel-code-review
 ---
@@ -107,8 +107,8 @@ is not obvious from a single number, and somebody deciding whether to raise `--m
 Stalled and capped are **failures to converge**, and they oblige the same thing: the branch is
 not ready. Say which findings survive, with their file and line, and stop.
 
-Do not open a pull request, and do not tell a caller it may. `implement-handoff` treats a
-non-clean outcome as a halt — the handoff stays unconsumed so the work can be resumed — and a
+Do not open a pull request, and do not tell a caller it may. `implement-backlog-item` treats a
+non-clean outcome as a halt — the backlog item stays open so the work can be resumed — and a
 caller that reads "capped" as "good enough" ships the defects the loop already found and
 reported.
 
