@@ -72,8 +72,9 @@ Requires Go 1.26+. The module lives at `source/toolkit/go.mod`, not the repo roo
   per integration (`context7.yaml`, `serena.yaml`, `rtk.yaml`, `plannotator.yaml`)
 - `docs/adr/` — architecture decision records; consult before changing something an ADR already
   settled
-- `docs/FEATURE-FLOW.md` — the two-stage feature flow (`/plan-feature` → handoff → implement →
-  review → open PR)
+- `docs/FEATURE-FLOW.md` — the feature flow (`/plan-feature` puts the approved plan on the
+  GitHub-issue backlog; `implement-backlog-item` implements an item verified by `agtk backlog
+  verify` → review → open PR)
 - `source/toolkit/internal/cli/tests/` — stack-render tests (e.g. `default_stack_render_test.go`,
   `feature_flow_stack_render_test.go`) that assert what `agtk render` writes for a given stack
 

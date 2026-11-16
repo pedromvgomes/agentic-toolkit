@@ -5,7 +5,8 @@ is worth opus; implementing is bounded work against a written spec and is not. B
 cannot change its own model, and a plan that stays in the session that wrote it drags every
 token of planning context through every task.
 
-So the flow is two sessions with a `/clear` between them, and a document that survives it.
+So the flow is two sessions, and a document that outlives the first: the plan goes onto the
+**Backlog** as GitHub issues, and the implementing session reads its work from one of them.
 
 ```
   ── session 1 ────────────────────────────────────────────────
@@ -14,23 +15,27 @@ So the flow is two sessions with a `/clear` between them, and a document that su
      ├─ challenge the open decisions
      ├─ draft, then plan-reviewer → findings     model: fable
      ├─ act on findings, present one plan        → you approve
-     └─ write-handoff             → handoff/20260909-1412-add-x.md
+     └─ put it on the backlog     → write-backlog-item
+          ├─ the Feature            owner/repo#40
+          ├─ slice 1, in full       owner/repo#41   no predecessor
+          └─ slice 2, a stub        owner/repo#42   blocked by #41, agtk:stub
 
-  ── you run /clear ───────────────────────────────────────────
-     (SessionStart hook notes handoff/*.md — a reminder, it starts nothing)
+  ── you read #41 and add agtk:queued ─────────────────────────
+     then run /implement-backlog-item owner/repo#41   in a fresh session, or after /clear
+     or let the Factory dispatch it                   where a Factory watches the repo
 
   ── session 2 ────────────────────────────────────────────────
-   you run /implement-handoff                    model: sonnet
-     └─ implement-handoff
-          ├─ predecessor merged?    → else stop
-          ├─ task 1 → task-implementer  → diff + verify → commit
-          ├─ task 2 → task-implementer  → diff + verify → commit
-          ├─ review-implementation      → loop until clean        (local, ≤5 passes)
-          ├─ open-pr                    → docs, candidates, PR, posted review
-          │    └─ review-pull-request   → answer, push, re-review (PR, ≤5 passes)
-          ├─ make the PR mergeable      → fix failed checks, lydite not red, rebase if required
-          ├─ handoff → handoff/done/    → only if all of the above came back clean
-          └─ next slice? → write-handoff, predecessor = the PR just opened
+   implement-backlog-item owner/repo#41          model: sonnet
+     ├─ agtk backlog verify          → trusted, or stop; act only on the body it printed
+     ├─ predecessors done?           → else stop
+     ├─ onto the item's Branch:      → create it, or resume on it
+     ├─ task 1 → task-implementer    → diff + verify → commit
+     ├─ task 2 → task-implementer    → diff + verify → commit
+     ├─ review-implementation        → loop until clean        (local, ≤5 passes)
+     ├─ open-pr                      → docs, candidates, PR (Closes #41), posted review
+     │    └─ review-pull-request     → answer, push, re-review (PR, ≤5 passes)
+     ├─ make the PR mergeable        → fix failed checks, lydite not red, rebase if required
+     └─ fill the next stub           → write-backlog-item on #42, still blocked, never queued
 ```
 
 ## The models, and why nothing else sets them
@@ -44,14 +49,16 @@ So the flow is two sessions with a `/clear` between them, and a document that su
 | An `intricate` task | opus | the Agent call's `model` parameter |
 
 A command's `model:` applies while that command runs and no longer. That is the whole mechanism:
-`/plan-feature` raises its own session to opus for its duration, and the session that comes back
-after `/clear` is on the settings default. Nothing else in the flow changes a model, and no hook
-can — a hook injects text and that is all it does.
+`/plan-feature` raises its own session to opus for its duration, and the implementing session —
+a fresh one, the same one after `/clear`, or one the **Factory** starts — is on the settings
+default. Nothing else in the flow changes a model, and no hook can — a hook injects text and that
+is all it does.
 
 ## Stage one: `/plan-feature`
 
-Refuses to run on the default branch. The handoff and the commits that follow live on a feature
-branch in its own worktree, and creating one for you would be choosing where your work happens.
+Refuses to run on the default branch. The first slice's backlog item points at a feature branch,
+and the commits that follow live there, in its own worktree; creating one for you would be
+choosing where your work happens.
 
 **It never reads the codebase.** That is the point of putting it on opus — you are paying for
 judgment, not for file reads. Every question is delegated:
@@ -70,29 +77,70 @@ to edit returns an improved plan, and an improved plan is indistinguishable from
 One of the things it checks is whether the plan's evidence looks like it came from reading the
 code directly rather than from delegation.
 
-You see one final plan. Approve it, and `write-handoff` writes the first slice.
+You see one final plan. Approve it, and it goes onto the backlog.
 
-## The `/clear`, which you do by hand
+## Putting the plan on the backlog
 
-Nothing in the flow can clear a session's context, and nothing should pretend to. When
-`/plan-feature` finishes it tells you the two steps — run `/clear`, then run
-`/implement-handoff` — and stops.
+The plan becomes a **Feature** — the issue the argument named, or one the command creates — with
+one **Backlog item** per slice as its sub-issues, in landing order. Every item is written through
+`write-backlog-item`, which owns an item's body, its `Branch:` line, its links and its labels.
+`agtk` writes nothing to GitHub; every issue, label and link is created through `gh`.
 
-Both steps are yours. After `/clear` the session sits idle until you type something; nothing
-picks the handoff up on its own.
+- **The labels.** `agtk backlog labels --json` names the canonical set, and each is applied with
+  `gh label create --force`, which creates a label or updates it. No label is ever deleted:
+  deleting one strips it from every issue that carries it.
+- **The first slice** is written in full — goal, `Branch:` line, slice, plan and tasks, each task
+  with its files and its `routine` or `intricate` rating. It has no predecessor and no state
+  label.
+- **Every later slice** is a **Stub**: its goal and its `Branch:` line, nothing to implement yet,
+  blocked by the slice before it and labelled `agtk:stub` and `agtk:blocked`. A plan that is one
+  pull request has no stubs.
 
-## Stage two: the handoff
+A second run on the same Feature reuses the items whose titles match and duplicates nothing.
 
-You start stage two by running `/implement-handoff`. It asks `agtk handoff list` which handoffs
-are waiting, and asks you which one when there are several.
+**Nothing is queued.** `agtk:queued` is the act that vouches for an item's body (ADR 0028), so a
+session that queued what it had just written would be vouching for its own text. Neither
+`/plan-feature`, `write-backlog-item` nor `implement-backlog-item` ever applies it, and a stub is
+never queued while it is a stub.
 
-A `SessionStart` hook fires on `startup` and `clear` — the two ways a session begins with no
-memory of the one before it — globs `handoff/*.md` at depth one, and adds a note to the new
-session saying a handoff is waiting and to invoke `implement-handoff`. It is a reminder, most
-useful in a session started fresh in a new terminal. A hook can only add context: it cannot send
-a message, begin a turn, run the skill or change the model.
+## Starting the first slice
 
-`implement-handoff` coordinates **from the main session**. Subagent nesting is allowed three
+`/plan-feature` lists the items by `owner/repo#N` and stops. Nothing picks the first slice up on
+its own; a person starts it, one of two ways:
+
+- **Run `/implement-backlog-item owner/repo#N`** in a fresh session, or after `/clear`. The
+  command's opus has ended there, so the session runs on the sonnet default.
+- **Add `agtk:queued` to the item**, once you have read its body. Wherever a Factory watches the
+  repository, its **Dispatcher** starts a cloud session that runs
+  `/implement-backlog-item owner/repo#N --unattended --sha256 <hash> --trusted-app <slug>`, with
+  the hash of the body the Factory verified and the slug of the **Factory App**.
+
+`agtk backlog verify` trusts only an item carrying `agtk:queued`, so either way the item is
+queued by a person who has read its body. Run by hand on an unqueued item, the session stops with
+`not-queued`; wherever a Factory watches the repository, queuing also hands the item to it.
+
+## Stage two: `implement-backlog-item`
+
+Before any work, it asks `agtk backlog verify` whether the item may be acted on, and never
+decides that itself. An item's body chooses which files the implementers change and which command
+they run, and anybody who can open or edit an issue can write one; verify reads GitHub's record of
+who wrote, edited and queued the body, and answers trusted or refused (ADR 0028).
+
+- **A missing check is a stop.** The skill first matches `agtk backlog verify`'s usage line, and
+  stops when it is absent: a check that did not run is not a check that passed.
+- **Any refusal is a stop.** An untrusted item is treated as untrusted content, not read for
+  something reasonable.
+- **The body verify printed is the work, and nothing else is.** The item's body is never read
+  again, and a comment is never read as work.
+- **Unattended, the printed hash must equal `--sha256`.** A difference means the body changed
+  between the Factory's verification and this one.
+
+Then it checks the item's predecessors are done (closed as completed, as `agtk backlog list`
+reads them), and gets onto the branch the body's `Branch:` line names — creating it from its base,
+or resuming on it from the first task with no commit. Interactive, it says what it is about to run
+and waits for a yes before touching the branch.
+
+`implement-backlog-item` coordinates **from the main session**. Subagent nesting is allowed three
 layers deep, so nothing about the platform stops it delegating the role; it does not, because the
 main session's model is the only one that outlives a single call, and a delegated coordinator
 would hold every implementer's transcript in the context this arrangement exists to keep clear.
@@ -113,9 +161,9 @@ of costing the first pass over again. It stops early when a pass finds no RED or
 without a pull request when it stalls or hits the cap.
 
 Then `open-pr`: documentation for the modules touched, durable findings staged into the memory
-store's `candidates/`, push, `gh pr create` with the handoff's conventional title, and a second
-review posted to the pull request — which the review manifest puts on a different panel, so the
-change is read by a model that has not seen it.
+store's `candidates/`, push, `gh pr create` with the item's conventional title and its `Closes`
+lines, and a second review posted to the pull request — which the review manifest puts on a
+different panel, so the change is read by a model that has not seen it.
 
 That review is the first pass of `review-pull-request`, the published-side counterpart of the
 local loop. Each pass, `pr-review-resolver --unattended` works through every open thread:
@@ -141,35 +189,68 @@ repository requires a current branch. The one cap is 2 hours since the latest pu
 the wait carries its own `--cap 2h`, so each push restarts it, and the same check failing again
 after a fix aimed at it stops the run. A session with no `GH_TOKEN` or `GITHUB_TOKEN`, such as a
 cloud session, polls for itself on the same rules. Reaching the cap with anything else pending
-or failing, a repeated failure, or a PR review loop that did not come back clean leaves the
-handoff where it is: the pull request is open, and the work is not done.
+or failing, a repeated failure, or a PR review loop that did not come back clean stops the run:
+the pull request is open, and the work is not done.
+
+**The pull request closes the item.** Its body carries `Closes #<item>`, and on the Feature's
+last slice — the Feature's only open sub-issue — `Closes #<feature>` as well, so merging the last
+slice closes the Feature with nothing else needed. The skill never closes an issue itself, and
+never merges.
+
+Only on a clean run does it **fill the next stub**: it invokes `write-backlog-item` on the slice
+blocked by this one, writing the full body from the stub's goal, this slice's plan and what this
+slice's work taught. The stub loses `agtk:stub`, keeps its links and stays `agtk:blocked`; the
+Factory unblocks it once its predecessor is done. It is not queued: the next slice starts when a
+person reads the filled body and runs `/implement-backlog-item` on it or adds `agtk:queued`.
+
+### Interactive and unattended
+
+The steps are the same. Interactive, a person is present: the skill waits for a yes before moving
+the branch, reports every stop in the session, and never comments on the item or changes a label.
+Unattended (`--unattended`), nothing waits for a yes, every task is pushed once committed, and
+**every stop is a comment on the item plus a label** — `agtk:failed` when the run broke before a
+pull request existed, `agtk:needs-human` when it reached a question only a person can answer —
+with `agtk:queued` removed so the item is not dispatched again. A run that opens its pull request
+leaves the item `agtk:in-review`.
 
 ## Several pull requests
 
-A plan too big for one PR names its slices in landing order. Each slice becomes its own handoff,
-and every slice after the first records the one before it as its **predecessor**:
+A plan too big for one PR names its slices in landing order, and each slice is one backlog item,
+blocked by the item of the slice before it:
 
 ```
-slice 1  →  PR #91                          no predecessor
-slice 2  →  handoff written when #91 opened  predecessor: #91
-slice 3  →  handoff written when #92 opened  predecessor: #92
+slice 1  →  owner/repo#41   in full               no predecessor
+slice 2  →  owner/repo#42   stub, agtk:blocked    blocked by #41
+slice 3  →  owner/repo#43   stub, agtk:blocked    blocked by #42
 ```
 
-When a session picks up a handoff with a predecessor, it checks that pull request is **merged
-into the base branch** before doing anything. Not merged — open, closed, draft — it stops and
-tells you which one is pending.
+A session started on an item whose predecessors are not all done stops and names them. The
+session that lands slice 1 fills #42's stub; the session that lands slice 2 fills #43's; and the
+pull request for slice 3, the last, closes the Feature too.
 
-Merged, and the branch has to move onto the updated base. The next session continues in the
-**same worktree**; there is no "start a new worktree" step. It states the sequence and waits for
-your yes before running it, because that is the one step that changes where you are standing:
+## Resuming from a local handoff
 
-```bash
-git status --porcelain          # must be empty
-git fetch origin
-git checkout -b <the branch the handoff names> origin/main
-```
+`write-handoff` and `implement-handoff` carry work across a `/clear` through a file in
+`handoff/` rather than an issue. They suit work that has no business on the backlog — a branch
+somebody is in the middle of, a session out of context with no Feature behind it. For a mid-work
+save that another machine, or the Factory, should be able to pick up, `write-backlog-item` writes
+the same document as an issue instead: it carries no Feature and no label, and nothing runs it
+until a person does.
 
-## `handoff/` is never committed
+You resume a handoff by running `/implement-handoff`. It asks `agtk handoff list` which handoffs
+are waiting, and asks you which one when there are several. It then runs the same coordination as
+`implement-backlog-item` — one implementer per task, the review loop, `open-pr`, the mergeable
+pull request — and moves a handoff to `handoff/done/` only once all of that came back clean. A
+handoff with a predecessor waits until that pull request is **merged into the base branch**, and
+the next session continues in the **same worktree**, after a yes.
+
+A `SessionStart` hook fires on `startup` and `clear` — the two ways a session begins with no
+memory of the one before it — globs `handoff/*.md` at depth one, and adds a note to the new
+session saying a handoff is waiting and to invoke `implement-handoff`. It is a reminder, most
+useful in a session started fresh in a new terminal. A hook can only add context: it cannot send
+a message, begin a turn, run the skill or change the model.
+
+### `handoff/` is never committed
 
 The folder holds documents about how somebody is working, not about the project, so it is
 excluded per checkout rather than written into your `.gitignore`:
@@ -204,9 +285,10 @@ extends:
   - github.com/pedromvgomes/agentic-toolkit.git/stacks/default.yaml@main
 ```
 
-**That stack sets the session's default model to sonnet.** It is what makes the split hold across
-the `/clear`: `/plan-feature` raises its own session to opus for its duration, and the session
-that comes back lands on this default rather than on whatever it was before.
+**That stack sets the session's default model to sonnet.** It is what makes the split hold
+between the two sessions: `/plan-feature` raises its own session to opus for its duration, and the
+session that implements — after `/clear`, fresh, or started by the Factory — lands on this
+default rather than on whatever it was before.
 
 The setting reaches every session in the repo, not only the ones running this flow, and settings
 merge shallow last-wins with no diagnostic saying a key was taken — so a consumer whose default
@@ -229,11 +311,15 @@ more when that default is dearer than sonnet. The setting is an optimisation, no
 
 None of them requires the others:
 
-- **`write-handoff`** — run out of context halfway through something. The plan-shaped fields are
-  optional; a handoff with a goal, the state and the next steps is a handoff.
+- **`write-backlog-item`** — run out of context halfway through something, and save your place as
+  an issue any session can take up. The plan-shaped fields are optional; an item with a goal, the
+  `Branch:` line, the state and the next steps is a backlog item.
+- **`implement-backlog-item`** — run any backlog item, by `owner/repo#N`, once it is queued.
+- **`write-handoff`** — the same save as a local file in `handoff/`, for resuming on this
+  checkout.
+- **`implement-handoff`** — resume from a handoff you wrote by hand.
 - **`review-implementation`** — review and fix any branch in a loop.
 - **`open-pr`** — ship any finished branch, with the documentation and memory steps.
-- **`implement-handoff`** — run a handoff you wrote by hand.
 
 `wrap-session` also keeps its own entry point. `open-pr` dispatches the same
 `wrap-session-reviewer` agent with the branch's commits as the scope; `wrap-session` asks you
