@@ -131,7 +131,7 @@ func (c *Client) ReadCheckRuns(ctx context.Context, sha string) ([]CheckRun, err
 		if payload.TotalCount == nil {
 			return nil, fmt.Errorf("GitHub reported %s with no total count", what)
 		}
-		if total >= 0 && *payload.TotalCount != total {
+		if total >= 0 && *payload.TotalCount != total { // [lydite:exclude_from_mutation][total is -1 only before the first page, and a read whose count is 0 returns or is refused on that page, so total is never 0 here and >= and > agree]
 			return nil, fmt.Errorf("%s changed from %d to %d runs while they were read", what, total, *payload.TotalCount)
 		}
 		total = *payload.TotalCount
@@ -195,7 +195,7 @@ func (c *Client) ReadCommitStatuses(ctx context.Context, sha string) (CombinedSt
 		if payload.State == "" || payload.TotalCount == nil {
 			return CombinedStatus{}, fmt.Errorf("GitHub reported %s with no state or total count", what)
 		}
-		if total >= 0 && (*payload.TotalCount != total || payload.State != out.State) {
+		if total >= 0 && (*payload.TotalCount != total || payload.State != out.State) { // [lydite:exclude_from_mutation][total is -1 only before the first page, and a read whose count is 0 returns or is refused on that page, so total is never 0 here and >= and > agree]
 			return CombinedStatus{}, fmt.Errorf("%s changed while they were read", what)
 		}
 		total, out.State = *payload.TotalCount, payload.State

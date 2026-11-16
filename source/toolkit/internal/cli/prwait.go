@@ -48,14 +48,14 @@ func newPRCmd(env *Env) *cobra.Command {
 func parsePullRequestRef(s string) (string, int, error) {
 	slug, num, ok := strings.Cut(s, "#")
 	if !ok {
-		return "", 0, fmt.Errorf("%q is not a pull request: want owner/repo#N", s)
+		return "", 0, fmt.Errorf("%q is not a pull request: want owner/repo#N", s) // [lydite:exclude_from_mutation][every caller returns on the error before reading the values beside it, so they are never observed]
 	}
 	repo, err := parseBacklogRepo(slug)
 	if err != nil {
-		return "", 0, fmt.Errorf("%q is not a pull request: want owner/repo#N", s)
+		return "", 0, fmt.Errorf("%q is not a pull request: want owner/repo#N", s) // [lydite:exclude_from_mutation][every caller returns on the error before reading the values beside it, so they are never observed]
 	}
 	if !backlogNumRE.MatchString(num) {
-		return "", 0, fmt.Errorf("%q is not a pull request: the number must be a positive integer", s)
+		return "", 0, fmt.Errorf("%q is not a pull request: the number must be a positive integer", s) // [lydite:exclude_from_mutation][every caller returns on the error before reading the values beside it, so they are never observed]
 	}
 	number, err := strconv.Atoi(num)
 	if err != nil {

@@ -121,7 +121,7 @@ func ParseLydite(body string) LyditeDetail {
 			if mark != "❌" && mark != "🟡" {
 				continue
 			}
-			rest := make([]string, 0, len(cells)-1)
+			rest := make([]string, 0, len(cells)-1) // [lydite:exclude_from_mutation][the size is only a capacity hint: a slice grows past it, so a larger hint yields the same rows]
 			for _, cell := range cells[1:] {
 				rest = append(rest, strings.TrimSpace(cell))
 			}

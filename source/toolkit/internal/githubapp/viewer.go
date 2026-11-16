@@ -24,10 +24,10 @@ func (c *Client) ReadViewer(ctx context.Context) (string, error) {
 		Login string `json:"login"`
 	}
 	if err := c.call(ctx, http.MethodGet, "/user", nil, &user); err != nil {
-		return "", classifyRead(err)
+		return "", classifyRead(err) // [lydite:exclude_from_mutation][every caller returns on the error before reading the login beside it, so it is never observed]
 	}
 	if user.Login == "" {
-		return "", errors.New("GitHub reported no login for the account this token belongs to")
+		return "", errors.New("GitHub reported no login for the account this token belongs to") // [lydite:exclude_from_mutation][every caller returns on the error before reading the login beside it, so it is never observed]
 	}
 	return user.Login, nil
 }

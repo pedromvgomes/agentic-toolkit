@@ -2,10 +2,13 @@ package tests
 
 import (
 	"encoding/json"
+	"math"
 	"net/http"
+	"regexp"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/pedromvgomes/agentic-toolkit/internal/prwait"
 )
@@ -370,10 +373,126 @@ func TestPRWaitRefusesAMalformedPullRequestWithExitOne(t *testing.T) {
 			t.Errorf("%q: exit %d, stderr:\n%s", arg, code, stderr)
 		}
 	}
-	if code, _, _ := runBacklog(t, "pr", "wait", "o/r#7", "--poll", "0s"); code != 1 {
-		t.Errorf("--poll 0s: exit %d, want 1", code)
+	for _, flags := range [][]string{{"--poll", "0s"}, {"--cap", "0s"}} {
+		if code, _, _ := runBacklog(t, append([]string{"pr", "wait", "o/r#7"}, flags...)...); code != 1 {
+			t.Errorf("%s %s: exit %d, want 1", flags[0], flags[1], code)
+		}
 	}
 	if len(fake.requests) != 0 {
 		t.Errorf("requests made for a malformed argument: %v", fake.requests)
+	}
+}
+
+// elapsedRE matches the rounded elapsed time in the text verdict, the one part
+// of it that depends on how long the run took.
+var elapsedRE = regexp.MustCompile(`elapsed: [0-9hms]+\n`)
+
+// verdictBlock is stdout with its elapsed time written as "elapsed: E".
+func verdictBlock(stdout string) string {
+	return elapsedRE.ReplaceAllString(stdout, "elapsed: E\n")
+}
+
+func TestPRWaitTextVerdictOnACleanPullRequestIsTheHeaderAlone(t *testing.T) {
+	withToken(t)
+	useGitHub(t, cleanPR().handle)
+
+	code, stdout, stderr := runBacklog(t, "pr", "wait", "o/r#7")
+	if code != prwait.ExitClean {
+		t.Fatalf("exit %d, stderr:\n%s", code, stderr)
+	}
+	want := "o/r#7: clean\n" +
+		`head: "` + waitHead + `"` + "\n" +
+		"polls: 1, elapsed: E\n"
+	if got := verdictBlock(stdout); got != want {
+		t.Errorf("stdout = %q, want %q", got, want)
+	}
+}
+
+func TestPRWaitTextVerdictListsFailingPendingAndWaitingUnderTheirHeadings(t *testing.T) {
+	withToken(t)
+	pr := cleanPR()
+	pr.runs = `[{"name":"evil\nname","status":"completed","conclusion":"failure","html_url":"https://github.com/o/r/runs/2"},` +
+		`{"name":"slow","status":"queued","html_url":"https://github.com/o/r/runs/3"}]`
+	pr.threads = `[{"path":"a.go","isResolved":false,"isOutdated":true,"comments":{"nodes":[{"body":"please fix","viewerDidAuthor":false}]},` +
+		`"latest":{"nodes":[{"author":{"login":"alice"}}]}}]`
+	useGitHub(t, pr.handle)
+
+	code, stdout, stderr := runBacklog(t, "pr", "wait", "o/r#7")
+	if code != prwait.ExitActionNeeded {
+		t.Fatalf("exit %d, stderr:\n%s", code, stderr)
+	}
+	want := "o/r#7: action-needed\n" +
+		`head: "` + waitHead + `"` + "\n" +
+		"polls: 1, elapsed: E\n" +
+		"failing:\n" +
+		`  check-run "evil\nname": "failure" "https://github.com/o/r/runs/2"` + "\n" +
+		"pending:\n" +
+		`  check-run "slow": "queued" "https://github.com/o/r/runs/3"` + "\n" +
+		"waiting threads:\n" +
+		`  "a.go" (outdated): "please fix"` + "\n"
+	if got := verdictBlock(stdout); got != want {
+		t.Errorf("stdout = %q, want %q", got, want)
+	}
+}
+
+func TestPRWaitTextVerdictNamesTheReadErrorQuoted(t *testing.T) {
+	withToken(t)
+	useGitHub(t, func(r *http.Request) (int, string) {
+		return 404, `{"message":"Not Found"}`
+	})
+
+	code, stdout, stderr := runBacklog(t, "pr", "wait", "o/r#7", "--poll", "1ms", "--cap", "1m")
+	if code != prwait.ExitCouldNotRead {
+		t.Fatalf("exit %d, stderr:\n%s", code, stderr)
+	}
+	if !regexp.MustCompile(`(?m)^polls: 3, elapsed: [0-9hms]+\nerror: ".+"$`).MatchString(stdout) {
+		t.Errorf("stdout does not name the polls and the read error:\n%s", stdout)
+	}
+}
+
+func TestPRWaitJSONNamesEveryFailingAndPendingItem(t *testing.T) {
+	withToken(t)
+	pr := cleanPR()
+	pr.runs = `[{"name":"build","status":"completed","conclusion":"failure","html_url":"https://github.com/o/r/runs/2"},` +
+		`{"name":"slow","status":"queued","html_url":"https://github.com/o/r/runs/3"}]`
+	useGitHub(t, pr.handle)
+
+	code, stdout, stderr := runBacklog(t, "pr", "wait", "o/r#7", "--json")
+	if code != prwait.ExitActionNeeded {
+		t.Fatalf("exit %d, stderr:\n%s", code, stderr)
+	}
+	var got struct {
+		Failing []prwait.Item `json:"failing"`
+		Pending []prwait.Item `json:"pending"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("stdout is not JSON: %v\n%s", err, stdout)
+	}
+	if len(got.Failing) != 1 || got.Failing[0].Name != "build" {
+		t.Errorf("failing = %+v, want build", got.Failing)
+	}
+	if len(got.Pending) != 1 || got.Pending[0].Name != "slow" {
+		t.Errorf("pending = %+v, want slow", got.Pending)
+	}
+}
+
+func TestPRWaitJSONElapsedIsWholeSecondsOfTheRun(t *testing.T) {
+	withToken(t)
+	useGitHub(t, cleanPR().handle)
+
+	start := time.Now()
+	code, stdout, stderr := runBacklog(t, "pr", "wait", "o/r#7", "--json")
+	took := time.Since(start)
+	if code != prwait.ExitClean {
+		t.Fatalf("exit %d, stderr:\n%s", code, stderr)
+	}
+	var got struct {
+		ElapsedSeconds int64 `json:"elapsed_seconds"`
+	}
+	if err := json.Unmarshal([]byte(stdout), &got); err != nil {
+		t.Fatalf("stdout is not JSON: %v\n%s", err, stdout)
+	}
+	if limit := int64(math.Ceil(took.Seconds())); got.ElapsedSeconds < 0 || got.ElapsedSeconds > limit {
+		t.Errorf("elapsed_seconds = %d for a run that took %s", got.ElapsedSeconds, took)
 	}
 }

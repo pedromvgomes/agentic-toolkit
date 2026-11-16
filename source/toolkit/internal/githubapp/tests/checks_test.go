@@ -339,3 +339,71 @@ func TestEveryCIReadIsAGetUnderTheCallersToken(t *testing.T) {
 		}
 	}
 }
+
+// A hash GitHub prints in upper case names the same commit, so every
+// hexadecimal digit is accepted in either case, the range ends included.
+func TestACIReadAcceptsAFullCommitSHAInUpperCase(t *testing.T) {
+	sha := "ABCDEF0123456789ABCDEF0123456789ABCDEF01"
+	c, net := readClient(t,
+		get("/repos/acme/widgets/commits/"+sha+"/check-runs", 200, `{"total_count":0,"check_runs":[]}`),
+		get("/repos/acme/widgets/commits/"+sha+"/status", 200, `{"state":"pending","total_count":0,"statuses":[]}`))
+	if _, err := c.ReadCheckRuns(context.Background(), sha); err != nil {
+		t.Errorf("check runs for %q: %v", sha, err)
+	}
+	if _, err := c.ReadCommitStatuses(context.Background(), sha); err != nil {
+		t.Errorf("statuses for %q: %v", sha, err)
+	}
+	net.done()
+}
+
+func TestTheCommentsOnIssueOneAreRead(t *testing.T) {
+	c, net := readClient(t, get("/repos/acme/widgets/issues/1/comments", 200, commentsJSON(1, 1)))
+	comments, err := c.ReadIssueComments(context.Background(), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	net.done()
+	if len(comments) != 1 {
+		t.Errorf("read %d comments, want 1", len(comments))
+	}
+}
+
+// The page limit refuses a read still going after its last page, never one
+// that ends on it.
+func TestACIReadThatEndsOnItsLastAllowedPageIsReturned(t *testing.T) {
+	const pages = 40
+	var runPages []exchange
+	for page := range pages {
+		runPages = append(runPages, get(checkRunsPath, 200,
+			checkRunsJSON(pages*checksPageLength, page*checksPageLength+1, checksPageLength)))
+	}
+	c, net := readClient(t, runPages...)
+	runs, err := c.ReadCheckRuns(context.Background(), headSHA)
+	if err != nil {
+		t.Fatalf("check runs ending on page %d: %v", pages, err)
+	}
+	net.done()
+	if len(runs) != pages*checksPageLength {
+		t.Errorf("read %d check runs, want %d", len(runs), pages*checksPageLength)
+	}
+
+	const statusPageLength = 100
+	var statusPages []exchange
+	for page := range pages {
+		items := make([]string, statusPageLength)
+		for i := range items {
+			items[i] = fmt.Sprintf(`{"context":"ctx/%d","state":"success"}`, page*statusPageLength+i+1)
+		}
+		statusPages = append(statusPages, get(statusPath, 200, fmt.Sprintf(`{"state":"success","total_count":%d,"statuses":[%s]}`,
+			pages*statusPageLength, strings.Join(items, ","))))
+	}
+	c, net = readClient(t, statusPages...)
+	combined, err := c.ReadCommitStatuses(context.Background(), headSHA)
+	if err != nil {
+		t.Fatalf("statuses ending on page %d: %v", pages, err)
+	}
+	net.done()
+	if len(combined.Statuses) != pages*statusPageLength {
+		t.Errorf("read %d statuses, want %d", len(combined.Statuses), pages*statusPageLength)
+	}
+}
