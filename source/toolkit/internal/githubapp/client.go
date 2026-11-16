@@ -92,8 +92,10 @@ func NewClient(cred *Credential, slug string, opts ...Option) *Client {
 	return c
 }
 
-// ReadClient reads one repository's pull requests with a token the caller
-// supplies, for a machine that holds no App registration.
+// ReadClient reads one repository's pull requests, issues, and the checks and
+// statuses on its commits with a token the caller supplies: on a machine that
+// holds no App registration, and for issue and CI reads, which are made with a
+// token whether or not one is held.
 //
 // It has no method that writes, and the Client inside it is unexported, so it
 // cannot reach a call site that posts: reviewapprove.GitHub and a run's
@@ -129,6 +131,8 @@ func (r *ReadClient) ReadPullRequest(ctx context.Context, number int) (PullReque
 // is whoever owns the token. Left as GitHub answers it, a token belonging to
 // the change's author would make the author's own comments read as the App's
 // fingerprints, and a finding would be withheld on the author's say-so.
+// LastAuthor is a login rather than a claim about the App, so it is returned
+// as GitHub reports it, and ByViewer is never read off it.
 func (r *ReadClient) ReadReviewThreads(ctx context.Context, number int) ([]ReviewThread, error) {
 	threads, err := r.c.ReadReviewThreads(ctx, number)
 	if err != nil {

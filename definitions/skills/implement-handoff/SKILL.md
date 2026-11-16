@@ -153,43 +153,107 @@ as step 5 does.
 
 ## 7 — Make the pull request mergeable
 
-A reviewed pull request is not a mergeable one. Wait for its checks:
+A reviewed pull request is not a mergeable one. Wait on it until it is, or until the clock runs
+out — and hand the waiting to `agtk`:
 
 ```bash
-gh pr checks <N> --watch --fail-fast
+agtk pr wait <owner/repo#N> --json        # polls every 5 minutes; --cap 2h is the default
 ```
 
-The command returns **as soon as** every check has finished, or at the first one that fails.
-Bound it at **30 minutes**. That is a ceiling for a pipeline still running at that point, not a
-wait that always runs its length. Run it in the background so the harness does not cut the call
-off sooner, and read its result when it finishes. If it is still running at 30 minutes, stop it
-and treat that as the ceiling being reached. `timeout 1800` does the same where it exists, but
-macOS ships without it, so do not rely on it.
+Run it as a **background command** and end the turn. The session wakes once, when the command
+exits, and acts on its verdict by exit code. Do not poll beside it, and do not run it in the
+foreground: a long foreground command is cut off by the harness before it ends, and leaves the
+session unable to act on what the wait found.
 
-Straight after a push, the pull request may report no checks at all, because CI has not
-registered them yet. Wait a minute and ask again. A repository whose pull request still reports
-none has no CI to wait for, so say so and continue.
+The session does not poll for itself, because each poll it makes is a model turn over the whole
+conversation, and a two-hour wait at five minutes is two dozen of them. The command polls the
+same pull request on the same rules and spends no turn while it waits. It reads with the token in
+`GH_TOKEN` or `GITHUB_TOKEN` and writes nothing: it never resolves a thread, posts or approves.
+See ADR 0029.
 
-- **A check failed** (a build, a coverage gate, a lint job, a scan) → read its log, fix the
-  cause on the branch, commit it conventionally and push. Then wait again. Fix only what the
-  failure names; a failure with no cause on this branch (an outage, a flaky runner) is
-  something to report, not to paper over.
-- **Still running at the ceiling** → **stop**, and say which checks were still pending. A
-  check nobody saw finish has not passed.
-- **Every check passed** → go on to the lydite verdict and the merge conditions below.
+### The clock
 
-Fixing and re-waiting is capped at **three rounds**. A pull request that is still failing after
-that has a problem this session is not solving: **stop**, report what still fails and what was
-tried, and leave the handoff where it is.
+The wait has **one cap: 2 hours of wall-clock since the latest push to the branch**. It covers
+the whole phase — waiting, fixing, pushing and waiting again — and every push restarts it along
+with CI, because each push asks the pipeline a new question that deserves its full time to
+answer. The command carries the cap: `--cap 2h` runs from the moment it starts, and every push
+is followed by a new run of the wait, which is a new 2-hour cap. There is no other cap: no count
+of fix rounds, no shorter ceiling on a single wait.
+
+A clock that restarts on every push could be extended forever by a run that keeps pushing, so
+one guard bounds the fixing: **the same check or lydite row failing again after a fix aimed at
+it is not progress.** Stop and report it, with what was tried, rather than pushing another
+attempt at the same failure. The command does not know what was tried; this guard is yours to
+keep across its runs.
+
+The 2 hours are a cap, not a wait that always runs its length. The command exits at the first
+poll that reaches a verdict.
+
+### What the verdict decides
+
+The `--json` object names what the wait found: the `failing` and `pending` checks and statuses
+of the head, the `waiting_threads`, the `answered_unresolved` count, `referral_pending`, and,
+where lydite left a results comment, its `lydite` rows.
+
+- **0, clean** → every check run passed (success, neutral or skipped), every commit status
+  succeeded except lydite's `lydite/referral`, which is the only one allowed to stay pending,
+  and no review thread is waiting for an answer. Read the lydite verdict (below), then go on to
+  the merge conditions.
+- **2, action needed** → fix what it names on the branch:
+  - a failed check (a build, a test, a lint job, a scan) → read its log, and hand the fix to a
+    fresh `task-implementer`, bounded to the files the failure names, as step 4 does;
+  - a ❌ lydite row (a failed test, a scan finding, a coverage drop, a surviving mutant) → the
+    same;
+  - a waiting review thread → `pr-review-resolver --unattended`.
+
+  Commit conventionally, push, and run the wait again; the new run is the push's new cap. Fix
+  only what the failure names. Do not add a suppression such as `#nosec`, and do not delete a
+  test, to make a row go away: lydite reports both as referrals, and they hide the finding
+  rather than answer it. A suppression that is genuinely justified is the person's decision:
+  **stop and ask** rather than commit it.
+- **2, with a failure that has no cause on this branch** (an outage, a flaky runner) → report
+  it, do not paper over it. Running the wait again reads the same failure, so stop there and
+  leave the handoff where it is.
+- **2, with the same check or lydite row failing again after a fix aimed at it** → **stop**, as
+  the clock's guard says. Report the failure and every fix tried, and leave the handoff where it
+  is.
+- **3, cap reached** → 2 hours passed since the push with something still pending. **Stop**.
+  Report what `pending` names and what was tried, and leave the handoff where it is. A check
+  nobody saw finish has not passed.
+- **4, head moved** → somebody else pushed to the branch. Pull it before fixing anything, and
+  run the wait again on the new head, with its own cap.
+- **5, closed** → the pull request was closed or merged. **Stop** and report it; leave the
+  handoff where it is.
+- **6, could not read** → `error` says why. With no token to read with, wait without the command
+  (below). Reads that failed three polls in a row are GitHub not answering: **stop** and report
+  it — "could not read" is not clean.
+- **7, no checks** → the head still had no check runs and no statuses a poll after the first.
+  The repository has no CI to wait for: say so, and judge the rest — the lydite verdict and the
+  merge conditions.
+
+Answered threads — unresolved, with your account the last to speak — never hold the wait. Only
+a person resolves a thread, so they stay open until one does; list them in the report.
+
+### Without a token
+
+A session with no `GH_TOKEN` or `GITHUB_TOKEN` — a cloud session, whose GitHub access goes
+through other tools — gets exit 6 at once. It polls for itself instead, under the same clock,
+guard and verdicts: every **5 minutes**, waiting between polls as a background command or with
+whatever the harness offers to wake the session later, never a long foreground sleep. Each poll
+reads, once and for the current head, the check runs and statuses (`gh pr checks <N>`, or the
+session's own GitHub tools), the latest `<!-- lydite:results -->` comment, and the unresolved
+review threads, one of which waits unless your account wrote its latest comment. Never a
+blocking `--watch` or `--fail-fast`: it holds the session on one state of the pipeline while
+the others change underneath it. A head with no checks right after a push is the next poll's
+question; still none a poll later means no CI.
 
 ### The lydite verdict
 
 If the repository has a `.lydite/` directory it uses lydite, and the pull request carries a
-comment starting `<!-- lydite:results -->`. Read the latest one:
-
-```bash
-gh pr view <N> --comments
-```
+comment starting `<!-- lydite:results -->`. The head's checks and statuses decide the verdict;
+the comment is detail. It names no head and is rewritten on each push, so the command reports
+its rows beside an action-needed verdict or a clean one with a referral pending, and marks them
+`possibly_stale` when it saw lydite still running on the head after the comment was written.
 
 Its heading is the verdict and each section (`test`, `scan`, `referral`, …) carries its own
 row per check:
@@ -201,19 +265,14 @@ row per check:
   introduced (a `#nosec`, a dropped test) gets one look first: if it is not justified, remove
   it; if it is, leave it and report it.
 - **❌ failure / red** → not done, even when the repository does not make lydite a required
-  check. Fix every finding it lists: a failed test, a scan finding, a coverage drop. Do not add
-  a suppression such as `#nosec`, and do not delete a test, to make a row go away: lydite
-  reports both as referrals, and they hide the finding rather than answer it. Push, wait for
-  the checks, and read the comment again; it is rewritten on each push, so a comment for an
-  older head says nothing about this one.
+  check. Fix every finding it lists, as above.
 
 While the verdict is 🟡, lydite's `lydite/referral` status stays `pending` until a human
-clears it. That pending status is expected: it is not a check still running, and neither
-`gh pr checks --watch` nor the ceiling should wait on it. Judge every other check as usual.
+clears it. That pending status is expected: it is not a check still running, and the wait does
+not hold on it.
 
-No lydite comment yet means lydite has not finished: wait a minute and ask again, within the
-same ceiling. `lydite scan --diff-base auto` reproduces the scan locally when a finding needs
-iterating on before a push.
+`lydite scan --diff-base auto` reproduces the scan locally when a finding needs iterating on
+before a push.
 
 ### Mergeable, not just green
 
@@ -221,14 +280,17 @@ Delivering a mergeable pull request means meeting whatever the repository requir
 beyond its checks. Read `gh pr view <N> --json mergeable,mergeStateStatus,reviewDecision` and
 the repository's contribution docs. A branch that is behind or conflicting with its base, where
 the repository requires it current, is rebased or merged onto the base — the way the
-repository's docs say — and pushed, and the checks are waited on again. A requirement that
-only a human can meet (an approval, a thread to resolve) is reported, never worked around.
+repository's docs say — and pushed, and the wait runs again on the cap that push started. A
+requirement that only a human can meet (an approval, a thread to resolve) is reported, never
+worked around.
 
 ## 8 — Close the handoff out
 
 Only now, and only on a clean run: review-implementation came back clean, review-pull-request
-came back clean, every check passed, lydite (where the repository uses it) is green or a
-referral, and the pull request is mergeable but for what only a human can do.
+came back clean, `agtk pr wait` exited clean (or the polling without a token found the same)
+within 2 hours of the latest push — every check passed but the referral and no thread waiting
+for an answer — lydite (where the repository uses it) green or a referral for the current head,
+and the pull request is mergeable but for what only a human can do.
 
 ```bash
 mkdir -p handoff/done

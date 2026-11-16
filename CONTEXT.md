@@ -154,7 +154,7 @@ write: an explorer never authors, stamps or deletes a **Note**.
 _Avoid_: draft note, proposal
 
 **Unreadable candidate**:
-A **Candidate** whose file cannot be parsed, so it is absent from the backlog a **Curator** can
+A **Candidate** whose file cannot be parsed, so it is absent from the candidates a **Curator** can
 rule on. It is a finding nobody has ruled on, made invisible rather than resolved, and only a person
 can repair it: `agtk memory lint` names it, and a **Curate** run fails while one remains. Never
 subject to **Clearing**.
@@ -677,6 +677,44 @@ reviews the diff instead. Denied the `Agent` tool, so "one implementer at a time
 about its tool set rather than a sentence it is asked to honour.
 _Avoid_: worker, executor, builder
 
+**Backlog**:
+The set of a repo's open **Backlog item**s, in every state. One per repo; it is read from GitHub
+on demand and kept nowhere else.
+_Avoid_: queue, docket, board
+
+**Backlog item**:
+A GitHub issue in the **Backlog**: the unit the **Factory** moves through its states and the
+**Dispatcher** picks up. It carries its state, its **Predecessor**s and its place under a
+**Feature**; its body carries the work — goal, **Task**s, verification. Only the body is ever
+read as work: comments on it never are.
+_Avoid_: ticket, story, card, job
+
+**Stub**:
+A **Backlog item** whose body holds a goal and nothing to implement yet. Filled by the session
+that lands the **Slice** before it, and never queued while it is a stub.
+_Avoid_: placeholder, skeleton
+
+**Feature**:
+The issue a plan is made for. Its **Slice**s' **Backlog item**s are its sub-issues; it is never
+one itself — never dispatched, never in a state — and it closes when its last item closes.
+_Avoid_: epic, request issue, parent issue
+
+**Factory**:
+The loop that takes a **Backlog item** from queued to an open pull request without a person
+starting it: unblocking items whose **Predecessor**s are done, sweeping stalled runs back to the
+queue, and dispatching. Stops at the pull request; merging is never the factory's.
+_Avoid_: pipeline, automation, bot
+
+**Dispatcher**:
+The step of the **Factory** that chooses which queued **Backlog item**s start, within a fixed
+number running at once, and starts a **Cloud session** for each.
+_Avoid_: scheduler, runner, picker
+
+**Factory App**:
+The GitHub App the **Factory** acts as. Holds issue permissions and no access to code, and its
+key has one holder. Distinct from the review **App registration**, and never the **Relay**.
+_Avoid_: bot, factory token
+
 ### Usage
 **Project**:
 The grouping a **Usage row** is costed under in the dashboard. Taken from `AGTK_PROJECT` when it
@@ -772,7 +810,7 @@ yet accepted. They are normally recorded in the **Ledger** as well; a crash betw
 and recording it can leave a row pending but unrecorded, and the next flush offered that row records
 it. A flush drains the **Outbox** before sending anything new, and a batch that fails stays in it. It empties as **Ingest** accepts batches, and it does not outlive a
 reclaimed cloud container.
-_Avoid_: queue, backlog (the curator's), retry buffer
+_Avoid_: queue, backlog, retry buffer
 
 **Claude account**:
 The Claude identity — an `account_uuid`, its `organization_uuid` and a `user_email` — read by the

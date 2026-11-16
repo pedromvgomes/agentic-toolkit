@@ -114,6 +114,145 @@ func TestTheRelayCannotReachTheCredential(t *testing.T) {
 	}
 }
 
+// backlogPackage reads backlog items with a caller's token, as a path from the
+// repo root.
+const backlogPackage = "source/toolkit/internal/backlog"
+
+// backlogImportPath is the same package as an import path. Spelled out for
+// the reason approvalImportPath is: the module root is source/toolkit.
+const backlogImportPath = "github.com/pedromvgomes/agentic-toolkit/internal/backlog"
+
+// backlogMayName is everything backlog may name from the credential package:
+// the read results and the errors that classify a failed read. None of them
+// holds a key or a token, or builds anything that mints one.
+var backlogMayName = map[string]bool{
+	"Issue":                 true,
+	"Permission":            true,
+	"IssueTrust":            true,
+	"Actor":                 true,
+	"BodyEdit":              true,
+	"LabelEvent":            true,
+	"ErrNotFound":           true,
+	"ErrForbidden":          true,
+	"ErrGraphQLUnavailable": true,
+}
+
+// Verify decides whether an unattended session may act on an issue body, and
+// reads with a token only (ADR 0028). The Factory App's key has one holder,
+// and the review App's installation token reaches every repository it is
+// installed on; neither belongs in the package that reads somebody's issue.
+//
+// backlog has to import the credential package for the types its reads
+// return, so the import graph cannot keep it out. What holds instead is that
+// it names only those types and errors: the Client, the Credential, Load and
+// every constructor stay out of reach, so minting a token here would take
+// widening this list rather than forgetting to remove a call. backlog may
+// import no other package of this module.
+func TestTheBacklogNamesNothingFromTheCredentialPackageButReadResults(t *testing.T) {
+	mustResolve(t, backlogImportPath)
+	assertNamesOnlyReadResults(t, backlogPackage, backlogMayName)
+}
+
+// prWaitPackage watches a pull request with a caller's token, as a path from
+// the repo root.
+const prWaitPackage = "source/toolkit/internal/prwait"
+
+// prWaitImportPath is the same package as an import path. Spelled out for
+// the reason approvalImportPath is: the module root is source/toolkit.
+const prWaitImportPath = "github.com/pedromvgomes/agentic-toolkit/internal/prwait"
+
+// prWaitMayName is everything prwait may name from the credential package:
+// the results of the reads a poll makes. None of them holds a key or a
+// token, or builds anything that mints one.
+var prWaitMayName = map[string]bool{
+	"PullRequest":    true,
+	"CheckRun":       true,
+	"CombinedStatus": true,
+	"CommitStatus":   true,
+	"IssueComment":   true,
+	"ReviewThread":   true,
+}
+
+// A wait reads a pull request with the token in the caller's environment and
+// writes nothing, so it has no use for the App's key or its installation
+// token. It imports the credential package for the types its reads return,
+// so what holds, as for the backlog, is that it names only those: minting a
+// token or reaching a client that posts would take widening this list.
+func TestThePRWaitNamesNothingFromTheCredentialPackageButReadResults(t *testing.T) {
+	mustResolve(t, prWaitImportPath)
+	assertNamesOnlyReadResults(t, prWaitPackage, prWaitMayName)
+}
+
+// assertNamesOnlyReadResults fails unless every non-test file under dir
+// names nothing from the credential package outside mayName, and imports no
+// other package of this module. A dir that names nothing from it at all fails
+// too, so a guard pointed at the wrong place does not pass asserting nothing.
+func assertNamesOnlyReadResults(t *testing.T, dir string, mayName map[string]bool) {
+	t.Helper()
+	mustResolve(t, credentialPackage)
+	repo := repoRoot(t)
+	const modulePrefix = "github.com/pedromvgomes/agentic-toolkit/"
+	var offenders []string
+	named := 0
+	fset := token.NewFileSet()
+	err := filepath.Walk(filepath.Join(repo, dir), func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return err
+		}
+		f, parseErr := parser.ParseFile(fset, path, nil, 0)
+		if parseErr != nil {
+			return parseErr
+		}
+		rel := filepath.ToSlash(mustRel(t, repo, path))
+		local := ""
+		for _, imp := range f.Imports {
+			importPath, _ := strconv.Unquote(imp.Path.Value)
+			if !strings.HasPrefix(importPath, modulePrefix) {
+				continue
+			}
+			if importPath != credentialPackage {
+				offenders = append(offenders, rel+" imports "+importPath)
+				continue
+			}
+			local = "githubapp"
+			if imp.Name != nil {
+				local = imp.Name.Name
+			}
+			if local == "." || local == "_" {
+				offenders = append(offenders, rel+" imports "+credentialPackage+" as "+local)
+			}
+		}
+		if local == "" {
+			return nil
+		}
+		ast.Inspect(f, func(n ast.Node) bool {
+			sel, ok := n.(*ast.SelectorExpr)
+			if !ok {
+				return true
+			}
+			pkg, ok := sel.X.(*ast.Ident)
+			if !ok || pkg.Name != local {
+				return true
+			}
+			named++
+			if !mayName[sel.Sel.Name] {
+				offenders = append(offenders, rel+":"+strconv.Itoa(fset.Position(sel.Pos()).Line)+" names githubapp."+sel.Sel.Name)
+			}
+			return true
+		})
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk %s: %v", dir, err)
+	}
+	if named == 0 {
+		t.Fatalf("%s names nothing from %s, so this guard is not where it looks", dir, credentialPackage)
+	}
+	if len(offenders) > 0 {
+		t.Errorf("%s reaches past the read results of %s, toward the App credential: %v", dir, credentialPackage, offenders)
+	}
+}
+
 // A reviewer inherits the operator's environment: agentic.Request carries a
 // prompt, a model and a workdir, and nothing that would strip a variable off
 // the child.

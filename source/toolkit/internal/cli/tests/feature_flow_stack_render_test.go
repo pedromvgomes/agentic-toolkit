@@ -889,16 +889,33 @@ func TestOpenPRHandsItsReviewToThePullRequestLoop(t *testing.T) {
 
 // A handoff is closed out only when the pull request's review converged and
 // its checks finished green. A single look at the checks reads a pending one
-// as a pass, which is how a failing scan ships behind a closed handoff.
+// as a pass, which is how a failing scan ships behind a closed handoff; a wait
+// with no cap, or one a run can extend by pushing the same fix again, never
+// ends. The wait is agtk's, run in the background: every poll the session
+// makes itself is a model turn over the whole conversation, and a foreground
+// wait is cut off by the harness before it ends. A session with no token to
+// hand agtk still has to wait, so it polls for itself.
 func TestImplementHandoffClosesOutOnlyOnAConvergedGreenPullRequest(t *testing.T) {
 	apply := renderFeatureFlowStack(t)
 
 	skill := readRendered(t, apply, ".claude/skills/implement-handoff/SKILL.md")
-	if !strings.Contains(skill, "gh pr checks <N> --watch --fail-fast") {
-		t.Error("implement-handoff looks at the checks once instead of waiting for them")
+	if !strings.Contains(skill, "agtk pr wait <owner/repo#N> --json") {
+		t.Error("implement-handoff does not hand the wait to agtk pr wait")
 	}
-	if !strings.Contains(skill, "**as soon as**") || !strings.Contains(skill, "30 minutes") {
-		t.Error("implement-handoff does not bound the wait, or reads the bound as a fixed delay")
+	if !strings.Contains(skill, "**background command**") {
+		t.Error("implement-handoff may block the session on the wait in the foreground")
+	}
+	if !strings.Contains(skill, "### Without a token") || !strings.Contains(skill, "every **5 minutes**") {
+		t.Error("implement-handoff has no wait for a session without a token")
+	}
+	if !strings.Contains(skill, "run the wait again") {
+		t.Error("implement-handoff does not restart the wait, and its cap, after a push")
+	}
+	if !strings.Contains(skill, "2 hours of wall-clock since the latest push") {
+		t.Error("implement-handoff does not cap the wait")
+	}
+	if !strings.Contains(skill, "is not progress") {
+		t.Error("implement-handoff can extend the wait forever by pushing the same fix again")
 	}
 	if !strings.Contains(skill, "review-pull-request\ncame back clean") && !strings.Contains(skill, "review-pull-request came back clean") {
 		t.Error("implement-handoff closes out without the pull request's review having converged")

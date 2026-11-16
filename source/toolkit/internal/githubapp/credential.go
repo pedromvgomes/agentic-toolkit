@@ -108,7 +108,7 @@ func Initialize(dir string, appID int64, pemBytes []byte) error {
 	}
 	// MkdirAll applies its mode only to the directories it creates, so a
 	// config directory that already existed keeps whatever mode it had.
-	if err := os.Chmod(dir, DirMode); err != nil {
+	if err := os.Chmod(dir, DirMode); err != nil { // #nosec G302 -- dir is a directory and needs its execute bit; DirMode (0700) is owner-only
 		return fmt.Errorf("restrict %s to %s: %w", dir, DirMode, err)
 	}
 	if err := writePrivate(filepath.Join(dir, KeyFile), pemBytes); err != nil {
