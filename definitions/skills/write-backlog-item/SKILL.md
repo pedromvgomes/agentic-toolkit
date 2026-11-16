@@ -242,10 +242,12 @@ git rev-parse --abbrev-ref HEAD   # the branch the Branch: line names
 
 Output the item's URL and its `owner/repo#N`.
 
-You cannot start the next session yourself. Tell the user the two ways in:
+You cannot start the next session yourself, and you never apply `agtk:queued`. Tell the user the
+item starts once a person with write access has read its body and added `agtk:queued`; queuing is
+what vouches for the body. After that:
 
-- run `/implement-backlog-item owner/repo#N` in a session, or
-- add `agtk:queued` to the item, once they have read it, for the Factory to dispatch.
+- they run `/implement-backlog-item owner/repo#N` in a session themselves, or
+- where a Factory watches the repository, it dispatches the item.
 
-Never say the item is picked up automatically: nothing runs it until a person does one of those
-two. A stub has neither way in until it is filled.
+Never say the item is picked up automatically: nothing runs it until a person has queued it and
+then runs it or leaves it to a Factory. A stub has no way in until it is filled.

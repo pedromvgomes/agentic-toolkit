@@ -185,10 +185,12 @@ there is something to implement. A plan that is one pull request has no later sl
 
 List every item by `owner/repo#N`, in landing order, with the Feature and which of them are stubs.
 
-Then tell the user the two ways the first slice starts — and that only a person starts it:
+Then tell the user how the first slice starts — and that only a person starts it. The item starts
+once a person with write access has read its body and added `agtk:queued`; queuing is what vouches
+for the body. After that:
 
-- run `/implement-backlog-item owner/repo#N` in a session, or
-- add `agtk:queued` to the item, once they have read its body, for the Factory to dispatch.
+- they run `/implement-backlog-item owner/repo#N` in a session themselves, or
+- where a Factory watches the repository, it dispatches the item.
 
 Run `/implement-backlog-item` in a fresh session, or after `/clear`. Your `model: opus` applies
 while this command runs and no longer, so that session is on the settings default — which is what
@@ -197,7 +199,7 @@ the implementing half is meant to run on.
 **Never apply `agtk:queued` yourself**, to the first slice or any other. Queuing is the act that
 vouches for an item's body, and a session that queued the items it had just written would be
 vouching for its own text. Never say an item will be picked up on its own: nothing runs it until a
-person does one of those two.
+person has queued it and then runs it or leaves it to a Factory.
 
 Do not start implementing. Not the first task, not the easy one, not a stub. The implementing
 session exists because doing that here is what this flow is arranged to prevent.
