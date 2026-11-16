@@ -1,6 +1,7 @@
 description: |
-  Default toolkit stack — the two-stage feature flow (plan on opus, hand off, implement on
-  sonnet, review in a capped loop, open the PR and loop its review too), the workflow-agnostic
+  Default toolkit stack — the two-stage feature flow (plan on opus, put the slices on the
+  backlog as GitHub issues, implement on sonnet, review in a capped loop, open the PR and loop
+  its review too, with handoffs kept for resuming locally), the workflow-agnostic
   skills around it, the plan-approval instruction, the session agents and the upstream
   skill-creator skill. The memory store and everything that reads it come from the memory stack
   this extends, and the setting that keeps Claude Code's authoring footers out of commits and
@@ -32,6 +33,7 @@ skills:
   # branch — so they are listed as skills rather than hidden behind the command
   # that chains them.
   - write-backlog-item
+  - implement-backlog-item
   - write-handoff
   - implement-handoff
   - review-implementation
