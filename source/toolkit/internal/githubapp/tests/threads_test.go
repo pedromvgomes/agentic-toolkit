@@ -37,15 +37,28 @@ func boolText(b bool) string {
 	return "false"
 }
 
-// threadNode renders one thread as GraphQL reports it.
+// threadNode renders one thread as GraphQL reports it, with no latest
+// comment read.
 func threadNode(path string, resolved, outdated, byViewer bool, body string) string {
+	return threadNodeLatest(path, resolved, outdated, byViewer, body, "")
+}
+
+// threadNodeLatest renders one thread whose latest comment's author is
+// latestAuthor: raw JSON, `{"login":"x"}` or `null`, and no latest comment
+// at all when empty.
+func threadNodeLatest(path string, resolved, outdated, byViewer bool, body, latestAuthor string) string {
 	encoded, err := json.Marshal(body)
 	if err != nil {
 		panic(err)
 	}
+	latest := `[]`
+	if latestAuthor != "" {
+		latest = `[{"author":` + latestAuthor + `}]`
+	}
 	return `{"path":"` + path + `","isResolved":` + boolText(resolved) +
 		`,"isOutdated":` + boolText(outdated) +
-		`,"comments":{"nodes":[{"body":` + string(encoded) + `,"viewerDidAuthor":` + boolText(byViewer) + `}]}}`
+		`,"comments":{"nodes":[{"body":` + string(encoded) + `,"viewerDidAuthor":` + boolText(byViewer) + `}]}` +
+		`,"latest":{"nodes":` + latest + `}}`
 }
 
 // Resolution and staleness are the two states REST cannot report — the
@@ -53,9 +66,9 @@ func threadNode(path string, resolved, outdated, byViewer bool, body string) str
 // and says nothing at all about resolution — and they oblige opposite things.
 func TestAThreadCarriesItsResolutionAndItsStaleness(t *testing.T) {
 	c, net := client(t, append(auth(far()), query(threadsPage(
-		threadNode("a.go", false, false, true, "open by the app")+","+
-			threadNode("b.go", true, false, false, "resolved by a person")+","+
-			threadNode("c.go", false, true, true, "outdated"),
+		threadNodeLatest("a.go", false, false, true, "open by the app", `{"login":"agtk-code-review[bot]"}`)+","+
+			threadNodeLatest("b.go", true, false, false, "resolved by a person", `{"login":"someone"}`)+","+
+			threadNodeLatest("c.go", false, true, true, "outdated", `{"login":"agtk-code-review[bot]"}`),
 		false, "")))...)
 
 	threads, err := c.ReadReviewThreads(context.Background(), 7)
@@ -65,9 +78,9 @@ func TestAThreadCarriesItsResolutionAndItsStaleness(t *testing.T) {
 	net.done()
 
 	want := []githubapp.ReviewThread{
-		{Path: "a.go", Body: "open by the app", ByViewer: true},
-		{Path: "b.go", Resolved: true, Body: "resolved by a person"},
-		{Path: "c.go", Outdated: true, Body: "outdated", ByViewer: true},
+		{Path: "a.go", Body: "open by the app", ByViewer: true, LastAuthor: "agtk-code-review[bot]"},
+		{Path: "b.go", Resolved: true, Body: "resolved by a person", LastAuthor: "someone"},
+		{Path: "c.go", Outdated: true, Body: "outdated", ByViewer: true, LastAuthor: "agtk-code-review[bot]"},
 	}
 	if len(threads) != len(want) {
 		t.Fatalf("read %d threads, want %d: %+v", len(threads), len(want), threads)
@@ -76,6 +89,36 @@ func TestAThreadCarriesItsResolutionAndItsStaleness(t *testing.T) {
 		if threads[i] != w {
 			t.Errorf("thread %d is %+v, want %+v", i, threads[i], w)
 		}
+	}
+}
+
+// The latest comment's author is who spoke last on the thread: a reply's
+// author once somebody has replied, and nobody when that account is deleted.
+// It is read apart from the root, whose author ByViewer stays about.
+func TestAThreadCarriesItsLatestCommentsAuthor(t *testing.T) {
+	c, net := client(t, append(auth(far()), query(threadsPage(
+		threadNodeLatest("a.go", false, false, true, "opened by the app", `{"login":"author"}`)+","+
+			threadNodeLatest("b.go", false, false, false, "opened by somebody", `null`)+","+
+			threadNode("c.go", false, false, false, "no latest comment read"),
+		false, "")))...)
+
+	threads, err := c.ReadReviewThreads(context.Background(), 7)
+	if err != nil {
+		t.Fatalf("read the threads: %v", err)
+	}
+	net.done()
+	if len(threads) != 3 {
+		t.Fatalf("read %d threads, want 3: %+v", len(threads), threads)
+	}
+	if threads[0].LastAuthor != "author" || !threads[0].ByViewer {
+		t.Errorf("a reply by another account changed the root's authorship or went unread: %+v", threads[0])
+	}
+	if threads[1].LastAuthor != "" || threads[2].LastAuthor != "" {
+		t.Errorf("a deleted or missing latest author read as a login: %q, %q", threads[1].LastAuthor, threads[2].LastAuthor)
+	}
+	sent := net.bodies[len(net.bodies)-1]
+	if !regexp.MustCompile(`latest:\s*comments\(last:1\)\{nodes\{author\{login\}\}\}`).MatchString(sent) {
+		t.Errorf("the query does not ask for the latest comment's author: %s", sent)
 	}
 }
 

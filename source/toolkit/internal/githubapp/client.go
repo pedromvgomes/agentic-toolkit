@@ -131,6 +131,8 @@ func (r *ReadClient) ReadPullRequest(ctx context.Context, number int) (PullReque
 // is whoever owns the token. Left as GitHub answers it, a token belonging to
 // the change's author would make the author's own comments read as the App's
 // fingerprints, and a finding would be withheld on the author's say-so.
+// LastAuthor is a login rather than a claim about the App, so it is returned
+// as GitHub reports it, and ByViewer is never read off it.
 func (r *ReadClient) ReadReviewThreads(ctx context.Context, number int) ([]ReviewThread, error) {
 	threads, err := r.c.ReadReviewThreads(ctx, number)
 	if err != nil {

@@ -188,7 +188,7 @@ func NewRootCmd(env *Env) *cobra.Command {
 		newInitCmd(env), newLockCmd(env), newFetchCmd(env), newPlanCmd(env),
 		newRenderCmd(env), newSyncCmd(env), newStatusCmd(env), newUpdateCmd(env),
 		newMemoryCmd(env), newCodeReviewCmd(env), newHandoffCmd(env), newGuardCmd(env),
-		newCloudCmd(env), newBacklogCmd(env),
+		newCloudCmd(env), newBacklogCmd(env), newPRCmd(env),
 	)
 	return root
 }
@@ -316,6 +316,16 @@ func ExecuteArgs(env *Env, args []string) int {
 		// `agtk update --check` returns updateNewerErr when newer is
 		// available; map that to UpdateCheckExitCode without the
 		// generic prefix so scripts can read the message verbatim.
+		// A command ending with a code of its own carries it in an
+		// exitCodeError, with the error to print or none when the command
+		// has already written its report.
+		var coded *exitCodeError
+		if errors.As(err, &coded) {
+			if coded.err != nil {
+				renderTopLevelError(env.Stderr, coded.err)
+			}
+			return coded.code
+		}
 		var newerErr *updateNewerErr
 		if errors.As(err, &newerErr) {
 			fmt.Fprintln(env.Stdout, newerErr.Error())

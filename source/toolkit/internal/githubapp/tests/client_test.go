@@ -472,7 +472,7 @@ func TestAReadClientNeverMintsAnInstallationToken(t *testing.T) {
 // what GitHub itself reports.
 func TestAReadClientClearsByViewerOnThreadsAndReviews(t *testing.T) {
 	threads, net := readClient(t, query(threadsPage(
-		threadNode("a.go", false, false, true, "looks like the app"), false, "")))
+		threadNodeLatest("a.go", false, false, true, "looks like the app", `{"login":"agtk-code-review[bot]"}`), false, "")))
 	got, err := threads.ReadReviewThreads(context.Background(), 7)
 	if err != nil {
 		t.Fatal(err)
@@ -480,6 +480,11 @@ func TestAReadClientClearsByViewerOnThreadsAndReviews(t *testing.T) {
 	net.done()
 	if len(got) != 1 || got[0].ByViewer {
 		t.Errorf("a token client read a thread as ByViewer: %+v", got)
+	}
+	// The latest author is a login, not a claim about the App: it is kept as
+	// GitHub reports it, and the App's own login there does not set ByViewer.
+	if len(got) == 1 && got[0].LastAuthor != "agtk-code-review[bot]" {
+		t.Errorf("a token client dropped the latest comment's author: %+v", got[0])
 	}
 
 	page := `{"data":{"repository":{"pullRequest":{"reviews":{` +

@@ -69,19 +69,20 @@ func prComment(id int64, body, login, authorAssociation string) string {
 }
 
 // Threads read over the substitute route carry the same resolved/outdated
-// state and root body/author GraphQL would have, filled in from one
+// state, root body/author and latest author GraphQL would have, filled in from one
 // paginated read of the pull request's own comments rather than one REST
 // call per comment id.
 func TestReadReviewThreadsFallsBackToTheSubstituteRouteWhenGraphQLIsBlocked(t *testing.T) {
 	c, net := client(t, append(append(auth(far()), blockedByProxy()),
 		exchange{method: http.MethodGet, path: ccrThreadsPath, status: 200, body: `[` +
-			`{"resolved":false,"outdated":false,"path":"a.go","comment_ids":[1]},` +
+			`{"resolved":false,"outdated":false,"path":"a.go","comment_ids":[1,3]},` +
 			`{"resolved":true,"outdated":false,"path":"b.go","comment_ids":[2]},` +
 			`{"resolved":false,"outdated":true,"path":"c.go","comment_ids":[]}` +
 			`]`},
 		exchange{method: http.MethodGet, path: prCommentsPath, status: 200, body: prComments(
 			prComment(1, "open by the app", "agtk-code-review[bot]", ""),
 			prComment(2, "resolved by a person", "someone", ""),
+			prComment(3, "answered by the author", "author", "OWNER"),
 		)},
 		appLogin(),
 	)...)
@@ -93,8 +94,8 @@ func TestReadReviewThreadsFallsBackToTheSubstituteRouteWhenGraphQLIsBlocked(t *t
 	net.done()
 
 	want := []githubapp.ReviewThread{
-		{Path: "a.go", Body: "open by the app", ByViewer: true},
-		{Path: "b.go", Resolved: true, Body: "resolved by a person"},
+		{Path: "a.go", Body: "open by the app", ByViewer: true, LastAuthor: "author"},
+		{Path: "b.go", Resolved: true, Body: "resolved by a person", LastAuthor: "someone"},
 		{Path: "c.go", Outdated: true},
 	}
 	if len(threads) != len(want) {

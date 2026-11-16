@@ -7,7 +7,7 @@ import (
 
 // ReviewThread is one comment thread on a pull request, as GitHub reports it.
 //
-// Read over GraphQL rather than REST because two of its four fields have no
+// Read over GraphQL rather than REST because two of its fields have no
 // REST answer: the comments endpoint reports `position: null` for a comment
 // whose code has moved and says nothing at all about resolution, so it cannot
 // tell an outdated thread from a resolved one — and those two states oblige
@@ -34,14 +34,24 @@ type ReviewThread struct {
 	// A fingerprint marker in a comment somebody else wrote is a claim about
 	// identity from an author who does not hold it.
 	ByViewer bool
+	// LastAuthor is the login of whoever wrote the thread's latest comment —
+	// the root when nobody has replied — and empty when that account has been
+	// deleted. It says who spoke last, which is what tells a thread somebody
+	// has answered from one still waiting on an answer. It is never evidence
+	// of ByViewer: any account can be the last to comment on a thread.
+	//
+	// Set by ReadReviewThreads; AnsweredThread leaves it empty and carries
+	// its replies instead.
+	LastAuthor string
 }
 
 // reviewThreadsQuery reads one page of a pull request's comment threads.
 //
-// One comment per thread: the root is what agtk posted and therefore the only
-// comment that carries a fingerprint marker agtk wrote. Asking for replies
-// would fetch text no decision is made from, and enlarge a response that is
-// read under a size cap.
+// One comment body per thread: the root is what agtk posted and therefore the
+// only comment that carries a fingerprint marker agtk wrote. Asking for
+// replies would fetch text no decision is made from, and enlarge a response
+// that is read under a size cap. The latest comment is read for its author's
+// login alone, under the alias latest.
 var reviewThreadsQuery = fmt.Sprintf(`query($owner:String!,$repo:String!,$number:Int!,$cursor:String){
   repository(owner:$owner,name:$repo){
     pullRequest(number:$number){
@@ -52,6 +62,7 @@ var reviewThreadsQuery = fmt.Sprintf(`query($owner:String!,$repo:String!,$number
           isResolved
           isOutdated
           comments(first:1){nodes{body viewerDidAuthor}}
+          latest:comments(last:1){nodes{author{login}}}
         }
       }
     }
@@ -106,6 +117,15 @@ func (c *Client) readReviewThreadsGraphQL(ctx context.Context, owner, repo strin
 									ViewerDidAuthor bool   `json:"viewerDidAuthor"`
 								} `json:"nodes"`
 							} `json:"comments"`
+							Latest struct {
+								Nodes []struct {
+									// Author is null when the account has
+									// been deleted.
+									Author *struct {
+										Login string `json:"login"`
+									} `json:"author"`
+								} `json:"nodes"`
+							} `json:"latest"`
 						} `json:"nodes"`
 					} `json:"reviewThreads"`
 				} `json:"pullRequest"`
@@ -128,6 +148,9 @@ func (c *Client) readReviewThreadsGraphQL(ctx context.Context, owner, repo strin
 				thread.Body = node.Comments.Nodes[0].Body
 				thread.ByViewer = node.Comments.Nodes[0].ViewerDidAuthor
 			}
+			if len(node.Latest.Nodes) > 0 && node.Latest.Nodes[0].Author != nil {
+				thread.LastAuthor = node.Latest.Nodes[0].Author.Login
+			}
 			out = append(out, thread)
 		}
 		if !threads.PageInfo.HasNextPage || threads.PageInfo.EndCursor == "" {
@@ -138,7 +161,8 @@ func (c *Client) readReviewThreadsGraphQL(ctx context.Context, owner, repo strin
 }
 
 // readReviewThreadsViaProxy reads every comment thread's resolved/outdated
-// state and its root comment's body and author, over the substitute route a
+// state, its root comment's body and author, and its latest comment's author,
+// over the substitute route a
 // blocked GraphQL query is told to use.
 //
 // Refused, rather than answered short, when the substitute thread list does
@@ -173,6 +197,13 @@ func (c *Client) readReviewThreadsViaProxy(ctx context.Context, owner, repo stri
 			}
 			thread.Body = root.Body
 			thread.ByViewer = viewer != "" && root.User.Login == viewer
+			lastID := node.CommentIDs[len(node.CommentIDs)-1]
+			last, ok := comments[lastID]
+			if !ok {
+				return nil, fmt.Errorf("the thread on %s names comment %d, which is not among %s#%d's comments",
+					node.Path, lastID, c.slug, number)
+			}
+			thread.LastAuthor = last.User.Login
 		}
 		out = append(out, thread)
 	}
