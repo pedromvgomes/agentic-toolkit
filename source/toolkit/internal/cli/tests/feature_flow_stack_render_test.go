@@ -1191,13 +1191,149 @@ func TestImplementBacklogItemKeepsTheFlagsTheFactoryRuns(t *testing.T) {
 	}
 }
 
+// resolverCheckedAuthors returns pr-review-resolver's "Checked authors"
+// section, failing the test when the section is missing or no longer names
+// how each kind of checked account is recognised. It is the one definition
+// both unattended callers defer to.
+func resolverCheckedAuthors(t *testing.T, apply string) string {
+	t.Helper()
+	resolver := readRendered(t, apply, ".claude/skills/pr-review-resolver/SKILL.md")
+	at := strings.Index(resolver, "\n## Checked authors\n")
+	if at < 0 {
+		t.Fatalf("pr-review-resolver defines no checked authors, so --checked-authors decides nothing:\n%s", resolver)
+	}
+	section := resolver[at+1:]
+	if end := strings.Index(section, "\n## "); end >= 0 {
+		section = section[:end]
+	}
+	if !strings.Contains(section, `gh api "repos/$repo/collaborators/<login>/permission" --jq .permission`) {
+		t.Error("pr-review-resolver does not check an author's write access under --checked-authors")
+	}
+	if !strings.Contains(section, "`admin`, `maintain` or `write` counts") {
+		t.Error("pr-review-resolver does not say which permissions count as write access")
+	}
+	if !strings.Contains(section, "<!-- agtk:review") || !strings.Contains(section, "[bot]") {
+		t.Error("pr-review-resolver does not identify the review App's account, so any bot's text may be acted on")
+	}
+	if !strings.Contains(section, "gh api user --jq .login") {
+		t.Error("pr-review-resolver does not name its own account as a checked author, so its own replies stop it")
+	}
+	return section
+}
+
 // Unattended, pr-review-resolver commits and pushes whatever it judges valid
-// in a thread with nobody approving, so a thread anybody can open would choose
-// the code the session pushes. Only a thread written by the review App, an
-// account with write access or the session itself is handed to it; any other
-// stops the run for a person.
+// in a thread, a review summary or a conversation comment with nobody
+// approving, so text anybody can post would choose the code it pushes. Under
+// --checked-authors the resolver checks every item its own Phase 1 read
+// collects, and acts only on what that read found: a check made earlier by a
+// caller misses what is posted in between, and a check of the inline threads
+// alone misses review summaries and conversation comments. A thread with an
+// unchecked author means it acts on nothing, since a thread waits for an
+// answer and holds approval. A summary or conversation comment from one is
+// left unread and listed, and does not stop the run: CI and other bots post
+// conversation comments nobody can resolve, so a stop on them never ends.
+func TestPRReviewResolverUnderCheckedAuthorsStopsOnUncheckedThreadsAndLeavesOtherUncheckedTextUnread(t *testing.T) {
+	apply := renderFeatureFlowStack(t)
+
+	section := resolverCheckedAuthors(t, apply)
+	if !strings.Contains(section, "`--checked-authors` is given with `--unattended`") {
+		t.Error("pr-review-resolver does not tie --checked-authors to an unattended run")
+	}
+	for _, item := range []string{
+		"any unresolved review thread holds a comment, at any position in it",
+		"A review's summary body or a comment on the pull request's conversation tab",
+	} {
+		if !strings.Contains(strings.Join(strings.Fields(section), " "), item) {
+			t.Errorf("pr-review-resolver's check under --checked-authors does not cover %q", item)
+		}
+	}
+	for _, listing := range []string{
+		`"repos/$repo/pulls/<N>/comments"`,
+		`"repos/$repo/pulls/<N>/reviews"`,
+		`"repos/$repo/issues/<N>/comments"`,
+	} {
+		if !strings.Contains(section, listing) {
+			t.Errorf("pr-review-resolver reads no authors from %s, so the items it lists act unchecked", listing)
+		}
+	}
+	if !strings.Contains(section, "Read every author by REST, never from GraphQL.") {
+		t.Error("pr-review-resolver may compare a GraphQL login, which drops the [bot] suffix the review App's login carries")
+	}
+	if !strings.Contains(section, "**Act only on what that same read collected.**") {
+		t.Error("pr-review-resolver may act on an item posted after the read its check was made on")
+	}
+	flat := strings.Join(strings.Fields(section), " ")
+	threads := flat[strings.Index(flat, "**An unchecked thread stops the run.**"):]
+	threads = threads[:strings.Index(threads, "**An unchecked summary or conversation comment is not read.**")]
+	if !strings.Contains(threads, "act on **nothing**") || !strings.Contains(threads, "no commit, no push") ||
+		!strings.Contains(threads, "not on the items whose authors are checked") {
+		t.Error("pr-review-resolver may act on the checked items beside a thread whose author is unchecked")
+	}
+	if !strings.Contains(threads, "End with the outcome **unchecked thread**") || !strings.Contains(threads, "never by its text") {
+		t.Error("pr-review-resolver does not end with unchecked thread on an unchecked thread, or may quote it")
+	}
+
+	others := flat[strings.Index(flat, "**An unchecked summary or conversation comment is not read.**"):]
+	others = others[:strings.Index(others, "**Act only on what that same read collected.**")]
+	if !strings.Contains(others, "its text is never read, assessed, acted on or replied to") {
+		t.Error("pr-review-resolver may read or act on a summary or conversation comment from an unchecked author")
+	}
+	if !strings.Contains(others, "It does not stop the run.") {
+		t.Error("pr-review-resolver may stop on a summary or conversation comment from an unchecked author, which a CI bot posts on every run")
+	}
+	if !strings.Contains(others, "**not read: unchecked author**") || !strings.Contains(others, "never by its text") {
+		t.Error("pr-review-resolver does not list unread summaries and conversation comments by link alone")
+	}
+	if strings.Contains(others, "unchecked thread") {
+		t.Error("pr-review-resolver ends with unchecked thread on a summary or conversation comment")
+	}
+
+	for _, listing := range []string{
+		"gh api --paginate \"repos/$repo/pulls/<N>/reviews\" \\\n  --jq '.[] | select((.body // \"\") != \"\") | {id, login: .user.login, url: .html_url}'",
+		"gh api --paginate \"repos/$repo/issues/<N>/comments\" \\\n  --jq '.[] | {id, login: .user.login, url: .html_url}'",
+	} {
+		if !strings.Contains(section, listing) {
+			t.Errorf("pr-review-resolver's author listing reads text before the author is checked; want %q", listing)
+		}
+	}
+	for _, read := range []string{
+		`gh api "repos/$repo/pulls/<N>/reviews/<id>" --jq '{login: .user.login, body}'`,
+		`gh api "repos/$repo/issues/comments/<id>" --jq '{login: .user.login, body}'`,
+	} {
+		if !strings.Contains(section, read) {
+			t.Errorf("pr-review-resolver does not read a checked item's text by its id: %s", read)
+		}
+	}
+	if !strings.Contains(flat, "Read the text of each one whose author is checked by its `id`, and of no other") {
+		t.Error("pr-review-resolver may read the text of an item whose author is unchecked")
+	}
+
+	resolver := readRendered(t, apply, ".claude/skills/pr-review-resolver/SKILL.md")
+	phase1 := resolver[strings.Index(resolver, "### Phase 1"):strings.Index(resolver, "### Phase 2")]
+	phase1 = strings.Join(strings.Fields(phase1), " ")
+	if !strings.Contains(phase1, "Under `--checked-authors`, read every collected item's author now") {
+		t.Error("pr-review-resolver's Phase 1 read does not check its authors, so the check is not made on the read it acts on")
+	}
+	if !strings.Contains(phase1, "Stop there with **unchecked thread** if any thread holds a comment whose author is not checked") ||
+		!strings.Contains(phase1, "Leave out every summary and conversation comment whose author is not checked") {
+		t.Error("pr-review-resolver's Phase 1 does not stop on an unchecked thread and leave out other unchecked text")
+	}
+	unattended := resolver[strings.Index(resolver, "## Unattended mode"):strings.Index(resolver, "## Checked authors")]
+	if !strings.Contains(unattended, "**not read: unchecked author**") {
+		t.Error("pr-review-resolver's unattended report does not list what it left unread")
+	}
+}
+
+// Unattended, implement-backlog-item hands the resolver its decision on whose
+// text is acted on: it invokes pr-review-resolver with --checked-authors, so
+// the check is made on the read the resolver acts on and covers review
+// summaries and conversation comments as well as threads. A thread from an
+// unchecked author stops the run for a person; a summary or conversation
+// comment from one, such as lydite's results comment, is left unread and
+// listed, and the run goes on.
 func TestImplementBacklogItemActsUnattendedOnlyOnThreadsFromCheckedAuthors(t *testing.T) {
 	apply := renderFeatureFlowStack(t)
+	resolverCheckedAuthors(t, apply)
 
 	skill := readRendered(t, apply, ".claude/skills/implement-backlog-item/SKILL.md")
 	at := strings.Index(skill, "### Whose threads are acted on, unattended")
@@ -1208,31 +1344,52 @@ func TestImplementBacklogItemActsUnattendedOnlyOnThreadsFromCheckedAuthors(t *te
 	if end := strings.Index(section[1:], "\n### "); end >= 0 {
 		section = section[:end+1]
 	}
-	if !strings.Contains(section, `gh api "repos/$repo/collaborators/<login>/permission" --jq .permission`) {
-		t.Error("implement-backlog-item does not check a thread author's write access before acting on the thread")
+	if !strings.Contains(section, "`pr-review-resolver <N> --unattended --checked-authors`") {
+		t.Error("implement-backlog-item runs the unattended resolver without --checked-authors")
 	}
-	if !strings.Contains(section, "`admin`, `maintain` or `write` counts") {
-		t.Error("implement-backlog-item does not say which permissions count as write access")
+	if !strings.Contains(section, `its "Checked authors" section defines`) {
+		t.Error("implement-backlog-item does not defer to the resolver's definition of a checked author")
 	}
-	if !strings.Contains(section, "<!-- agtk:review") || !strings.Contains(section, "[bot]") {
-		t.Error("implement-backlog-item does not identify the review App's account, so any bot's thread may be acted on")
+	for _, item := range []string{"each review's summary body", "each comment on the conversation tab"} {
+		if !strings.Contains(section, item) {
+			t.Errorf("implement-backlog-item's unattended check does not cover %q", item)
+		}
 	}
-	if !strings.Contains(section, "is not acted on, and **stops** the run") || !strings.Contains(section, "`agtk:needs-human`") {
+	flat := strings.Join(strings.Fields(section), " ")
+	if !strings.Contains(flat, "**A thread from an unchecked author stops the run.**") ||
+		!strings.Contains(flat, "the resolver acts on nothing") {
+		t.Error("implement-backlog-item may let the resolver act on checked items beside an unchecked thread")
+	}
+	if !strings.Contains(flat, "**stops** the run with `agtk:needs-human`") {
 		t.Error("implement-backlog-item does not stop with agtk:needs-human on a thread from an unchecked author")
 	}
-	if !strings.Contains(section, "never quotes its text") {
+	if !strings.Contains(flat, "never quotes its text") {
 		t.Error("implement-backlog-item may quote an unchecked thread back into the item")
+	}
+	if !strings.Contains(flat, "**A summary or conversation comment from an unchecked author is not read.**") ||
+		!strings.Contains(flat, "**not read: unchecked author**") || !strings.Contains(flat, "the run goes on") {
+		t.Error("implement-backlog-item may stop on, or read, a summary or conversation comment from an unchecked author")
+	}
+	if !strings.Contains(flat, "`<!-- lydite:results -->` comment") || !strings.Contains(flat, "does not stop an unattended run") {
+		t.Error("implement-backlog-item does not say why lydite's results comment leaves an unattended run going")
+	}
+
+	nine := skill[strings.Index(skill, "## 9 "):]
+	if !strings.Contains(nine, "unattended,\n    `pr-review-resolver <N> --unattended --checked-authors`") {
+		t.Error("implement-backlog-item's step 9 runs the unattended resolver without --checked-authors")
 	}
 
 	stops := skill[strings.Index(skill, "### Every stop"):]
 	found := false
 	for _, line := range strings.Split(stops, "\n") {
-		if strings.HasPrefix(line, "| 9 | a waiting review thread") && strings.Contains(line, "`agtk:needs-human`") {
+		if strings.HasPrefix(line, "| 9 | `pr-review-resolver --unattended --checked-authors` ends with an unchecked thread") &&
+			strings.Contains(line, "an unresolved review thread holds a comment") && strings.Contains(line, "`agtk:needs-human`") &&
+			!strings.Contains(line, "conversation comment") {
 			found = true
 		}
 	}
 	if !found {
-		t.Error("the stop table has no step 9 row for a thread from an unchecked author")
+		t.Error("the stop table has no step 9 row for a thread from an unchecked author, or stops on a conversation comment")
 	}
 	if !strings.Contains(skill, "Unattended, it never acts on a review thread from an author it has not checked") {
 		t.Error("implement-backlog-item does not rule out acting on an unchecked thread")
@@ -1241,23 +1398,26 @@ func TestImplementBacklogItemActsUnattendedOnlyOnThreadsFromCheckedAuthors(t *te
 
 // The pull request loop that open-pr runs at step 8 also drives the resolver
 // unattended, and anybody who can see the pull request can comment while it
-// runs. Under --checked-authors it hands the resolver only threads from the
-// same accounts step 9 checks, and any other waiting thread ends the loop
-// before the resolver runs on anything. implement-backlog-item passes the
-// argument unattended, and open-pr carries it through to the loop.
+// runs. Under --checked-authors it runs the resolver with the same argument,
+// whose own check on its own read is the one that decides; the loop's check
+// of the waiting threads is an early exit before it. implement-backlog-item
+// passes the argument unattended, and open-pr carries it through to the loop.
 func TestThePullRequestLoopActsOnlyOnCheckedAuthorsWhenAskedTo(t *testing.T) {
 	apply := renderFeatureFlowStack(t)
+	resolverCheckedAuthors(t, apply)
 
 	loop := readRendered(t, apply, ".claude/skills/review-pull-request/SKILL.md")
 	if !strings.Contains(loop, "`--checked-authors`") {
 		t.Fatalf("review-pull-request takes no --checked-authors argument:\n%s", loop)
 	}
-	if !strings.Contains(loop, `gh api "repos/$repo/collaborators/<login>/permission" --jq .permission`) ||
-		!strings.Contains(loop, "`admin`, `maintain` or `write` counts") {
-		t.Error("review-pull-request does not check a thread author's write access under --checked-authors")
+	if !strings.Contains(loop, "`pr-review-resolver <N> --unattended --checked-authors`") {
+		t.Error("review-pull-request does not pass --checked-authors to the resolver, so its check never sees what the resolver reads")
 	}
-	if !strings.Contains(loop, "<!-- agtk:review") || !strings.Contains(loop, "[bot]") {
-		t.Error("review-pull-request does not identify the review App's account, so any bot's thread may be acted on")
+	if !strings.Contains(loop, "`pr-review-resolver`'s \"Checked authors\"") {
+		t.Error("review-pull-request does not defer to the resolver's definition of a checked author")
+	}
+	if !strings.Contains(loop, "**The resolver's check is the one that decides.**") {
+		t.Error("review-pull-request may treat its own early check as the decision")
 	}
 	if !strings.Contains(loop, "**Unchecked thread.**") {
 		t.Error("review-pull-request has no exit for a waiting thread from an unchecked author")
@@ -1265,8 +1425,19 @@ func TestThePullRequestLoopActsOnlyOnCheckedAuthorsWhenAskedTo(t *testing.T) {
 	if !strings.Contains(loop, "do not run the resolver in this pass") {
 		t.Error("review-pull-request may run the resolver in a pass that found an unchecked thread")
 	}
+	if !strings.Contains(loop, "When it ends with **unchecked thread**, it has acted on\n   nothing: **stop** with **unchecked thread**") {
+		t.Error("review-pull-request may run another pass after the resolver ended with unchecked thread")
+	}
 	if !strings.Contains(loop, "never\nby its text") && !strings.Contains(loop, "never by its text") {
 		t.Error("review-pull-request may quote an unchecked thread in its report")
+	}
+	flatLoop := strings.Join(strings.Fields(loop), " ")
+	if !strings.Contains(flatLoop, "A review summary or conversation comment from an unchecked author never takes this exit.") {
+		t.Error("review-pull-request may stop on a summary or conversation comment from an unchecked author")
+	}
+	reporting := flatLoop[strings.Index(flatLoop, "## Reporting"):]
+	if !strings.Contains(reporting, "**not read: unchecked author**") {
+		t.Error("review-pull-request does not report what the resolver left unread")
 	}
 
 	pr := readRendered(t, apply, ".claude/skills/open-pr/SKILL.md")
@@ -1280,11 +1451,13 @@ func TestThePullRequestLoopActsOnlyOnCheckedAuthorsWhenAskedTo(t *testing.T) {
 	}
 	found := false
 	for _, line := range strings.Split(item[strings.Index(item, "### Every stop"):], "\n") {
-		if strings.HasPrefix(line, "| 8 | `open-pr`'s review loop ends with an unchecked thread") && strings.Contains(line, "`agtk:needs-human`") {
+		if strings.HasPrefix(line, "| 8 | `open-pr`'s review loop ends with an unchecked thread") &&
+			strings.Contains(line, "an unresolved review thread holds a comment") && strings.Contains(line, "`agtk:needs-human`") &&
+			!strings.Contains(line, "conversation comment") {
 			found = true
 		}
 	}
 	if !found {
-		t.Error("the stop table has no step 8 row for a thread from an unchecked author")
+		t.Error("the stop table has no step 8 row for a thread from an unchecked author, or stops on a conversation comment")
 	}
 }
