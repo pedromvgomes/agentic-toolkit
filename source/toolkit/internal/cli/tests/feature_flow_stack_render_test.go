@@ -889,16 +889,21 @@ func TestOpenPRHandsItsReviewToThePullRequestLoop(t *testing.T) {
 
 // A handoff is closed out only when the pull request's review converged and
 // its checks finished green. A single look at the checks reads a pending one
-// as a pass, which is how a failing scan ships behind a closed handoff.
+// as a pass, which is how a failing scan ships behind a closed handoff; a wait
+// with no cap, or one a run can extend by pushing the same fix again, never
+// ends.
 func TestImplementHandoffClosesOutOnlyOnAConvergedGreenPullRequest(t *testing.T) {
 	apply := renderFeatureFlowStack(t)
 
 	skill := readRendered(t, apply, ".claude/skills/implement-handoff/SKILL.md")
-	if !strings.Contains(skill, "gh pr checks <N> --watch --fail-fast") {
-		t.Error("implement-handoff looks at the checks once instead of waiting for them")
+	if !strings.Contains(skill, "Poll every **5 minutes**") || !strings.Contains(skill, "gh pr checks <N>") {
+		t.Error("implement-handoff looks at the checks once instead of polling them")
 	}
-	if !strings.Contains(skill, "**as soon as**") || !strings.Contains(skill, "30 minutes") {
-		t.Error("implement-handoff does not bound the wait, or reads the bound as a fixed delay")
+	if !strings.Contains(skill, "2 hours of wall-clock since the latest push") {
+		t.Error("implement-handoff does not cap the wait")
+	}
+	if !strings.Contains(skill, "is not progress") {
+		t.Error("implement-handoff can extend the wait forever by pushing the same fix again")
 	}
 	if !strings.Contains(skill, "review-pull-request\ncame back clean") && !strings.Contains(skill, "review-pull-request came back clean") {
 		t.Error("implement-handoff closes out without the pull request's review having converged")
