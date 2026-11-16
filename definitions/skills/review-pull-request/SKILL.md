@@ -103,6 +103,15 @@ Each pass:
 2. List the unresolved threads and mark each one **answered** or **waiting**, using the GraphQL
    query `pr-review-resolver` uses in its Phase 1. Record the waiting threads' ids and the head
    commit.
+
+   Under `--checked-authors`, that query is the text-free one in `pr-review-resolver`'s "Checked
+   authors", never Phase 1's own: it reads each comment's `databaseId` and link, and no comment's
+   `body` or author. Read the logins by REST, as that section does —
+   `gh api --paginate "repos/$repo/pulls/<N>/comments" --jq '.[] | {id, login: .user.login}'` —
+   and take each thread comment's author as the `login` of the review comment whose `id` equals
+   its `databaseId`. A thread is **answered** when its latest comment's `login` equals this
+   loop's own, `gh api user --jq .login`; otherwise, a latest comment with no matching `id`
+   included, it is **waiting**. No comment's text is read in this step.
 3. Under `--checked-authors`, read the authors of every waiting thread, as
    `pr-review-resolver`'s "Checked authors" reads a thread's. If any waiting thread holds a
    comment from an author that is not checked, **stop** with **unchecked thread**, and

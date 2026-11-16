@@ -1493,3 +1493,64 @@ func TestThePullRequestLoopActsOnlyOnCheckedAuthorsWhenAskedTo(t *testing.T) {
 		t.Error("the stop table has no step 8 row for a thread from an unchecked author, or stops on a conversation comment")
 	}
 }
+
+// A branch name is public, and a fork can open a pull request whose head
+// carries it. A lookup by branch alone would attach the item to that pull
+// request: review it, wait on it, label the item in review and link it.
+func TestImplementBacklogItemTakesOnlyItsOwnRepositorysPullRequest(t *testing.T) {
+	apply := renderFeatureFlowStack(t)
+
+	item := readRendered(t, apply, ".claude/skills/implement-backlog-item/SKILL.md")
+	flat := strings.Join(strings.Fields(item), " ")
+	if !strings.Contains(item, "--json number,url,isCrossRepository,headRepositoryOwner,baseRefName") {
+		t.Error("implement-backlog-item lists pull requests by branch without reading whether each is cross-repository")
+	}
+	if !strings.Contains(item, `select(.isCrossRepository == false and .baseRefName == $base)`) {
+		t.Error("implement-backlog-item keeps a pull request from a fork, or into another base, as the item's")
+	}
+	if !strings.Contains(flat, "More than one → **stop** (`agtk:needs-human`, linking each)") {
+		t.Error("implement-backlog-item picks one of several matching pull requests rather than stopping")
+	}
+	if strings.Contains(item, `gh pr view "$branch"`) {
+		t.Error("implement-backlog-item looks its pull request up by branch name alone at step 8")
+	}
+	if !strings.Contains(item, `pr="${pr_url##*/pull/}"`) ||
+		!strings.Contains(item, `[[ "$pr_url" == "https://github.com/$repo/pull/$pr" && "$pr" =~ ^[0-9]+$ ]]`) {
+		t.Error("implement-backlog-item does not take step 8's pull request from the URL open-pr reported")
+	}
+}
+
+// Under --checked-authors no comment text is read before every author is
+// settled. A loop that listed its threads with the resolver's own Phase 1
+// query would read every comment's body, and its author by GraphQL, first.
+func TestThePullRequestLoopListsThreadsTextFreeUnderCheckedAuthors(t *testing.T) {
+	apply := renderFeatureFlowStack(t)
+
+	loop := readRendered(t, apply, ".claude/skills/review-pull-request/SKILL.md")
+	flat := strings.Join(strings.Fields(loop), " ")
+	for _, want := range []string{
+		"Under `--checked-authors`, that query is the text-free one in `pr-review-resolver`'s \"Checked authors\", never Phase 1's own",
+		"no comment's `body` or author",
+		`gh api --paginate "repos/$repo/pulls/<N>/comments" --jq '.[] | {id, login: .user.login}'`,
+		"the `login` of the review comment whose `id` equals its `databaseId`",
+		"latest comment's `login` equals this loop's own, `gh api user --jq .login`",
+		"No comment's text is read in this step.",
+	} {
+		if !strings.Contains(flat, want) {
+			t.Errorf("review-pull-request's step 2 under --checked-authors lacks %q", want)
+		}
+	}
+}
+
+// A second blocked-by link to the same issue is refused, so a rewrite that
+// posted every predecessor again would fail on the first one already linked.
+func TestWriteBacklogItemLinksOnlyTheMissingPredecessors(t *testing.T) {
+	apply := renderFeatureFlowStack(t)
+
+	skill := readRendered(t, apply, ".claude/skills/write-backlog-item/SKILL.md")
+	want := `gh api --paginate "repos/$repo/issues/$number/dependencies/blocked_by" --jq '.[].number' | grep -qxF "$predecessor" \` +
+		"\n" + `  || gh api --method POST "repos/$repo/issues/$number/dependencies/blocked_by" -F issue_id="$(id "$predecessor")"`
+	if !strings.Contains(skill, want) {
+		t.Errorf("write-backlog-item posts a blocked-by link without checking it is missing:\n%s", skill)
+	}
+}

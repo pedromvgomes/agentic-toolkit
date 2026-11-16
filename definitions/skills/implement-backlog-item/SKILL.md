@@ -338,14 +338,24 @@ commit**. Interactive, show the match and wait for a yes. Where the match is not
 spanning two tasks, a task half-done, commits the body does not account for — **stop**: the
 resumption point is a person's call.
 
-If every task is committed, check for a pull request already open from the branch:
+If every task is committed, check for a pull request already open from the branch into the base,
+from this repository:
 
 ```bash
-gh pr list --repo "$repo" --head "$branch" --state open --json number,url
+gh pr list --repo "$repo" --head "$branch" --state open \
+  --json number,url,isCrossRepository,headRepositoryOwner,baseRefName \
+  | jq -r --arg base "$base" \
+      '.[] | select(.isCrossRepository == false and .baseRefName == $base) | "\(.number) \(.url)"'
 ```
 
-One is open → skip to step 8's review loop on it (`review-pull-request <N>`), then step 9. None →
-go on to step 7.
+`--head` matches a branch name alone, and the name is public — it is in the body's `Branch:`
+line — so a fork can open a pull request whose head carries the same name. Only a pull request
+with `isCrossRepository == false` and `baseRefName` equal to `$base` is this item's; every other
+one the list returns is ignored, never reviewed, waited on, labelled or linked.
+
+Exactly one matches → skip to step 8's review loop on it (`review-pull-request <N>`), then step 9.
+None → go on to step 7. More than one → **stop** (`agtk:needs-human`, linking each), and
+interactive, list them and ask which one is the item's: which to continue is a person's call.
 
 ## 5 — Build the task list
 
@@ -451,14 +461,24 @@ last. An item with no Feature closes only itself.
 
 **Unattended, mark the item in review** as soon as `open-pr` has returned with a pull request,
 whatever its review loop concluded. Read the labels and remove those it carries, as in
-"Stopping":
+"Stopping". The pull request is the one `open-pr` reports: it reports the URL of the pull request
+it opened, `https://github.com/<owner>/<repo>/pull/<N>`, and its number is the URL's last path
+segment. Take both from there, never from a lookup by branch name, which a fork's pull request
+with the same head name can answer:
 
 ```bash
-gh pr view "$branch" --repo "$repo" --json number,url
+pr_url="<the URL open-pr reported>"
+pr="${pr_url##*/pull/}"
+[[ "$pr_url" == "https://github.com/$repo/pull/$pr" && "$pr" =~ ^[0-9]+$ ]]   # anything else → stop
 gh issue view "$number" --repo "$repo" --json labels --jq '.labels[].name'
 gh issue edit "$number" --repo "$repo" --add-label agtk:in-review \
   --remove-label agtk:queued --remove-label agtk:running
 ```
+
+`$pr` and `$pr_url` are the pull request every later step reviews, waits on and links. When
+`open-pr` reported no URL, find it with step 4's query, which keeps only a pull request from
+this repository (`isCrossRepository == false`) into `$base`; none, or more than one → **stop**
+(`agtk:needs-human`), as there.
 
 Then, if the review loop came back anything but clean (stalled, capped, no verdict) → **stop**.
 The pull request is open and not ready: report what is still waiting.

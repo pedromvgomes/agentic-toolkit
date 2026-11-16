@@ -171,11 +171,12 @@ gh api --paginate "repos/$repo/issues/$feature/sub_issues" --jq '.[].number' | g
 ```
 
 **The predecessors.** Each is a blocked-by link from this item to the issue it waits on. Read the
-existing ones first and add only the missing:
+existing ones first and add only the missing — a second link to the same issue is refused. Run
+this once per predecessor:
 
 ```bash
-gh api --paginate "repos/$repo/issues/$number/dependencies/blocked_by" --jq '.[].number'
-gh api --method POST "repos/$repo/issues/$number/dependencies/blocked_by" -F issue_id="$(id "$predecessor")"
+gh api --paginate "repos/$repo/issues/$number/dependencies/blocked_by" --jq '.[].number' | grep -qxF "$predecessor" \
+  || gh api --method POST "repos/$repo/issues/$number/dependencies/blocked_by" -F issue_id="$(id "$predecessor")"
 ```
 
 When the plan spans several slices, each slice's item is blocked by the item of the slice before
