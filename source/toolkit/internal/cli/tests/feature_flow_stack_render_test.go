@@ -699,9 +699,10 @@ func TestPlanFeatureChallengesAndThenHasItsDraftReviewed(t *testing.T) {
 	}
 }
 
-// Planning ends at the handoff. A planning session that starts implementing
-// spends opus on the work the whole split exists to move onto sonnet.
-func TestPlanFeatureStopsAtTheHandoff(t *testing.T) {
+// Planning ends at the backlog. A planning session that starts implementing
+// spends opus on the work the whole split exists to move onto sonnet, and one
+// that queues its own items vouches for the text it has just written.
+func TestPlanFeatureStopsAtTheBacklog(t *testing.T) {
 	apply := renderFeatureFlowStack(t)
 
 	body, err := os.ReadFile(filepath.Join(apply, ".claude/commands/plan-feature.md"))
@@ -709,17 +710,41 @@ func TestPlanFeatureStopsAtTheHandoff(t *testing.T) {
 		t.Fatalf("plan-feature did not reach the consumer: %v", err)
 	}
 	cmd := string(body)
-	if !strings.Contains(cmd, "write-handoff") {
-		t.Fatalf("plan-feature writes no handoff, so nothing carries the plan across /clear:\n%s", cmd)
+	if !strings.Contains(cmd, "write-backlog-item") {
+		t.Fatalf("plan-feature writes no backlog item, so nothing carries the plan to the implementing session:\n%s", cmd)
 	}
-	if !strings.Contains(cmd, "/clear") {
-		t.Error("plan-feature does not name the step the user performs by hand")
+	if _, err := os.Stat(filepath.Join(apply, ".claude/skills/write-backlog-item/SKILL.md")); err != nil {
+		t.Errorf("plan-feature writes through write-backlog-item, which never rendered: %v", err)
 	}
-	if !strings.Contains(cmd, "/implement-handoff") {
-		t.Error("plan-feature does not tell the user to run /implement-handoff, so the session sits idle after /clear")
+	if !strings.Contains(cmd, "agtk backlog labels --json") {
+		t.Error("plan-feature does not create the canonical labels the items are created with")
+	}
+	if !strings.Contains(cmd, "--force") {
+		t.Error("plan-feature does not update a label that already exists, so a re-run fails on it")
+	}
+	if strings.Contains(cmd, "gh label delete") || strings.Contains(cmd, "--remove-label") {
+		t.Errorf("plan-feature deletes or removes a label, stripping it from issues that carry it:\n%s", cmd)
+	}
+	if !strings.Contains(cmd, "/sub_issues") {
+		t.Error("plan-feature does not look up the Feature's existing items, so a re-run duplicates them")
+	}
+	if !strings.Contains(cmd, "/implement-backlog-item") {
+		t.Error("plan-feature does not tell the user to run /implement-backlog-item, so nothing starts the first slice")
+	}
+	if !strings.Contains(cmd, "Never apply `agtk:queued` yourself") {
+		t.Error("plan-feature may queue the items it has just written")
 	}
 	if !strings.Contains(cmd, "Do not start implementing") {
 		t.Error("plan-feature may start implementing on opus")
+	}
+
+	at := strings.Index(cmd, "## 6")
+	if at < 0 {
+		t.Fatalf("plan-feature has no step 6 to say what follows approval:\n%s", cmd)
+	}
+	step6 := cmd[at:]
+	if strings.Contains(step6, "handoff/") || strings.Contains(step6, "write-handoff") {
+		t.Errorf("plan-feature still writes a local handoff after approval:\n%s", step6)
 	}
 }
 
