@@ -209,6 +209,24 @@ func (c *Client) readIssuePages(ctx context.Context, path string, query url.Valu
 // a read of the issue itself, and is "no parent" only when that read succeeds;
 // otherwise the issue read's own failure is returned.
 func (c *Client) ReadParent(ctx context.Context, number int) (parent Issue, found bool, err error) {
+	return c.readParent(ctx, number, false)
+}
+
+// ReadParentOfVisibleIssue reads the parent of an issue the caller has
+// already read with this client, such as one returned by ReadLabelledIssues.
+// That read settles that the issue exists and is visible, so a 404 is "no
+// parent" and no further request is made.
+//
+// A caller holding only a number uses ReadParent: given an issue that is not
+// there, this reports it as having no parent.
+func (c *Client) ReadParentOfVisibleIssue(ctx context.Context, number int) (parent Issue, found bool, err error) {
+	return c.readParent(ctx, number, true)
+}
+
+// readParent reads the parent of the numbered issue. visible says the caller
+// has already read the issue, so a 404 needs no read of the issue to tell
+// "no parent" apart from "no issue".
+func (c *Client) readParent(ctx context.Context, number int, visible bool) (Issue, bool, error) {
 	if number < 1 {
 		return Issue{}, false, fmt.Errorf("%d is not an issue number", number)
 	}
@@ -218,6 +236,9 @@ func (c *Client) ReadParent(ctx context.Context, number int) (parent Issue, foun
 		var apiErr *Error
 		if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusNotFound {
 			return Issue{}, false, classifyRead(err)
+		}
+		if visible {
+			return Issue{}, false, nil
 		}
 		if _, err := c.ReadIssue(ctx, number); err != nil {
 			return Issue{}, false, err
@@ -254,4 +275,10 @@ func (r *ReadClient) ReadPredecessors(ctx context.Context, number int) ([]Issue,
 // found false, with no error, when it has none.
 func (r *ReadClient) ReadParent(ctx context.Context, number int) (Issue, bool, error) {
 	return r.c.ReadParent(ctx, number)
+}
+
+// ReadParentOfVisibleIssue reads the parent of an issue already read with
+// this client, and reports found false, with no error, on a 404.
+func (r *ReadClient) ReadParentOfVisibleIssue(ctx context.Context, number int) (Issue, bool, error) {
+	return r.c.ReadParentOfVisibleIssue(ctx, number)
 }

@@ -380,6 +380,31 @@ func TestAnEditHistoryThatNeverEndsIsRefused(t *testing.T) {
 	net.done()
 }
 
+// Label events that never end are refused after exactly the page bound: the
+// first query and 39 follow-ups, with no 41st request.
+func TestLabelEventsThatNeverEndAreRefusedAtThePageBound(t *testing.T) {
+	start := mustTime(t, "2026-01-01T00:00:00Z")
+	const maxPagesForTest = 40
+	total := trustPageLength * (maxPagesForTest + 1)
+	exchanges := []exchange{trustAnswer(t, defaultTrustState,
+		trustConnection(0, []map[string]any{}, false, ""),
+		trustConnection(total, labelRun(start, trustPageLength), true, "timeline"))}
+	for range maxPagesForTest - 1 {
+		exchanges = append(exchanges, trustAnswer(t, defaultTrustState,
+			trustConnection(0, nil, false, ""),
+			trustConnection(total, labelRun(start, trustPageLength), true, "timeline")))
+	}
+	c, net := readClient(t, exchanges...)
+	_, err := c.ReadIssueTrust(context.Background(), 12)
+	if err == nil {
+		t.Fatal("label events that never ended were read as whole")
+	}
+	if !strings.Contains(err.Error(), "did not end after 40 pages") {
+		t.Errorf("the refusal does not name the page bound: %v", err)
+	}
+	net.done()
+}
+
 // GraphQL refused by the network is "the history cannot be read here", which
 // is neither an empty history nor a refusal of the token.
 func TestGraphQLBlockedByTheNetworkIsReportedAsUnavailable(t *testing.T) {
@@ -447,6 +472,27 @@ func TestALabelEventOfAnUnaskedTypeIsRefused(t *testing.T) {
 		trustConnection(1, []map[string]any{trustLabelEvent("RenamedTitleEvent", "x", nil, start)}, false, "")))
 	if _, err := c.ReadIssueTrust(context.Background(), 12); err == nil {
 		t.Error("an unasked timeline item type was read as a label event")
+	}
+}
+
+// Issue 1 is the first issue a repository has, and is read like any other.
+func TestIssueOneHasATrustRecord(t *testing.T) {
+	raw, err := json.Marshal(map[string]any{"data": map[string]any{"repository": map[string]any{"issue": map[string]any{
+		"number": 1, "body": "first", "lastEditedAt": nil, "author": trustActorJSON("octocat", "User"),
+		"userContentEdits": trustConnection(0, []map[string]any{}, false, ""),
+		"timelineItems":    trustConnection(0, []map[string]any{}, false, ""),
+	}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, net := readClient(t, query(string(raw)))
+	got, err := c.ReadIssueTrust(context.Background(), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	net.done()
+	if got.Number != 1 || got.Body != "first" {
+		t.Errorf("issue 1 read as %+v", got)
 	}
 }
 

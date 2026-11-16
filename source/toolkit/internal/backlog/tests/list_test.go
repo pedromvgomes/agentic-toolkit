@@ -121,6 +121,22 @@ func TestAnItemsFeatureIsTheIssueItIsASubIssueOf(t *testing.T) {
 	}
 }
 
+// Every item List completes came back from the label scan, so its parent is
+// read as an issue known to be visible and the issue itself is not read again.
+func TestListReadsEachParentWithoutReReadingTheItem(t *testing.T) {
+	f := &fakeReader{
+		labelled: map[string][]githubapp.Issue{backlog.LabelQueued: {issue(3, "orphan", backlog.LabelQueued), issue(2, "child", backlog.LabelQueued)}},
+		parents:  map[int]githubapp.Issue{2: {Number: 1, Title: "The feature"}},
+	}
+	list(t, f)
+	if !slices.Equal(f.parentReads, []int{2, 3}) {
+		t.Errorf("parents read for %v, want #2 and #3", f.parentReads)
+	}
+	if len(f.issueReads) != 0 {
+		t.Errorf("List re-read issues %v it already held", f.issueReads)
+	}
+}
+
 func TestAnEmptyBacklogAndEmptyFieldsEncodeAsArrays(t *testing.T) {
 	items := list(t, &fakeReader{})
 	raw, err := json.Marshal(items)

@@ -47,7 +47,7 @@ var (
 func parseBacklogRepo(s string) (string, error) {
 	owner, repo, ok := strings.Cut(s, "/")
 	if !ok || !backlogOwnerRE.MatchString(owner) || !backlogRepoRE.MatchString(repo) || repo == "." || repo == ".." {
-		return "", fmt.Errorf("%q is not a repository: want owner/repo", s)
+		return "", fmt.Errorf("%q is not a repository: want owner/repo", s) // [lydite:exclude_from_mutation][every caller returns on the error before reading the values beside it, so they are never observed]
 	}
 	return owner + "/" + repo, nil
 }
@@ -57,18 +57,18 @@ func parseBacklogRepo(s string) (string, error) {
 func parseBacklogItem(s string) (string, int, error) {
 	slug, num, ok := strings.Cut(s, "#")
 	if !ok {
-		return "", 0, fmt.Errorf("%q is not a backlog item: want owner/repo#N", s)
+		return "", 0, fmt.Errorf("%q is not a backlog item: want owner/repo#N", s) // [lydite:exclude_from_mutation][every caller returns on the error before reading the values beside it, so they are never observed]
 	}
 	repo, err := parseBacklogRepo(slug)
 	if err != nil {
-		return "", 0, fmt.Errorf("%q is not a backlog item: want owner/repo#N", s)
+		return "", 0, fmt.Errorf("%q is not a backlog item: want owner/repo#N", s) // [lydite:exclude_from_mutation][every caller returns on the error before reading the values beside it, so they are never observed]
 	}
 	if !backlogNumRE.MatchString(num) {
-		return "", 0, fmt.Errorf("%q is not a backlog item: the issue number must be a positive integer", s)
+		return "", 0, fmt.Errorf("%q is not a backlog item: the issue number must be a positive integer", s) // [lydite:exclude_from_mutation][every caller returns on the error before reading the values beside it, so they are never observed]
 	}
 	number, err := strconv.Atoi(num)
 	if err != nil {
-		return "", 0, fmt.Errorf("%q is not a backlog item: the issue number is out of range", s)
+		return "", 0, fmt.Errorf("%q is not a backlog item: the issue number is out of range", s) // [lydite:exclude_from_mutation][every caller returns on the error before reading the values beside it, so they are never observed]
 	}
 	return repo, number, nil
 }
@@ -83,7 +83,7 @@ func parseBacklogItem(s string) (string, int, error) {
 func backlogReader(seam clientSeam, repo string) (*githubapp.ReadClient, string, error) {
 	token, variable := seam.token()
 	if token == "" {
-		return nil, "", fmt.Errorf("no GitHub token to read %s with: set GH_TOKEN or GITHUB_TOKEN to a token that can read its issues", repo)
+		return nil, "", fmt.Errorf("no GitHub token to read %s with: set GH_TOKEN or GITHUB_TOKEN to a token that can read its issues", repo) // [lydite:exclude_from_mutation][every caller returns on the error before reading the values beside it, so they are never observed]
 	}
 	reader, err := githubapp.NewReadClient(token, repo, seam.options()...)
 	if err != nil {

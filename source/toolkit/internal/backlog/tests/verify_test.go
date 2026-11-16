@@ -115,6 +115,17 @@ func TestALabelFromADeletedAccountIsRefused(t *testing.T) {
 	mustRefuse(t, f, "", backlog.ReasonLabelActorUntrusted, backlog.Untrusted)
 }
 
+// A refusal names the deleted account as such, so a person reading it is not
+// left with an empty login to look up.
+func TestALabelFromADeletedAccountIsNamedAsOneInTheRefusal(t *testing.T) {
+	f := trustedItem()
+	f.trust.LabelEvents[1].Actor = nil
+	refusal := mustRefuse(t, f, "", backlog.ReasonLabelActorUntrusted, backlog.Untrusted)
+	if !strings.Contains(refusal.Message, "queued by a deleted account,") {
+		t.Errorf("refusal message = %q, want it to name a deleted account", refusal.Message)
+	}
+}
+
 func TestOnlyTheLatestQueuingDecidesWhoQueuedTheItem(t *testing.T) {
 	f := trustedItem()
 	f.perms["mallory"] = triagePerm
@@ -202,6 +213,46 @@ func TestADeletedRevisionIsRefused(t *testing.T) {
 	f.trust.Edits[1].DeletedAt = edited.Add(time.Minute)
 	f.trust.Edits[1].DeletedBy = user("alice")
 	mustRefuse(t, f, "", backlog.ReasonRevisionDeleted, backlog.Untrusted)
+}
+
+// A refusal over one revision counts revisions from 1, oldest first, so the
+// person reading it can find the revision in the issue's edit history.
+func TestARefusalOverARevisionNamesItsNumberFromOne(t *testing.T) {
+	for name, tc := range map[string]struct {
+		alter  func(f *fakeReader)
+		reason backlog.Reason
+		want   string
+	}{
+		"a deleted revision": {
+			alter:  func(f *fakeReader) { f.trust.Edits[1].Deleted = true },
+			reason: backlog.ReasonRevisionDeleted, want: "revision 2 of the body of octo/widgets#7 has been deleted",
+		},
+		"a deleted editor": {
+			alter:  func(f *fakeReader) { f.trust.Edits[1].Editor = nil },
+			reason: backlog.ReasonEditorDeleted, want: "revision 2 of the body of octo/widgets#7 was made by a deleted account",
+		},
+		"a revision with no time": {
+			alter:  func(f *fakeReader) { f.trust.Edits[1].EditedAt = time.Time{} },
+			reason: backlog.ReasonHistoryUnreadable, want: "revision 2 of the body of octo/widgets#7 with no time",
+		},
+		"an editor whose permission is unreadable": {
+			alter:  func(f *fakeReader) { f.permErr = map[string]error{"bob": errRead} },
+			reason: backlog.ReasonPermissionUnreadable, want: `of "bob", who made revision 2 of octo/widgets#7`,
+		},
+		"an editor without write": {
+			alter:  func(f *fakeReader) { f.perms["bob"] = triagePerm },
+			reason: backlog.ReasonEditorLacksWrite, want: `revision 2 of the body of octo/widgets#7 was made by "bob"`,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := trustedItem()
+			tc.alter(f)
+			refusal := mustRefuse(t, f, "", tc.reason, tc.reason.Kind())
+			if !strings.Contains(refusal.Message, tc.want) {
+				t.Errorf("refusal message = %q, want it to contain %q", refusal.Message, tc.want)
+			}
+		})
+	}
 }
 
 func TestAnEditAfterTheQueuingIsRefused(t *testing.T) {

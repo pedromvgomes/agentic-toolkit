@@ -20,7 +20,9 @@ type Reader interface {
 	ReadIssueTrust(ctx context.Context, number int) (githubapp.IssueTrust, error)
 	ReadLabelledIssues(ctx context.Context, label string) ([]githubapp.Issue, error)
 	ReadPredecessors(ctx context.Context, number int) ([]githubapp.Issue, error)
-	ReadParent(ctx context.Context, number int) (githubapp.Issue, bool, error)
+	// ReadParentOfVisibleIssue reads the parent of an issue the reader has
+	// already returned, so a 404 means it has none.
+	ReadParentOfVisibleIssue(ctx context.Context, number int) (githubapp.Issue, bool, error)
 }
 
 // Verified is a trusted item's work: the body exactly as verified, and the
@@ -271,7 +273,7 @@ func (a *access) write(ctx context.Context, actor *githubapp.Actor) (bool, error
 	}
 	perm, err := a.reader.ReadPermission(ctx, actor.Login)
 	if err != nil {
-		return false, err
+		return false, err // [lydite:exclude_from_mutation][Verify refuses on the error before reading the bool, so the value beside an error is never observed]
 	}
 	ok := grantsWrite(perm)
 	a.seen[key] = ok

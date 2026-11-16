@@ -107,7 +107,9 @@ func readItem(ctx context.Context, reader Reader, repo string, issue githubapp.I
 	}
 	slices.Sort(item.Predecessors)
 
-	parent, hasParent, err := reader.ReadParent(ctx, issue.Number)
+	// The label scan returned issue, so it is visible to the reader and a
+	// parent read needs no second read of it.
+	parent, hasParent, err := reader.ReadParentOfVisibleIssue(ctx, issue.Number)
 	if err != nil {
 		return Item{}, fmt.Errorf("reading the Feature of %s#%d: %w", repo, issue.Number, err)
 	}

@@ -330,7 +330,7 @@ func sameTime(a, b *time.Time) bool {
 
 // withVar copies vars with one more variable set.
 func withVar(vars map[string]any, name string, value any) map[string]any {
-	out := make(map[string]any, len(vars)+1)
+	out := make(map[string]any, len(vars)+1) // [lydite:exclude_from_mutation][the size is only a capacity hint: a map grows past it, so a smaller hint yields the same map]
 	for k, v := range vars {
 		out[k] = v
 	}

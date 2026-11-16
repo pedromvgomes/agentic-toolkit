@@ -166,7 +166,8 @@ func TestLabelledIssuesAreReadPastTheFirstPage(t *testing.T) {
 	}
 	for i, req := range net.seen {
 		q := req.URL.Query()
-		if q.Get("page") != strconv.Itoa(i+1) || q.Get("state") != "open" || q.Get("labels") != "agtk:queued" {
+		if q.Get("page") != strconv.Itoa(i+1) || q.Get("state") != "open" || q.Get("labels") != "agtk:queued" ||
+			q.Get("per_page") != strconv.Itoa(issuesPageLength) {
 			t.Errorf("call %d asked for %s", i+1, req.URL.RawQuery)
 		}
 	}
@@ -206,6 +207,11 @@ func TestPredecessorsAreReadPastTheFirstPageWithTheirStateReasons(t *testing.T) 
 	}
 	if net.seen[1].URL.Query().Get("page") != "2" {
 		t.Errorf("the second call asked for %s", net.seen[1].URL.RawQuery)
+	}
+	for i, req := range net.seen {
+		if req.URL.Query().Get("per_page") != strconv.Itoa(issuesPageLength) {
+			t.Errorf("call %d asked for %s, not pages of %d", i+1, req.URL.RawQuery, issuesPageLength)
+		}
 	}
 }
 
@@ -256,8 +262,40 @@ func TestNoParentIsToldApartFromNoIssue(t *testing.T) {
 	net.done()
 
 	c, _ = readClient(t, get(parentPath, 403, `{"message":"Forbidden"}`))
-	if _, _, err = c.ReadParent(context.Background(), 12); !errors.Is(err, githubapp.ErrForbidden) {
-		t.Errorf("a refused parent read is reported as %v", err)
+	if _, found, err = c.ReadParent(context.Background(), 12); !errors.Is(err, githubapp.ErrForbidden) || found {
+		t.Errorf("a refused parent read is reported as found=%v err=%v", found, err)
+	}
+}
+
+// An issue the caller has already read is visible, so a 404 on its parent is
+// "no parent" and costs no second request.
+func TestNoParentOfAVisibleIssueIsReadInOneRequest(t *testing.T) {
+	c, net := readClient(t, get(parentPath, 404, `{"message":"Not Found"}`))
+	parent, found, err := c.ReadParentOfVisibleIssue(context.Background(), 12)
+	if err != nil || found || parent.Number != 0 {
+		t.Errorf("a visible issue with no parent read as %+v, found=%v err=%v", parent, found, err)
+	}
+	net.done()
+
+	c, net = readClient(t, get(parentPath, 200, issueJSON(3, "open", "")))
+	parent, found, err = c.ReadParentOfVisibleIssue(context.Background(), 12)
+	if err != nil || !found || parent.Number != 3 {
+		t.Errorf("a visible issue's parent read as %+v, found=%v err=%v", parent, found, err)
+	}
+	net.done()
+
+	c, _ = readClient(t, get(parentPath, 403, `{"message":"Forbidden"}`))
+	if _, found, err = c.ReadParentOfVisibleIssue(context.Background(), 12); !errors.Is(err, githubapp.ErrForbidden) || found {
+		t.Errorf("a refused parent read is reported as found=%v err=%v", found, err)
+	}
+}
+
+// A parent answer with no number names no issue, and is refused rather than
+// reported as found.
+func TestAParentWithNoNumberIsRefused(t *testing.T) {
+	c, _ := readClient(t, get(parentPath, 200, `{"title":"nameless"}`))
+	if _, found, err := c.ReadParent(context.Background(), 12); err == nil || found {
+		t.Errorf("a parent with no number read as found=%v err=%v", found, err)
 	}
 }
 
@@ -270,11 +308,34 @@ func TestAnIssueNumberBelowOneNeverReachesTheNetwork(t *testing.T) {
 	if _, err := c.ReadPredecessors(ctx, 0); err == nil {
 		t.Error("ReadPredecessors accepted 0")
 	}
-	if _, _, err := c.ReadParent(ctx, 0); err == nil {
-		t.Error("ReadParent accepted 0")
+	if _, found, err := c.ReadParent(ctx, 0); err == nil || found {
+		t.Errorf("ReadParent of 0 read as found=%v err=%v", found, err)
+	}
+	if _, found, err := c.ReadParentOfVisibleIssue(ctx, 0); err == nil || found {
+		t.Errorf("ReadParentOfVisibleIssue of 0 read as found=%v err=%v", found, err)
 	}
 	if _, err := c.ReadPermission(ctx, ""); err == nil {
 		t.Error("ReadPermission accepted an empty login")
+	}
+	net.done()
+}
+
+// Issue 1 is the first issue a repository has, and every read takes it.
+func TestIssueOneIsAnIssueNumber(t *testing.T) {
+	const one = "/repos/acme/widgets/issues/1"
+	c, net := readClient(t,
+		get(one, 200, issueJSON(1, "open", "")),
+		get(one+"/dependencies/blocked_by", 200, `[]`),
+		get(one+"/parent", 200, issueJSON(3, "open", "")))
+	ctx := context.Background()
+	if issue, err := c.ReadIssue(ctx, 1); err != nil || issue.Number != 1 {
+		t.Errorf("ReadIssue(1) = %+v, %v", issue, err)
+	}
+	if _, err := c.ReadPredecessors(ctx, 1); err != nil {
+		t.Errorf("ReadPredecessors(1): %v", err)
+	}
+	if _, found, err := c.ReadParent(ctx, 1); err != nil || !found {
+		t.Errorf("ReadParent(1) found=%v err=%v", found, err)
 	}
 	net.done()
 }

@@ -216,6 +216,36 @@ func TestVerifyNeverReadsAsTheAppRegistration(t *testing.T) {
 	}
 }
 
+// An item the named App queued is trusted only when --trusted-app names it:
+// a bot's login is no collaborator, so without the flag nobody vouches for it.
+func TestVerifyTrustsTheLabelOfTheAppNamedByTrustedApp(t *testing.T) {
+	withToken(t)
+	queuedByApp := strings.Replace(trustAnswer(7, trustedBody),
+		`"actor":{"__typename":"User","login":"alice"}`, `"actor":{"__typename":"Bot","login":"factory"}`, 1)
+	if queuedByApp == trustAnswer(7, trustedBody) {
+		t.Fatal("the trust answer names no label actor to replace")
+	}
+	useGitHub(t, func(r *http.Request) (int, string) {
+		if r.Method+" "+r.URL.Path == "POST /graphql" {
+			return 200, queuedByApp
+		}
+		return trustedItem(r)
+	})
+
+	code, stdout, stderr := runBacklog(t, "backlog", "verify", "o/r#7", "--trusted-app", "factory")
+	if code != 0 {
+		t.Fatalf("exit %d, stderr:\n%s", code, stderr)
+	}
+	if want := "sha256 " + sha(trustedBody) + "\n" + trustedBody; stdout != want {
+		t.Errorf("stdout = %q, want %q", stdout, want)
+	}
+
+	code, _, stderr = runBacklog(t, "backlog", "verify", "o/r#7")
+	if code != 1 || !strings.Contains(stderr, string(backlog.ReasonLabelActorUntrusted)) {
+		t.Errorf("without --trusted-app, exit %d, stderr:\n%s", code, stderr)
+	}
+}
+
 func TestANotTrustedItemExitsNonZeroAndNamesTheReasonOnStderr(t *testing.T) {
 	withToken(t)
 	useGitHub(t, func(r *http.Request) (int, string) {
@@ -426,17 +456,13 @@ func backlogOnGitHub(r *http.Request) (int, string) {
 		return 200, restIssue(9, "the \"feature\"", "open", "")
 	case path == "/repos/o/r/issues/4/parent", path == "/repos/o/r/issues/5/parent":
 		return 404, `{"message":"Not Found"}`
-	case path == "/repos/o/r/issues/4":
-		return 200, restIssue(4, "a stub", "open", "", backlog.LabelStub)
-	case path == "/repos/o/r/issues/5":
-		return 200, restIssue(5, "waiting", "open", "", backlog.LabelBlocked)
 	}
 	return 404, `{"message":"Not Found"}`
 }
 
 func TestListPrintsEachItemsStatesStubPredecessorsAndFeatureWithQuotedTitles(t *testing.T) {
 	withToken(t)
-	useGitHub(t, backlogOnGitHub)
+	fake := useGitHub(t, backlogOnGitHub)
 
 	code, stdout, stderr := runBacklog(t, "backlog", "list", "--repo", "o/r")
 	if code != 0 {
@@ -451,6 +477,14 @@ func TestListPrintsEachItemsStatesStubPredecessorsAndFeatureWithQuotedTitles(t *
 	for _, word := range []string{"ready", "trusted", "verified"} {
 		if strings.Contains(strings.ToLower(stdout), word) {
 			t.Errorf("list output says %q, which only verify may claim", word)
+		}
+	}
+	// An item with no parent answers 404 on its parent read; the label scan
+	// already showed it visible, so it is not read again to tell the two
+	// 404s apart.
+	for _, request := range fake.requests {
+		if request == "GET /repos/o/r/issues/4" || request == "GET /repos/o/r/issues/5" {
+			t.Errorf("list made %s for an item its label scan returned", request)
 		}
 	}
 }

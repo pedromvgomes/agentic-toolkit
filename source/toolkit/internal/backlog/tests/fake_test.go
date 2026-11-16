@@ -34,9 +34,12 @@ type fakeReader struct {
 	permReads     []string
 	trustReads    int
 	labelledReads []string
+	issueReads    []int
+	parentReads   []int
 }
 
 func (f *fakeReader) ReadIssue(_ context.Context, number int) (githubapp.Issue, error) {
+	f.issueReads = append(f.issueReads, number)
 	if f.issueErr != nil {
 		return githubapp.Issue{}, f.issueErr
 	}
@@ -78,7 +81,8 @@ func (f *fakeReader) ReadPredecessors(_ context.Context, number int) ([]githubap
 	return f.predecessors[number], nil
 }
 
-func (f *fakeReader) ReadParent(_ context.Context, number int) (githubapp.Issue, bool, error) {
+func (f *fakeReader) ReadParentOfVisibleIssue(_ context.Context, number int) (githubapp.Issue, bool, error) {
+	f.parentReads = append(f.parentReads, number)
 	if f.parentErr != nil {
 		return githubapp.Issue{}, false, f.parentErr
 	}
