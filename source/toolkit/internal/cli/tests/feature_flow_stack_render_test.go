@@ -891,13 +891,25 @@ func TestOpenPRHandsItsReviewToThePullRequestLoop(t *testing.T) {
 // its checks finished green. A single look at the checks reads a pending one
 // as a pass, which is how a failing scan ships behind a closed handoff; a wait
 // with no cap, or one a run can extend by pushing the same fix again, never
-// ends.
+// ends. The wait is agtk's, run in the background: every poll the session
+// makes itself is a model turn over the whole conversation, and a foreground
+// wait is cut off by the harness before it ends. A session with no token to
+// hand agtk still has to wait, so it polls for itself.
 func TestImplementHandoffClosesOutOnlyOnAConvergedGreenPullRequest(t *testing.T) {
 	apply := renderFeatureFlowStack(t)
 
 	skill := readRendered(t, apply, ".claude/skills/implement-handoff/SKILL.md")
-	if !strings.Contains(skill, "Poll every **5 minutes**") || !strings.Contains(skill, "gh pr checks <N>") {
-		t.Error("implement-handoff looks at the checks once instead of polling them")
+	if !strings.Contains(skill, "agtk pr wait <owner/repo#N> --json") {
+		t.Error("implement-handoff does not hand the wait to agtk pr wait")
+	}
+	if !strings.Contains(skill, "**background command**") {
+		t.Error("implement-handoff may block the session on the wait in the foreground")
+	}
+	if !strings.Contains(skill, "### Without a token") || !strings.Contains(skill, "every **5 minutes**") {
+		t.Error("implement-handoff has no wait for a session without a token")
+	}
+	if !strings.Contains(skill, "run the wait again") {
+		t.Error("implement-handoff does not restart the wait, and its cap, after a push")
 	}
 	if !strings.Contains(skill, "2 hours of wall-clock since the latest push") {
 		t.Error("implement-handoff does not cap the wait")

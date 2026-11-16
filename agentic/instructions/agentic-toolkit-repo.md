@@ -46,7 +46,9 @@ Requires Go 1.26+. The module lives at `source/toolkit/go.mod`, not the repo roo
   `stack`, `definitions`, `sourceref`/`sourcestore` (fetch/cache), `review`/`reviewrun`/`reviewpost`/
   `reviewapprove` (code-review flow), `curator`, `memory`, `githubapp`, `backlog` (`agtk backlog
   list|verify|labels`: read-only; decides under ADR-0028 whether an issue may be acted on, reading
-  with a token only), `relay` (dispatches a
+  with a token only), `prwait` (`agtk pr wait`: polls a pull request's checks, statuses and
+  threads until one verdict, with an exit code per verdict; reads with a token only, writes
+  nothing; ADR-0029), `relay` (dispatches a
   registered repository's own workflow to post or approve on behalf of a machine holding no App
   registration; never imports `githubapp`), `cloudinit` (`agtk cloud init`: git identity and the
   user's own SSH signing key from `AGTK_*` environment variables), `usage` (parses Claude Code

@@ -128,17 +128,21 @@ nothing is waiting for an answer, when the pull request stops moving, or at the 
 fix or with its false-positive call, and `agtk code-review approve` refuses until you have. The
 closing report lists every marking the agent made, and every thread waiting for you.
 
-Then the coordinator makes the pull request mergeable. It polls every 5 minutes, reading the
-checks, lydite's verdict comment for the current head (in a repository with a `.lydite/`
-directory) and the unresolved review threads, and fixes on the branch whatever fails or appears:
-a failed check or ❌ lydite row through a fresh implementer, a new thread through
-`pr-review-resolver`. Lydite green or a referral is done, red is fixed even where lydite is not
-a required check, and `lydite/referral` is the only check allowed to stay pending. It rebases
-when the repository requires a current branch. The one cap is 2 hours since the latest push;
-each push restarts it, and the same check failing again after a fix aimed at it stops the run.
-Reaching the cap with anything else pending or failing, a repeated failure, or a PR review loop
-that did not come back clean leaves the handoff where it is: the pull request is open, and the
-work is not done.
+Then the coordinator makes the pull request mergeable. It hands the wait to
+`agtk pr wait <owner/repo#N> --json`, run in the background, and wakes once on its exit code
+(ADR 0029): the command polls every 5 minutes, reading the head's checks and statuses, lydite's
+results comment as detail (in a repository with a `.lydite/` directory) and the unresolved
+review threads, so a two-hour wait costs the session no model turns. On "action needed" the
+coordinator fixes on the branch whatever it names — a failed check or ❌ lydite row through a
+fresh implementer, a waiting thread through `pr-review-resolver` — pushes, and runs the wait
+again. Lydite green or a referral is done, red is fixed even where lydite is not a required
+check, and `lydite/referral` is the only check allowed to stay pending. It rebases when the
+repository requires a current branch. The one cap is 2 hours since the latest push: each run of
+the wait carries its own `--cap 2h`, so each push restarts it, and the same check failing again
+after a fix aimed at it stops the run. A session with no `GH_TOKEN` or `GITHUB_TOKEN`, such as a
+cloud session, polls for itself on the same rules. Reaching the cap with anything else pending
+or failing, a repeated failure, or a PR review loop that did not come back clean leaves the
+handoff where it is: the pull request is open, and the work is not done.
 
 ## Several pull requests
 
