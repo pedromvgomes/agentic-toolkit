@@ -188,7 +188,7 @@ func NewRootCmd(env *Env) *cobra.Command {
 		newInitCmd(env), newLockCmd(env), newFetchCmd(env), newPlanCmd(env),
 		newRenderCmd(env), newSyncCmd(env), newStatusCmd(env), newUpdateCmd(env),
 		newMemoryCmd(env), newCodeReviewCmd(env), newHandoffCmd(env), newGuardCmd(env),
-		newCloudCmd(env),
+		newCloudCmd(env), newBacklogCmd(env),
 	)
 	return root
 }
