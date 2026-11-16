@@ -1238,3 +1238,53 @@ func TestImplementBacklogItemActsUnattendedOnlyOnThreadsFromCheckedAuthors(t *te
 		t.Error("implement-backlog-item does not rule out acting on an unchecked thread")
 	}
 }
+
+// The pull request loop that open-pr runs at step 8 also drives the resolver
+// unattended, and anybody who can see the pull request can comment while it
+// runs. Under --checked-authors it hands the resolver only threads from the
+// same accounts step 9 checks, and any other waiting thread ends the loop
+// before the resolver runs on anything. implement-backlog-item passes the
+// argument unattended, and open-pr carries it through to the loop.
+func TestThePullRequestLoopActsOnlyOnCheckedAuthorsWhenAskedTo(t *testing.T) {
+	apply := renderFeatureFlowStack(t)
+
+	loop := readRendered(t, apply, ".claude/skills/review-pull-request/SKILL.md")
+	if !strings.Contains(loop, "`--checked-authors`") {
+		t.Fatalf("review-pull-request takes no --checked-authors argument:\n%s", loop)
+	}
+	if !strings.Contains(loop, `gh api "repos/$repo/collaborators/<login>/permission" --jq .permission`) ||
+		!strings.Contains(loop, "`admin`, `maintain` or `write` counts") {
+		t.Error("review-pull-request does not check a thread author's write access under --checked-authors")
+	}
+	if !strings.Contains(loop, "<!-- agtk:review") || !strings.Contains(loop, "[bot]") {
+		t.Error("review-pull-request does not identify the review App's account, so any bot's thread may be acted on")
+	}
+	if !strings.Contains(loop, "**Unchecked thread.**") {
+		t.Error("review-pull-request has no exit for a waiting thread from an unchecked author")
+	}
+	if !strings.Contains(loop, "do not run the resolver in this pass") {
+		t.Error("review-pull-request may run the resolver in a pass that found an unchecked thread")
+	}
+	if !strings.Contains(loop, "never\nby its text") && !strings.Contains(loop, "never by its text") {
+		t.Error("review-pull-request may quote an unchecked thread in its report")
+	}
+
+	pr := readRendered(t, apply, ".claude/skills/open-pr/SKILL.md")
+	if !strings.Contains(pr, "`review-pull-request <N> --checked-authors`") {
+		t.Error("open-pr does not pass --checked-authors through to the pull request loop")
+	}
+
+	item := readRendered(t, apply, ".claude/skills/implement-backlog-item/SKILL.md")
+	if !strings.Contains(item, "**Unattended, invoke `open-pr` with `--checked-authors`**") {
+		t.Error("implement-backlog-item runs open-pr's loop unattended on threads from any author")
+	}
+	found := false
+	for _, line := range strings.Split(item[strings.Index(item, "### Every stop"):], "\n") {
+		if strings.HasPrefix(line, "| 8 | `open-pr`'s review loop ends with an unchecked thread") && strings.Contains(line, "`agtk:needs-human`") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("the stop table has no step 8 row for a thread from an unchecked author")
+	}
+}

@@ -13,7 +13,7 @@ requires:
   - instructions/git
 extensions:
   claude:
-    argument_hint: "[pr title]"
+    argument_hint: "[pr title] [--checked-authors]"
 ---
 
 # Open PR
@@ -170,6 +170,11 @@ has not seen it. Report the posted review's URL and how many findings landed.
 Invoke `review-pull-request <N>`. The review just posted is its first pass: every thread it
 opened gets fixed or answered, the fixes are pushed, and the next pass reads only what they
 changed, until nothing is waiting or the loop stops for another reason.
+
+When the caller passes `--checked-authors`, invoke `review-pull-request <N> --checked-authors`
+instead: the loop then hands the resolver only threads written by the accounts it checks, and
+ends with **unchecked thread**, linking the rest, when any other is waiting. This skill never
+adds the argument on its own; the caller knows whether anybody is there to approve a fix.
 
 Report its outcome as it gave it: the passes, what each cost, every false-positive marking the
 agent posted, and the threads waiting for a person to resolve. Anything but clean means the
