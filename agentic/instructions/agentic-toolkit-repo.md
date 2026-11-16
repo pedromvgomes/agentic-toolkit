@@ -44,7 +44,9 @@ Requires Go 1.26+. The module lives at `source/toolkit/go.mod`, not the repo roo
 - `source/toolkit/cmd/agtk/` — CLI entrypoint
 - `source/toolkit/internal/` — CLI implementation (private packages): `resolver`, `lockfile`,
   `stack`, `definitions`, `sourceref`/`sourcestore` (fetch/cache), `review`/`reviewrun`/`reviewpost`/
-  `reviewapprove` (code-review flow), `curator`, `memory`, `githubapp`, `relay` (dispatches a
+  `reviewapprove` (code-review flow), `curator`, `memory`, `githubapp`, `backlog` (`agtk backlog
+  list|verify|labels`: read-only; decides under ADR-0028 whether an issue may be acted on, reading
+  with a token only), `relay` (dispatches a
   registered repository's own workflow to post or approve on behalf of a machine holding no App
   registration; never imports `githubapp`), `cloudinit` (`agtk cloud init`: git identity and the
   user's own SSH signing key from `AGTK_*` environment variables), `usage` (parses Claude Code
