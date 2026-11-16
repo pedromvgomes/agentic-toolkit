@@ -589,3 +589,20 @@ func TestLabelsJSONIsAnArrayOfNameColourDescription(t *testing.T) {
 		}
 	}
 }
+
+// TestBacklogRejectsAnUnknownSubcommand: cobra takes an unknown subcommand of
+// a non-root parent as an argument, prints help and exits 0, unless the parent
+// has a RunE. A caller running a subcommand its installed agtk lacks would
+// read the help text as output and report success.
+func TestBacklogRejectsAnUnknownSubcommand(t *testing.T) {
+	isolatedConfig(t)
+
+	code, stdout, stderr := runBacklog(t, "backlog", "nosuchcommand")
+
+	if code == 0 {
+		t.Fatalf("an unknown subcommand exited 0 and printed:\n%s", stdout)
+	}
+	if !strings.Contains(stderr, "nosuchcommand") {
+		t.Errorf("stderr does not name the subcommand:\n%s", stderr)
+	}
+}
