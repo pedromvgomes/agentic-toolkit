@@ -1,0 +1,7 @@
+{
+  "toolkit": {
+    "covered": 10302,
+    "total": 11518,
+    "producer": "go 1.27.4"
+  }
+}
