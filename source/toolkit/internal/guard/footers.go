@@ -1,7 +1,7 @@
 // Package guard holds the decision logic Claude Code hooks call into
 // before letting a tool call through. A hook script stays a thin call
-// into a tested function here, the same shape ADR 0014 uses for the
-// session-start hook and `agtk handoff list`.
+// into a tested function here, so the decision is covered by Go tests
+// rather than living untested in shell.
 package guard
 
 import (
