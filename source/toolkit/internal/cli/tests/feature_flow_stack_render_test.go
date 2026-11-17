@@ -304,6 +304,31 @@ func TestPRReviewResolverFixesALyditeMutantThreadWithoutReplying(t *testing.T) {
 	}
 }
 
+// The resolver never replies to a lydite surviving-mutant thread, so a loop
+// that counted it as waiting could never end clean. It is handed to the
+// resolver once, and its verdict is then lydite's own check's.
+func TestThePullRequestLoopLeavesLyditeMutantThreadsToLyditesCheck(t *testing.T) {
+	apply := renderFeatureFlowStack(t)
+
+	loop := strings.Join(strings.Fields(readRendered(t, apply, ".claude/skills/review-pull-request/SKILL.md")), " ")
+	if !strings.Contains(loop, "## Lydite mutant threads") ||
+		!strings.Contains(loop, "A thread is a **lydite mutant thread** when every one of its comments is by `lydite[bot]`, "+
+			"read by REST login as `pr-review-resolver`'s \"Checked authors\" reads logins, and never by its text") {
+		t.Error("review-pull-request does not identify a lydite mutant thread by its authors' REST logins")
+	}
+	if !strings.Contains(loop, "Such a thread is neither answered nor waiting, so it stays out of step 2's classification, "+
+		"out of step 3's early exit, and out of the Clean, Stalled and Capped conditions") {
+		t.Error("review-pull-request counts a lydite mutant thread as waiting, so the loop cannot end clean")
+	}
+	if !strings.Contains(loop, "Each lydite mutant thread is handed to the resolver **once**, keyed by its thread id") {
+		t.Error("review-pull-request does not hand a lydite mutant thread to the resolver exactly once")
+	}
+	reporting := loop[strings.Index(loop, "## Reporting"):]
+	if !strings.Contains(reporting, "**Every lydite mutant thread left to lydite's check**, by its link") {
+		t.Error("review-pull-request does not report the lydite mutant threads it left to lydite's check")
+	}
+}
+
 // An item ordered behind another builds on what that one lands. Starting it
 // before every predecessor is closed as completed builds on something that
 // has not merged.
