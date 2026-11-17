@@ -15,8 +15,8 @@ extensions:
 
 Write the GitHub issue a session with no memory of this one reads to continue the work.
 
-A backlog item is the same document a handoff is — a goal, the current state and the next steps,
-and optionally a plan's tasks — carried on an issue instead of a local file. Its terms are in
+A backlog item is a goal, the current state and the next steps, and optionally a plan's tasks,
+carried on a GitHub issue. Its terms are in
 `CONTEXT.md`: **Backlog item**, **Stub**, **Feature**, **Factory**, **Dispatcher**, **Factory
 App**. The task list and the slice are **optional**: a mid-work save carries neither and is still
 a backlog item.
