@@ -1472,3 +1472,144 @@ func TestOpenPRCountsOnlyItsOwnRepositorysOpenPullRequest(t *testing.T) {
 		t.Error("open-pr counts a fork's pull request with the same head name as this branch's")
 	}
 }
+
+// section returns the text from the heading at to the heading until, with its
+// whitespace folded, failing the test when either heading is missing.
+func section(t *testing.T, text, at, until string) string {
+	t.Helper()
+	from := strings.Index(text, at)
+	if from < 0 {
+		t.Fatalf("no %q in:\n%s", at, text)
+	}
+	to := strings.Index(text[from:], until)
+	if to < 0 {
+		t.Fatalf("no %q after %q in:\n%s", until, at, text)
+	}
+	return strings.Join(strings.Fields(text[from:from+to]), " ")
+}
+
+// A squash-merged pull request leaves its branch holding commits the base
+// never descends from, so a later slice started from the base and pushed to
+// the same branch moves it only by a force push, which stalls an unattended
+// run on a permission prompt. Each item names a branch of its own, created
+// from the base and pushed plainly.
+func TestEachBacklogItemWorksOnABranchOfItsOwn(t *testing.T) {
+	apply := renderFeatureFlowStack(t)
+
+	write := readRendered(t, apply, ".claude/skills/write-backlog-item/SKILL.md")
+	contents := section(t, write, "## 3 — Write the contents", "## 4 — Create or edit the issue")
+	for _, want := range []string{
+		"**One branch per backlog item, never reused after its pull request merges.**",
+		"Each slice's item names a fresh branch of its own, derived from the item",
+		"never the branch of an earlier slice",
+		"A branch whose pull request has merged is never a target again.",
+	} {
+		if !strings.Contains(contents, want) {
+			t.Errorf("write-backlog-item lets a slice reuse an earlier slice's branch: it lacks %q", want)
+		}
+	}
+
+	plan := readRendered(t, apply, ".claude/commands/plan-feature.md")
+	later := section(t, plan, "### Every later slice", "### Say what happens next")
+	if !strings.Contains(later, "Each slice's `Branch:` names a fresh branch of its own") {
+		t.Error("/plan-feature lets a later slice's stub name the branch of an earlier slice")
+	}
+
+	item := readRendered(t, apply, ".claude/skills/implement-backlog-item/SKILL.md")
+	four := section(t, item, "## 4 — Get onto the branch", "## 5 — Build the task list")
+	for _, want := range []string{
+		"**One branch per backlog item, never reused after its pull request merges.**",
+		"creates from `origin/<base>` and every push sends with a plain `git push -u origin <branch>`",
+		"A branch whose pull request has merged is never a target again.",
+		`git checkout --no-track -b "$branch" "origin/$base"`,
+	} {
+		if !strings.Contains(four, want) {
+			t.Errorf("implement-backlog-item's step 4 lacks %q", want)
+		}
+	}
+	stub := section(t, item, "### Fill the next slice's stub", "### Report")
+	if !strings.Contains(stub, "the next slice's `Branch:` names a branch of its own, never `$branch`") {
+		t.Error("implement-backlog-item fills the next slice's stub with this item's own branch")
+	}
+}
+
+// A session that may push only to a branch already holding an earlier,
+// merged slice cannot force it. Its old tip is recorded as a parent by a
+// merge that keeps the new tree, after a check by content that everything on
+// it is on the base; a commit that is not stops for a person, since it may be
+// somebody else's work.
+func TestImplementBacklogItemNeverForcesABranchHoldingMergedWork(t *testing.T) {
+	apply := renderFeatureFlowStack(t)
+
+	item := readRendered(t, apply, ".claude/skills/implement-backlog-item/SKILL.md")
+	four := section(t, item, "## 4 — Get onto the branch", "## 5 — Build the task list")
+	for _, want := range []string{
+		`git cherry "origin/$base" "origin/$branch" | grep -q '^+' || echo on-base`,
+		`[ "$(git merge-tree --write-tree "origin/$base" "origin/$branch" 2>/dev/null)" \ = "$(git rev-parse "origin/$base^{tree}")" ] && echo on-base`,
+		"It is not resumed and it is not forced.",
+		`git checkout --no-track -B "$branch" "origin/$base"`,
+		"--first-parent",
+	} {
+		if !strings.Contains(four, want) {
+			t.Errorf("implement-backlog-item's step 4 lacks %q", want)
+		}
+	}
+
+	six := section(t, item, "## 6 — One task at a time", "## 7 — Review the branch")
+	merge := strings.Index(six, `git merge -s ours --no-edit "origin/$branch"`)
+	check := strings.Index(six, `git cherry "origin/$base" "origin/$branch"`)
+	if merge < 0 || check < 0 || check > merge {
+		t.Errorf("implement-backlog-item records a branch's merged tip without first checking it is on the base:\n%s", six)
+	}
+	for _, want := range []string{
+		"before anything is pushed",
+		"Neither line printing `on-base` → **stop**",
+	} {
+		if !strings.Contains(six, want) {
+			t.Errorf("implement-backlog-item's step 6 lacks %q", want)
+		}
+	}
+
+	stops := section(t, item, "### Every stop", "## 1 — Check that agtk can verify")
+	if !strings.Contains(stops, "| 6 | the remote branch holds a commit that is not on the base before the first push, or refuses a plain push | `agtk:needs-human` |") {
+		t.Error("the stop table has no row for a remote branch holding work that is not on the base")
+	}
+}
+
+// Rebasing, amending or resetting a pushed branch rewrites commits the remote
+// holds, and only a force push moves it after that. A branch behind its base
+// is brought current by a merge; a conflict that needs a judgement, or a
+// repository that requires a linear history, stops for a person.
+func TestImplementBacklogItemBringsABranchCurrentByMergingItsBase(t *testing.T) {
+	apply := renderFeatureFlowStack(t)
+
+	item := readRendered(t, apply, ".claude/skills/implement-backlog-item/SKILL.md")
+	mergeable := section(t, item, "### Mergeable, not just green", "## 10 — Close out")
+	for _, want := range []string{
+		"is brought current by merging the base into it — never rebased, amended or reset.",
+		"git fetch origin git merge --no-edit \"origin/$base\"",
+		"is committed as an ordinary merge commit and pushed with a plain `git push -u origin \"$branch\"`",
+		"A merge whose conflicts need a judgement about which side wins → `git merge --abort` and **stop**.",
+		"A repository whose rules require a linear history → **stop** for a person rather than rewrite the pushed branch",
+	} {
+		if !strings.Contains(mergeable, want) {
+			t.Errorf("implement-backlog-item's mergeable step lacks %q", want)
+		}
+	}
+	if strings.Contains(mergeable, "rebased or merged") {
+		t.Error("implement-backlog-item offers a rebase to bring a pushed branch current")
+	}
+
+	stops := section(t, item, "### Every stop", "## 1 — Check that agtk can verify")
+	for _, want := range []string{
+		"| 9 | the branch needs a merge of its base whose conflicts need a judgement about which side wins | `agtk:needs-human` |",
+		"| 9 | the branch must be current with its base and the repository requires a linear history, so only a rebase would do | `agtk:needs-human` |",
+	} {
+		if !strings.Contains(stops, want) {
+			t.Errorf("the stop table lacks %q", want)
+		}
+	}
+	if strings.Contains(stops, "needs a rebase") {
+		t.Error("the stop table has the branch rebased onto its base")
+	}
+}

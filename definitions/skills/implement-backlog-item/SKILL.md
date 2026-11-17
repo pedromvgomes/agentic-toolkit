@@ -168,6 +168,7 @@ comment and change no label.
 | 4 | the worktree is dirty, or a local branch of that name differs from the remote's | `agtk:failed` | the checkout the run started in was not clean |
 | 4 | the branch exists and which tasks it holds cannot be established | `agtk:needs-human` | which commits on the branch carry which task, as far as it could tell |
 | 4 | every task is committed and the review loop on the pull request already open comes back anything but clean, an unchecked thread included | `agtk:needs-human` | the pull request, what is still waiting, and a link to each unchecked thread, never its text |
+| 6 | the remote branch holds a commit that is not on the base before the first push, or refuses a plain push | `agtk:needs-human` | the branch, and the commits on it this run does not hold; somebody else's work may be on it |
 | 6 | an implementer reports `blocked` | `agtk:needs-human` | the task, and what the implementer said it would need |
 | 6 | a task sent back twice without converging | `agtk:failed` | the task, and what was wrong each time |
 | 7 | `review-implementation` comes back anything but clean | `agtk:failed` | its outcome — stalled, capped, no verdict — and what is outstanding |
@@ -182,7 +183,8 @@ comment and change no label.
 | 9 | the pull request was merged (exit 5) | none: the merge closed the item | the pull request merged before the run finished |
 | 9 | reads failed on three polls in a row (exit 6) | `agtk:needs-human` | GitHub did not answer, and the pull request's state when it last did |
 | 9 | a suppression or a removed test that is genuinely justified | `agtk:needs-human` | the finding, and why a suppression looks justified |
-| 9 | the branch needs a rebase that does not apply cleanly | `agtk:needs-human` | the pull request, and the files in conflict |
+| 9 | the branch needs a merge of its base whose conflicts need a judgement about which side wins | `agtk:needs-human` | the pull request, and the files in conflict |
+| 9 | the branch must be current with its base and the repository requires a linear history, so only a rebase would do | `agtk:needs-human` | the pull request, and the rule that requires a linear history |
 
 A stub that cannot be filled at step 10 is not a stop of this item: its pull request is fine. It
 keeps `agtk:in-review`, and the closing comment says the stub was not filled and why.
@@ -303,6 +305,15 @@ git check-ref-format --branch "$branch" && git check-ref-format --branch "$base"
 
 No such line, or a name `git` refuses → **stop**: the body names no branch to work on.
 
+**One branch per backlog item, never reused after its pull request merges.** The body names a
+branch of the item's own, which this step creates from `origin/<base>` and every push sends with
+a plain `git push -u origin <branch>`. A branch whose pull request has merged is never a target
+again. Its commits are not ancestors of the squash commit its merge put on the base, so a
+branch started from the base does not descend from them, and only a force push moves the remote
+branch onto it — which an unattended run cannot make. Where the branch the body names holds such
+commits anyway, the session never forces it: it takes the path below for a branch whose work is
+all on the base.
+
 **Interactive: say what you are about to run and wait for a yes** before touching the branch —
 this is the one step that changes where the user is standing, and it is cheap to confirm and
 expensive to surprise. Unattended, proceed.
@@ -318,25 +329,60 @@ A dirty worktree refuses the whole sequence → **stop**, saying what is uncommi
 **The branch does not exist on the remote.** Create it from the remote base directly:
 
 ```bash
-git checkout -b "$branch" "origin/$base"
+git checkout --no-track -b "$branch" "origin/$base"
 ```
 
 Checking out `<base>` first would fail outright wherever it already has a worktree of its own,
 and buys nothing. A local branch of that name already existing makes this refuse → **stop**.
+`--no-track` leaves the branch without an upstream, so the first `git push -u origin "$branch"`
+sets it to the branch itself rather than to the base.
 
-**The branch exists on the remote.** Resume on it:
+**The branch exists on the remote.** First establish whether it holds anything the base does
+not — whether every commit it has and a branch fresh from the base lacks is already on the base,
+by content:
+
+```bash
+git cherry "origin/$base" "origin/$branch" | grep -q '^+' || echo on-base
+[ "$(git merge-tree --write-tree "origin/$base" "origin/$branch" 2>/dev/null)" \
+  = "$(git rev-parse "origin/$base^{tree}")" ] && echo on-base
+```
+
+`git cherry` marks with `+` each commit whose patch has no equivalent on the base. It misses a
+squash merge, whose one commit carries several commits' patches at once, and the second check
+catches that: merging the branch into the base cleanly yields the base's own tree, so the branch
+adds nothing. Either line printing `on-base` is enough. Neither printing it means the branch holds
+work that is not on the base.
+
+**Everything on it is already on the base** — an earlier slice's branch whose pull request
+merged, or the one branch a session may push to, holding work that has since landed. It is not
+resumed and it is not forced. The item starts fresh from the base, as a branch that does not
+exist would, and the remote branch's old tip is recorded as a parent before the first push, as
+step 6 does:
+
+```bash
+git merge-base --is-ancestor "$branch" "origin/$branch"  # only when a local branch of that name exists; refusing → stop
+git checkout --no-track -B "$branch" "origin/$base"
+merged_work=1
+```
+
+A local branch of that name holding a commit the remote branch lacks is work that exists nowhere
+else, and moving the branch would lose it → **stop**.
+
+**It holds work that is not on the base** → it is this item's branch, resumed:
 
 ```bash
 git checkout "$branch"
 git merge --ff-only "origin/$branch"                    # a local copy that diverged refuses → stop
-git log --reverse --format='%h %s' "origin/$base..HEAD"
+git log --reverse --first-parent --format='%h %s' "origin/$base..HEAD"
 ```
 
 Each landed task is one conventional commit on the branch. Match the commits to the body's tasks
 — by subject, by the files `git show --stat <commit>` names against each task's file boundary,
 and by what the body's **State** section says is done — and resume from the **first task with no
-commit**. Interactive, show the match and wait for a yes. Where the match is not clear — a commit
-spanning two tasks, a task half-done, commits the body does not account for — **stop**: the
+commit**. `--first-parent` keeps the commits a merge brought in off the list; the merge commits
+it does list — the old tip recorded at step 6, the base merged in at step 9 — are the branch's
+own, not tasks. Interactive, show the match and wait for a yes. Where the match is not clear — a
+commit spanning two tasks, a task half-done, commits the body does not account for — **stop**: the
 resumption point is a person's call.
 
 If every task is committed, check for a pull request already open from the branch into the base,
@@ -414,14 +460,32 @@ arrangement is worth nothing if the claim is what you act on.
 **Decide.** Three outcomes:
 
 - The diff does what the task said, stays inside its files, and verification passes → commit it,
-  conventionally, one commit for the task. Unattended, push it at once:
-  `git push -u origin "$branch"`.
+  conventionally, one commit for the task. Unattended, push it at once — on a branch that already
+  holds merged work, after the merge below: `git push -u origin "$branch"`. A push the remote
+  refuses means it holds commits this branch lacks → **stop**: somebody else's work may be on it.
 - Something is wrong, missing, or outside the boundary → send it back. Dispatch a fresh
   implementer for the same task with what was wrong. Do not fix it yourself; you are holding the
   list, and a coordinator that starts writing code is a coordinator that stops reviewing it.
 - Reported `blocked` → **stop**: the task as written cannot be done inside its boundary, and the
   body has to change. Sent back twice without converging → **stop**. A task that will not land is
   not a reason to keep going; the tasks after it were ordered behind it for a reason.
+
+**A branch that already holds merged work.** When step 4 set `merged_work`, the first task's
+commit is followed, in both modes and before anything is pushed, by a check that the remote
+branch still holds nothing but work already on the base, and by a merge that records its old tip
+as a parent without changing the tree:
+
+```bash
+git fetch origin
+git cherry "origin/$base" "origin/$branch" | grep -q '^+' || echo on-base
+[ "$(git merge-tree --write-tree "origin/$base" "origin/$branch" 2>/dev/null)" \
+  = "$(git rev-parse "origin/$base^{tree}")" ] && echo on-base
+git merge -s ours --no-edit "origin/$branch"            # only when a line above printed on-base
+```
+
+Neither line printing `on-base` → **stop**: a commit on the remote branch is not on the base, and
+somebody else's work may be on it. Otherwise the remote branch's tip is now an ancestor of this
+one, and the plain push moves it forward. Interactive, the push stays `open-pr`'s.
 
 Record what each implementer `NOTED`. Out-of-boundary problems it found are yours to decide on
 — a new task now, or something said in the pull request — and they are gone if you do not.
@@ -671,12 +735,25 @@ before a push.
 
 Delivering a mergeable pull request means meeting whatever the repository requires of one
 beyond its checks. Read `gh pr view <N> --json mergeable,mergeStateStatus,reviewDecision` and
-the repository's contribution docs. A branch that is behind or conflicting with its base, where
-the repository requires it current, is rebased or merged onto the base — the way the
-repository's docs say — and pushed, and the wait runs again on the cap that push started. A
-rebase whose conflicts need a judgement about which side wins → **stop**. A requirement that
-only a human can meet (an approval, a thread to resolve) is reported, never worked around, and
-is not a stop.
+the repository's contribution docs. A requirement that only a human can meet (an approval, a
+thread to resolve) is reported, never worked around, and is not a stop.
+
+A branch that is behind or conflicting with its base, where the repository requires it current,
+is brought current by merging the base into it — never rebased, amended or reset. Each of those
+rewrites commits already pushed, and only a force push moves the remote branch after one:
+
+```bash
+git fetch origin
+git merge --no-edit "origin/$base"
+```
+
+A merge that applies cleanly, or whose conflicts resolve without choosing between the two sides
+— both sides' changes kept, as when each added its own entry to the same list — is committed as
+an ordinary merge commit and pushed with a plain `git push -u origin "$branch"`, and the wait runs
+again on the cap that push started. A merge whose conflicts need a judgement about which side
+wins → `git merge --abort` and **stop**. A repository whose rules require a linear history →
+**stop** for a person rather than rewrite the pushed branch: only a rebase would bring it
+current there.
 
 ## 10 — Close out
 
@@ -721,6 +798,10 @@ trusts. What the filled body is written from therefore depends on the mode:
   later slices — and from what this slice's work taught. The next slice's goal and its `Branch:`
   line come from that verified plan too. If the verified body does not name the next slice's goal
   and branch, fill nothing, and say so in the closing comment.
+- **Either way, the next slice's `Branch:` names a branch of its own, never `$branch`:** this
+  item's pull request merges before that slice starts, and a branch whose pull request has merged
+  is never a target again. A plan that names this item's branch for the next slice is filled
+  with nothing, and the closing comment says why.
 - **Interactive**, the stub's title and body may be read for its goal and its branch, beside this
   item's **Slice** and **Plan** and what this slice's work taught. The person present reads the
   stub and approves what `write-backlog-item` writes into it before it is written.
