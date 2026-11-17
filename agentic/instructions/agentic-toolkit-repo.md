@@ -14,7 +14,7 @@ to render a chosen stack into their platform's native layout (`.claude/`, `CLAUD
 Full documentation: [README.md](README.md), [docs/CONSUMER-GUIDE.md](docs/CONSUMER-GUIDE.md).
 
 For the project's domain vocabulary — **Definition**, **Stack**, **Note**, **Reviewer**,
-**Panel**, **Handoff**, **Task**, **Platform**, **Adapter**, and more — read [CONTEXT.md](CONTEXT.md)
+**Panel**, **Task**, **Platform**, **Adapter**, and more — read [CONTEXT.md](CONTEXT.md)
 before writing about any of those concepts. Terms there are precise and words listed under
 `_Avoid_` are deliberately banned; using a wrong synonym (e.g. "preset" for **Stack**, "gate" for
 **Predecessor**) reads as a misunderstanding, not a style choice.
