@@ -45,7 +45,7 @@ type LyditeRow struct {
 // lyditeDetail reads the latest lydite comment among comments, or returns
 // nil when there is none. A comment is lydite's only when it opens with
 // LyditeMarker and its author is exactly app's bot account, `<app>[bot]`,
-// compared without case: any other App or workflow can write the marker,
+// compared without case: any other App or GitHub Actions workflow can write the marker,
 // and its rows would otherwise reach a session as findings to fix.
 // lyditeRunningAt is the last time this wait saw a lydite check still
 // running on the head, zero when it never did.

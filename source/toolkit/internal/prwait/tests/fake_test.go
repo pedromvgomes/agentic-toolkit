@@ -24,7 +24,7 @@ type state struct {
 	threads   []githubapp.ReviewThread
 	// err fails the poll's check run read.
 	err error
-	// workflowsErr fails the poll's workflow run read.
+	// workflowsErr fails the poll's GitHub Actions workflow run read.
 	workflowsErr error
 }
 

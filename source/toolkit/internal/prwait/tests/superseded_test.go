@@ -9,9 +9,9 @@ import (
 	"github.com/pedromvgomes/agentic-toolkit/internal/prwait"
 )
 
-// workflowRun is a run of the workflow with id workflow, triggered by event,
-// whose check runs sit in the suite with id suite, created minute minutes
-// past 11:00.
+// workflowRun is a run of the GitHub Actions workflow with id workflow, triggered by
+// event, whose check runs sit in the suite with id suite, created minute
+// minutes past 11:00.
 func workflowRun(id, workflow, suite int64, event string, minute int, status, conclusion string) githubapp.WorkflowRun {
 	return githubapp.WorkflowRun{
 		ID: id, Name: "CI", WorkflowID: workflow, Path: ".github/workflows/ci.yml", Event: event,
@@ -28,8 +28,8 @@ func inSuite(suite int64, name, status, conclusion string) githubapp.CheckRun {
 	return r
 }
 
-// Two pull_request events on one head start two runs of one workflow; the
-// workflow's concurrency cancels the older, whose matrix jobs never expanded.
+// Two pull_request events on one head start two runs of one GitHub Actions workflow;
+// the workflow's concurrency cancels the older, whose matrix jobs never expanded.
 // Its cancelled and failed check runs stay on the head beside the newer run's
 // green ones, under names the newer run does not carry.
 func TestAnOlderRunOfAWorkflowCancelledByANewerOneIsNotJudged(t *testing.T) {
@@ -111,7 +111,7 @@ func TestAFullTieBetweenRunsKeepsTheRunGitHubListedFirst(t *testing.T) {
 	}
 }
 
-// A check run another App created belongs to no workflow run, so nothing
+// A check run another App created belongs to no GitHub Actions workflow run, so nothing
 // supersedes it.
 func TestACheckRunInASuiteNoWorkflowRunOwnsIsJudgedAsItIs(t *testing.T) {
 	other := run("external-ci", "completed", "failure")
@@ -134,7 +134,7 @@ func TestACheckRunInASuiteNoWorkflowRunOwnsIsJudgedAsItIs(t *testing.T) {
 	}
 }
 
-// A push run and a pull_request run of one workflow test the head under
+// A push run and a pull_request run of one GitHub Actions workflow test the head under
 // different events, so neither replaces the other.
 func TestRunsOfOneWorkflowTriggeredByDifferentEventsAreBothJudged(t *testing.T) {
 	reader := &fakeReader{states: []state{{
@@ -153,7 +153,7 @@ func TestRunsOfOneWorkflowTriggeredByDifferentEventsAreBothJudged(t *testing.T) 
 	}
 }
 
-// The newest run of a workflow may have created no check run yet. It stands
+// The newest run of a GitHub Actions workflow may have created no check run yet. It stands
 // in for them, so the older run it supersedes does not leave the workflow
 // with nothing judged.
 func TestANewestRunWithNoCheckRunsIsJudgedByItsOwnStatus(t *testing.T) {
@@ -187,7 +187,7 @@ func TestANewestRunWithNoCheckRunsIsJudgedByItsOwnStatus(t *testing.T) {
 	}
 }
 
-// A run that starts between the workflow run read and the check run read is
+// A run that starts between the GitHub Actions workflow run read and the check run read is
 // missing from the first, so its check runs are judged beside the run it
 // supersedes rather than leaving the workflow with nothing judged.
 func TestACheckRunOfARunTheWorkflowReadMissedIsJudged(t *testing.T) {
@@ -206,7 +206,7 @@ func TestACheckRunOfARunTheWorkflowReadMissedIsJudged(t *testing.T) {
 	}
 }
 
-// A token without actions: read is refused the workflow runs. Nothing then
+// A token without actions: read is refused the GitHub Actions workflow runs. Nothing then
 // ties a check run to a newer run of its workflow, so every check run is
 // judged as it is and the superseded run's failure needs action.
 func TestAForbiddenWorkflowRunReadJudgesEveryCheckRunAsItIs(t *testing.T) {
@@ -227,7 +227,7 @@ func TestAForbiddenWorkflowRunReadJudgesEveryCheckRunAsItIs(t *testing.T) {
 	}
 }
 
-// A workflow run read failing any other way fails the poll as every other read
+// A GitHub Actions workflow run read failing any other way fails the poll as every other read
 // failure does.
 func TestAWorkflowRunReadFailureOtherThanForbiddenFailsThePoll(t *testing.T) {
 	reader := &fakeReader{states: []state{{
