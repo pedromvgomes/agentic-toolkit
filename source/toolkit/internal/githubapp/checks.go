@@ -36,9 +36,9 @@ type CheckRun struct {
 type WorkflowRun struct {
 	ID   int64
 	Name string
-	// WorkflowID is the workflow the run is of, and Path that workflow's
-	// file. Event is what triggered the run, such as "pull_request" or
-	// "push".
+	// WorkflowID is the GitHub Actions workflow the run is of, and Path that
+	// workflow's file. Event is what triggered the run, such as
+	// "pull_request" or "push".
 	WorkflowID int64
 	Path       string
 	Event      string
@@ -92,9 +92,9 @@ type IssueComment struct {
 // ordinary case never meets the cap.
 const checksPerPage = 25
 
-// workflowRunsPerPage bounds one page of a workflow run read. Every run
-// arrives with its head commit and two full repository objects, several
-// kilobytes each, so the page is kept well inside maxBody.
+// workflowRunsPerPage bounds one page of a GitHub Actions workflow run read.
+// Every run arrives with its head commit and two full repository objects,
+// several kilobytes each, so the page is kept well inside maxBody.
 const workflowRunsPerPage = 25
 
 // statusesPerPage bounds one page of a combined status read. A status is a
@@ -214,7 +214,7 @@ func (c *Client) ReadWorkflowRuns(ctx context.Context, sha string) ([]WorkflowRu
 	if !validSHA(sha) {
 		return nil, fmt.Errorf("%q is not a full commit SHA", sha)
 	}
-	what := fmt.Sprintf("the workflow runs on %s@%s", c.slug, sha)
+	what := fmt.Sprintf("the GitHub Actions workflow runs on %s@%s", c.slug, sha)
 	path := fmt.Sprintf("/repos/%s/actions/runs", c.slug)
 	query := url.Values{"head_sha": {sha}, "per_page": {fmt.Sprint(workflowRunsPerPage)}}
 	out := []WorkflowRun{}

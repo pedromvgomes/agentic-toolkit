@@ -48,16 +48,16 @@ Requires Go 1.26+. The module lives at `source/toolkit/go.mod`, not the repo roo
   list|verify|labels`: read-only; decides under ADR-0028 whether an issue may be acted on, reading
   with a token only), `prwait` (`agtk pr wait`: polls a pull request's checks, statuses and
   threads until one verdict, with an exit code per verdict; reads with a token only, writes
-  nothing; ADR-0029), `relay` (dispatches a
-  registered repository's own workflow to post or approve on behalf of a machine holding no App
-  registration; never imports `githubapp`), `cloudinit` (`agtk cloud init`: git identity and the
-  user's own SSH signing key from `AGTK_*` environment variables), `usage` (parses Claude Code
-  session and subagent transcripts into token-count rows deterministically, with no model call,
-  and stamps each row with the Project, repo, Claude account and host of the session's cwd),
-  `usagestate` (the Collector's per-machine Ledger and Outbox under the XDG state directory,
-  behind a flock lock; unix only), `gitremote` (stdlib-only strict `owner/repo` parser for a
-  checkout's remote URL, shared by `review` and `cli`), `updater`/`updatecheck`, `adapters`
-  (per-platform render targets, over the shared `adapters/fsops`)
+  nothing; ADR-0029), `relay` (dispatches a registered repository's own GitHub Actions workflow to
+  post or approve on behalf of a machine holding no App registration; never imports `githubapp`),
+  `cloudinit` (`agtk cloud init`: git identity and the user's own SSH signing key from `AGTK_*`
+  environment variables), `usage` (parses Claude Code session and subagent transcripts into
+  token-count rows deterministically, with no model call, and stamps each row with the Project,
+  repo, Claude account and host of the session's cwd), `usagestate` (the Collector's per-machine
+  Ledger and Outbox under the XDG state directory, behind a flock lock; unix only), `gitremote`
+  (stdlib-only strict `owner/repo` parser for a checkout's remote URL, shared by `review` and
+  `cli`), `updater`/`updatecheck`, `adapters` (per-platform render targets, over the shared
+  `adapters/fsops`)
 - `definitions/` — the catalog, one directory per category: `agents/`, `commands/`, `hooks/`,
   `instructions/`, `mcp/`, `settings/`, `skills/`. `rules/` is a valid category the schema
   defines and this repo currently ships none of. See

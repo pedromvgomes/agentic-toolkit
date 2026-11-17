@@ -16,7 +16,7 @@
 // once, on the first poll that gets as far as the head's checks, and kept
 // for the rest of the wait.
 //
-// # Superseded workflow runs
+// # Superseded GitHub Actions workflow runs
 //
 // Every pull_request event, an edit of the description included, starts a
 // new workflow run on the same head, each a check suite of its own. When a
@@ -32,15 +32,15 @@
 // other. A check run in a suite no workflow run owns, from any App other than
 // GitHub Actions, is judged as it is.
 //
-// The workflow runs are read before the check runs. A run that starts
+// The GitHub Actions workflow runs are read before the check runs. A run that starts
 // between the two reads is then missing from the first, and its check runs
 // are judged as they are, beside the run it supersedes, rather than leaving
 // that workflow with nothing judged. The newest run of a workflow with no
 // check runs on the head, one still queued or one that failed before any
 // job started, is bare: it is judged by its own status and conclusion.
 //
-// A token GitHub refuses the workflow runs, one without actions: read, reads
-// no runs: every check run is judged as it is, and the wait polls as usual.
+// A token GitHub refuses the GitHub Actions workflow runs, one without
+// actions: read, reads no runs: every check run is judged as it is, and the wait polls as usual.
 //
 // # What a poll decides
 //
@@ -48,7 +48,7 @@
 //   - Head moved: the head differs from the one the first poll saw. The
 //     caller runs the wait again for the new head, which is what restarts the
 //     cap on every push.
-//   - Action needed: a judged check run or bare workflow run completed with
+//   - Action needed: a judged check run or bare GitHub Actions workflow run completed with
 //     any conclusion other than success, neutral or skipped; a commit status is failure or error, or a
 //     state GitHub does not document; or a review thread is waiting.
 //   - No checks: the head has no check runs and no statuses on a second
@@ -56,7 +56,7 @@
 //     a moment after a push; a head still bare a poll interval later has no
 //     CI that is going to report on it, and waiting out the cap on it would
 //     report nothing more.
-//   - Pending: a judged check run or bare workflow run has not completed, a
+//   - Pending: a judged check run or bare GitHub Actions workflow run has not completed, a
 //     commit status other than
 //     lydite/referral is pending, or the head has no check runs and no
 //     statuses on the first judged poll.
@@ -98,7 +98,7 @@
 //
 // A comment is lydite's only when its author's login is exactly
 // `<Options.LyditeApp>[bot]`, compared without case. Any other GitHub App,
-// and github-actions[bot] from any workflow, can post a comment opening with
+// and github-actions[bot] from any GitHub Actions workflow, can post a comment opening with
 // the marker; one from any other author is ignored and gives no detail, so a
 // forged comment cannot hand a session rows to fix.
 //
@@ -253,7 +253,7 @@ type PollReport struct {
 // Item is one check run or commit status the verdict names.
 type Item struct {
 	// Kind is "check-run", "status", "workflow-run" for the newest run of a
-	// workflow with no check runs on the head, or "none" for the placeholder
+	// GitHub Actions workflow with no check runs on the head, or "none" for the placeholder
 	// that stands for a head with nothing registered on it.
 	Kind  string `json:"kind"`
 	Name  string `json:"name"`
@@ -433,7 +433,7 @@ func read(ctx context.Context, reader Reader, number int, watched string, viewer
 	case errors.Is(err, githubapp.ErrForbidden):
 		p.workflows = nil
 	case err != nil:
-		return polled{}, fmt.Errorf("read the workflow runs on %s: %w", p.pr.HeadSHA, err)
+		return polled{}, fmt.Errorf("read the GitHub Actions workflow runs on %s: %w", p.pr.HeadSHA, err)
 	}
 	if p.runs, err = reader.ReadCheckRuns(ctx, p.pr.HeadSHA); err != nil {
 		return polled{}, fmt.Errorf("read the check runs on %s: %w", p.pr.HeadSHA, err)
@@ -512,8 +512,8 @@ func judge(p polled, viewer, lyditeApp string) judgement {
 	return j
 }
 
-// judgeRun judges one check run, or one workflow run standing in for its
-// check runs: pending until it completes, failing on a conclusion other than
+// judgeRun judges one check run, or one GitHub Actions workflow run standing
+// in for its check runs: pending until it completes, failing on a conclusion other than
 // a passing one.
 func (j *judgement) judgeRun(kind, name, status, conclusion, url string) {
 	switch {
@@ -527,15 +527,15 @@ func (j *judgement) judgeRun(kind, name, status, conclusion, url string) {
 	}
 }
 
-// workflowKey is what makes one workflow run supersede another: the same
-// workflow, triggered by the same event.
+// workflowKey is what makes one GitHub Actions workflow run supersede
+// another: the same workflow, triggered by the same event.
 type workflowKey struct {
 	workflow int64
 	event    string
 }
 
 // current is the check runs a poll judges: every check run but those of a
-// workflow run superseded by a newer run of its workflow and event, in the
+// GitHub Actions workflow run superseded by a newer run of its workflow and event, in the
 // order GitHub listed them. bare is the newest runs whose suite holds no
 // check run on the head, in the order GitHub listed them; each is judged in
 // place of the check runs it has not created.

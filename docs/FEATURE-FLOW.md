@@ -111,7 +111,7 @@ its own; a person starts it, one of two ways:
 - **Run `/implement-backlog-item owner/repo#N`** in a fresh session, or after `/clear`. The
   command's opus has ended there, so the session runs on the sonnet default.
 - **Add `agtk:queued` to the item**, once you have read its body. Wherever a Factory watches the
-  repository, its **Dispatcher** starts a cloud session that runs
+  repository, its **Dispatcher** starts a **Workflow Execution** whose agentic **Step** runs
   `/implement-backlog-item owner/repo#N --unattended --sha256 <hash> --trusted-app <slug>`, with
   the hash of the body the Factory verified and the slug of the **Factory App**.
 

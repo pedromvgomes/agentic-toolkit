@@ -4,11 +4,11 @@ description: internal/relay must never import internal/githubapp, keeping the pa
 
 # `internal/relay` must never import `internal/githubapp`
 
-The relay carries a caller's own token to a dedicated repository whose own workflow holds the
-App's registration; the raw key never leaves that workflow's runner. Keeping `internal/relay`
-out of reach of `internal/githubapp` makes that a property of the import graph, so handing the
-relay the App's credential would take adding an import rather than forgetting to remove one (see
-ADR 0020).
+The relay carries a caller's own token to a dedicated repository whose own GitHub Actions
+workflow holds the App's registration; the raw key never leaves that workflow's runner. Keeping
+`internal/relay` out of reach of `internal/githubapp` makes that a property of the import graph,
+so handing the relay the App's credential would take adding an import rather than forgetting to
+remove one (see ADR 0020).
 
 ## Applies to
 

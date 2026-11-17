@@ -101,7 +101,7 @@ func TestPRWaitOnACleanPullRequestExitsZeroWithTheVerdictOnStdout(t *testing.T) 
 	}
 }
 
-// A fine-grained token without actions: read is refused the workflow runs;
+// A fine-grained token without actions: read is refused the GitHub Actions workflow runs;
 // the wait judges the check runs as they are and still reaches its verdict.
 func TestPRWaitWithATokenRefusedTheWorkflowRunsJudgesTheCheckRuns(t *testing.T) {
 	withToken(t)
