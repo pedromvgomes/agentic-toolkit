@@ -548,3 +548,23 @@ func TestACIReadThatEndsOnItsLastAllowedPageIsReturned(t *testing.T) {
 		t.Errorf("read %d statuses, want %d", len(combined.Statuses), pages*statusPageLength)
 	}
 }
+
+// The page limit refuses a workflow run read still going after its last page,
+// never one that ends on it.
+func TestAWorkflowRunReadThatEndsOnItsLastAllowedPageIsReturned(t *testing.T) {
+	const pages = 40
+	var runPages []exchange
+	for page := range pages {
+		runPages = append(runPages, get(workflowRunsPath, 200,
+			workflowRunsJSON(pages*workflowPageLength, page*workflowPageLength+1, workflowPageLength)))
+	}
+	c, net := readClient(t, runPages...)
+	runs, err := c.ReadWorkflowRuns(context.Background(), headSHA)
+	if err != nil {
+		t.Fatalf("workflow runs ending on page %d: %v", pages, err)
+	}
+	net.done()
+	if len(runs) != pages*workflowPageLength {
+		t.Errorf("read %d workflow runs, want %d", len(runs), pages*workflowPageLength)
+	}
+}

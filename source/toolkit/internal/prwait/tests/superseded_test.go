@@ -92,6 +92,25 @@ func TestBetweenRunsCreatedTogetherTheHigherIDIsTheNewest(t *testing.T) {
 	}
 }
 
+// Two runs with the same creation time and the same ID cannot be ordered, so
+// the run GitHub listed first is the one judged.
+func TestAFullTieBetweenRunsKeepsTheRunGitHubListedFirst(t *testing.T) {
+	reader := &fakeReader{states: []state{{
+		pr: open(headA),
+		workflows: []githubapp.WorkflowRun{
+			workflowRun(7, 9, 700, "pull_request", 5, "completed", "success"),
+			workflowRun(7, 9, 800, "pull_request", 5, "completed", "success"),
+		},
+		runs: []githubapp.CheckRun{
+			inSuite(700, "test", "completed", "success"),
+			inSuite(800, "test", "completed", "failure"),
+		},
+	}}}
+	if res := wait(t, reader, newClock()); res.Verdict != prwait.Clean {
+		t.Fatalf("verdict %q, want clean from the run listed first", res.Verdict)
+	}
+}
+
 // A check run another App created belongs to no workflow run, so nothing
 // supersedes it.
 func TestACheckRunInASuiteNoWorkflowRunOwnsIsJudgedAsItIs(t *testing.T) {
