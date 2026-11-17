@@ -167,10 +167,16 @@ different panel, so the change is read by a model that has not seen it.
 
 That review is the first pass of `review-pull-request`, the published-side counterpart of the
 local loop. Each pass, `pr-review-resolver --unattended` works through every open thread:
-agtk's, bots', and people's. It fixes what it judges valid, and replies on each thread with the
-commit that fixed it, with `agtk: false positive: <reason>`, or with a direct answer. Then it
-pushes, and the next pass reviews only what that push changed (ADR 0018). The loop stops when
-nothing is waiting for an answer, when the pull request stops moving, or at the fifth pass.
+agtk's, bots', and people's. An unattended `implement-backlog-item` run passes
+`--checked-authors` down through `open-pr` and `review-pull-request`, and the loop then works
+only threads whose every comment is from a checked author: the review App, an account with write
+access, or the loop's own. A thread holding any other comment ends the loop as an **unchecked
+thread**, linked and never read, and a review summary or conversation comment from an unchecked
+author is left unread and listed. A resumed pull request's loop follows the same rule. It fixes
+what it judges valid, and replies on each thread with the commit that fixed it, with
+`agtk: false positive: <reason>`, or with a direct answer. Then it pushes, and the next pass
+reviews only what that push changed (ADR 0018). The loop stops when nothing is waiting for an
+answer, when the pull request stops moving, or at the fifth pass.
 
 **The loop never resolves a thread. You do.** Resolving is where you agree with the agent's
 fix or with its false-positive call, and `agtk code-review approve` refuses until you have. The
@@ -198,10 +204,12 @@ slice closes the Feature with nothing else needed. The skill never closes an iss
 never merges.
 
 Only on a clean run does it **fill the next stub**: it invokes `write-backlog-item` on the slice
-blocked by this one, writing the full body from the stub's goal, this slice's plan and what this
-slice's work taught. The stub loses `agtk:stub`, keeps its links and stays `agtk:blocked`; the
-Factory unblocks it once its predecessor is done. It is not queued: the next slice starts when a
-person reads the filled body and runs `/implement-backlog-item` on it or adds `agtk:queued`.
+blocked by this one, writing the full body from this slice's plan and what this slice's work
+taught. Unattended it never reads the stub's own title or body, since nobody verified who wrote
+them; the next slice's goal and branch come from this item's verified plan. The stub loses
+`agtk:stub`, keeps its links and stays `agtk:blocked`; the Factory unblocks it once its
+predecessor is done. It is not queued: the next slice starts when a person reads the filled body
+and runs `/implement-backlog-item` on it or adds `agtk:queued`.
 
 ### Interactive and unattended
 
