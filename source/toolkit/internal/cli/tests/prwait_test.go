@@ -20,25 +20,28 @@ const (
 
 // prGitHub is what GitHub answers about o/r#7 for agtk pr wait.
 type prGitHub struct {
-	state    string
-	head     func() string
-	runs     string
-	statuses string
-	comments string
-	threads  string
+	state string
+	head  func() string
+	// workflows is the GitHub Actions workflow runs on the head, a JSON array.
+	workflows string
+	runs      string
+	statuses  string
+	comments  string
+	threads   string
 	// viewer is the login GET /user answers for the token.
 	viewer string
 }
 
 func cleanPR() *prGitHub {
 	return &prGitHub{
-		state:    "open",
-		head:     func() string { return waitHead },
-		runs:     `[{"name":"build","status":"completed","conclusion":"success","html_url":"https://github.com/o/r/runs/1"}]`,
-		statuses: `[]`,
-		comments: `[]`,
-		threads:  `[]`,
-		viewer:   "agent-bot",
+		state:     "open",
+		head:      func() string { return waitHead },
+		workflows: `[]`,
+		runs:      `[{"name":"build","status":"completed","conclusion":"success","html_url":"https://github.com/o/r/runs/1"}]`,
+		statuses:  `[]`,
+		comments:  `[]`,
+		threads:   `[]`,
+		viewer:    "agent-bot",
 	}
 }
 
@@ -49,6 +52,11 @@ func (g *prGitHub) handle(r *http.Request) (int, string) {
 		return 200, `{"login":"` + g.viewer + `"}`
 	case "GET /repos/o/r/pulls/7":
 		return 200, `{"number":7,"state":"` + g.state + `","base":{"sha":"` + waitBase + `"},"head":{"sha":"` + head + `"}}`
+	case "GET /repos/o/r/actions/runs":
+		if r.URL.Query().Get("head_sha") != head {
+			break
+		}
+		return 200, `{"total_count":` + count(g.workflows) + `,"workflow_runs":` + g.workflows + `}`
 	case "GET /repos/o/r/commits/" + head + "/check-runs":
 		return 200, `{"total_count":` + count(g.runs) + `,"check_runs":` + g.runs + `}`
 	case "GET /repos/o/r/commits/" + head + "/status":
@@ -90,6 +98,24 @@ func TestPRWaitOnACleanPullRequestExitsZeroWithTheVerdictOnStdout(t *testing.T) 
 		if fake.bearers[i] != "Bearer the-token" {
 			t.Errorf("%s carried %q, not the token from GH_TOKEN", request, fake.bearers[i])
 		}
+	}
+}
+
+// A fine-grained token without actions: read is refused the workflow runs;
+// the wait judges the check runs as they are and still reaches its verdict.
+func TestPRWaitWithATokenRefusedTheWorkflowRunsJudgesTheCheckRuns(t *testing.T) {
+	withToken(t)
+	pr := cleanPR()
+	useGitHub(t, func(r *http.Request) (int, string) {
+		if r.URL.Path == "/repos/o/r/actions/runs" {
+			return 403, `{"message":"Resource not accessible by personal access token"}`
+		}
+		return pr.handle(r)
+	})
+
+	code, stdout, stderr := runBacklog(t, "pr", "wait", "o/r#7")
+	if code != prwait.ExitClean || !strings.Contains(stdout, "o/r#7: clean") {
+		t.Errorf("exit %d, stdout:\n%s\nstderr:\n%s", code, stdout, stderr)
 	}
 }
 

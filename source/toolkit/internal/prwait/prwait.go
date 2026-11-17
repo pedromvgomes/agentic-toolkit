@@ -10,11 +10,37 @@
 //
 // # What one poll reads
 //
-// The pull request (its head commit and state), the check runs and the
-// combined commit status of that head, the conversation's comments, and the
-// review threads. The login of the account the token belongs to is read
+// The pull request (its head commit and state), the GitHub Actions workflow
+// runs, the check runs and the combined commit status of that head, the
+// conversation's comments, and the review threads. The login of the account the token belongs to is read
 // once, on the first poll that gets as far as the head's checks, and kept
 // for the rest of the wait.
+//
+// # Superseded workflow runs
+//
+// Every pull_request event, an edit of the description included, starts a
+// new workflow run on the same head, each a check suite of its own. When a
+// workflow's concurrency cancels the older run, the older run's cancelled and
+// failed check runs stay on the head beside the newer run's, often under
+// other names: a matrix job cancelled before it expanded is named with its
+// unexpanded expression. So only the newest run of each workflow, per
+// triggering event, is judged; the check runs of every other run of it are
+// left out. Newest is the latest CreatedAt, and the higher run ID between two
+// created in the same second. A re-run attempt keeps its run's CreatedAt, so
+// re-running an older run does not make it the newest. A push and a
+// pull_request run of one workflow are both judged: neither supersedes the
+// other. A check run in a suite no workflow run owns, from any App other than
+// GitHub Actions, is judged as it is.
+//
+// The workflow runs are read before the check runs. A run that starts
+// between the two reads is then missing from the first, and its check runs
+// are judged as they are, beside the run it supersedes, rather than leaving
+// that workflow with nothing judged. The newest run of a workflow with no
+// check runs on the head, one still queued or one that failed before any
+// job started, is bare: it is judged by its own status and conclusion.
+//
+// A token GitHub refuses the workflow runs, one without actions: read, reads
+// no runs: every check run is judged as it is, and the wait polls as usual.
 //
 // # What a poll decides
 //
@@ -22,15 +48,16 @@
 //   - Head moved: the head differs from the one the first poll saw. The
 //     caller runs the wait again for the new head, which is what restarts the
 //     cap on every push.
-//   - Action needed: a check run completed with any conclusion other than
-//     success, neutral or skipped; a commit status is failure or error, or a
+//   - Action needed: a judged check run or bare workflow run completed with
+//     any conclusion other than success, neutral or skipped; a commit status is failure or error, or a
 //     state GitHub does not document; or a review thread is waiting.
 //   - No checks: the head has no check runs and no statuses on a second
 //     judged poll. One empty poll is pending, because CI registers its checks
 //     a moment after a push; a head still bare a poll interval later has no
 //     CI that is going to report on it, and waiting out the cap on it would
 //     report nothing more.
-//   - Pending: a check run has not completed, a commit status other than
+//   - Pending: a judged check run or bare workflow run has not completed, a
+//     commit status other than
 //     lydite/referral is pending, or the head has no check runs and no
 //     statuses on the first judged poll.
 //   - Clean: none of the above. lydite/referral is the one status allowed to
@@ -95,6 +122,7 @@ import (
 // satisfies it, and nothing in it writes.
 type Reader interface {
 	ReadPullRequest(ctx context.Context, number int) (githubapp.PullRequest, error)
+	ReadWorkflowRuns(ctx context.Context, sha string) ([]githubapp.WorkflowRun, error)
 	ReadCheckRuns(ctx context.Context, sha string) ([]githubapp.CheckRun, error)
 	ReadCommitStatuses(ctx context.Context, sha string) (githubapp.CombinedStatus, error)
 	ReadIssueComments(ctx context.Context, number int) ([]githubapp.IssueComment, error)
@@ -224,8 +252,9 @@ type PollReport struct {
 
 // Item is one check run or commit status the verdict names.
 type Item struct {
-	// Kind is "check-run", "status", or "none" for the placeholder that
-	// stands for a head with nothing registered on it.
+	// Kind is "check-run", "status", "workflow-run" for the newest run of a
+	// workflow with no check runs on the head, or "none" for the placeholder
+	// that stands for a head with nothing registered on it.
 	Kind  string `json:"kind"`
 	Name  string `json:"name"`
 	State string `json:"state"`
@@ -368,11 +397,12 @@ func report(opts Options, r PollReport) {
 
 // polled is everything one poll read.
 type polled struct {
-	pr       githubapp.PullRequest
-	runs     []githubapp.CheckRun
-	statuses githubapp.CombinedStatus
-	comments []githubapp.IssueComment
-	threads  []githubapp.ReviewThread
+	pr        githubapp.PullRequest
+	workflows []githubapp.WorkflowRun
+	runs      []githubapp.CheckRun
+	statuses  githubapp.CombinedStatus
+	comments  []githubapp.IssueComment
+	threads   []githubapp.ReviewThread
 }
 
 // read makes one poll's reads. The head's checks are read only once the pull
@@ -398,6 +428,12 @@ func read(ctx context.Context, reader Reader, number int, watched string, viewer
 			return polled{}, errors.New("GitHub reported no login for the account the token belongs to")
 		}
 		*viewer = login
+	}
+	switch p.workflows, err = reader.ReadWorkflowRuns(ctx, p.pr.HeadSHA); {
+	case errors.Is(err, githubapp.ErrForbidden):
+		p.workflows = nil
+	case err != nil:
+		return polled{}, fmt.Errorf("read the workflow runs on %s: %w", p.pr.HeadSHA, err)
 	}
 	if p.runs, err = reader.ReadCheckRuns(ctx, p.pr.HeadSHA); err != nil {
 		return polled{}, fmt.Errorf("read the check runs on %s: %w", p.pr.HeadSHA, err)
@@ -433,20 +469,16 @@ var passingConclusions = map[string]bool{"success": true, "neutral": true, "skip
 
 func judge(p polled, viewer, lyditeApp string) judgement {
 	j := judgement{failing: []Item{}, pending: []Item{}, waiting: []Thread{}}
-	for _, run := range p.runs {
+	runs, bare := current(p.runs, p.workflows)
+	for _, run := range runs {
 		url := run.HTMLURL
 		if url == "" {
 			url = run.DetailsURL
 		}
-		switch {
-		case run.Status != "completed":
-			j.pending = append(j.pending, Item{Kind: "check-run", Name: run.Name, State: run.Status, URL: url})
-			if isLydite(run.Name) {
-				j.lyditeRunning = true
-			}
-		case !passingConclusions[run.Conclusion]:
-			j.failing = append(j.failing, Item{Kind: "check-run", Name: run.Name, State: run.Conclusion, URL: url})
-		}
+		j.judgeRun("check-run", run.Name, run.Status, run.Conclusion, url)
+	}
+	for _, run := range bare {
+		j.judgeRun("workflow-run", run.Name, run.Status, run.Conclusion, run.HTMLURL)
 	}
 	for _, status := range p.statuses.Statuses {
 		item := Item{Kind: "status", Name: status.Context, State: status.State, URL: status.TargetURL}
@@ -463,7 +495,7 @@ func judge(p polled, viewer, lyditeApp string) judgement {
 			j.failing = append(j.failing, item)
 		}
 	}
-	if len(p.runs) == 0 && len(p.statuses.Statuses) == 0 {
+	if len(runs) == 0 && len(bare) == 0 && len(p.statuses.Statuses) == 0 {
 		j.empty = true
 		j.pending = append(j.pending, Item{Kind: "none", Name: "no checks registered on the head", State: "pending"})
 	}
@@ -478,6 +510,78 @@ func judge(p polled, viewer, lyditeApp string) judgement {
 		}
 	}
 	return j
+}
+
+// judgeRun judges one check run, or one workflow run standing in for its
+// check runs: pending until it completes, failing on a conclusion other than
+// a passing one.
+func (j *judgement) judgeRun(kind, name, status, conclusion, url string) {
+	switch {
+	case status != "completed":
+		j.pending = append(j.pending, Item{Kind: kind, Name: name, State: status, URL: url})
+		if isLydite(name) {
+			j.lyditeRunning = true
+		}
+	case !passingConclusions[conclusion]:
+		j.failing = append(j.failing, Item{Kind: kind, Name: name, State: conclusion, URL: url})
+	}
+}
+
+// workflowKey is what makes one workflow run supersede another: the same
+// workflow, triggered by the same event.
+type workflowKey struct {
+	workflow int64
+	event    string
+}
+
+// current is the check runs a poll judges: every check run but those of a
+// workflow run superseded by a newer run of its workflow and event, in the
+// order GitHub listed them. bare is the newest runs whose suite holds no
+// check run on the head, in the order GitHub listed them; each is judged in
+// place of the check runs it has not created.
+func current(runs []githubapp.CheckRun, workflows []githubapp.WorkflowRun) (kept []githubapp.CheckRun, bare []githubapp.WorkflowRun) {
+	newest := map[workflowKey]githubapp.WorkflowRun{}
+	for _, w := range workflows {
+		key := workflowKey{w.WorkflowID, w.Event}
+		if held, ok := newest[key]; !ok || newer(w, held) {
+			newest[key] = w
+		}
+	}
+	judged := map[int64]bool{}
+	for _, w := range newest {
+		judged[w.CheckSuiteID] = true
+	}
+	superseded := map[int64]bool{}
+	for _, w := range workflows {
+		if !judged[w.CheckSuiteID] {
+			superseded[w.CheckSuiteID] = true
+		}
+	}
+	kept = []githubapp.CheckRun{}
+	holding := map[int64]bool{}
+	for _, run := range runs {
+		if run.CheckSuiteID != 0 && superseded[run.CheckSuiteID] {
+			continue
+		}
+		kept = append(kept, run)
+		holding[run.CheckSuiteID] = true
+	}
+	bare = []githubapp.WorkflowRun{}
+	for _, w := range workflows {
+		if newest[workflowKey{w.WorkflowID, w.Event}].ID == w.ID && !holding[w.CheckSuiteID] {
+			bare = append(bare, w)
+		}
+	}
+	return kept, bare
+}
+
+// newer reports whether a was created after b: the later CreatedAt, or the
+// higher run ID between two created at the same time.
+func newer(a, b githubapp.WorkflowRun) bool {
+	if !a.CreatedAt.Equal(b.CreatedAt) {
+		return a.CreatedAt.After(b.CreatedAt)
+	}
+	return a.ID > b.ID
 }
 
 // answeredBy reports whether viewer wrote the thread's latest comment.

@@ -25,6 +25,34 @@ type CheckRun struct {
 	// App is the slug of the GitHub App that created the run, and empty when
 	// GitHub reports none.
 	App string
+	// CheckSuiteID is the check suite the run belongs to, and 0 when GitHub
+	// reports none. A GitHub Actions workflow run owns exactly one suite, so
+	// this ties a check run to the WorkflowRun whose CheckSuiteID it equals.
+	CheckSuiteID int64
+}
+
+// WorkflowRun is one GitHub Actions workflow run on a commit, at its latest
+// attempt.
+type WorkflowRun struct {
+	ID   int64
+	Name string
+	// WorkflowID is the workflow the run is of, and Path that workflow's
+	// file. Event is what triggered the run, such as "pull_request" or
+	// "push".
+	WorkflowID int64
+	Path       string
+	Event      string
+	// CheckSuiteID is the check suite holding the run's check runs.
+	CheckSuiteID int64
+	// RunAttempt counts the attempts of this run, from 1; a re-run attempt
+	// keeps the run's ID, CheckSuiteID and CreatedAt.
+	RunAttempt int
+	// Status and Conclusion take the values a CheckRun's do; Conclusion is
+	// empty while the run has not completed.
+	Status     string
+	Conclusion string
+	HTMLURL    string
+	CreatedAt  time.Time
 }
 
 // CommitStatus is one context's latest status on a commit.
@@ -64,6 +92,11 @@ type IssueComment struct {
 // ordinary case never meets the cap.
 const checksPerPage = 25
 
+// workflowRunsPerPage bounds one page of a workflow run read. Every run
+// arrives with its head commit and two full repository objects, several
+// kilobytes each, so the page is kept well inside maxBody.
+const workflowRunsPerPage = 25
+
 // statusesPerPage bounds one page of a combined status read. A status is a
 // handful of short fields, so the page is GitHub's largest.
 const statusesPerPage = 100
@@ -92,7 +125,10 @@ func validSHA(sha string) bool {
 }
 
 // ReadCheckRuns reads every check run on the commit sha, the latest run of
-// each name.
+// each name within its check suite. Runs in different suites are all
+// returned, even under one name: each workflow run of GitHub Actions is a
+// suite of its own, so a superseded workflow run's check runs stay on the
+// commit beside the newer run's, and only ReadWorkflowRuns tells them apart.
 //
 // The whole list or an error. GitHub reports how many runs there are, and a
 // read that collects a different number — a run created or removed between
@@ -123,6 +159,9 @@ func (c *Client) ReadCheckRuns(ctx context.Context, sha string) ([]CheckRun, err
 				App        *struct {
 					Slug string `json:"slug"`
 				} `json:"app"`
+				CheckSuite *struct {
+					ID int64 `json:"id"`
+				} `json:"check_suite"`
 			} `json:"check_runs"`
 		}
 		if err := c.call(ctx, http.MethodGet, path+"?"+query.Encode(), nil, &payload); err != nil {
@@ -149,9 +188,92 @@ func (c *Client) ReadCheckRuns(ctx context.Context, sha string) ([]CheckRun, err
 			if run.App != nil {
 				read.App = run.App.Slug
 			}
+			if run.CheckSuite != nil {
+				read.CheckSuiteID = run.CheckSuite.ID
+			}
 			out = append(out, read)
 		}
 		if err := countSettled(what, len(out), total, len(payload.CheckRuns)); err != nil {
+			return nil, err
+		}
+		if len(out) == total {
+			return out, nil
+		}
+	}
+}
+
+// ReadWorkflowRuns reads every GitHub Actions workflow run on the commit sha,
+// each at its latest attempt.
+//
+// The whole list or an error, by the count GitHub reports, for the reason
+// ReadCheckRuns refuses a short list; a read that returns one run twice, as a
+// run that moves between pages does, is refused too. A run missing its id,
+// workflow, check suite, status or creation time is refused rather than
+// returned: it could not be told apart from the runs it may supersede.
+func (c *Client) ReadWorkflowRuns(ctx context.Context, sha string) ([]WorkflowRun, error) {
+	if !validSHA(sha) {
+		return nil, fmt.Errorf("%q is not a full commit SHA", sha)
+	}
+	what := fmt.Sprintf("the workflow runs on %s@%s", c.slug, sha)
+	path := fmt.Sprintf("/repos/%s/actions/runs", c.slug)
+	query := url.Values{"head_sha": {sha}, "per_page": {fmt.Sprint(workflowRunsPerPage)}}
+	out := []WorkflowRun{}
+	seen := map[int64]bool{}
+	total := -1
+	for page := 1; ; page++ {
+		if page > maxPages {
+			return nil, fmt.Errorf("%s did not end after %d pages of %d", what, maxPages, workflowRunsPerPage)
+		}
+		query.Set("page", fmt.Sprint(page))
+		var payload struct {
+			TotalCount   *int `json:"total_count"`
+			WorkflowRuns []struct {
+				ID           int64     `json:"id"`
+				Name         string    `json:"name"`
+				WorkflowID   int64     `json:"workflow_id"`
+				Path         string    `json:"path"`
+				Event        string    `json:"event"`
+				CheckSuiteID int64     `json:"check_suite_id"`
+				RunAttempt   int       `json:"run_attempt"`
+				Status       string    `json:"status"`
+				Conclusion   string    `json:"conclusion"`
+				HTMLURL      string    `json:"html_url"`
+				CreatedAt    time.Time `json:"created_at"`
+			} `json:"workflow_runs"`
+		}
+		if err := c.call(ctx, http.MethodGet, path+"?"+query.Encode(), nil, &payload); err != nil {
+			return nil, classifyRead(err)
+		}
+		if payload.TotalCount == nil {
+			return nil, fmt.Errorf("GitHub reported %s with no total count", what)
+		}
+		if total >= 0 && *payload.TotalCount != total { // [lydite:exclude_from_mutation][total is -1 only before the first page, and a read whose count is 0 returns or is refused on that page, so total is never 0 here and >= and > agree]
+			return nil, fmt.Errorf("%s changed from %d to %d runs while they were read", what, total, *payload.TotalCount)
+		}
+		total = *payload.TotalCount
+		for _, run := range payload.WorkflowRuns {
+			if run.ID == 0 || run.WorkflowID == 0 || run.CheckSuiteID == 0 || run.Status == "" || run.CreatedAt.IsZero() {
+				return nil, fmt.Errorf("GitHub reported a run in %s with no id, workflow, check suite, status or creation time", what)
+			}
+			if seen[run.ID] {
+				return nil, fmt.Errorf("%s returned run %d twice", what, run.ID)
+			}
+			seen[run.ID] = true
+			out = append(out, WorkflowRun{
+				ID:           run.ID,
+				Name:         run.Name,
+				WorkflowID:   run.WorkflowID,
+				Path:         run.Path,
+				Event:        run.Event,
+				CheckSuiteID: run.CheckSuiteID,
+				RunAttempt:   run.RunAttempt,
+				Status:       run.Status,
+				Conclusion:   run.Conclusion,
+				HTMLURL:      run.HTMLURL,
+				CreatedAt:    run.CreatedAt,
+			})
+		}
+		if err := countSettled(what, len(out), total, len(payload.WorkflowRuns)); err != nil {
 			return nil, err
 		}
 		if len(out) == total {
@@ -292,6 +414,11 @@ func (c *Client) ReadIssueComments(ctx context.Context, number int) ([]IssueComm
 // ReadCheckRuns reads every check run on the commit sha.
 func (r *ReadClient) ReadCheckRuns(ctx context.Context, sha string) ([]CheckRun, error) {
 	return r.c.ReadCheckRuns(ctx, sha)
+}
+
+// ReadWorkflowRuns reads every GitHub Actions workflow run on the commit sha.
+func (r *ReadClient) ReadWorkflowRuns(ctx context.Context, sha string) ([]WorkflowRun, error) {
+	return r.c.ReadWorkflowRuns(ctx, sha)
 }
 
 // ReadCommitStatuses reads the combined status of the commit sha.

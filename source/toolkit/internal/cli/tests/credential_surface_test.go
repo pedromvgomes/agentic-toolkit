@@ -162,11 +162,14 @@ const prWaitPackage = "source/toolkit/internal/prwait"
 const prWaitImportPath = "github.com/pedromvgomes/agentic-toolkit/internal/prwait"
 
 // prWaitMayName is everything prwait may name from the credential package:
-// the results of the reads a poll makes. None of them holds a key or a
-// token, or builds anything that mints one.
+// the results of the reads a poll makes, and ErrForbidden, the refusal one of
+// those reads may meet. None of them holds a key or a token, or builds
+// anything that mints one.
 var prWaitMayName = map[string]bool{
+	"ErrForbidden":   true,
 	"PullRequest":    true,
 	"CheckRun":       true,
+	"WorkflowRun":    true,
 	"CombinedStatus": true,
 	"CommitStatus":   true,
 	"IssueComment":   true,

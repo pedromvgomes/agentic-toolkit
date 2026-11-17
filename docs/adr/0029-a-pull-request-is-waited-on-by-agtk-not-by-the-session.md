@@ -28,6 +28,19 @@ action. A check run not completed, or a status pending, keeps the wait going —
 `lydite/referral`, the one status allowed to stay pending: it waits for a human to clear a
 referral, not for anything still running, and a clean verdict reports it.
 
+**Only the newest workflow run decides.** Every `pull_request` event, an edit of the description
+included, starts a new GitHub Actions workflow run on the same head, each a check suite of its
+own, and a run the workflow's `concurrency` cancels leaves its cancelled and failed check runs on
+the head beside the newer run's, often under other names (a matrix job cancelled before it
+expanded carries the unexpanded expression). Check runs are deduplicated by name only within a
+suite, so the poll also reads the head's workflow runs and judges only the check runs of the
+newest run of each workflow and triggering event: the latest created, the higher run ID breaking
+a tie. A newest run with no check runs on the head, still queued or failed before any job
+started, is judged by its own status and conclusion. A check run in a suite no workflow run owns,
+from any App other than GitHub Actions, is judged as it is. A token GitHub refuses the
+workflow runs, one without `actions: read`, reads no runs, so every check run is judged as it is
+and the wait polls as usual.
+
 **lydite's results comment is detail, never a verdict.** lydite reports per head through the
 head's checks and statuses. Its `<!-- lydite:results -->` comment is rewritten on each push but
 names neither the head it describes nor when that head was pushed, so it cannot say whether it is
