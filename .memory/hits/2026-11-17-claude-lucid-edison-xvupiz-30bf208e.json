@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "notes": {
+    "handoff-trust-is-asked-of-git": {
+      "count": 1,
+      "first": "2026-11-17T07:22:36.281140507Z",
+      "last": "2026-11-17T07:22:36.281140507Z"
+    },
+    "hit-fold-and-compaction-ordering": {
+      "count": 1,
+      "first": "2026-11-17T07:22:36.312252988Z",
+      "last": "2026-11-17T07:22:36.312252988Z"
+    },
+    "hook-commands-need-no-bash-grant": {
+      "count": 1,
+      "first": "2026-11-17T07:22:36.325475377Z",
+      "last": "2026-11-17T07:22:36.325475377Z"
+    },
+    "hook-must-tolerate-an-older-agtk": {
+      "count": 1,
+      "first": "2026-11-17T07:22:36.298067314Z",
+      "last": "2026-11-17T07:22:36.298067314Z"
+    },
+    "no-shared-git-fixture-helper": {
+      "count": 1,
+      "first": "2026-11-17T07:22:36.341424211Z",
+      "last": "2026-11-17T07:22:36.341424211Z"
+    },
+    "only-lock-resolves-refs": {
+      "count": 1,
+      "first": "2026-11-17T07:22:36.362479818Z",
+      "last": "2026-11-17T07:22:36.362479818Z"
+    }
+  }
+}
