@@ -15,8 +15,8 @@ extensions:
 
 Write the GitHub issue a session with no memory of this one reads to continue the work.
 
-A backlog item is the same document a handoff is — a goal, the current state and the next steps,
-and optionally a plan's tasks — carried on an issue instead of a local file. Its terms are in
+A backlog item is a goal, the current state and the next steps, and optionally a plan's tasks,
+carried on a GitHub issue. Its terms are in
 `CONTEXT.md`: **Backlog item**, **Stub**, **Feature**, **Factory**, **Dispatcher**, **Factory
 App**. The task list and the slice are **optional**: a mid-work save carries neither and is still
 a backlog item.
@@ -84,6 +84,15 @@ reasoning that exists nowhere but this conversation.
 
 The `Branch:` line is required on every item, a stub included: the session that takes the item
 reads the branch and its base off the body and from nowhere else.
+
+**One branch per backlog item, never reused after its pull request merges.** Each slice's item
+names a fresh branch of its own, derived from the item — the Feature's branch name with the
+slice's position and a word or two of its goal, `feat/backlog-flow-2-stub-filling` — never the
+branch of an earlier slice. `implement-backlog-item` creates it from `origin/<base>` and pushes it
+with a plain `git push -u origin <branch>`. An earlier slice's pull request is squash-merged, so
+its branch's commits never become ancestors of the base, and a later slice started from the base
+moves that remote branch only by a force push. A branch whose pull request has merged is never a
+target again.
 
 Rate each task `routine` or `intricate`. The rating picks the model that implements it, so rate by
 how much judgment the task needs, not by how many lines it touches: a wide mechanical rename is
@@ -213,7 +222,8 @@ Those belong to the session running the item and to the Factory.
 
 Written by `/plan-feature` after approval, or by hand for a slice of a Feature. The item is a
 sub-issue of the Feature, blocked by the slice before it, and its `Branch:` is the branch to create
-and the base to create it from. A later slice that holds only a goal is created as a **stub**:
+and the base to create it from — a branch of this slice's own, as step 3 says, never one an earlier
+slice's item names. A later slice that holds only a goal is created as a **stub**:
 its body is the **Goal** section and the `Branch:` line, and it carries `agtk:stub` beside
 `agtk:blocked`. A stub is never queued while it is a stub.
 

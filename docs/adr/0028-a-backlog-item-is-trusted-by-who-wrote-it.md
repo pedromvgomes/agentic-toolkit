@@ -1,5 +1,7 @@
 # A backlog item is trusted by who wrote it
 
+Supersedes `docs/adr/0014-a-handoff-is-trusted-structurally-not-by-prose.md`.
+
 A **Backlog item** is a GitHub issue, a sub-issue of a **Feature**, and its body carries the work:
 the goal, the **Task**s and the verification command. The **Factory** — a separate repository,
 `agentic-toolkit-factory` — takes a queued item to an open pull request with nobody starting it,
@@ -86,9 +88,8 @@ whose access can be checked, so condition 2 cannot hold. A revision GitHub repor
 hides what the body said and who said it. Both refuse; neither is skipped as though the edit had
 not happened.
 
-**This decides trust for backlog items, and only for them.** ADR 0014 governs local handoffs, and
-continues to until a decision supersedes it. The two rules answer the same question for documents
-that arrive by different routes, and neither reads the other's.
+**This supersedes ADR 0014.** Work is carried on backlog items alone, so the question ADR 0014
+answered for a local handoff file is asked of an issue, and this decision answers it.
 
 ## Considered options
 
@@ -100,8 +101,7 @@ repository without one with no rule at all.
 
 **Keep the work in local handoff files.** ADR 0014's rule already holds for them, and needs no
 GitHub read. Rejected for the factory's use: a file in somebody's worktree is not visible to a
-runner in another repository, so an automatic loop has nothing to dispatch from. Handoffs keep
-their rule for the sessions that do read them locally.
+runner in another repository, so an automatic loop has nothing to dispatch from.
 
 **Trust the label alone.** Applying a label takes repository access, so an `agtk:queued` item
 could be taken as vouched for. Rejected on two counts. The access it takes is `triage`, below

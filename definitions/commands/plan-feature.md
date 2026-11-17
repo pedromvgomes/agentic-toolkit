@@ -172,7 +172,12 @@ unqueued.
 ### Every later slice
 
 Invoke `write-backlog-item` for each later slice, in landing order, in its **stub** shape: the
-**Goal** section and the `Branch:` line, nothing to implement yet. Each one is
+**Goal** section and the `Branch:` line, nothing to implement yet. Each slice's `Branch:` names a
+fresh branch of its own, derived from the slice, never the branch of the first slice or any other:
+an earlier slice's pull request has merged before this one starts, and a branch whose pull request
+has merged is never a target again. The **Plan** section of the first slice's item names each later
+slice's branch beside its goal, since the session that fills a stub reads both from there. Each
+one is
 
 - a sub-issue of the Feature,
 - blocked by the item of the slice before it, and

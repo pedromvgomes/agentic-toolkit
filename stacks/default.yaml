@@ -1,9 +1,8 @@
 description: |
   Default toolkit stack — the two-stage feature flow (plan on opus, put the slices on the
-  backlog as GitHub issues, implement on sonnet, review in a capped loop, open the PR and loop
-  its review too, with handoffs kept for resuming locally), the workflow-agnostic
-  skills around it, the plan-approval instruction, the session agents and the upstream
-  skill-creator skill. The memory store and everything that reads it come from the memory stack
+  backlog as GitHub issues, implement each verified item on sonnet, review in a capped loop, open
+  the PR and loop its review too), the workflow-agnostic skills around it, the plan-approval
+  instruction, the session agents and the upstream skill-creator skill. The memory store and everything that reads it come from the memory stack
   this extends, and the setting that keeps Claude Code's authoring footers out of commits and
   pull requests comes from the no-attribution stack it extends.
 
@@ -28,14 +27,11 @@ skills:
   - tdd-bugfix
   - using-agentic-toolkit
   - wrap-session
-  # The feature flow. Each is usable on its own — a backlog item or a handoff
-  # written by hand, a review loop over any branch, shipping any finished
-  # branch — so they are listed as skills rather than hidden behind the command
-  # that chains them.
+  # The feature flow. Each is usable on its own — a backlog item written by
+  # hand, a review loop over any branch, shipping any finished branch — so they
+  # are listed as skills rather than hidden behind the command that chains them.
   - write-backlog-item
   - implement-backlog-item
-  - write-handoff
-  - implement-handoff
   - review-implementation
   - review-pull-request
   - open-pr
@@ -55,7 +51,6 @@ instructions:
   - rendered-output-stays-out-of-git
 hooks:
   - cloud-init-claude-session-start
-  - handoff-claude-session-start
   - no-authoring-footers-claude-pre-tool-use
 settings:
   - skill-permissions

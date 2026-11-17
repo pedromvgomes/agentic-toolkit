@@ -45,11 +45,23 @@ func threadNode(path string, resolved, outdated, byViewer bool, body string) str
 
 // threadNodeLatest renders one thread whose latest comment's author is
 // latestAuthor: raw JSON, `{"login":"x"}` or `null`, and no latest comment
-// at all when empty.
+// at all when empty. The root carries no author field.
 func threadNodeLatest(path string, resolved, outdated, byViewer bool, body, latestAuthor string) string {
+	return threadNodeAuthors(path, resolved, outdated, byViewer, body, "", latestAuthor)
+}
+
+// threadNodeAuthors renders one thread whose root comment's author is
+// rootAuthor and whose latest comment's author is latestAuthor, each raw
+// JSON, `{"login":"x"}` or `null`. An empty rootAuthor leaves the root's
+// author field out; an empty latestAuthor reads no latest comment.
+func threadNodeAuthors(path string, resolved, outdated, byViewer bool, body, rootAuthor, latestAuthor string) string {
 	encoded, err := json.Marshal(body)
 	if err != nil {
 		panic(err)
+	}
+	root := ""
+	if rootAuthor != "" {
+		root = `,"author":` + rootAuthor
 	}
 	latest := `[]`
 	if latestAuthor != "" {
@@ -57,7 +69,7 @@ func threadNodeLatest(path string, resolved, outdated, byViewer bool, body, late
 	}
 	return `{"path":"` + path + `","isResolved":` + boolText(resolved) +
 		`,"isOutdated":` + boolText(outdated) +
-		`,"comments":{"nodes":[{"body":` + string(encoded) + `,"viewerDidAuthor":` + boolText(byViewer) + `}]}` +
+		`,"comments":{"nodes":[{"body":` + string(encoded) + `,"viewerDidAuthor":` + boolText(byViewer) + root + `}]}` +
 		`,"latest":{"nodes":` + latest + `}}`
 }
 
@@ -119,6 +131,34 @@ func TestAThreadCarriesItsLatestCommentsAuthor(t *testing.T) {
 	sent := net.bodies[len(net.bodies)-1]
 	if !regexp.MustCompile(`latest:\s*comments\(last:1\)\{nodes\{author\{login\}\}\}`).MatchString(sent) {
 		t.Errorf("the query does not ask for the latest comment's author: %s", sent)
+	}
+}
+
+// The root comment's author is who opened the thread, read apart from who
+// spoke last, and nobody when that account is deleted.
+func TestAThreadCarriesItsRootCommentsAuthor(t *testing.T) {
+	c, net := client(t, append(auth(far()), query(threadsPage(
+		threadNodeAuthors("a.go", false, false, false, "a surviving mutant", `{"login":"lydite[bot]"}`, `{"login":"alice"}`)+","+
+			threadNodeAuthors("b.go", false, false, false, "opened by a deleted account", `null`, `{"login":"alice"}`),
+		false, "")))...)
+
+	threads, err := c.ReadReviewThreads(context.Background(), 7)
+	if err != nil {
+		t.Fatalf("read the threads: %v", err)
+	}
+	net.done()
+	if len(threads) != 2 {
+		t.Fatalf("read %d threads, want 2: %+v", len(threads), threads)
+	}
+	if threads[0].RootAuthor != "lydite[bot]" || threads[0].LastAuthor != "alice" {
+		t.Errorf("the root and latest authors were not read apart: %+v", threads[0])
+	}
+	if threads[1].RootAuthor != "" {
+		t.Errorf("a deleted root author read as a login: %q", threads[1].RootAuthor)
+	}
+	sent := net.bodies[len(net.bodies)-1]
+	if !regexp.MustCompile(`comments\(first:1\)\{nodes\{body viewerDidAuthor author\{login\}\}\}`).MatchString(sent) {
+		t.Errorf("the query does not ask for the root comment's author: %s", sent)
 	}
 }
 

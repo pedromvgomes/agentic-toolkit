@@ -16,13 +16,16 @@ const (
 
 // state is what GitHub answers on one poll.
 type state struct {
-	pr       githubapp.PullRequest
-	runs     []githubapp.CheckRun
-	statuses []githubapp.CommitStatus
-	comments []githubapp.IssueComment
-	threads  []githubapp.ReviewThread
+	pr        githubapp.PullRequest
+	workflows []githubapp.WorkflowRun
+	runs      []githubapp.CheckRun
+	statuses  []githubapp.CommitStatus
+	comments  []githubapp.IssueComment
+	threads   []githubapp.ReviewThread
 	// err fails the poll's check run read.
 	err error
+	// workflowsErr fails the poll's workflow run read.
+	workflowsErr error
 }
 
 // fakeReader answers poll n with states[n-1], and the last state for every
@@ -48,6 +51,11 @@ func (f *fakeReader) current() state {
 func (f *fakeReader) ReadPullRequest(context.Context, int) (githubapp.PullRequest, error) {
 	f.polls++
 	return f.current().pr, nil
+}
+
+func (f *fakeReader) ReadWorkflowRuns(context.Context, string) ([]githubapp.WorkflowRun, error) {
+	s := f.current()
+	return s.workflows, s.workflowsErr
 }
 
 func (f *fakeReader) ReadCheckRuns(_ context.Context, sha string) ([]githubapp.CheckRun, error) {

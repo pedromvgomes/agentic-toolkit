@@ -94,8 +94,8 @@ func TestReadReviewThreadsFallsBackToTheSubstituteRouteWhenGraphQLIsBlocked(t *t
 	net.done()
 
 	want := []githubapp.ReviewThread{
-		{Path: "a.go", Body: "open by the app", ByViewer: true, LastAuthor: "author"},
-		{Path: "b.go", Resolved: true, Body: "resolved by a person", LastAuthor: "someone"},
+		{Path: "a.go", Body: "open by the app", ByViewer: true, RootAuthor: "agtk-code-review[bot]", LastAuthor: "author"},
+		{Path: "b.go", Resolved: true, Body: "resolved by a person", RootAuthor: "someone", LastAuthor: "someone"},
 		{Path: "c.go", Outdated: true},
 	}
 	if len(threads) != len(want) {
@@ -127,6 +127,9 @@ func TestAReadClientClearsByViewerOnThreadsReadOverTheSubstituteRoute(t *testing
 	net.done()
 	if len(got) != 1 || got[0].ByViewer {
 		t.Errorf("a token client read a thread as ByViewer over the substitute route: %+v", got)
+	}
+	if len(got) == 1 && got[0].RootAuthor != "agtk-code-review[bot]" {
+		t.Errorf("a token client dropped the root comment's author over the substitute route: %+v", got[0])
 	}
 	// The blocked GraphQL query, the substitute route, and the paginated
 	// comment read — and no fourth call resolving an App login this client

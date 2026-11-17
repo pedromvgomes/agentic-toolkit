@@ -17,7 +17,8 @@ extensions:
 
 # Review pull request
 
-Post a panel review on a pull request, answer every thread it opens, push, and review again.
+Post a panel review on a pull request, answer every thread it opens (a lydite surviving-mutant
+thread is fixed and never replied to), push, and review again.
 Stop when a pass leaves nothing unanswered, when the pull request stops moving, or at the fifth
 pass, whichever comes first.
 

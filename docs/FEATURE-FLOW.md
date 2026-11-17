@@ -236,54 +236,6 @@ A session started on an item whose predecessors are not all done stops and names
 session that lands slice 1 fills #42's stub; the session that lands slice 2 fills #43's; and the
 pull request for slice 3, the last, closes the Feature too.
 
-## Resuming from a local handoff
-
-`write-handoff` and `implement-handoff` carry work across a `/clear` through a file in
-`handoff/` rather than an issue. They suit work that has no business on the backlog — a branch
-somebody is in the middle of, a session out of context with no Feature behind it. For a mid-work
-save that another machine, or the Factory, should be able to pick up, `write-backlog-item` writes
-the same document as an issue instead: it carries no Feature and no label, and nothing runs it
-until a person does.
-
-You resume a handoff by running `/implement-handoff`. It asks `agtk handoff list` which handoffs
-are waiting, and asks you which one when there are several. It then runs the same coordination as
-`implement-backlog-item` — one implementer per task, the review loop, `open-pr`, the mergeable
-pull request — and moves a handoff to `handoff/done/` only once all of that came back clean. A
-handoff with a predecessor waits until that pull request is **merged into the base branch**, and
-the next session continues in the **same worktree**, after a yes.
-
-A `SessionStart` hook fires on `startup` and `clear` — the two ways a session begins with no
-memory of the one before it — globs `handoff/*.md` at depth one, and adds a note to the new
-session saying a handoff is waiting and to invoke `implement-handoff`. It is a reminder, most
-useful in a session started fresh in a new terminal. A hook can only add context: it cannot send
-a message, begin a turn, run the skill or change the model.
-
-### `handoff/` is never committed
-
-The folder holds documents about how somebody is working, not about the project, so it is
-excluded per checkout rather than written into your `.gitignore`:
-
-```bash
-echo 'handoff/' >> "$(git rev-parse --git-common-dir)/info/exclude"
-```
-
-`--git-common-dir` rather than `--git-dir`: under a `gt` bare repo it resolves to the shared
-`.bare/`, so one write covers every worktree. `write-handoff` does this itself, idempotently.
-
-A consumed handoff moves to `handoff/done/`, which the hook's depth-one glob does not see.
-
-**The exclude is a convenience, not the control.** A git exclude has no effect on a file that is
-already tracked, so a branch can commit `handoff/anything.md` regardless — and a handoff decides
-what the next session does, which subagents it dispatches and what command it runs. Both the hook
-and `implement-handoff` therefore check the thing that cannot be forged from inside a branch:
-
-```bash
-git ls-files --error-unmatch -- handoff/x.md    # tracked → refuse
-```
-
-A tracked handoff is never advertised and never acted on. Its presence is reported, because a
-committed one is a fact worth knowing rather than a file to skip quietly.
-
 ## Where it ships, and the model it sets
 
 The flow is in `stacks/default.yaml`. Extending that stack is all that is needed:
@@ -323,9 +275,6 @@ None of them requires the others:
   an issue any session can take up. The plan-shaped fields are optional; an item with a goal, the
   `Branch:` line, the state and the next steps is a backlog item.
 - **`implement-backlog-item`** — run any backlog item, by `owner/repo#N`, once it is queued.
-- **`write-handoff`** — the same save as a local file in `handoff/`, for resuming on this
-  checkout.
-- **`implement-handoff`** — resume from a handoff you wrote by hand.
 - **`review-implementation`** — review and fix any branch in a loop.
 - **`open-pr`** — ship any finished branch, with the documentation and memory steps.
 

@@ -1,5 +1,7 @@
 # A handoff is trusted structurally, not by prose
 
+Superseded by `docs/adr/0028-a-backlog-item-is-trusted-by-who-wrote-it.md`.
+
 A **Handoff** drives `implement-handoff`, which dispatches **Implementer**s holding Write, Edit
 and Bash. The document therefore chooses a session's tasks, its file boundaries and the command
 it runs. It is the second untrusted document this toolkit reads, and it arrives by a different
