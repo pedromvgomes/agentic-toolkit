@@ -35,9 +35,9 @@ func checkRunsJSON(total, first, count int) string {
 	return fmt.Sprintf(`{"total_count":%d,"check_runs":[%s]}`, total, strings.Join(runs, ","))
 }
 
-// workflowRunsJSON renders a page of count workflow runs with ids from first,
-// under a total of total, each carrying the head commit and repository
-// objects GitHub sends with every run.
+// workflowRunsJSON renders a page of count GitHub Actions workflow runs with
+// ids from first, under a total of total, each carrying the head commit and
+// repository objects GitHub sends with every run.
 func workflowRunsJSON(total, first, count int) string {
 	runs := make([]string, count)
 	for i := range runs {
@@ -175,7 +175,7 @@ func TestWorkflowRunsAreReadForTheHeadWithTheirWorkflowAndSuite(t *testing.T) {
 	}
 	query := net.seen[0].URL.Query()
 	if query.Get("head_sha") != headSHA || query.Get("per_page") != fmt.Sprint(workflowPageLength) {
-		t.Errorf("workflow runs were read with %v, want the head's at %d a page", query, workflowPageLength)
+		t.Errorf("GitHub Actions workflow runs were read with %v, want the head's at %d a page", query, workflowPageLength)
 	}
 }
 
@@ -210,9 +210,9 @@ func TestAHeadWithNoWorkflowRunsReadsAsAnEmptyList(t *testing.T) {
 	}
 }
 
-// A list missing the newest run of a workflow leaves the older run's failures
-// judged, and one missing an older run leaves its failures unexplained, so a
-// read that is not the whole list is refused.
+// A list missing the newest run of a GitHub Actions workflow leaves the older
+// run's failures judged, and one missing an older run leaves its failures
+// unexplained, so a read that is not the whole list is refused.
 func TestAWorkflowRunReadThatIsNotTheWholeListIsRefused(t *testing.T) {
 	run := func(fields string) string {
 		return `{"total_count":1,"workflow_runs":[{` + fields + `}]}`
@@ -410,7 +410,7 @@ func TestACIReadRefusesAnythingButAFullCommitSHA(t *testing.T) {
 			t.Errorf("statuses were read for %q", sha)
 		}
 		if _, err := c.ReadWorkflowRuns(context.Background(), sha); err == nil {
-			t.Errorf("workflow runs were read for %q", sha)
+			t.Errorf("GitHub Actions workflow runs were read for %q", sha)
 		}
 		net.done()
 	}
@@ -434,7 +434,7 @@ func TestACIReadThatGitHubRefusesIsClassified(t *testing.T) {
 	}
 	c, _ = readClient(t, get(workflowRunsPath, 403, `{"message":"Resource not accessible by personal access token"}`))
 	if _, err := c.ReadWorkflowRuns(context.Background(), headSHA); !errors.Is(err, githubapp.ErrForbidden) {
-		t.Errorf("a 403 on workflow runs read as %v", err)
+		t.Errorf("a 403 on GitHub Actions workflow runs read as %v", err)
 	}
 	c, _ = readClient(t, exchange{method: http.MethodGet, path: issueCommentsPath, status: 403,
 		body:   `{"message":"API rate limit exceeded"}`,
@@ -549,8 +549,8 @@ func TestACIReadThatEndsOnItsLastAllowedPageIsReturned(t *testing.T) {
 	}
 }
 
-// The page limit refuses a workflow run read still going after its last page,
-// never one that ends on it.
+// The page limit refuses a GitHub Actions workflow run read still going after
+// its last page, never one that ends on it.
 func TestAWorkflowRunReadThatEndsOnItsLastAllowedPageIsReturned(t *testing.T) {
 	const pages = 40
 	var runPages []exchange
@@ -561,10 +561,10 @@ func TestAWorkflowRunReadThatEndsOnItsLastAllowedPageIsReturned(t *testing.T) {
 	c, net := readClient(t, runPages...)
 	runs, err := c.ReadWorkflowRuns(context.Background(), headSHA)
 	if err != nil {
-		t.Fatalf("workflow runs ending on page %d: %v", pages, err)
+		t.Fatalf("GitHub Actions workflow runs ending on page %d: %v", pages, err)
 	}
 	net.done()
 	if len(runs) != pages*workflowPageLength {
-		t.Errorf("read %d workflow runs, want %d", len(runs), pages*workflowPageLength)
+		t.Errorf("read %d GitHub Actions workflow runs, want %d", len(runs), pages*workflowPageLength)
 	}
 }
