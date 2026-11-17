@@ -31,9 +31,18 @@ Stop, and say which applies, if any of these hold:
 
 - The current branch is the default branch. A pull request needs somewhere to come from.
 - Nothing separates this branch from its base. There is no change to open.
-- A pull request is already open for this branch. Say so, give its URL, and stop — re-reviewing
-  an open PR is `panel-code-review`'s to do directly, and opening a second is not a thing to
-  recover from.
+- A pull request is already open for this branch from this repository. Say so, give its URL,
+  and stop — re-reviewing an open PR is `panel-code-review`'s to do directly, and opening a
+  second is not a thing to recover from.
+
+  ```bash
+  gh pr list --head <branch> --state open --json number,url,isCrossRepository \
+    --jq '.[] | select(.isCrossRepository == false) | .url'
+  ```
+
+  Only a pull request with `isCrossRepository == false` counts. `--head` matches a branch name
+  alone, and a fork can open a pull request whose head carries the same name; counting it would
+  refuse to open this branch's own.
 
 Follow the repo's git rules for everything below: establish the layout, read the GitHub user
 from the root `.envrc` before any `gh` call, and never merge.
@@ -172,8 +181,10 @@ opened gets fixed or answered, the fixes are pushed, and the next pass reads onl
 changed, until nothing is waiting or the loop stops for another reason.
 
 When the caller passes `--checked-authors`, invoke `review-pull-request <N> --checked-authors`
-instead: the loop then hands the resolver only threads written by the accounts it checks, and
-ends with **unchecked thread**, linking the rest, when any other is waiting. This skill never
+instead. The loop then ends with **unchecked thread**, linking each such thread, when an
+unresolved thread holds a comment from an author `pr-review-resolver`'s "Checked authors" does
+not check, and leaves a review summary or conversation comment from one unread and listed under
+**not read: unchecked author**. This skill never
 adds the argument on its own; the caller knows whether anybody is there to approve a fix.
 
 Report its outcome as it gave it: the passes, what each cost, every false-positive marking the
