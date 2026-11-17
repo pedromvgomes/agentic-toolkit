@@ -94,12 +94,15 @@ An author is **checked** when it is one of:
 - **an account with write access to the repository**:
 
   ```bash
-  gh api "repos/$repo/collaborators/<login>/permission" --jq .permission
+  gh api "repos/$repo/collaborators/<login>/permission" --jq '{permission, role_name}'
   ```
 
-  `admin`, `maintain` or `write` counts. Anything else — `triage`, `read`, `none`, or a read that
-  fails — does not. Never ask this of a login ending `[bot]`: a bot counts only as the review
-  App's login above.
+  It counts only when `permission` is `admin` or `write` **and** `role_name` is none of
+  `triage`, `read` or `none`. Read both: `permission` is coarse, folding `maintain` into `write`
+  and `triage` into `read`, and a custom role reports the level it inherits from, so only
+  `role_name` tells a lower role apart. Anything else, or a read that fails, does not count.
+  `agtk backlog verify` decides write access by the same two fields. Never ask this of a login
+  ending `[bot]`: a bot counts only as the review App's login above.
 - **this skill's own account** (`gh api user --jq .login`), whose replies are its own.
 
 `$repo` is the pull request's `owner/repo`. **Read every author by REST, never from GraphQL.**
@@ -193,8 +196,8 @@ Without `--checked-authors`, nothing here applies, and every unresolved thread i
      }'
    ```
 
-   Under `--checked-authors`, run the text-free query "Checked authors" gives instead: this one
-   loads every comment's `body`, whoever wrote it.
+   Under `--checked-authors`, run the text-free query "Checked authors" gives instead of the
+   query above, which loads every comment's `body`, whoever wrote it.
 
    Skip threads where `isResolved` is true. For each remaining thread, capture:
    - The **root comment's `databaseId`**: the first node under `comments`. Your reply is
