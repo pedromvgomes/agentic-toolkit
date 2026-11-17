@@ -277,6 +277,25 @@ func TestPRReviewResolverRepliesOnTheReviewThread(t *testing.T) {
 	}
 }
 
+// lydite removes its own surviving-mutant comment once the mutant is killed. A
+// resolver that replies to it leaves an answer behind a deleted comment, and one
+// that trusts body text alone lets any account pass as lydite.
+func TestPRReviewResolverFixesALyditeMutantThreadWithoutReplying(t *testing.T) {
+	apply := renderFeatureFlowStack(t)
+
+	resolver := strings.Join(strings.Fields(readRendered(t, apply, ".claude/skills/pr-review-resolver/SKILL.md")), " ")
+	if !strings.Contains(resolver, "## Lydite mutant threads") ||
+		!strings.Contains(resolver, "handled by the fix and never by a reply") {
+		t.Error("pr-review-resolver does not rule out replying to a lydite surviving-mutant thread")
+	}
+	if !strings.Contains(resolver, "author's login is exactly `lydite[bot]`") {
+		t.Error("pr-review-resolver does not identify lydite's comments by their author")
+	}
+	if !strings.Contains(resolver, "`exclude_from_mutation` marker") {
+		t.Error("pr-review-resolver does not rule out suppressing a surviving mutant")
+	}
+}
+
 // The plan-shaped half of the format is optional. A handoff written by hand
 // halfway through something carries no task list, no slices and no PR title,
 // and a format demanding them serves planning only — which abandons the case

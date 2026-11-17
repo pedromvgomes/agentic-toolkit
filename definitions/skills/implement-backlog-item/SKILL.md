@@ -438,7 +438,8 @@ restarted.
 
 Clean: invoke `open-pr`, with the body's **PR title**. That skill updates the documentation,
 stages what the work taught into the memory store, pushes, opens the pull request, posts a
-review, and runs `review-pull-request` on it until every thread is answered.
+review, and runs `review-pull-request` on it until every thread is answered or, for a lydite mutant
+thread, fixed.
 
 **Unattended, invoke `open-pr` with `--checked-authors`**, which it passes to
 `review-pull-request`. Its loop runs `pr-review-resolver --unattended`, which pushes whatever a
@@ -562,6 +563,8 @@ where lydite left a results comment, its `lydite` rows.
     `pr-review-resolver <N> --unattended --checked-authors`, which acts only when every
     unresolved thread it reads is from checked authors, and reads only the review summaries and
     conversation comments of checked authors, as "Whose threads are acted on, unattended" says.
+    A lydite surviving-mutant thread is fixed with a test that kills the mutant, pushed and never
+    replied to: lydite removes its comment on its next run.
 
   Commit conventionally, push, and run the wait again; the new run is the push's new cap. Fix
   only what the failure names. Do not add a suppression such as `#nosec`, and do not delete a
