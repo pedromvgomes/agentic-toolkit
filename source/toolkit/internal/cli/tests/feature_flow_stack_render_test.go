@@ -304,280 +304,84 @@ func TestPRReviewResolverFixesALyditeMutantThreadWithoutReplying(t *testing.T) {
 	}
 }
 
-// The plan-shaped half of the format is optional. A handoff written by hand
-// halfway through something carries no task list, no slices and no PR title,
-// and a format demanding them serves planning only — which abandons the case
-// that needs a handoff most.
-func TestWriteHandoffServesAHandoffWithNoPlan(t *testing.T) {
+// An item ordered behind another builds on what that one lands. Starting it
+// before every predecessor is closed as completed builds on something that
+// has not merged.
+func TestImplementBacklogItemWaitsForItsPredecessors(t *testing.T) {
 	apply := renderFeatureFlowStack(t)
 
-	body, err := os.ReadFile(filepath.Join(apply, ".claude/skills/write-handoff/SKILL.md"))
-	if err != nil {
-		t.Fatalf("write-handoff did not reach the consumer: %v", err)
+	skill := readRendered(t, apply, ".claude/skills/implement-backlog-item/SKILL.md")
+	if !strings.Contains(skill, "`predecessors_done` is `false` → **stop**") {
+		t.Errorf("implement-backlog-item starts an item whose predecessors have not landed:\n%s", skill)
 	}
-	skill := string(body)
-	if !strings.Contains(skill, "optional") {
-		t.Fatalf("write-handoff makes no part of the format optional:\n%s", skill)
-	}
-	if !strings.Contains(skill, "and is still a handoff") {
-		t.Error("write-handoff does not say a plan-free handoff is valid, so the ad-hoc case has no writer")
-	}
-	if _, err := os.Stat(filepath.Join(apply, ".claude/skills/write-handoff/references/handoff-template.md")); err != nil {
-		t.Errorf("write-handoff prescribes a template that never rendered: %v", err)
-	}
-}
-
-// A task-free handoff is valid and is read as one routine task whose boundary
-// is what its next steps describe. The template is the shape a writer follows,
-// so a template with no next steps sends the implementing session a goal and
-// no way to start on it.
-func TestTheHandoffTemplateCarriesTheSectionATaskFreeHandoffIsBuiltFrom(t *testing.T) {
-	apply := renderFeatureFlowStack(t)
-
-	body, err := os.ReadFile(filepath.Join(apply, ".claude/skills/write-handoff/references/handoff-template.md"))
-	if err != nil {
-		t.Fatalf("the handoff template did not reach the consumer: %v", err)
-	}
-	template := string(body)
-	if !strings.Contains(template, "## Next steps") {
-		t.Fatalf("the template has no next steps, so a handoff written without tasks carries no task:\n%s", template)
-	}
-	if !strings.Contains(template, "Required when **Tasks** is omitted") {
-		t.Error("the template does not say next steps are what a task-free handoff supplies instead")
-	}
-}
-
-// A gated handoff sends the next session to make a branch once the predecessor
-// merges, and the handoff is the only place it can read that name from. A
-// template that gates the work without naming the branch reads as complete
-// while leaving the session unable to start.
-func TestAGatedHandoffMustNameTheBranchToResumeOn(t *testing.T) {
-	apply := renderFeatureFlowStack(t)
-
-	body, err := os.ReadFile(filepath.Join(apply, ".claude/skills/write-handoff/references/handoff-template.md"))
-	if err != nil {
-		t.Fatalf("the handoff template did not reach the consumer: %v", err)
-	}
-	if !strings.Contains(string(body), "the branch to create and the base to create it from are **required**") {
-		t.Errorf("the template lets a gated handoff omit the branch the next session must create:\n%s", body)
-	}
-}
-
-// A handoff pointing at work that exists only in the context about to be
-// discarded is worse than no handoff: the next session resumes on top of it
-// and cannot tell what is missing.
-func TestWriteHandoffRefusesToPointAtUnsavedWork(t *testing.T) {
-	apply := renderFeatureFlowStack(t)
-
-	body, err := os.ReadFile(filepath.Join(apply, ".claude/skills/write-handoff/SKILL.md"))
-	if err != nil {
-		t.Fatalf("write-handoff did not reach the consumer: %v", err)
-	}
-	skill := string(body)
-	if !strings.Contains(skill, "No uncommitted or unstaged changes") {
-		t.Errorf("write-handoff writes over a dirty worktree:\n%s", skill)
-	}
-	if !strings.Contains(skill, "are pushed") {
-		t.Error("write-handoff does not require the branch to be pushed")
-	}
-}
-
-// The worktree is a constant; what varies is whether the next session may
-// start at all. A handoff written with a pull request open waits for it.
-func TestWriteHandoffRecordsAPredecessorRatherThanAWorktree(t *testing.T) {
-	apply := renderFeatureFlowStack(t)
-
-	body, err := os.ReadFile(filepath.Join(apply, ".claude/skills/write-handoff/SKILL.md"))
-	if err != nil {
-		t.Fatalf("write-handoff did not reach the consumer: %v", err)
-	}
-	skill := string(body)
-	if !strings.Contains(skill, "predecessor") {
-		t.Fatalf("write-handoff records no predecessor, so a gated slice can start early:\n%s", skill)
-	}
-	if !strings.Contains(skill, "continues in **this** worktree") {
-		t.Error("write-handoff leaves the resume location open, which it no longer is")
-	}
-}
-
-// handoff/ is a fact about how somebody works, not about the project. The
-// common dir is what makes one write cover every worktree of a bare repo.
-func TestWriteHandoffExcludesItsFolderWithoutTouchingGitignore(t *testing.T) {
-	apply := renderFeatureFlowStack(t)
-
-	body, err := os.ReadFile(filepath.Join(apply, ".claude/skills/write-handoff/SKILL.md"))
-	if err != nil {
-		t.Fatalf("write-handoff did not reach the consumer: %v", err)
-	}
-	skill := string(body)
-	if !strings.Contains(skill, "--git-common-dir") {
-		t.Errorf("write-handoff excludes per worktree, so a bare repo needs the line in each:\n%s", skill)
-	}
-	if !strings.Contains(skill, "info/exclude") {
-		t.Error("write-handoff does not use the checkout-local exclude file")
-	}
-	if !strings.Contains(skill, "never edit the consumer's `.gitignore`") {
-		t.Error("write-handoff may write into a consumer's committed ignore rules")
-	}
-}
-
-// A SessionStart hook can add context but cannot begin a turn, so after /clear
-// the session is idle until the user runs /implement-handoff. A continuation
-// prompt to paste as well would be a second way in, and the two would drift.
-func TestWriteHandoffHandsOffThroughTheImplementHandoffCommand(t *testing.T) {
-	apply := renderFeatureFlowStack(t)
-
-	body, err := os.ReadFile(filepath.Join(apply, ".claude/skills/write-handoff/SKILL.md"))
-	if err != nil {
-		t.Fatalf("write-handoff did not reach the consumer: %v", err)
-	}
-	skill := string(body)
-	if !strings.Contains(skill, "/clear") {
-		t.Errorf("write-handoff does not name the step the user performs by hand:\n%s", skill)
-	}
-	if !strings.Contains(skill, "/implement-handoff") {
-		t.Error("write-handoff does not tell the user to run /implement-handoff, so the session sits idle after /clear")
-	}
-	if !strings.Contains(skill, "Do not paste a continuation prompt") {
-		t.Error("write-handoff offers a second way in alongside /implement-handoff")
-	}
-}
-
-// The hook is the only thing that adds a note to a session started after /clear,
-// so it has to arrive under an event and a matcher Claude Code actually fires.
-// Under any other matcher the injection is not rejected, it simply never runs.
-func TestTheHandoffHookFiresOnAFreshSessionAndNamesTheSkill(t *testing.T) {
-	apply := renderFeatureFlowStack(t)
-
-	body, err := os.ReadFile(filepath.Join(apply, ".claude/settings.json"))
-	if err != nil {
-		t.Fatalf("settings did not reach the consumer: %v", err)
-	}
-	settings := string(body)
-	if !strings.Contains(settings, "SessionStart") {
-		t.Fatalf("settings.json carries no SessionStart hook:\n%s", settings)
-	}
-	if !strings.Contains(settings, "startup|clear") {
-		t.Error("the handoff hook does not match the two ways a session starts with no memory of the one that wrote the handoff")
-	}
-	if !strings.Contains(settings, "implement-handoff") {
-		t.Error("the hook injects no instruction naming the skill that consumes a handoff")
-	}
-	if _, err := os.Stat(filepath.Join(apply, ".claude/skills/implement-handoff/SKILL.md")); err != nil {
-		t.Errorf("the hook names implement-handoff, which never rendered: %v", err)
-	}
-}
-
-// Which handoffs may be acted on is one decision, made in internal/handoff and
-// exercised by its own tests. What the rendered hook has to get right is that
-// it asks, rather than deciding again in shell — a second implementation is a
-// second answer, and this one gates what a session is told to run.
-func TestTheHandoffHookDefersToAgtk(t *testing.T) {
-	apply := renderFeatureFlowStack(t)
-
-	body, err := os.ReadFile(filepath.Join(apply, ".claude/settings.json"))
-	if err != nil {
-		t.Fatalf("settings did not reach the consumer: %v", err)
-	}
-	settings := string(body)
-	if !strings.Contains(settings, "agtk handoff list") {
-		t.Errorf("the hook does not ask agtk which handoffs may be acted on:\n%s", settings)
-	}
-	if strings.Contains(settings, "ls-files --error-unmatch") {
-		t.Errorf("the hook still decides tracked-ness itself, so there are two answers:\n%s", settings)
-	}
-}
-
-// A check that did not run is not a check that passed. An agtk the consumer
-// does not have must withhold the handoff and say so, because the alternative
-// is a session acting on a document nothing vetted.
-func TestTheHandoffHookFailsClosedWhenTheCheckCannotRun(t *testing.T) {
-	apply := renderFeatureFlowStack(t)
-
-	body, err := os.ReadFile(filepath.Join(apply, ".claude/settings.json"))
-	if err != nil {
-		t.Fatalf("settings did not reach the consumer: %v", err)
-	}
-	settings := string(body)
-	if !strings.Contains(settings, "could not be checked") {
-		t.Errorf("the hook does not say when the check could not run:\n%s", settings)
-	}
-	if !strings.Contains(settings, "withheld rather than offered unchecked") {
-		t.Errorf("the hook does not withhold a handoff it could not check:\n%s", settings)
-	}
-}
-
-// Work gated behind a pull request must not start before it merges, and the
-// step that moves the branch changes where the user is standing.
-func TestImplementHandoffHonoursThePredecessorBeforeItStarts(t *testing.T) {
-	apply := renderFeatureFlowStack(t)
-
-	body, err := os.ReadFile(filepath.Join(apply, ".claude/skills/implement-handoff/SKILL.md"))
-	if err != nil {
-		t.Fatalf("implement-handoff did not reach the consumer: %v", err)
-	}
-	skill := string(body)
-	if !strings.Contains(skill, "merged into the base branch") {
-		t.Fatalf("implement-handoff starts gated work without checking the gate:\n%s", skill)
-	}
-	if !strings.Contains(skill, "wait\nfor a yes") && !strings.Contains(skill, "wait for a yes") {
-		t.Error("implement-handoff moves the branch without asking")
+	if !strings.Contains(skill, "done only when it is closed as completed") {
+		t.Error("implement-backlog-item does not say when a predecessor counts as done")
 	}
 }
 
 // Two implementers write into one working tree, and the second reads a tree
 // the first is still changing — after which neither diff can be reviewed on
 // its own, which is the property that makes each reviewable at all.
-func TestImplementHandoffRunsOneImplementerAtATime(t *testing.T) {
+func TestImplementBacklogItemRunsOneImplementerAtATime(t *testing.T) {
 	apply := renderFeatureFlowStack(t)
 
-	body, err := os.ReadFile(filepath.Join(apply, ".claude/skills/implement-handoff/SKILL.md"))
-	if err != nil {
-		t.Fatalf("implement-handoff did not reach the consumer: %v", err)
-	}
-	skill := string(body)
+	skill := readRendered(t, apply, ".claude/skills/implement-backlog-item/SKILL.md")
 	if !strings.Contains(skill, "Never two at once") {
-		t.Errorf("implement-handoff does not rule out concurrent implementers:\n%s", skill)
+		t.Errorf("implement-backlog-item does not rule out concurrent implementers:\n%s", skill)
 	}
 	if _, err := os.Stat(filepath.Join(apply, ".claude/agents/task-implementer/AGENT.md")); err != nil {
-		t.Errorf("implement-handoff dispatches task-implementer, which never rendered: %v", err)
+		t.Errorf("implement-backlog-item dispatches task-implementer, which never rendered: %v", err)
 	}
 }
 
 // The implementer's transcript never reaches the coordinator, so the report is
 // a claim and the diff is the evidence. A coordinator acting on the claim has
 // nothing the arrangement was built to give it.
-func TestImplementHandoffVerifiesTheDiffRatherThanTheReport(t *testing.T) {
+func TestImplementBacklogItemVerifiesTheDiffRatherThanTheReport(t *testing.T) {
 	apply := renderFeatureFlowStack(t)
 
-	body, err := os.ReadFile(filepath.Join(apply, ".claude/skills/implement-handoff/SKILL.md"))
-	if err != nil {
-		t.Fatalf("implement-handoff did not reach the consumer: %v", err)
-	}
-	skill := string(body)
-	if !strings.Contains(skill, "git diff") {
-		t.Errorf("implement-handoff commits on a report it never checked:\n%s", skill)
+	skill := readRendered(t, apply, ".claude/skills/implement-backlog-item/SKILL.md")
+	if !strings.Contains(skill, "git diff -- <the task's files>") {
+		t.Errorf("implement-backlog-item commits on a report it never checked:\n%s", skill)
 	}
 	if !strings.Contains(skill, "run the verification command yourself") {
-		t.Error("implement-handoff trusts the implementer's claim that verification passed")
+		t.Error("implement-backlog-item trusts the implementer's claim that verification passed")
 	}
 }
 
-// A handoff marked consumed on a run that never opened a pull request strands
-// the work: nothing points at it, and the next session starts from scratch.
-func TestImplementHandoffKeepsTheHandoffUntilTheWorkLands(t *testing.T) {
+// The coordinator holds the task list and reviews every diff. One that writes
+// code itself stops reviewing it, and its fix lands with no review at all.
+func TestImplementBacklogItemSendsAWrongDiffBackRatherThanFixingIt(t *testing.T) {
 	apply := renderFeatureFlowStack(t)
 
-	body, err := os.ReadFile(filepath.Join(apply, ".claude/skills/implement-handoff/SKILL.md"))
-	if err != nil {
-		t.Fatalf("implement-handoff did not reach the consumer: %v", err)
+	skill := readRendered(t, apply, ".claude/skills/implement-backlog-item/SKILL.md")
+	if !strings.Contains(skill, "send it back. Dispatch a fresh") || !strings.Contains(skill, "implementer for the same task with what was wrong") {
+		t.Errorf("implement-backlog-item does not send a wrong diff back to a fresh implementer:\n%s", skill)
 	}
-	skill := string(body)
-	if !strings.Contains(skill, "handoff/done/") {
-		t.Fatalf("implement-handoff never consumes a handoff, so the hook points at it forever:\n%s", skill)
+	if !strings.Contains(skill, "Do not fix it yourself") {
+		t.Error("implement-backlog-item lets the coordinator write the fix it should be reviewing")
 	}
-	if !strings.Contains(skill, "never marks a handoff consumed on a run that did not reach a pull request") {
-		t.Error("implement-handoff may consume a handoff whose work never landed")
+}
+
+// A run that never reached a pull request has nothing a person can merge, so
+// nothing about the item may read as done: the commits stay on the branch to
+// resume from, and the item closes only when a person merges the pull request
+// that carries its Closes line.
+func TestImplementBacklogItemNeverClosesOutARunWithoutAPullRequest(t *testing.T) {
+	apply := renderFeatureFlowStack(t)
+
+	skill := readRendered(t, apply, ".claude/skills/implement-backlog-item/SKILL.md")
+	if !strings.Contains(skill, "`open-pr` stopping before the pull request exists → **stop**.") {
+		t.Errorf("implement-backlog-item carries on after open-pr stopped short of a pull request:\n%s", skill)
+	}
+	if !strings.Contains(skill, "as soon as `open-pr` has returned with a pull request") {
+		t.Error("implement-backlog-item may mark the item in review with no pull request open")
+	}
+	if !strings.Contains(skill, "`agtk:failed` means the run ended without a pull request") {
+		t.Error("implement-backlog-item does not label a run that ended without a pull request as failed")
+	}
+	if !strings.Contains(skill, "The commits stay on the branch") {
+		t.Error("implement-backlog-item does not keep the work on the branch when it stops before a pull request")
 	}
 }
 
@@ -775,40 +579,6 @@ func TestPlanFeatureStopsAtTheBacklog(t *testing.T) {
 	}
 }
 
-// A git exclude has no effect on an already-tracked file, so being excluded is
-// not evidence of anything. A branch that commits handoff/x.md would otherwise
-// drive every session started or cleared on that checkout — choosing its tasks,
-// its file boundaries and the command it runs, through subagents holding Write
-// and Bash.
-func TestACommittedHandoffIsNeverAdvertisedOrActedOn(t *testing.T) {
-	apply := renderFeatureFlowStack(t)
-
-	settings, err := os.ReadFile(filepath.Join(apply, ".claude/settings.json"))
-	if err != nil {
-		t.Fatalf("settings did not reach the consumer: %v", err)
-	}
-	if !strings.Contains(string(settings), "agtk handoff list") {
-		t.Errorf("the hook advertises handoffs without asking what may be acted on:\n%s", settings)
-	}
-
-	// The hook is not the only way in: implement-handoff is invocable directly,
-	// so the same check has to hold there.
-	body, err := os.ReadFile(filepath.Join(apply, ".claude/skills/implement-handoff/SKILL.md"))
-	if err != nil {
-		t.Fatalf("implement-handoff did not reach the consumer: %v", err)
-	}
-	skill := string(body)
-	if !strings.Contains(skill, "agtk handoff list") {
-		t.Errorf("implement-handoff acts on a handoff without asking what may be acted on:\n%s", skill)
-	}
-	if !strings.Contains(skill, "Never decide it here") {
-		t.Error("implement-handoff decides trust itself, so there are two answers")
-	}
-	if !strings.Contains(skill, "untrusted content") {
-		t.Error("implement-handoff does not say what a refused handoff is")
-	}
-}
-
 // agtk validates neither tools nor disallowed_tools against a tool vocabulary,
 // so a name the platform does not recognise is ignored rather than rejected.
 // Naming one spelling leaves the grant or the guard silently inert wherever
@@ -939,38 +709,38 @@ func TestOpenPRHandsItsReviewToThePullRequestLoop(t *testing.T) {
 	}
 }
 
-// A handoff is closed out only when the pull request's review converged and
-// its checks finished green. A single look at the checks reads a pending one
-// as a pass, which is how a failing scan ships behind a closed handoff; a wait
-// with no cap, or one a run can extend by pushing the same fix again, never
-// ends. The wait is agtk's, run in the background: every poll the session
-// makes itself is a model turn over the whole conversation, and a foreground
-// wait is cut off by the harness before it ends. A session with no token to
-// hand agtk still has to wait, so it polls for itself.
-func TestImplementHandoffClosesOutOnlyOnAConvergedGreenPullRequest(t *testing.T) {
+// An item is closed out only when the pull request's review converged and its
+// checks finished green. A single look at the checks reads a pending one as a
+// pass, which is how a failing scan ships behind a closed-out item; a wait with
+// no cap, or one a run can extend by pushing the same fix again, never ends.
+// The wait is agtk's, run in the background: every poll the session makes
+// itself is a model turn over the whole conversation, and a foreground wait is
+// cut off by the harness before it ends. A session with no token to hand agtk
+// still has to wait, so it polls for itself.
+func TestImplementBacklogItemClosesOutOnlyOnAConvergedGreenPullRequest(t *testing.T) {
 	apply := renderFeatureFlowStack(t)
 
-	skill := readRendered(t, apply, ".claude/skills/implement-handoff/SKILL.md")
+	skill := readRendered(t, apply, ".claude/skills/implement-backlog-item/SKILL.md")
 	if !strings.Contains(skill, "agtk pr wait <owner/repo#N> --json") {
-		t.Error("implement-handoff does not hand the wait to agtk pr wait")
+		t.Error("implement-backlog-item does not hand the wait to agtk pr wait")
 	}
 	if !strings.Contains(skill, "**background command**") {
-		t.Error("implement-handoff may block the session on the wait in the foreground")
+		t.Error("implement-backlog-item may block the session on the wait in the foreground")
 	}
 	if !strings.Contains(skill, "### Without a token") || !strings.Contains(skill, "every **5 minutes**") {
-		t.Error("implement-handoff has no wait for a session without a token")
+		t.Error("implement-backlog-item has no wait for a session without a token")
 	}
 	if !strings.Contains(skill, "run the wait again") {
-		t.Error("implement-handoff does not restart the wait, and its cap, after a push")
+		t.Error("implement-backlog-item does not restart the wait, and its cap, after a push")
 	}
 	if !strings.Contains(skill, "2 hours of wall-clock since the latest push") {
-		t.Error("implement-handoff does not cap the wait")
+		t.Error("implement-backlog-item does not cap the wait")
 	}
 	if !strings.Contains(skill, "is not progress") {
-		t.Error("implement-handoff can extend the wait forever by pushing the same fix again")
+		t.Error("implement-backlog-item can extend the wait forever by pushing the same fix again")
 	}
 	if !strings.Contains(skill, "review-pull-request\ncame back clean") && !strings.Contains(skill, "review-pull-request came back clean") {
-		t.Error("implement-handoff closes out without the pull request's review having converged")
+		t.Error("implement-backlog-item closes out without the pull request's review having converged")
 	}
 }
 

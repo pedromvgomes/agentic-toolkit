@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -116,6 +117,49 @@ func TestTheNoAuthoringFootersHookReachesPreToolUse(t *testing.T) {
 	}
 	if !strings.Contains(string(settings), "agtk guard footers") {
 		t.Error("settings.json's PreToolUse hook does not invoke `agtk guard footers`")
+	}
+}
+
+// Work reaches a session through the backlog: an item agtk backlog verify
+// answers trusted, carried out by implement-backlog-item. A skill or a
+// session-start hook that also offered work from local files would be a second
+// way in, deciding what a session runs from text the backlog's trust check
+// never read.
+func TestTheDefaultStackOffersWorkOnlyThroughTheBacklog(t *testing.T) {
+	apply := renderDefaultStack(t)
+
+	for _, skill := range []string{"write-handoff", "implement-handoff"} {
+		if _, err := os.Stat(filepath.Join(apply, ".claude/skills", skill)); err == nil {
+			t.Errorf("the default stack renders the %s skill", skill)
+		} else if !os.IsNotExist(err) {
+			t.Errorf("stat %s: %v", skill, err)
+		}
+	}
+
+	body, err := os.ReadFile(filepath.Join(apply, ".claude/settings.json"))
+	if err != nil {
+		t.Fatalf("settings did not reach the consumer: %v", err)
+	}
+	var settings struct {
+		Hooks map[string][]struct {
+			Hooks []struct {
+				Command string `json:"command"`
+			} `json:"hooks"`
+		} `json:"hooks"`
+	}
+	if err := json.Unmarshal(body, &settings); err != nil {
+		t.Fatalf("settings.json does not parse: %v", err)
+	}
+	starts := settings.Hooks["SessionStart"]
+	if len(starts) == 0 {
+		t.Fatalf("settings.json carries no SessionStart hook, so this check reads nothing:\n%s", body)
+	}
+	for _, block := range starts {
+		for _, hook := range block.Hooks {
+			if strings.Contains(hook.Command, "agtk handoff") {
+				t.Errorf("a session-start hook offers work through `agtk handoff`:\n%s", hook.Command)
+			}
+		}
 	}
 }
 
