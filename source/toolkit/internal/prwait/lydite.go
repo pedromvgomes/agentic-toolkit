@@ -50,11 +50,10 @@ type LyditeRow struct {
 // lyditeRunningAt is the last time this wait saw a lydite check still
 // running on the head, zero when it never did.
 func lyditeDetail(comments []githubapp.IssueComment, app string, lyditeRunningAt time.Time) *LyditeDetail {
-	author := app + "[bot]"
 	var latest *githubapp.IssueComment
 	for i := range comments {
 		c := &comments[i]
-		if !strings.EqualFold(c.Author, author) || !strings.HasPrefix(strings.TrimSpace(c.Body), LyditeMarker) {
+		if !byLydite(c.Author, app) || !strings.HasPrefix(strings.TrimSpace(c.Body), LyditeMarker) {
 			continue
 		}
 		if latest == nil || lastWritten(*c).After(lastWritten(*latest)) {
@@ -68,6 +67,22 @@ func lyditeDetail(comments []githubapp.IssueComment, app string, lyditeRunningAt
 	detail.UpdatedAt = lastWritten(*latest)
 	detail.PossiblyStale = !lyditeRunningAt.IsZero() && detail.UpdatedAt.Before(lyditeRunningAt)
 	return &detail
+}
+
+// byLydite reports whether login is app's bot account, `<app>[bot]`,
+// compared without case as GitHub matches logins.
+func byLydite(login, app string) bool {
+	return strings.EqualFold(login, app+"[bot]")
+}
+
+// lyditeThread reports whether a review thread is lydite's alone: its
+// opening comment and its latest are both by app's bot account. lydite opens
+// such a thread on a line where a mutant survived and deletes it once the
+// mutant is killed, and a surviving mutant fails lydite's own check, so that
+// check carries the thread's verdict. A thread somebody else opened, or
+// somebody else spoke last on, is judged like any other.
+func lyditeThread(thread githubapp.ReviewThread, app string) bool {
+	return byLydite(thread.RootAuthor, app) && byLydite(thread.LastAuthor, app)
 }
 
 // lastWritten is when a comment was last written: lydite edits one comment

@@ -46,6 +46,15 @@
 // conversation-resolution rule counts them too. A thread whose latest author
 // is a deleted account is waiting: nobody can say it was answered.
 //
+// A thread lydite opened on a surviving mutant, whose opening comment and
+// latest comment are both by `<Options.LyditeApp>[bot]`, is neither waiting
+// nor answered: it is left out of the thread judgement. lydite fails its own
+// check while the mutant survives and deletes the comment once it is killed,
+// so the check decides: pending while lydite runs, action needed through the
+// failing check, clean once the check passes. A thread anybody else
+// opened, or anybody else spoke last on, is judged as above, so copying
+// lydite's text into a comment does not hide it.
+//
 // Only a person resolves a thread, so an answered thread stays unresolved
 // until one does. It is reported as a count beside the verdict and never
 // holds the wait: counting it as waiting would make every pull request with
@@ -182,8 +191,9 @@ type Options struct {
 	// Clock is RealClock when nil.
 	Clock Clock
 	// LyditeApp is the slug of the GitHub App that writes lydite's results
-	// comment; only a comment by `<LyditeApp>[bot]` is read. DefaultLyditeApp
-	// when empty.
+	// comment and its mutant threads; only a comment by `<LyditeApp>[bot]` is
+	// read, and only a thread wholly by that account is left out of the
+	// thread judgement. DefaultLyditeApp when empty.
 	LyditeApp string
 	// Progress, when set, is called once after every poll, including the
 	// one that ends the wait.
@@ -310,7 +320,7 @@ func Wait(ctx context.Context, reader Reader, opts Options) Result {
 		} else {
 			failures = 0
 			res.Err = nil
-			j := judge(poll, res.Viewer)
+			j := judge(poll, res.Viewer, lyditeApp)
 			res.Failing, res.Pending, res.WaitingThreads, res.ReferralPending = j.failing, j.pending, j.waiting, j.referral
 			res.AnsweredUnresolved = j.answered
 			now := clock.Now()
@@ -421,7 +431,7 @@ type judgement struct {
 // passingConclusions are the check run conclusions a clean head may carry.
 var passingConclusions = map[string]bool{"success": true, "neutral": true, "skipped": true}
 
-func judge(p polled, viewer string) judgement {
+func judge(p polled, viewer, lyditeApp string) judgement {
 	j := judgement{failing: []Item{}, pending: []Item{}, waiting: []Thread{}}
 	for _, run := range p.runs {
 		url := run.HTMLURL
@@ -460,6 +470,7 @@ func judge(p polled, viewer string) judgement {
 	for _, thread := range p.threads {
 		switch {
 		case thread.Resolved:
+		case lyditeThread(thread, lyditeApp):
 		case answeredBy(thread, viewer):
 			j.answered++
 		default:

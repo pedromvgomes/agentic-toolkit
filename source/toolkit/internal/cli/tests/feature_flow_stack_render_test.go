@@ -294,6 +294,14 @@ func TestPRReviewResolverFixesALyditeMutantThreadWithoutReplying(t *testing.T) {
 	if !strings.Contains(resolver, "`exclude_from_mutation` marker") {
 		t.Error("pr-review-resolver does not rule out suppressing a surviving mutant")
 	}
+	if !strings.Contains(resolver, "Under `--checked-authors`, a thread whose comments are all by `lydite[bot]` is left alone: "+
+		"it is neither acted on nor a reason to stop, because its mutant is fixed through lydite's failing check, "+
+		"which the coordinator hands to a `task-implementer`.") {
+		t.Error("pr-review-resolver may stop an unattended run on a lydite mutant thread, whose verdict lydite's check carries")
+	}
+	if !strings.Contains(resolver, "A thread holding a comment by `lydite[bot]` and one by any other unchecked author is an unchecked thread") {
+		t.Error("pr-review-resolver may leave alone a lydite thread somebody unchecked has spoken on")
+	}
 }
 
 // The plan-shaped half of the format is optional. A handoff written by hand
@@ -1359,7 +1367,7 @@ func TestPRReviewResolverUnderCheckedAuthorsStopsOnUncheckedThreadsAndLeavesOthe
 	if !strings.Contains(phase1, "Under `--checked-authors`, read every collected item's author now") {
 		t.Error("pr-review-resolver's Phase 1 read does not check its authors, so the check is not made on the read it acts on")
 	}
-	if !strings.Contains(phase1, "Stop there with **unchecked thread** if any thread holds a comment whose author is not checked") ||
+	if !strings.Contains(phase1, "Stop there with **unchecked thread** if any thread holds a comment whose author is not checked, a thread whose comments are all by `lydite[bot]` excepted") ||
 		!strings.Contains(phase1, "Leave out every summary and conversation comment whose author is not checked") {
 		t.Error("pr-review-resolver's Phase 1 does not stop on an unchecked thread and leave out other unchecked text")
 	}

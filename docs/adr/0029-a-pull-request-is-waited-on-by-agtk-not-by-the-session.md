@@ -38,12 +38,18 @@ App's bot account, `<slug>[bot]` compared without case with the slug from `--lyd
 (`lydite` by default), is read: any other App, or `github-actions[bot]` from any workflow, can
 post the marker, and its rows would reach a session that edits code as findings to fix.
 
-**A review thread waits unless the token's own account spoke last.** A resolved thread is done.
-An unresolved one is answered when its latest comment was written by the account the token
-belongs to, and waiting otherwise, outdated or not; one whose latest author is a deleted account
-is waiting, since nobody can say it was answered. Answered threads are counted beside the verdict
-and never hold the wait: only a person resolves a thread, so counting them would make every pull
-request with an answered conversation need action on every poll.
+**A review thread waits unless the token's own account spoke last or lydite wrote it alone.** A
+resolved thread is done. An unresolved one is answered when its latest comment was written by the
+account the token belongs to, and waiting otherwise, outdated or not; one whose latest author is a
+deleted account is waiting, since nobody can say it was answered. An unresolved thread whose
+opening comment and latest comment are both by the lydite App's bot account, the same
+`<slug>[bot]` the results comment is read from, is a surviving mutant and neither waits nor counts
+as answered: lydite fails its own check while the mutant survives and deletes the comment once it
+is killed, so that check carries the verdict, pending while lydite runs and action needed once it
+fails. A thread any other account opened or spoke last on is judged as any other. Answered threads
+are counted beside the verdict and never hold the wait: only a person resolves a thread, so
+counting them would make every pull request with an answered conversation need action on every
+poll.
 
 **No checks is a verdict.** A head with no check runs and no statuses on the first poll is
 pending, because CI registers its checks a moment after a push. Still bare on the second poll, it

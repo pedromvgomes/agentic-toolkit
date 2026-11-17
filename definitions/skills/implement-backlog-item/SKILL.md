@@ -557,14 +557,13 @@ where lydite left a results comment, its `lydite` rows.
   - a failed check (a build, a test, a lint job, a scan) → read its log, and hand the fix to a
     fresh `task-implementer`, bounded to the files the failure names, as step 6 does;
   - a ❌ lydite row (a failed test, a scan finding, a coverage drop, a surviving mutant) → the
-    same;
+    same. A surviving mutant is killed with a test, and its lydite comment is never replied to:
+    lydite removes it on its next run;
   - a waiting review thread → interactive, `pr-review-resolver`, whose plan the person approves
     before anything is committed; unattended,
     `pr-review-resolver <N> --unattended --checked-authors`, which acts only when every
     unresolved thread it reads is from checked authors, and reads only the review summaries and
     conversation comments of checked authors, as "Whose threads are acted on, unattended" says.
-    A lydite surviving-mutant thread is fixed with a test that kills the mutant, pushed and never
-    replied to: lydite removes its comment on its next run.
 
   Commit conventionally, push, and run the wait again; the new run is the push's new cap. Fix
   only what the failure names. Do not add a suppression such as `#nosec`, and do not delete a

@@ -34,6 +34,14 @@ type ReviewThread struct {
 	// A fingerprint marker in a comment somebody else wrote is a claim about
 	// identity from an author who does not hold it.
 	ByViewer bool
+	// RootAuthor is the login of whoever wrote that first comment, and empty
+	// when that account has been deleted. It names an account and is never
+	// evidence of ByViewer: ByViewer is what GitHub says about the viewer,
+	// and a reader under a credential other than the App's clears it whatever
+	// RootAuthor says.
+	//
+	// Set by ReadReviewThreads.
+	RootAuthor string
 	// LastAuthor is the login of whoever wrote the thread's latest comment —
 	// the root when nobody has replied — and empty when that account has been
 	// deleted. It says who spoke last, which is what tells a thread somebody
@@ -50,8 +58,8 @@ type ReviewThread struct {
 // One comment body per thread: the root is what agtk posted and therefore the
 // only comment that carries a fingerprint marker agtk wrote. Asking for
 // replies would fetch text no decision is made from, and enlarge a response
-// that is read under a size cap. The latest comment is read for its author's
-// login alone, under the alias latest.
+// that is read under a size cap. The root is also read for its author's login,
+// and the latest comment for its author's login alone, under the alias latest.
 var reviewThreadsQuery = fmt.Sprintf(`query($owner:String!,$repo:String!,$number:Int!,$cursor:String){
   repository(owner:$owner,name:$repo){
     pullRequest(number:$number){
@@ -61,7 +69,7 @@ var reviewThreadsQuery = fmt.Sprintf(`query($owner:String!,$repo:String!,$number
           path
           isResolved
           isOutdated
-          comments(first:1){nodes{body viewerDidAuthor}}
+          comments(first:1){nodes{body viewerDidAuthor author{login}}}
           latest:comments(last:1){nodes{author{login}}}
         }
       }
@@ -115,6 +123,11 @@ func (c *Client) readReviewThreadsGraphQL(ctx context.Context, owner, repo strin
 								Nodes []struct {
 									Body            string `json:"body"`
 									ViewerDidAuthor bool   `json:"viewerDidAuthor"`
+									// Author is null when the account has
+									// been deleted.
+									Author *struct {
+										Login string `json:"login"`
+									} `json:"author"`
 								} `json:"nodes"`
 							} `json:"comments"`
 							Latest struct {
@@ -147,6 +160,9 @@ func (c *Client) readReviewThreadsGraphQL(ctx context.Context, owner, repo strin
 			if len(node.Comments.Nodes) > 0 {
 				thread.Body = node.Comments.Nodes[0].Body
 				thread.ByViewer = node.Comments.Nodes[0].ViewerDidAuthor
+				if node.Comments.Nodes[0].Author != nil {
+					thread.RootAuthor = node.Comments.Nodes[0].Author.Login
+				}
 			}
 			if len(node.Latest.Nodes) > 0 && node.Latest.Nodes[0].Author != nil {
 				thread.LastAuthor = node.Latest.Nodes[0].Author.Login
@@ -197,6 +213,7 @@ func (c *Client) readReviewThreadsViaProxy(ctx context.Context, owner, repo stri
 			}
 			thread.Body = root.Body
 			thread.ByViewer = viewer != "" && root.User.Login == viewer
+			thread.RootAuthor = root.User.Login
 			lastID := node.CommentIDs[len(node.CommentIDs)-1]
 			last, ok := comments[lastID]
 			if !ok {
