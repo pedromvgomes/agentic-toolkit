@@ -15,11 +15,12 @@ const pollInterval = 5 * time.Second
 // runName is the title a relay run shows for req: "<action> <repo>#<pr>", as
 // in "run acme/widgets#42".
 //
-// This is the relay workflow's `run-name:`, which lives in the relay
-// repository rather than here: `${{ inputs.action }} ${{ inputs.repo }}#${{
-// inputs.pr }}`. The two have to agree. A relay whose runs are titled any other
-// way is only ever found through the run GitHub names on dispatch; when GitHub
-// names none, Await matches nothing and runs out its timeout.
+// This is the relay's GitHub Actions workflow's `run-name:`, which lives in
+// the relay repository rather than here:
+// `${{ inputs.action }} ${{ inputs.repo }}#${{ inputs.pr }}`. The two have to
+// agree. A relay whose runs are titled any other way is only ever found
+// through the run GitHub names on dispatch; when GitHub names none, Await
+// matches nothing and runs out its timeout.
 func runName(req Request) string {
 	return req.Action + " " + req.Repo + "#" + strconv.Itoa(req.PR)
 }
@@ -115,8 +116,8 @@ func readRun(ctx context.Context, doer Doer, target Target, id int64, name strin
 	}
 
 	// Filtered here rather than with the API's `created` qualifier: the page
-	// is a workflow's most recent runs, and a filter that is wrong in Go fails
-	// a test where a mistyped qualifier matches nothing until the timeout.
+	// is a GitHub Actions workflow's most recent runs, and a filter that is
+	// wrong in Go fails a test where a mistyped qualifier matches nothing until the timeout.
 	var page struct {
 		Runs []workflowRun `json:"workflow_runs"`
 	}

@@ -40,17 +40,18 @@ const (
 	// maxBody bounds how much of a response is read.
 	maxBody = 1 << 20
 
-	// workflowFile is the relay repository's workflow, addressed by file name.
+	// workflowFile is the relay repository's GitHub Actions workflow, addressed
+	// by file name.
 	workflowFile = "relay.yml"
 
-	// ref is the branch the relay's workflow runs from. A relay repository's
-	// default branch must be named main: dispatching by name rather than by
-	// asking GitHub which branch is the default costs one request fewer on
-	// every dispatch, at the cost of this one required name.
+	// ref is the branch the relay's GitHub Actions workflow runs from. A relay
+	// repository's default branch must be named main: dispatching by name
+	// rather than by asking GitHub which branch is the default costs one
+	// request fewer on every dispatch, at the cost of this one required name.
 	ref = "main"
 )
 
-// The actions the relay's workflow accepts.
+// The actions the relay's GitHub Actions workflow accepts.
 const (
 	ActionRun     = "run"
 	ActionApprove = "approve"
@@ -72,8 +73,8 @@ type Doer interface {
 // Target names the relay repository and the token that reaches it.
 //
 // Token is the caller's own, needing only to dispatch and read the relay's
-// workflow runs. It is never the App's credential, and it never touches the
-// repository under review.
+// GitHub Actions workflow runs. It is never the App's credential, and it never
+// touches the repository under review.
 type Target struct {
 	Slug  string
 	Token string
@@ -141,8 +142,8 @@ func (e *Error) Error() string {
 	return fmt.Sprintf("GitHub answered %d to %s %s: %s", e.StatusCode, e.Method, e.Path, e.Message)
 }
 
-// Dispatch starts the relay's workflow for req, and returns once GitHub has
-// accepted it, not once the run finishes.
+// Dispatch starts the relay's GitHub Actions workflow for req, and returns once
+// GitHub has accepted it, not once the run finishes.
 //
 // It asks GitHub to name the run it started. When GitHub accepts without
 // naming one, Await finds the run by its title and Since instead.

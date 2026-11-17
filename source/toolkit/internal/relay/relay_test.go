@@ -285,7 +285,7 @@ func TestRateLimitResetIgnoresXRateLimitHeadersUnlessRemainingIsZero(t *testing.
 
 // Every one of these would reach the relay as a run that fails on its own
 // inputs, or as a path that addresses something other than the relay's
-// workflow, so none is sent.
+// GitHub Actions workflow, so none is sent.
 func TestAMalformedDispatchIsNeverSent(t *testing.T) {
 	good := Request{Repo: "acme/widgets", PR: 42, Action: ActionRun, Payload: review}
 	for name, tc := range map[string]struct {
