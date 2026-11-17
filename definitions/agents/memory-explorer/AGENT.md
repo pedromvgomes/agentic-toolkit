@@ -172,7 +172,7 @@ targets: generated-schema-docs-have-no-ci-guard
 verdict: still-true
 ---
 
-Re-checked because the note was stale: two workflow blobs moved.
+Re-checked because the note was stale: two GitHub Actions workflow blobs moved.
 
 `grep -rn 'generate|schemagen|SCHEMA' .github/workflows/ Makefile` -> 0 hits.
 Nothing regenerates or diffs `definitions/SCHEMA.md`, so the claim holds.
