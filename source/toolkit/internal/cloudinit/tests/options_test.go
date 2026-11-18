@@ -92,7 +92,10 @@ func TestAnUnreadableWorkingDirectoryFails(t *testing.T) {
 	}
 
 	_, err := run(t, home, "", map[string]string{cloudinit.EnvUser: "Ada Lovelace"})
-	if err == nil || !strings.Contains(err.Error(), "cloud init: resolve the working directory: ") {
+	// Platforms differ on whether os.Getwd fails for a removed directory; where
+	// it succeeds, git itself refuses to run and says so.
+	if err == nil || !(strings.Contains(err.Error(), "cloud init: resolve the working directory: ") ||
+		strings.Contains(err.Error(), "Unable to read current working directory")) {
 		t.Fatalf("Run = %v, want a failure to resolve the working directory", err)
 	}
 	if _, err := os.Stat(filepath.Join(home, ".gitconfig")); !os.IsNotExist(err) {

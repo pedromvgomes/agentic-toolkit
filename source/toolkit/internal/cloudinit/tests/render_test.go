@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -396,10 +397,27 @@ func TestTheExecutableRunsRenderFromInsideEachCheckout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := gitIn(t, first, "rev-parse", "--show-toplevel") + " 1:render\n" +
-		gitIn(t, second, "rev-parse", "--show-toplevel") + " 1:render\n"
-	if string(data) != want {
-		t.Errorf("invocations =\n%s\nwant\n%s", data, want)
+	// Temp directories sit behind a symlink on some platforms (macOS's /var is
+	// /private/var), and the shell's $PWD and git's toplevel may each spell the
+	// path either way, so both sides are compared fully resolved.
+	resolve := func(path string) string {
+		resolved, err := filepath.EvalSymlinks(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resolved
+	}
+	var got []string
+	for _, line := range strings.Split(strings.TrimSuffix(string(data), "\n"), "\n") {
+		dir, rest, _ := strings.Cut(line, " ")
+		got = append(got, resolve(dir)+" "+rest)
+	}
+	want := []string{
+		resolve(gitIn(t, first, "rev-parse", "--show-toplevel")) + " 1:render",
+		resolve(gitIn(t, second, "rev-parse", "--show-toplevel")) + " 1:render",
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("invocations =\n%s\nwant\n%s", data, strings.Join(want, "\n"))
 	}
 }
 
