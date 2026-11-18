@@ -25,6 +25,11 @@
 //     to project-scope .mcp.json exclusively — Claude Code does not
 //     read project MCP servers from settings.json.
 //
+// A Workflow Definition renders nothing here: no file, no managed key,
+// no manifest entry. The Factory reads its source through
+// `agtk workflow show`, which resolves stack layering, so a copy under
+// .claude/ would be a second source nothing reads (ADR 0031).
+//
 // Bundle companion files (skills/agents) are copied verbatim from
 // PlannedDefinition.SourceFS, walking path.Dir(EntryPath) and skipping
 // the entry file itself (which is reconstructed from the parsed
@@ -189,6 +194,8 @@ func reportDryRun(stdout io.Writer, plan *resolver.Plan, ops []fsops.WholeOp, ro
 			hasInstr = true
 		case definitions.CategoryHook, definitions.CategoryMCP, definitions.CategorySetting:
 			hasSettings = true
+		case definitions.CategoryWorkflow:
+			// Touches neither CLAUDE.md nor settings.json (ADR 0031).
 		}
 	}
 	if hasInstr {

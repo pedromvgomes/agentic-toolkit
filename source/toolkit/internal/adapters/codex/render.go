@@ -31,6 +31,12 @@
 // like CLAUDE.md: the whole file is agtk's, rebuilt from the plan on
 // every render, and (like any other whole-owned file) only written when
 // there is something to put in it.
+//
+// A Workflow Definition renders nothing here: no file, no config.toml
+// key, no AGENTS.md entry, no manifest entry. The Factory reads its
+// source through `agtk workflow show`, which resolves stack layering, so
+// a copy under .agents/ or .codex/ would be a second source nothing
+// reads (ADR 0031).
 package codex
 
 import (

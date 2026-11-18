@@ -139,6 +139,8 @@ func Diff(plan *resolver.Plan, opts Options) (Drift, error) {
 			d.HasInstructions = true
 		case definitions.CategoryHook, definitions.CategoryMCP, definitions.CategorySetting:
 			d.HasSettings = true
+		case definitions.CategoryWorkflow:
+			// Touches neither CLAUDE.md nor settings.json (ADR 0031).
 		}
 	}
 	return d, nil

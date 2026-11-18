@@ -196,3 +196,20 @@ func pdSetting(name, description string, value map[string]any, stackName string)
 		StackName:  stackName,
 	}
 }
+
+// pdWorkflow builds a PlannedDefinition for a Workflow Definition. Source
+// carries the document byte for byte, the way the parser keeps it.
+func pdWorkflow(id, title, stackName string) resolver.PlannedDefinition {
+	w := &definitions.Workflow{
+		Common: definitions.Common{Name: id, Description: title},
+		ID:     id,
+		Title:  title,
+		Source: []byte("id: " + id + "\nname: " + title + "\nversion: 1\nsteps: []\n"),
+	}
+	return resolver.PlannedDefinition{
+		Category:   definitions.CategoryWorkflow,
+		Name:       id,
+		Definition: w,
+		StackName:  stackName,
+	}
+}

@@ -18,7 +18,8 @@ var wholeOps = fsops.New("claude")
 
 // planWholeOwned builds the list of every whole-owned-file write the
 // plan will perform: skill/agent entry files + their bundle companions,
-// command files, rule files. Order is deterministic: alphabetical by
+// command files, rule files. A Workflow Definition contributes none.
+// Order is deterministic: alphabetical by
 // RelPath.
 func planWholeOwned(plan *resolver.Plan, roots scopeRoots) ([]fsops.WholeOp, error) {
 	var ops []fsops.WholeOp
@@ -48,6 +49,11 @@ func planWholeOwned(plan *resolver.Plan, roots scopeRoots) ([]fsops.WholeOp, err
 				return nil, err
 			}
 			ops = append(ops, fsops.SingleFileOp(roots.ScopeRoot, "rules", d.Name+".md", content))
+		case definitions.CategoryWorkflow:
+			// A Workflow Definition writes nothing under .claude/: the
+			// Factory reads its source through `agtk workflow show`
+			// (ADR 0031). No op means no manifest entry, so it is never
+			// a collision, never drift and never stale.
 		}
 	}
 	sort.Slice(ops, func(i, j int) bool { return ops[i].RelPath < ops[j].RelPath })
