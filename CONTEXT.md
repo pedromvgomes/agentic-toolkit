@@ -624,7 +624,7 @@ A **Backlog item** another item is blocked by, through the issue's blocked-by li
 not start until each of its predecessors is closed as completed. The first **Slice** of a plan
 has none.
 
-It decides *waiting*, not *where*: the branch an item works on is the one its body names, and a
+It decides *waiting*, not *where*: the branch an item starts from is the one its body's `Source:` line names, and a
 predecessor only says when that work may begin.
 
 Not "gate", which **Approval** already lists as a word to avoid. The two are different enough

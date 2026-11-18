@@ -2,7 +2,7 @@
 name: write-backlog-item
 description: |
   Write or update one backlog item — the GitHub issue a session with no memory of this one reads to carry the work forward: the
-  goal, the branch, the state, the next steps, and optionally a plan's tasks. Owns the backlog item's body format, its links to
+  goal, the source branch, the state, the next steps, and optionally a plan's tasks. Owns the backlog item's body format, its links to
   the Feature and its predecessors, and the labels it is created with. Written by /plan-feature after approval, when a slice's
   stub is filled, and by hand when a session runs out of context mid-work. Never queues anything. Trigger on "write a backlog
   item", "fill the stub", "save my place as an issue", "put this on the backlog", "continue this from an issue".
@@ -27,9 +27,12 @@ the rules.
 An item has four parts, and each lives in exactly one place:
 
 - **Title** — the slice's one-line goal.
-- **Body** — the template's sections, with the required `Branch:` line naming the branch the work
-  happens on and its base. The body is the work and nothing else is: comments on the issue are
-  never read as work (ADR-0028), so nothing this skill writes goes into a comment.
+- **Body** — the template's sections, with the required `Source:` line naming the branch the work
+  starts from and the pull request targets. It never names the branch the work happens on: that is
+  the implementing session's to choose, and it records the choice in a progress comment of its
+  own. The body is the work and nothing else is: comments on the issue are never read as work
+  (ADR-0028), so nothing this skill writes goes into a comment, bar a mid-work save's progress comment (step 7), which
+  is state and not work.
 - **Links** — each predecessor is a blocked-by link (GitHub's issue dependencies), and the Feature
   is the item's sub-issue parent. Neither is written into the body.
 - **Labels** — at most one state label from the canonical set, plus `agtk:stub` while the item is
@@ -82,17 +85,16 @@ Follow the template. Carry only what the goal needs, and do not duplicate what a
 issue or a commit already records — reference it by path or URL. The one thing worth repeating is
 reasoning that exists nowhere but this conversation.
 
-The `Branch:` line is required on every item, a stub included: the session that takes the item
-reads the branch and its base off the body and from nowhere else.
+The `Source:` line is required on every item, a stub included: the session that takes the item
+reads the branch to start from off the body and from nowhere else.
 
-**One branch per backlog item, never reused after its pull request merges.** Each slice's item
-names a fresh branch of its own, derived from the item — the Feature's branch name with the
-slice's position and a word or two of its goal, `feat/backlog-flow-2-stub-filling` — never the
-branch of an earlier slice. `implement-backlog-item` creates it from `origin/<base>` and pushes it
-with a plain `git push -u origin <branch>`. An earlier slice's pull request is squash-merged, so
-its branch's commits never become ancestors of the base, and a later slice started from the base
-moves that remote branch only by a force push. A branch whose pull request has merged is never a
-target again.
+**Never name the work branch.** The branch an item's work happens on belongs to
+`implement-backlog-item`, which derives a name of its own from the item's number and title, creates
+it from `origin/<source>` in its own worktree and records it in the progress comment. A body that
+named it would be a second record of something the progress comment already holds, and a name
+chosen before the work starts is a name a later slice could reuse after an earlier slice's pull
+request merged. The `Source:` of every slice is the branch the repository merges into, never an
+earlier slice's work branch.
 
 Rate each task `routine` or `intricate`. The rating picks the model that implements it, so rate by
 how much judgment the task needs, not by how many lines it touches: a wide mechanical rename is
@@ -221,10 +223,9 @@ Those belong to the session running the item and to the Factory.
 ### A planned slice
 
 Written by `/plan-feature` after approval, or by hand for a slice of a Feature. The item is a
-sub-issue of the Feature, blocked by the slice before it, and its `Branch:` is the branch to create
-and the base to create it from — a branch of this slice's own, as step 3 says, never one an earlier
-slice's item names. A later slice that holds only a goal is created as a **stub**:
-its body is the **Goal** section and the `Branch:` line, and it carries `agtk:stub` beside
+sub-issue of the Feature, blocked by the slice before it, and its `Source:` is the branch it starts
+from and its pull request targets. A later slice that holds only a goal is created as a **stub**:
+its body is the **Goal** section and the `Source:` line, and it carries `agtk:stub` beside
 `agtk:blocked`. A stub is never queued while it is a stub.
 
 ### Filling a stub
@@ -241,13 +242,28 @@ Done by the session that lands the slice before it, once there is something to i
 ### A mid-work save
 
 Written by hand when a session runs out of context halfway through something. The item has no
-Feature and no predecessors, its `Branch:` is the current branch with the base it was created
-from, and it carries no label: it is unqueued, and `agtk backlog list` does not show it until it
-carries one.
+Feature and no predecessors, its `Source:` is the branch the work was created from. The work so
+far lives on the current branch, pushed, which the body never names. Instead the save also posts
+the item's **progress comment** — the one comment this skill writes — so that
+`implement-backlog-item` takes the restart path onto that branch rather than starting a new one:
 
 ```bash
-git rev-parse --abbrev-ref HEAD   # the branch the Branch: line names
+based="$(git merge-base HEAD "origin/<source>")"
+# once the issue exists and its number is known:
+branch="feat/backlog-${number}-<a word or two of the goal>"
+git branch -m "$branch" && git push -u origin "$branch"
 ```
+
+The comment is in the shape `implement-backlog-item`'s step 4 defines, beginning with its marker
+line: `Branch:` is the renamed `$branch`, `Source` and `Last checked` are `$based`, and the table has
+one row per task. A task the branch already carries is `done` with its commits, or `rework` when
+it is only partly done; a task with no commits is `pending`. It has **no `Body` line**, so the first run reconciles the work against the body as it
+stands. Post it as `implement-backlog-item` step 5 does, from a file with `-F body=@`. The restart
+refuses a branch outside `feat/backlog-<number>-<slug>`, so the save renames and pushes the branch
+as above, and only then posts the comment. The branch's old name stays on the remote, deliberately: this skill never deletes a
+branch, and a person removes it once the item no longer needs it. A branch that cannot be renamed and pushed is left out of the comment, and **State** says
+the work is not resumable by a session. The item carries no label: it is unqueued, and `agtk backlog list` does not show it
+until it carries one.
 
 ## 8 — Say what happens next
 
