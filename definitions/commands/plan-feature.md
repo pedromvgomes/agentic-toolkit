@@ -26,8 +26,7 @@ git rev-parse --abbrev-ref HEAD
 ```
 
 If it is the repository's default branch, **stop**. Say that this needs a feature branch in its
-own worktree, and that the branch is where the first slice's backlog item points and its commits
-will live. Do not create one — where somebody's work happens is theirs to choose.
+own worktree. Do not create one — where somebody's work happens is theirs to choose.
 
 ## 1 — Never read the codebase yourself
 
@@ -164,7 +163,7 @@ plan now says differently.
 
 ### The first slice
 
-Invoke `write-backlog-item` for the **first slice**, in full: the goal, the `Branch:` line, the
+Invoke `write-backlog-item` for the **first slice**, in full: the goal, the `Source:` line, the
 **Slice** and **Plan** sections and the tasks from step 3, each with its files and rating. It is a
 sub-issue of the Feature and has no predecessor, so it carries no state label: it is left
 unqueued.
@@ -172,12 +171,11 @@ unqueued.
 ### Every later slice
 
 Invoke `write-backlog-item` for each later slice, in landing order, in its **stub** shape: the
-**Goal** section and the `Branch:` line, nothing to implement yet. Each slice's `Branch:` names a
-fresh branch of its own, derived from the slice, never the branch of the first slice or any other:
-an earlier slice's pull request has merged before this one starts, and a branch whose pull request
-has merged is never a target again. The **Plan** section of the first slice's item names each later
-slice's branch beside its goal, since the session that fills a stub reads both from there. Each
-one is
+**Goal** section and the `Source:` line, nothing to implement yet. Each slice's `Source:` is the
+branch the repository merges into, never the work branch of an earlier slice: an earlier slice's
+pull request has merged before this one starts, and the implementing session names its own branch.
+The **Plan** section of the first slice's item names each later slice's goal, since the session
+that fills a stub reads it from there. Each one is
 
 - a sub-issue of the Feature,
 - blocked by the item of the slice before it, and

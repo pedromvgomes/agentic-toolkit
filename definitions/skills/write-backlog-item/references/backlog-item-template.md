@@ -1,15 +1,15 @@
 <!--
 The issue body of a backlog item. The issue's title is the one line saying what this slice must
-accomplish; the body starts at the Branch line below. Everything in this comment and the
+accomplish; the body starts at the Source line below. Everything in this comment and the
 guidance under each heading is for the writer: replace it, and leave none of it in the issue.
 -->
 
-Branch: `feat/the-next-slice`, from `main`.
+Source: `main`.
 
-The branch the work happens on and the base it is created from, both **required**. The session
-that takes this item has nothing but the body to read either name off: it creates the branch from
-the base when the branch does not exist yet, and resumes on it when it does. For a mid-work save
-the branch is the current one.
+The branch the work starts from and the pull request targets, **required**. It is the only branch
+the body names: the session that takes this item picks the branch it works on itself, creates it
+from the source, and records its name in the item's progress comment. For a mid-work save the
+source is the branch the work was created from.
 
 Predecessors and the Feature are not written here. They are GitHub's own links on the issue —
 blocked-by for each predecessor, sub-issue of the Feature — and a copy in the body would be a
@@ -19,7 +19,7 @@ second record that nothing keeps in step with the first.
 
 The concrete outcome. What is true when this is done that is not true now.
 
-A stub's body is this section and the `Branch:` line, and nothing else.
+A stub's body is this section and the `Source:` line, and nothing else.
 
 ## Slice
 

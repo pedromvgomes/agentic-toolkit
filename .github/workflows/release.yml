@@ -1,39 +1,245 @@
+# release — releases one version, or finishes a partial release.
+#
+# A release is the merge of its notes (ADR-0030): `auto-release.yml` calls this
+# workflow for the pending version, and nothing else releases one. There is no
+# tag trigger. A tag pushed with GITHUB_TOKEN starts no workflow, so a tag this
+# workflow pushes could not start the build, and a tag pushed by hand releases
+# nothing.
+#
+# Two modes. `release` validates the commit `sha`, tests it, pushes the tag on
+# it and publishes the release with goreleaser. `finish` takes a tag that
+# already exists and publishes its release, which completes a release whose
+# publication failed; `auto-release.yml` calls it for every tag left without a
+# GitHub Release, and a `workflow_dispatch` naming the tag does the same by
+# hand. `dry_run` runs `verify` alone.
+#
+# Three jobs, and the seams between them are the safety property. `verify`
+# holds a read-only token, checks out without persisting it, and is the only
+# job that runs the repository's tests. `tag` holds `contents: write` and runs
+# no project code: it pushes one annotated tag. `release` holds
+# `contents: write` and builds the archives, so it runs only at the tag `verify`
+# validated and tested. Everything that can fail without leaving a version
+# half-released fails in `verify`, before any job can write.
 name: release
 
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_call:
+    inputs:
+      version:
+        description: The version to release, vX.Y.Z.
+        type: string
+        required: true
+      sha:
+        description: The commit to tag, on main. Required in mode `release`.
+        type: string
+        required: false
+        default: ""
+      mode:
+        description: "`release` tags sha and publishes it; `finish` publishes the existing tag."
+        type: string
+        required: true
+      dry_run:
+        description: Run verify alone, writing nothing.
+        type: boolean
+        required: false
+        default: false
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag whose release to finish, vX.Y.Z.
+        type: string
+        required: true
+      dry_run:
+        description: Run verify alone, writing nothing.
+        type: boolean
+        required: false
+        default: false
 
 permissions:
-  contents: write
+  contents: read
+
+# One run per version, and never cancel one in flight: a cancelled run can leave
+# a version tagged but unpublished. Keyed by the version, so a dispatched finish
+# and a sweep never publish one tag at once. In a called workflow `github.*`
+# names the caller, so the group is built from the inputs.
+concurrency:
+  group: release-${{ inputs.tag || inputs.version }}
+  cancel-in-progress: false
 
 jobs:
-  goreleaser:
+  verify:
+    name: verify
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      mode: ${{ steps.resolve.outputs.mode }}
+      version: ${{ steps.resolve.outputs.version }}
+      sha: ${{ steps.resolve.outputs.sha }}
+      commit: ${{ steps.valid.outputs.commit }}
     steps:
-      - name: checkout
+      # The inputs are untrusted text, so they reach the script through the
+      # environment and are matched before anything uses them as a ref or a
+      # path. `mode` is required of a caller and absent from a dispatch, which
+      # is how the two are told apart: in a called workflow `github.event_name`
+      # is the caller's event.
+      - name: The inputs name a release
+        id: resolve
+        env:
+          INPUT_MODE: ${{ inputs.mode }}
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_SHA: ${{ inputs.sha }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          mode="${INPUT_MODE:-finish}"
+          version="${INPUT_VERSION:-$INPUT_TAG}"
+          re='^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'
+          [[ "$version" =~ $re ]] || { echo "::error::${version} is not a version"; exit 1; }
+          case "$mode" in
+            release)
+              [[ "$INPUT_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::mode release needs a full commit sha"; exit 1; }
+              ref="$INPUT_SHA" ;;
+            finish)
+              ref="refs/tags/${version}" ;;
+            *) echo "::error::${mode} is not a mode"; exit 1 ;;
+          esac
+          {
+            echo "mode=${mode}"
+            echo "version=${version}"
+            echo "sha=${INPUT_SHA}"
+            echo "ref=${ref}"
+          } >> "$GITHUB_OUTPUT"
+
+      # The full history and every tag, so that origin/main is there to prove
+      # the commit is on it. Checking out a tag that does not exist fails here,
+      # which is what stops a dispatch naming an unknown tag.
+      - name: Check out the commit to release
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ steps.resolve.outputs.ref }}
           fetch-depth: 0
-      - name: setup go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+          persist-credentials: false
+
+      # In mode `release` the tag must not exist yet; in mode `finish` it must
+      # exist as an annotated tag. Either way the commit it names must be on
+      # main, which is the control: a tag pushed by hand on a commit nobody
+      # reviewed releases nothing. The tagger check below is a sanity check, not
+      # provenance, since anyone who can push a tag can set that email. Both
+      # modes need the notes at the commit: the notes are the release. The
+      # commit is an output, and `release` builds exactly it.
+      - name: The release is valid
+        id: valid
+        env:
+          MODE: ${{ steps.resolve.outputs.mode }}
+          VERSION: ${{ steps.resolve.outputs.version }}
+          SHA: ${{ steps.resolve.outputs.sha }}
+        run: |
+          set -euo pipefail
+          [[ -f "docs/releases/${VERSION}.md" ]] || { echo "::error::docs/releases/${VERSION}.md does not exist at this commit"; exit 1; }
+          git fetch --tags --force origin
+          if [[ "$MODE" == release ]]; then
+            if git rev-parse --verify --quiet "refs/tags/${VERSION}" >/dev/null; then
+              echo "::error::${VERSION} is already tagged"; exit 1
+            fi
+            commit="$SHA"
+          else
+            git rev-parse --verify --quiet "refs/tags/${VERSION}" >/dev/null || { echo "::error::${VERSION} is not tagged"; exit 1; }
+            [[ "$(git cat-file -t "refs/tags/${VERSION}")" == tag ]] || { echo "::error::${VERSION} is not an annotated tag"; exit 1; }
+            tagger="$(git for-each-ref --format='%(taggeremail)' "refs/tags/${VERSION}")"
+            [[ "$tagger" == "<41898282+github-actions[bot]@users.noreply.github.com>" ]] || { echo "::error::${VERSION} was not tagged as github-actions[bot]"; exit 1; }
+            commit="$(git rev-parse "refs/tags/${VERSION}^{commit}")"
+          fi
+          git merge-base --is-ancestor "$commit" origin/main || { echo "::error::${commit} is not on main"; exit 1; }
+          echo "commit=${commit}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: source/toolkit/go.mod
+          cache: false
+
+      # The last step of this job: from here on the repository's own code runs.
+      - name: The checks pass
+        run: |
+          set -euo pipefail
+          .github/scripts/release/test/pending_test.sh
+          make check
+
+  tag:
+    name: tag
+    needs: verify
+    if: needs.verify.outputs.mode == 'release' && !inputs.dry_run
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      # Credentials persist so the tag can be pushed. No project code runs in
+      # this job: it creates one annotated tag and pushes it.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.verify.outputs.sha }}
+          fetch-depth: 0
+
+      # An annotated tag made as github-actions[bot], carrying the URL of the run
+      # that made it. A rejected push fails the job: the tag exists, which means
+      # a concurrent run made it, and the next sweep no longer sees the version
+      # as pending.
+      - name: Push the tag
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+          SHA: ${{ needs.verify.outputs.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$VERSION" "$SHA" -m "${VERSION}" -m "Released by ${RUN_URL}"
+          git push origin "refs/tags/${VERSION}"
+
+  release:
+    name: release
+    needs: [verify, tag]
+    # `tag` is skipped in mode `finish`, where the tag already exists.
+    if: >-
+      !cancelled() && !inputs.dry_run
+      && needs.verify.result == 'success'
+      && (needs.tag.result == 'success' || needs.verify.outputs.mode == 'finish')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      # Built at the commit verify validated and tested, and at the tag only
+      # while the tag still names it: a tag moved between the jobs fails here.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.verify.outputs.commit }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: The tag still names the commit
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+          COMMIT: ${{ needs.verify.outputs.commit }}
+        run: |
+          set -euo pipefail
+          git fetch --tags --force origin
+          [[ "$(git rev-parse "refs/tags/${VERSION}^{commit}")" == "$COMMIT" ]] || { echo "::error::${VERSION} no longer names ${COMMIT}"; exit 1; }
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: source/toolkit/go.mod
           cache: true
-      - name: stage hand-written release notes (if present)
-        # If docs/releases/v<X.Y.Z>.md exists, surface it via $RELEASE_NOTES
-        # so goreleaser uses it instead of auto-generated notes.
-        run: |
-          tag="${GITHUB_REF##*/}"
-          notes="docs/releases/${tag}.md"
-          if [ -f "$notes" ]; then
-            echo "RELEASE_NOTES=$notes" >> "$GITHUB_ENV"
-          fi
-      - name: goreleaser
-        uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
+
+      # The release notes are the file that was merged, and no other text.
+      - name: The release notes
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: echo "RELEASE_NOTES=docs/releases/${VERSION}.md" >> "$GITHUB_ENV"
+
+      - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         with:
           version: latest
-          args: release --clean ${{ env.RELEASE_NOTES && format('--release-notes={0}', env.RELEASE_NOTES) || '' }}
+          args: release --clean --release-notes=${{ env.RELEASE_NOTES }}
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}

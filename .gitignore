@@ -22,3 +22,4 @@
 
 # Locally built agtk, used by .gt.yaml to sync this repo with its own build.
 /.gt/
+/.agentic-toolkit.lock.yaml

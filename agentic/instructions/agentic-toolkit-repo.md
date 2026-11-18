@@ -75,6 +75,9 @@ Requires Go 1.26+. The module lives at `source/toolkit/go.mod`, not the repo roo
 - `docs/FEATURE-FLOW.md` — the feature flow (`/plan-feature` puts the approved plan on the
   GitHub-issue backlog; `implement-backlog-item` implements an item verified by `agtk backlog
   verify` → review → open PR)
+- `docs/releases/` — one `vX.Y.Z.md` per release. Merging a new one to `main` is the release:
+  `.github/workflows/auto-release.yml` tags and `release.yml` publishes. Nobody pushes a tag (ADR
+  0030); the repo-local `release` skill under `agentic/skills/` carries the procedure
 - `source/toolkit/internal/cli/tests/` — stack-render tests (e.g. `default_stack_render_test.go`,
   `feature_flow_stack_render_test.go`) that assert what `agtk render` writes for a given stack
 

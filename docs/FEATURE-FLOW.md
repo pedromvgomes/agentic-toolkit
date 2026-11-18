@@ -28,9 +28,10 @@ So the flow is two sessions, and a document that outlives the first: the plan go
    implement-backlog-item owner/repo#41          model: sonnet
      ├─ agtk backlog verify          → trusted, or stop; act only on the body it printed
      ├─ predecessors done?           → else stop
-     ├─ onto the item's Branch:      → create it, or resume on it
-     ├─ task 1 → task-implementer    → diff + verify → commit
-     ├─ task 2 → task-implementer    → diff + verify → commit
+     ├─ progress comment             → fresh start (new branch + worktree from Source:) or restart
+     ├─ task 1 → task-implementer    → diff + verify → commit → progress comment
+     ├─ task 2 → task-implementer    → diff + verify → commit → progress comment
+     ├─ rebase onto Source: if moved → every test suite
      ├─ review-implementation        → loop until clean        (local, ≤5 passes)
      ├─ open-pr                      → docs, candidates, PR (Closes #41), posted review
      │    └─ review-pull-request     → answer, push, re-review (PR, ≤5 passes)
@@ -56,9 +57,9 @@ is all it does.
 
 ## Stage one: `/plan-feature`
 
-Refuses to run on the default branch. The first slice's backlog item points at a feature branch,
-and the commits that follow live there, in its own worktree; creating one for you would be
-choosing where your work happens.
+Refuses to run on the default branch. Each slice's backlog item names only the `Source:` branch its
+work starts from; `implement-backlog-item` picks the work branch itself and records it in the
+item's progress comment. Creating a branch for you would be choosing where your work happens.
 
 **It never reads the codebase.** That is the point of putting it on opus — you are paying for
 judgment, not for file reads. Every question is delegated:
@@ -83,16 +84,16 @@ You see one final plan. Approve it, and it goes onto the backlog.
 
 The plan becomes a **Feature** — the issue the argument named, or one the command creates — with
 one **Backlog item** per slice as its sub-issues, in landing order. Every item is written through
-`write-backlog-item`, which owns an item's body, its `Branch:` line, its links and its labels.
+`write-backlog-item`, which owns an item's body, its `Source:` line, its links and its labels.
 `agtk` writes nothing to GitHub; every issue, label and link is created through `gh`.
 
 - **The labels.** `agtk backlog labels --json` names the canonical set, and each is applied with
   `gh label create --force`, which creates a label or updates it. No label is ever deleted:
   deleting one strips it from every issue that carries it.
-- **The first slice** is written in full — goal, `Branch:` line, slice, plan and tasks, each task
+- **The first slice** is written in full — goal, `Source:` line, slice, plan and tasks, each task
   with its files and its `routine` or `intricate` rating. It has no predecessor and no state
   label.
-- **Every later slice** is a **Stub**: its goal and its `Branch:` line, nothing to implement yet,
+- **Every later slice** is a **Stub**: its goal and its `Source:` line, nothing to implement yet,
   blocked by the slice before it and labelled `agtk:stub` and `agtk:blocked`. A plan that is one
   pull request has no stubs.
 
@@ -136,9 +137,15 @@ who wrote, edited and queued the body, and answers trusted or refused (ADR 0028)
   between the Factory's verification and this one.
 
 Then it checks the item's predecessors are done (closed as completed, as `agtk backlog list`
-reads them), and gets onto the branch the body's `Branch:` line names — creating it from its base,
-or resuming on it from the first task with no commit. Interactive, it says what it is about to run
-and waits for a yes before touching the branch.
+reads them), and finds the source the body's `Source:` line names. It then reads the item's **progress
+comment** — a comment it maintains itself, marked `<!-- agtk:backlog-progress -->`, read as state
+and never as work, and only from an author with write access — to tell a fresh start from a
+restart. A fresh start names its own branch, creates it from the source's head in a worktree of
+its own (unless the checkout is already on that head), and writes the comment: the branch, and a
+table of the tasks with their status and commits. A restart takes the branch and what is done and
+left from the comment, checking each claim against git. The comment also records the hash of the body the work was last reconciled with: a different verified hash means the body was edited and re-queued, so the task table is rebuilt against the new body, and the existing work reviewed against it, before anything else runs. After the last task, and before the
+review, it rebases the branch onto the source if the source has moved, and runs every test suite
+the repository defines.
 
 `implement-backlog-item` coordinates **from the main session**. Subagent nesting is allowed three
 layers deep, so nothing about the platform stops it delegating the role; it does not, because the
@@ -206,7 +213,7 @@ never merges.
 Only on a clean run does it **fill the next stub**: it invokes `write-backlog-item` on the slice
 blocked by this one, writing the full body from this slice's plan and what this slice's work
 taught. Unattended it never reads the stub's own title or body, since nobody verified who wrote
-them; the next slice's goal and branch come from this item's verified plan. The stub loses
+them; the next slice's goal and source come from this item's verified plan. The stub loses
 `agtk:stub`, keeps its links and stays `agtk:blocked`; the Factory unblocks it once its
 predecessor is done. It is not queued: the next slice starts when a person reads the filled body
 and runs `/implement-backlog-item` on it or adds `agtk:queued`.
@@ -273,7 +280,7 @@ None of them requires the others:
 
 - **`write-backlog-item`** — run out of context halfway through something, and save your place as
   an issue any session can take up. The plan-shaped fields are optional; an item with a goal, the
-  `Branch:` line, the state and the next steps is a backlog item.
+  `Source:` line, the state and the next steps is a backlog item.
 - **`implement-backlog-item`** — run any backlog item, by `owner/repo#N`, once it is queued.
 - **`review-implementation`** — review and fix any branch in a loop.
 - **`open-pr`** — ship any finished branch, with the documentation and memory steps.
