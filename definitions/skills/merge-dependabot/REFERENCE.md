@@ -37,14 +37,16 @@ Two file sets feed the table:
   `dependabot[bot]`, read from the repository's activity log:
 
   ```bash
-  gh api "repos/$repo/activity?ref=refs/heads/$branch&activity_type=push&activity_type=force_push&per_page=100" \
-    --jq '[.[] | select(.actor.login == "dependabot[bot]")] | first | .after'
+  gh api --paginate --slurp \
+    "repos/$repo/activity?ref=refs/heads/$branch&activity_type=push&activity_type=force_push&per_page=100" \
+    | jq -r '[.[][] | select(.actor.login == "dependabot[bot]")] | first | .after'
   ```
 
   Commits are attributed to dependabot by who pushed them, never by the author or the signature
   on the commit: both are chosen by whoever writes it, and GitHub signs and marks verified a
-  commit created through its API under any author name. The log needs read access to the
-  activity and is paginated for a branch with many pushes; a read that fails or finds no
+  commit created through its API under any author name. The log lists the newest push first, and
+  the pages are slurped together so the newest dependabot push is chosen across all of them, not
+  once per page; a read that fails or finds no
   dependabot push leaves no commit dependabot's, which makes every commit foreign. Diffing from
   the merge base leaves out whatever a merge of the base brought in.
 

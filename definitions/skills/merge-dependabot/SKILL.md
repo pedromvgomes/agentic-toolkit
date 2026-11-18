@@ -538,8 +538,12 @@ rm -rf "$work"
   runs inside an OS-level sandbox: a container, a separate OS user, or `sandbox-exec` with a
   profile that denies reads of the user's home configuration (`~/.config/gh`, `~/.ssh`), the
   keychain or Secret Service, and the checkout's `.git` directory and its linked repository
-  config. The code runs on a copy of the worktree's files without the `.git` link, and its changes
-  are copied back and committed outside the sandbox. Inside it the environment is built from
+  config. The code runs on a copy of the worktree's files without the `.git` link. What it
+  changed is copied back by regular files only, and only paths inside the worktree: a `.git` at any
+  depth, a symlink or a special file in the copy refuses the copy-back, and the pull request is
+  **needs a human fix**, since a gitdir the sandbox wrote would run its hooks, `core.fsmonitor` or
+  `credential.helper` in the credentialed `git add`, `commit` and `push` that follow. The copied-back
+  changes are then committed outside the sandbox. Inside it the environment is built from
   nothing, so no token, `SSH_AUTH_SOCK` or session variable crosses in:
 
   ```bash
