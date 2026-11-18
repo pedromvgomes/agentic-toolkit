@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -84,6 +85,11 @@ func TestAnUnresolvableHomeFailsBeforeWritingAnything(t *testing.T) {
 }
 
 func TestAnUnreadableWorkingDirectoryFails(t *testing.T) {
+	// os.Getwd still returns a path for a removed directory on darwin, so the
+	// failure to resolve the working directory cannot be provoked there.
+	if runtime.GOOS == "darwin" {
+		t.Skip("os.Getwd does not fail for a removed directory on darwin")
+	}
 	home := fakeHome(t)
 	gone := t.TempDir()
 	t.Chdir(gone)

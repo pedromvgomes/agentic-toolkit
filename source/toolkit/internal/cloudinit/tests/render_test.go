@@ -386,7 +386,7 @@ func TestTheExecutableRunsRenderFromInsideEachCheckout(t *testing.T) {
 	first := newCommittedCheckout(t, root, "first")
 	second := newCommittedCheckout(t, root, "second")
 	log := filepath.Join(t.TempDir(), "log")
-	agtk := fakeAgtk(t, `echo "$PWD $#:$*" >> '`+log+`'`)
+	agtk := fakeAgtk(t, `echo "$(pwd -P) $#:$*" >> '`+log+`'`)
 
 	_, stderr, err := runRender(t, cloudinit.Options{RenderRoot: root, Executable: agtk})
 	if err != nil {
