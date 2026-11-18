@@ -1,7 +1,8 @@
 description: |
   Default toolkit stack — the two-stage feature flow (plan on opus, put the slices on the
   backlog as GitHub issues, implement each verified item on sonnet, review in a capped loop, open
-  the PR and loop its review too), the workflow-agnostic skills around it, the plan-approval
+  the PR and loop its review too), the workflow-agnostic skills around it (including one that
+  clears and merges the dependabot pull requests auto-merge leaves open), the plan-approval
   instruction, the session agents and the upstream skill-creator skill. The memory store and everything that reads it come from the memory stack
   this extends, and the setting that keeps Claude Code's authoring footers out of commits and
   pull requests comes from the no-attribution stack it extends.
@@ -35,6 +36,9 @@ skills:
   - review-implementation
   - review-pull-request
   - open-pr
+  # Clears and merges the dependabot pull requests gt's auto-merge job leaves
+  # open. Usable on its own.
+  - merge-dependabot
   - github.com/anthropics/skills.git/skills/skill-creator@main
 agents:
   - wrap-session-reviewer
