@@ -458,9 +458,9 @@ changes. It asks for one and waits.
 ## 9 — The approval rescan
 
 It runs after the policy read and before section 5 evaluates anything: every open dependabot pull
-request already carrying the run's own request comment is read again — this is how a run picks up what a person answered after an
-earlier one asked. A request marker counts only when `$me` wrote its comment; anyone else's is
-ignored, never quoted and never edited.
+request already carrying the run's own request comment is read again — this is how a run picks up
+what a person answered after an earlier one asked. Which comments count as the request comment is
+REFERENCE.md's trust rule.
 
 For each:
 
