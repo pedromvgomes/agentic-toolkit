@@ -192,6 +192,21 @@ func TestTheHostManifestsLoadAndDeclareTheHostsComponents(t *testing.T) {
 	}
 }
 
+func TestTheHostManifestsAreOrderedByUse(t *testing.T) {
+	manifests, err := definitions.HostManifests()
+	if err != nil {
+		t.Fatalf("loading the host manifests: %v", err)
+	}
+	uses := make([]string, 0, len(manifests))
+	for _, m := range manifests {
+		uses = append(uses, m.Use)
+	}
+	want := "component.agentic,component.script,component.webhook"
+	if got := strings.Join(uses, ","); got != want {
+		t.Errorf("uses = %s, want %s", got, want)
+	}
+}
+
 func TestTheHostManifestFilesAreServedAsShipped(t *testing.T) {
 	names, err := fs.Glob(definitions.HostManifestFS(), "*.yaml")
 	if err != nil {

@@ -3,6 +3,7 @@ package schemadoc
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -92,5 +93,37 @@ func TestGenerateRefusesOutsideARepository(t *testing.T) {
 
 	if err := Generate(); err == nil {
 		t.Error("Generate wrote the documents with no .git above the working directory")
+	}
+}
+
+type EmbeddedWithoutKey struct {
+	Value string `yaml:"value"`
+}
+
+type EmbeddedUnderKey struct {
+	Value string `yaml:"value"`
+}
+
+type NamedNested struct {
+	Value string `yaml:"value"`
+}
+
+type subStructHolder struct {
+	EmbeddedWithoutKey
+	EmbeddedUnderKey `yaml:"keyed"`
+	Nested           NamedNested `yaml:"nested"`
+}
+
+// An embedded struct with no yaml key is inlined into its parent's mapping,
+// so its fields are the parent's and it gets no section of its own. One
+// embedded under a key is a nested mapping like any named field, and does.
+func TestOnlyStructsUnderAYAMLKeyAreDocumentedAsSubStructs(t *testing.T) {
+	var titles []string
+	for _, d := range collectSubStructs(reflect.TypeOf(subStructHolder{})) {
+		titles = append(titles, d.Title)
+	}
+	want := "`keyed` (EmbeddedUnderKey),`nested` (NamedNested)"
+	if got := strings.Join(titles, ","); got != want {
+		t.Errorf("sub-structs = %s, want %s", got, want)
 	}
 }

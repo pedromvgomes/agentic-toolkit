@@ -2,6 +2,7 @@ package tests
 
 import (
 	"bytes"
+	"errors"
 	"io/fs"
 	"strings"
 	"testing"
@@ -98,6 +99,13 @@ func TestAWorkflowWithoutATitleIsRefusedByHatua(t *testing.T) {
 	if !strings.Contains(err.Error(), "name is required") {
 		t.Errorf("hatua's reason is missing from the error: %v", err)
 	}
+	var pe *definitions.ParseError
+	if !errors.As(err, &pe) {
+		t.Fatalf("got %T, want *definitions.ParseError", err)
+	}
+	if pe.Line != 0 {
+		t.Errorf("line = %d, want 0: hatua's reason names no line", pe.Line)
+	}
 }
 
 func TestInvalidWorkflowsAreRejected(t *testing.T) {
@@ -130,6 +138,20 @@ func TestAnEmptyWorkflowFileIsMissingItsID(t *testing.T) {
 		"definitions/workflows/empty.yaml": &fstest.MapFile{Data: []byte("\n")},
 	}
 	_, err := definitions.ParseInCatalog(fsys, "definitions/workflows/empty.yaml")
+	if !definitions.IsKind(err, definitions.ErrMissingRequired) {
+		t.Errorf("got %v, want ErrMissingRequired", err)
+	}
+}
+
+// A file holding only whitespace is an empty workflow, not malformed YAML. A
+// non-breaking space is whitespace to the emptiness check but a scalar to the
+// YAML decoder, so decoding it would report a mapping error in place of the
+// missing id.
+func TestAWhitespaceOnlyWorkflowFileIsMissingItsID(t *testing.T) {
+	fsys := fstest.MapFS{
+		"definitions/workflows/blank.yaml": &fstest.MapFile{Data: []byte("\u00a0\n")},
+	}
+	_, err := definitions.ParseInCatalog(fsys, "definitions/workflows/blank.yaml")
 	if !definitions.IsKind(err, definitions.ErrMissingRequired) {
 		t.Errorf("got %v, want ErrMissingRequired", err)
 	}

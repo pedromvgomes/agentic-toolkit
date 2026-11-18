@@ -4,7 +4,7 @@ import (
 	"embed"
 	"fmt"
 	"io/fs"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 
@@ -66,5 +66,5 @@ func loadHost() {
 		}
 		hostManifests = append(hostManifests, ms...)
 	}
-	sort.Slice(hostManifests, func(i, j int) bool { return hostManifests[i].Use < hostManifests[j].Use })
+	slices.SortFunc(hostManifests, func(a, b hatua.Manifest) int { return strings.Compare(a.Use, b.Use) })
 }
