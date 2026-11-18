@@ -603,8 +603,6 @@ func walkSubStructs(t reflect.Type, prefix string, out *[]structDoc, seen map[st
 	}
 }
 
-// filterOutCommon removes fields that came from the Common base from the
-// per-category field list, since Common is documented separately.
 // ownFields documents t's own fields, leaving out everything embedded, so a
 // field that shares a name with one of Common's is still listed.
 func ownFields(t reflect.Type) []fieldDoc {
@@ -620,6 +618,8 @@ func ownFields(t reflect.Type) []fieldDoc {
 	return out
 }
 
+// filterOutCommon removes fields that came from the Common base from the
+// per-category field list, since Common is documented separately.
 func filterOutCommon(fields []fieldDoc) []fieldDoc {
 	commonNames := map[string]bool{}
 	for _, f := range docForType(reflect.TypeOf(defs.Common{})).Fields {

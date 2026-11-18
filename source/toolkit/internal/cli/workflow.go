@@ -47,7 +47,7 @@ func newWorkflowShowCmd(env *Env) *cobra.Command {
 			"`agtk render` does (stack layering, dedupe, lockfile pins), and prints\n" +
 			"the winning Workflow Definition's YAML source byte for byte.\n" +
 			"\n" +
-			"--json prints an object with id, name, source (the raw YAML) and\n" +
+			"--json prints an object with version, id, name, source (the raw YAML) and\n" +
 			"definition (the same document as generic JSON); `agtk workflow schema`\n" +
 			"prints its JSON Schema.",
 		Args: cobra.ExactArgs(1),
