@@ -37,8 +37,9 @@ checksum:
   name_template: "checksums.txt"
   algorithm: sha256
 
-# Release notes: prefer a hand-written file at docs/releases/v<Version>.md
-# when present, else let goreleaser generate from commit history.
+# Release notes: release.yml passes the merged docs/releases/v<Version>.md with
+# --release-notes. The changelog settings below apply only to a run given no
+# notes file.
 release:
   draft: false
   prerelease: auto

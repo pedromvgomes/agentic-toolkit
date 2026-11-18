@@ -81,6 +81,6 @@ make install    # go install with the same ldflags
 
 ## Releases
 
-Released versions are git tags in semver form: `v0.1.0`, `v1.2.3`. Pushing a tag triggers `.github/workflows/release.yml`, which runs goreleaser and publishes archives + `checksums.txt` to a GitHub Release. Hand-written notes at `docs/releases/v<X.Y.Z>.md` are picked up automatically; otherwise goreleaser auto-generates from the commit history.
+Released versions are git tags in semver form: `v0.1.0`, `v1.2.3`. A release is the merge of its notes: a pull request that adds `docs/releases/v<X.Y.Z>.md` merges to `main`, and `.github/workflows/auto-release.yml` then tags that commit and runs goreleaser, which publishes archives + `checksums.txt` to a GitHub Release whose body is the notes file. Nobody pushes a tag, and a tag pushed by hand releases nothing (ADR 0030). The `release` skill carries the procedure.
 
 Consumer repos pin to a tag, branch, or commit SHA — same convention GitHub Actions uses (e.g. `extends: github.com/pedromvgomes/agentic-toolkit.git/stacks/default.yaml@v0.1.0`).

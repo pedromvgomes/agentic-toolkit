@@ -1,5 +1,5 @@
 # Convenience targets for local agtk builds. Release builds go through
-# .goreleaser.yaml on tag push (see .github/workflows/release.yml).
+# .goreleaser.yaml when a release's notes merge (see .github/workflows/auto-release.yml).
 
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X github.com/pedromvgomes/agentic-toolkit/internal/version.Version=$(VERSION)
