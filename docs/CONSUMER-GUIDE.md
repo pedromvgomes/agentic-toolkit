@@ -68,10 +68,10 @@ you own is found by convention scanning instead.
 ## Convention scanning
 
 Your own skills, instructions, rules, agents, commands, hooks, MCP servers
-and settings live under `<root>/<category>/` (default `root` is `agentic`),
+settings and workflows live under `<root>/<category>/` (default `root` is `agentic`),
 one directory per category: `agentic/skills/`, `agentic/instructions/`,
 `agentic/rules/`, `agentic/agents/`, `agentic/commands/`, `agentic/hooks/`,
-`agentic/mcp/`, `agentic/settings/`. Drop a bundle there and it renders — you
+`agentic/mcp/`, `agentic/settings/`, `agentic/workflows/`. Drop a bundle there and it renders — you
 never name it in `.agentic-toolkit.yaml`.
 
 This repo's own entry manifest is a worked example:
@@ -113,6 +113,7 @@ commands:  [...]
 hooks:     [...]
 mcp:       [...]
 settings:  [...]
+workflows: [...]
 ```
 
 | Field | Required | Meaning |
@@ -120,7 +121,7 @@ settings:  [...]
 | `description` | no | One-line summary shown by tooling when this stack is imported. |
 | `root` | no | Convention root for bare-name lookups, relative to the stack file's repo root. Default: `definitions`. |
 | `extends` | no | Other stacks to layer under this one. Each entry is a URL (with `.git/` boundary) or a local `./path`. Bare names not allowed. |
-| `skills` / `agents` / `rules` / `instructions` / `commands` / `hooks` / `mcp` / `settings` | no | Per-category definition lists. Each entry is a URL, a local path, or a bare name. |
+| `skills` / `agents` / `rules` / `instructions` / `commands` / `hooks` / `mcp` / `settings` / `workflows` | no | Per-category definition lists. Each entry is a URL, a local path, or a bare name. |
 
 ## Per-entry resolution
 
@@ -257,6 +258,16 @@ Where each category lands, under the default `--scope project`:
 | `mcp` | `.mcp.json` | `.codex/config.toml` |
 | `settings` | `.claude/settings.json` | `.codex/config.toml` |
 | `hooks` | `.claude/settings.json` | `.codex/config.toml` |
+| `workflows` | nothing | nothing |
+
+A workflow definition (`<root>/workflows/<id>.yaml`, hatua's YAML format) renders nothing: no
+adapter writes a file for it, and `agtk status` reports no drift for it. Read one through
+`agtk workflow show <id> --json`, which resolves the entry manifest and its stacks the way
+`render` does; `agtk workflow schema` prints the JSON Schema of that output. The entry manifest
+has no `workflows:` list, so its workflows come from scanning `<root>/workflows/`; a stack file
+may list them under `workflows:`. An older `agtk` rejects an unknown `workflows:` key in a stack
+with `unknown_field`, so a shared stack that lists `workflows:` must be published only after the
+binary release carrying the category.
 
 Under `--scope user` the same layouts are written beneath your home
 directory, with one exception: `mcp:` renders nothing for `claude`,

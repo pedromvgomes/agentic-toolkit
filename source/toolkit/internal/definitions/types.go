@@ -460,7 +460,7 @@ func (*Setting) Category() Category   { return CategorySetting }
 type Workflow struct {
 	Common   `yaml:"-"`
 	ID       string            `yaml:"id"   agtkdoc:"required;The Workflow Definition's identifier and its canonical name. Must equal the path-derived name under workflows/."`
-	Title    string            `yaml:"name" agtkdoc:"Display title in hatua's format, surfaced as the definition's description."`
+	Title    string            `yaml:"name" agtkdoc:"required;The workflow's display title, required by hatua. Surfaced as the definition's description."`
 	Source   []byte            `yaml:"-"`
 	Document *hatua.Definition `yaml:"-"`
 }
