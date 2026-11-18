@@ -331,3 +331,55 @@ func TestMemoryRootDocNamesTheRealDefault(t *testing.T) {
 		t.Errorf("agtkdoc does not name memory.DefaultRoot (%q):\n%s", memory.DefaultRoot, doc)
 	}
 }
+
+func TestParseBytes_WorkflowEntriesTakeEveryLayout(t *testing.T) {
+	body := `workflows:
+  - triage
+  - ./team/release.yaml
+  - github.com/x/y.git/workflows/deploy.yaml@v1
+`
+	s, err := stack.ParseBytes("t.yaml", []byte(body))
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	got := s.EntriesFor(definitions.CategoryWorkflow)
+	if len(got) != 3 {
+		t.Fatalf("EntriesFor(workflow) = %+v, want 3", got)
+	}
+	if got[0].Kind != stack.RefBare || got[0].Name != "triage" {
+		t.Errorf("workflows[0] = %+v", got[0])
+	}
+	if got[1].Kind != stack.RefPath || got[1].Path != "team/release.yaml" {
+		t.Errorf("workflows[1] = %+v", got[1])
+	}
+	if got[2].Kind != stack.RefURL || got[2].URL != "github.com/x/y.git/workflows/deploy.yaml" || got[2].Ref != "v1" {
+		t.Errorf("workflows[2] = %+v", got[2])
+	}
+}
+
+// Workflow Definitions are flat: only commands take a nested bare name.
+func TestParseBytes_NestedWorkflowName_Rejected(t *testing.T) {
+	_, err := stack.ParseBytes("t.yaml", []byte("workflows:\n  - team/triage\n"))
+	if err == nil {
+		t.Fatal("expected error for a workflow name containing '/'")
+	}
+	if !stack.IsKind(err, stack.ErrInvalidEntry) {
+		t.Errorf("error kind != invalid_entry: %v", err)
+	}
+	if !strings.Contains(err.Error(), "workflows[0]") {
+		t.Errorf("error does not name the workflows list: %v", err)
+	}
+}
+
+// The stack decode is strict, so a top-level category key this agtk does not
+// know is refused as an unknown field rather than silently dropped. An agtk
+// that predates a category therefore fails on a stack that lists one.
+func TestParseBytes_UnknownCategoryKeyIsAnUnknownField(t *testing.T) {
+	_, err := stack.ParseBytes("t.yaml", []byte("pipelines:\n  - triage\n"))
+	if err == nil {
+		t.Fatal("expected error for an unknown category key")
+	}
+	if !stack.IsKind(err, stack.ErrUnknownField) {
+		t.Errorf("error kind != unknown_field: %v", err)
+	}
+}

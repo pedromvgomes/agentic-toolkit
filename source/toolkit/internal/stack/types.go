@@ -16,6 +16,7 @@
 //	hooks:       []EntryRef
 //	mcp:         []EntryRef
 //	settings:    []EntryRef
+//	workflows:   []EntryRef
 //
 // Override semantics: depth-first walk of `extends:`, post-order overlay
 // (children apply before importer's own entries), entry-point file's
@@ -59,6 +60,7 @@ type Stack struct {
 	Hooks        []EntryRef `yaml:"hooks,omitempty"`
 	MCP          []EntryRef `yaml:"mcp,omitempty"`
 	Settings     []EntryRef `yaml:"settings,omitempty"`
+	Workflows    []EntryRef `yaml:"workflows,omitempty"`
 }
 
 // MemoryConfig configures the memory store. It is deliberately not part of
@@ -103,6 +105,8 @@ func (s *Stack) EntriesFor(cat definitions.Category) []EntryRef {
 		return s.MCP
 	case definitions.CategorySetting:
 		return s.Settings
+	case definitions.CategoryWorkflow:
+		return s.Workflows
 	}
 	return nil
 }

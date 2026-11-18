@@ -1,0 +1,19 @@
+id: triage-issue
+name: Triage an issue
+version: 1
+status: published
+triggers:
+  - id: opened
+    use: component.webhook
+steps:
+  - id: label
+    use: component.script
+    with:
+      run: echo triage {{triggers.opened.inputs.issue}}
+  - id: summarise
+    use: component.agentic
+    with:
+      provider: claude-code
+      prompt: "Summarise the labels: {{steps.label.stdout}}"
+      worktree: inherit
+      agtk: none

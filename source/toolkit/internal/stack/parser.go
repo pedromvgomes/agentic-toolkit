@@ -108,6 +108,8 @@ func (s *Stack) entriesPtr(cat definitions.Category) *[]EntryRef {
 		return &s.MCP
 	case definitions.CategorySetting:
 		return &s.Settings
+	case definitions.CategoryWorkflow:
+		return &s.Workflows
 	}
 	return nil
 }

@@ -19,7 +19,8 @@ var wholeOps = fsops.New("codex")
 // skill, a bundle per command converted to a skill, a file per rule
 // (plus its AGENTS.md index entry), a TOML file per subagent, and — if
 // there is at least one instruction or rule to say something — the
-// synthesized AGENTS.md itself. All RelPaths are relative to
+// synthesized AGENTS.md itself. A Workflow Definition contributes none.
+// All RelPaths are relative to
 // rts.ProjectRoot, per this package's doc comment.
 //
 // A skill and a command sharing a name resolve onto the same
@@ -79,6 +80,12 @@ func planWholeOwned(plan *resolver.Plan, rts roots, stdout io.Writer) ([]fsops.W
 			ops = append(ops, fsops.SingleFileOp(rts.ProjectRoot, ".codex/agents", d.Name+".toml", content))
 		case definitions.CategoryInstruction:
 			instructions = append(instructions, d)
+		case definitions.CategoryWorkflow:
+			// A Workflow Definition writes nothing under .agents/ or
+			// .codex/ and adds nothing to AGENTS.md: the Factory reads
+			// its source through `agtk workflow show` (ADR 0031). No op
+			// means no manifest entry, so it is never a collision and
+			// never stale.
 		}
 	}
 

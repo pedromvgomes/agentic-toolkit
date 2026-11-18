@@ -1,0 +1,14 @@
+# A webhook trigger: a signed request to a Webhook registration starts the
+# workflow. Its outputs are the input contract a Step reads as
+# `{{triggers.<id>.inputs.<key>}}`. `inputs` declares no members, so each key
+# is typed when the workflow runs rather than when it is validated.
+kind: trigger
+use: component.webhook
+name: When a webhook is received
+group: Triggers
+blurb: Starts the workflow when its Webhook registration receives a signed request.
+fields: []
+outputs:
+  - k: inputs
+    label: Inputs
+    t: object

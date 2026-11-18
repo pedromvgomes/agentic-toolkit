@@ -37,6 +37,9 @@ const (
 	ErrPlatformExtension   ErrorKind = "platform_extension"
 	ErrHandlerShape        ErrorKind = "handler_shape"
 	ErrUnknownCategory     ErrorKind = "unknown_category"
+	// ErrWorkflowInvalid is a Workflow Definition hatua refuses: its shape,
+	// or a diagnostic from validating it against the Host manifests.
+	ErrWorkflowInvalid ErrorKind = "workflow_invalid"
 )
 
 func (e *ParseError) Error() string {

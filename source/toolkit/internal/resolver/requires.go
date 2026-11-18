@@ -207,6 +207,11 @@ func (s *traversalState) reportRequirement(kind DiagnosticKind, w walkedDef, req
 // entirely. A requirement may only name a definition at the canonical
 // <root>/<plural>/<name> location, so anything ParseEntryRef reads as a URL or
 // a path is refused too.
+//
+// Every category is a valid target, workflows included: a skill that drives
+// a Workflow Definition may require `workflows/<id>`. A workflow itself never
+// declares a requirement — its document is hatua's format, which has no
+// `requires:` field, so its Common.Requires is always empty.
 func parseRequirement(req string) (definitions.Category, string, error) {
 	dir, name, ok := strings.Cut(strings.TrimSpace(req), "/")
 	if !ok || dir == "" || name == "" {

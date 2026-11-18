@@ -8,12 +8,13 @@ keeps what an agent learned by exploring a codebase.
 ### Distribution
 **Definition**:
 One unit of agent configuration — a skill, agent, rule, instruction, command, hook, MCP
-server, or setting. Identified by a (category, name) pair.
+server, setting, or workflow (a **Workflow Definition**, hatua's YAML format, which renders
+nothing). Identified by a (category, name) pair.
 _Avoid_: config, artifact, asset
 
 **Category**:
 The kind of a **Definition**. The set is closed: skill, agent, rule, instruction, command,
-hook, mcp, setting.
+hook, mcp, setting, workflow.
 _Avoid_: type, group
 
 **Stack**:

@@ -1,0 +1,24 @@
+# A script Step: one command, run without a model. A non-zero exit code is an
+# output rather than a failure, so a later Step can branch on it.
+kind: component
+use: component.script
+name: Run a script
+group: Scripts
+blurb: Run one command and keep its exit code and output.
+fields:
+  - k: run
+    label: Command
+    kind: mono
+    req: true
+    hint: The command to run, as a shell would read it.
+  - k: timeout
+    label: Timeout
+    kind: number
+    hint: Seconds the command may run before it is stopped.
+outputs:
+  - k: exit_code
+    label: Exit code
+    t: number
+  - k: stdout
+    label: Standard output
+    t: text

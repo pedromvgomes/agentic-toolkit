@@ -22,6 +22,7 @@ Drop the file under `<root>/<category>/` and run `agtk render`. Nothing names it
 | hook | `hooks/<name>.yaml` | flat `*.yaml` / `*.yml` |
 | mcp | `mcp/<name>.yaml` | flat `*.yaml` / `*.yml` |
 | setting | `settings/<name>.yaml` | flat `*.yaml` / `*.yml` |
+| workflow | `workflows/<id>.yaml` | flat `*.yaml` / `*.yml`; hatua's format, renders nothing |
 
 ```
 agentic/
@@ -33,12 +34,18 @@ agentic/
 ├── commands/db/reset.md                   # command "db/reset" → /db:reset on Claude
 ├── hooks/log-tools.yaml
 ├── mcp/context7.yaml
-└── settings/deny-dangerous-shell.yaml
+├── settings/deny-dangerous-shell.yaml
+└── workflows/release.yaml                 # workflow "release"; renders nothing
 ```
 
 Anything the shape does not cover is ignored, not failed — a `README.md` beside the hooks is not
 a broken definition. A skill or agent is a *directory*; a loose `agentic/skills/foo.md` is
 invisible to the scan.
+
+A workflow definition renders nothing on any platform. Read it with `agtk workflow show <id> --json`
+(`agtk workflow schema` prints the shape of that output). A stack file may list `workflows:`; an
+entry manifest does not, and finds its own by scanning `<root>/workflows/`. An older `agtk`
+rejects a stack's unknown `workflows:` key with `unknown_field`.
 
 ### Names
 
@@ -49,8 +56,8 @@ instruction `house-style`.
 
 ### What is and is not an error
 
-- **A missing category directory is an empty one.** You do not create seven empty directories to
-  use the eighth.
+- **A missing category directory is an empty one.** You do not create eight empty directories to
+  use the ninth.
 - **A missing `context:` file is a hard error.** `context:` names one file of free-form repo
   prose (rendered as the instruction `context`); naming a file this repo does not have fails the
   resolve.

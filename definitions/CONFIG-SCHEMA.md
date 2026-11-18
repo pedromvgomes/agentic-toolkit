@@ -30,6 +30,7 @@ A stack layers other stacks (`extends:`) and lists its own definitions by name p
 | `hooks` | `[]EntryRef` | no |  |
 | `mcp` | `[]EntryRef` | no |  |
 | `settings` | `[]EntryRef` | no |  |
+| `workflows` | `[]EntryRef` | no |  |
 
 ## Entry manifest
 
@@ -59,7 +60,7 @@ Settings for the repo-resident memory store (`agtk memory ...`): where the store
 
 ### Per-entry resolution
 
-Each entry in `extends:` and in the per-category lists (`skills`, `agents`, `rules`, `instructions`, `commands`, `hooks`, `mcp`, `settings`) is a string that the parser disambiguates by shape:
+Each entry in `extends:` and in the per-category lists (`skills`, `agents`, `rules`, `instructions`, `commands`, `hooks`, `mcp`, `settings`, `workflows`) is a string that the parser disambiguates by shape:
 
 - **External URL** — contains `.git/` as the boundary between repo URL and in-repo path. Optional `@<ref>` selects a git ref (branch, tag, sha). Example: `github.com/owner/repo.git/skills/foo@main`. The resolver fetches the repo and locates the bundle/file at the in-repo path.
 - **Local path** — starts with `./` or `/`. Resolved relative to the directory holding the stack file itself. Example: `./team-skills/foo` in a stack at `repo/stacks/team.yaml` resolves to `repo/stacks/team-skills/foo`.
