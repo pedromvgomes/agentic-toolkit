@@ -81,8 +81,8 @@ func (s *traversalState) scanEntryRoot(m *stack.EntryManifest, ctx stackCtx) {
 // scanCategory parses every definition cat's layout finds in dir.
 //
 // A directory that does not exist is an empty one: a repo contributes the
-// categories it has, and having to create seven empty directories to use the
-// eighth is a worse manifest than no manifest.
+// categories it has, and having to create eight empty directories to use the
+// ninth is a worse manifest than no manifest.
 //
 // Two files declaring the same `name:` are refused rather than one silently
 // winning: which of them the consumer meant is not knowable here, and a scan
@@ -181,7 +181,7 @@ type scannedFile struct {
 //   - rule, instruction: *.md directly in dir
 //   - command: *.md at any depth; the name is the relative path minus extension,
 //     so nested files are namespaced ("foo/bar")
-//   - hook, mcp, setting: *.yaml / *.yml directly in dir
+//   - hook, mcp, setting, workflow: *.yaml / *.yml directly in dir
 //
 // Entries the shape does not cover are ignored: a README beside the
 // definitions is not a failed definition.
@@ -263,7 +263,7 @@ func relativeTo(dir, p string) (string, error) {
 // scanExts is the set of extensions a file-shaped category's scan accepts.
 func scanExts(cat definitions.Category) []string {
 	switch cat {
-	case definitions.CategoryHook, definitions.CategoryMCP, definitions.CategorySetting:
+	case definitions.CategoryHook, definitions.CategoryMCP, definitions.CategorySetting, definitions.CategoryWorkflow:
 		return []string{".yaml", ".yml"}
 	default:
 		return []string{".md"}

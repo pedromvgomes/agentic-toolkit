@@ -104,6 +104,12 @@ func validSettingBody(name, model string) string {
 	return "name: " + name + "\ndescription: A setting.\nvalue:\n  model: " + model + "\n"
 }
 
+// validWorkflowBody is a Workflow Definition in hatua's format. Its `id` is
+// the definition's name and its `name` is the display title.
+func validWorkflowBody(id, title string) string {
+	return "id: " + id + "\nname: " + title + "\nversion: 1\nstatus: draft\nsteps: []\n"
+}
+
 // entryBody renders an entry manifest composing the given stacks. extra is
 // appended verbatim for the fields a test sets on top (root:, context:,
 // memory:).
@@ -154,7 +160,7 @@ func stackBody(extends []string, entries map[string][]string) string {
 			out += "  - " + e + "\n"
 		}
 	}
-	for _, key := range []string{"skills", "agents", "rules", "instructions", "commands", "hooks", "mcp", "settings"} {
+	for _, key := range []string{"skills", "agents", "rules", "instructions", "commands", "hooks", "mcp", "settings", "workflows"} {
 		list, ok := entries[key]
 		if !ok || len(list) == 0 {
 			continue

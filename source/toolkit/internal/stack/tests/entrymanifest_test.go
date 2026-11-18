@@ -83,3 +83,16 @@ func TestParseEntryManifestBytes_UnknownPlatformRejected(t *testing.T) {
 		t.Errorf("error kind != unknown_platform: %v", err)
 	}
 }
+
+// An entry manifest names no definitions of its own: its workflows, like
+// every other category, come from scanning <root>/workflows/, so a
+// `workflows:` list is an unknown field there.
+func TestParseEntryManifestBytes_WorkflowsListRejected(t *testing.T) {
+	_, err := stack.ParseEntryManifestBytes("t.yaml", []byte("workflows:\n  - triage\n"))
+	if err == nil {
+		t.Fatal("expected error for a workflows list on an entry manifest")
+	}
+	if !stack.IsKind(err, stack.ErrUnknownField) {
+		t.Errorf("error kind != unknown_field: %v", err)
+	}
+}

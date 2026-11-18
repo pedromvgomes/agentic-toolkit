@@ -61,6 +61,11 @@ func TestResolve_Scan_EachCategoryShape(t *testing.T) {
 			files:    map[string]string{"agentic/settings/model.yaml": validSettingBody("model", "opus")},
 			category: definitions.CategorySetting, wantName: "model",
 		},
+		{
+			name:     "workflows",
+			files:    map[string]string{"agentic/workflows/triage.yaml": validWorkflowBody("triage", "Triage")},
+			category: definitions.CategoryWorkflow, wantName: "triage",
+		},
 	}
 
 	for _, tc := range cases {

@@ -482,8 +482,8 @@ func rootFromEntryPath(cat definitions.Category, bundleDir string) string {
 // ===== layout helpers =====
 
 // bareLayout builds the (bundle dir, entry file) pair for a bare-name
-// entry under <root>/<plural>/<name>. For hook/mcp/setting it tries
-// .yaml then .yml.
+// entry under <root>/<plural>/<name>. For hook/mcp/setting/workflow it
+// tries .yaml then .yml.
 func bareLayout(root string, cat definitions.Category, name string, fsys fs.FS) (bundleDir, fileName string, err error) {
 	switch cat {
 	case definitions.CategorySkill:
@@ -504,6 +504,8 @@ func bareLayout(root string, cat definitions.Category, name string, fsys fs.FS) 
 		return path.Join(root, "mcp"), pickYAMLOrYML(fsys, path.Join(root, "mcp"), name), nil
 	case definitions.CategorySetting:
 		return path.Join(root, "settings"), pickYAMLOrYML(fsys, path.Join(root, "settings"), name), nil
+	case definitions.CategoryWorkflow:
+		return path.Join(root, "workflows"), pickYAMLOrYML(fsys, path.Join(root, "workflows"), name), nil
 	}
 	return "", "", fmt.Errorf("unsupported category %q", cat)
 }
