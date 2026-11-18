@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/pedromvgomes/agentic-toolkit/schemas/workflow-show.json",
+  "title": "agtk workflow show --json",
+  "description": "The Workflow Definition that wins for an id once the entry manifest and its stacks are resolved the way agtk render resolves them.",
+  "type": "object",
+  "required": ["version", "id", "name", "source", "definition"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "type": "integer",
+      "description": "Schema version of every agtk --json output."
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The Workflow Definition's identifier and canonical name."
+    },
+    "name": {
+      "type": "string",
+      "description": "The definition's display title, from its name field."
+    },
+    "source": {
+      "type": "string",
+      "description": "The definition's YAML source, byte for byte."
+    },
+    "definition": {
+      "type": "object",
+      "description": "The source document converted to generic JSON. hatua's own Workflow Definition schema describes its fields."
+    }
+  }
+}
