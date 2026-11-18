@@ -40,6 +40,7 @@ Two file sets feed the table:
 | A major bump's breaking changes have impact here | The major-bump reading names at least one breaking change with an impact on a use in this repository. A reading that could not be completed — no release notes or changelog reachable for a version in the range, or a usage search that could not run — counts as impact: an unread breaking change is never assumed harmless. | `breaking-change` |
 | New transitive dependencies | The transitive diff names at least one package, read at `$sha`, so a package the run's own lockfile regeneration added counts as much as one dependabot's did. | `new-transitive-deps` |
 | The policy requires a review | Any source of the policy read sets `required_approving_review_count` above 0, `require_code_owner_review` to `true` or `require_last_push_approval` to `true`, or classic protection's `required_pull_request_reviews` is present with a nonzero count or either of those flags; or, when protection cannot be read, `reviewDecision` is `REVIEW_REQUIRED`. | `review-required` |
+| Someone else pushed to the branch | Any commit in the pull request's commit list whose author, read over REST, is neither `dependabot[bot]` nor `$me`, or whose REST author is null because its email links to no account. A merge of the base in is not such a commit: its changes are the base's. Whatever such a commit changed is unread by the run, so nothing about it is exempt. | `foreign-commit` |
 | The title is unparseable or ambiguous | The title does not match the version pattern; matches it more than once; or is a grouped pull request whose body yields no `Updates … from … to …` pair, or carries an `Updates` line that does not match the pattern. | `unparseable-title` |
 
 **Exempt files** are recognised conservatively. A path that does not clearly match one of these is
@@ -47,8 +48,9 @@ not exempt, however test-like or generated it looks:
 
 - **A test**: a file whose name follows its language's test convention — `*_test.go`,
   `test_*.py`, `*_test.py`, `*.test.<ext>` and `*.spec.<ext>` for JavaScript and TypeScript,
-  `*_spec.rb` — or any file under a directory named `testdata/`, `__tests__/`, `test/`, `tests/`
-  or `spec/`. A helper outside those paths is not a test because only tests call it.
+  `*_spec.rb`. A path is never a test for living in a `test/`, `tests/`, `spec/`, `testdata/` or
+  `__tests__/` directory: `conftest.py`, fixtures, helpers and scripts there run in CI and are as
+  much code as any other file. A helper is not a test because only tests call it.
 - **A lockfile**: a path the transitive-diff loop matches as a lockfile. A manifest — `go.mod`,
   `package.json`, `Cargo.toml`, `pyproject.toml`, `Gemfile` — is not a lockfile, even when the
   tool that regenerated the lockfile rewrote it.
@@ -168,6 +170,7 @@ Each reason token is said with this sentence, in the marker's order:
 | `breaking-change` | This major bump has breaking changes that affect how this repository uses `<package>`: `<file:line links, one per use>`. |
 | `new-transitive-deps` | This bump adds dependencies this repository did not have: `<package names>`. |
 | `review-required` | The rules of `<base>` require an approving review before it merges. |
+| `foreign-commit` | Someone other than dependabot or this run pushed to this branch, so part of it has not been read. |
 | `unparseable-title` | The bump's size cannot be read from this pull request, so it is not assumed small. |
 
 The `breaking-change` sentence names each affected use by linking it, and states the impact in the
