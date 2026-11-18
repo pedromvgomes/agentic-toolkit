@@ -243,3 +243,90 @@ func listTree(t *testing.T, root string) []string {
 	sort.Strings(out)
 	return out
 }
+
+func TestWorkflowShowRefusesWithoutAnEntryManifest(t *testing.T) {
+	work := t.TempDir()
+	writeFile(t, filepath.Join(work, ".agentic-toolkit.lock.yaml"), emptyLockfile)
+
+	stdout, _, err := runCLI(t, work, "workflow", "show", "triage", "--cache", t.TempDir())
+	if err == nil {
+		t.Fatal("workflow show succeeded without an entry manifest")
+	}
+	if stdout != "" {
+		t.Errorf("stdout = %q, want nothing on failure", stdout)
+	}
+	if !strings.Contains(err.Error(), ".agentic-toolkit.yaml") {
+		t.Errorf("error = %q, want it to name the entry manifest", err)
+	}
+}
+
+func TestWorkflowShowRefusesWithoutALockfileAndSaysToLock(t *testing.T) {
+	work := t.TempDir()
+	writeFile(t, filepath.Join(work, ".agentic-toolkit.yaml"), "stacks: []\n")
+	writeFile(t, filepath.Join(work, "agentic/workflows/triage.yaml"), workflowBody("triage", "Triage"))
+
+	_, _, err := runCLI(t, work, "workflow", "show", "triage", "--cache", t.TempDir())
+	if err == nil {
+		t.Fatal("workflow show succeeded without a lockfile")
+	}
+	if !strings.Contains(err.Error(), "agtk lock") {
+		t.Errorf("error = %q, want it to say to run agtk lock", err)
+	}
+}
+
+func TestWorkflowShowRefusesWhenNoDefaultCacheCanBeLocated(t *testing.T) {
+	work := workflowRepo(t, map[string]string{
+		".agentic-toolkit.yaml":         "stacks: []\n",
+		"agentic/workflows/triage.yaml": workflowBody("triage", "Triage"),
+	})
+	t.Setenv("XDG_CACHE_HOME", "")
+	t.Setenv("HOME", "")
+
+	_, _, err := runCLI(t, work, "workflow", "show", "triage")
+	if err == nil {
+		t.Fatal("workflow show succeeded with no cache to locate")
+	}
+	if !strings.Contains(err.Error(), "default cache") {
+		t.Errorf("error = %q, want the cache failure", err)
+	}
+}
+
+func TestWorkflowShowReportsAResolveFailure(t *testing.T) {
+	work := workflowRepo(t, map[string]string{
+		".agentic-toolkit.yaml": "stacks:\n  - ./stacks/team.yaml\n",
+		"stacks/team.yaml":      "workflows:\n  - triage\n",
+		"definitions/workflows/triage.yaml": "id: triage\nname: Triage\nversion: 1\nstatus: draft\n" +
+			"steps:\n  - id: deploy\n    use: component.deploy\n",
+	})
+
+	stdout, _, err := runCLI(t, work, "workflow", "show", "triage", "--cache", t.TempDir())
+	if err == nil {
+		t.Fatal("workflow show succeeded over a workflow hatua refuses")
+	}
+	if stdout != "" {
+		t.Errorf("stdout = %q, want nothing on failure", stdout)
+	}
+	if !strings.HasPrefix(err.Error(), "resolve: ") || !strings.Contains(err.Error(), "COMPONENT_UNKNOWN") {
+		t.Errorf("error = %q, want the resolve failure carrying hatua's refusal", err)
+	}
+}
+
+func TestWorkflowShowSaysThePlanHasNoWorkflowsWhenItHasOnlyOtherDefinitions(t *testing.T) {
+	work := workflowRepo(t, map[string]string{
+		".agentic-toolkit.yaml":               "stacks: []\n",
+		"agentic/instructions/conventions.md": "---\nname: conventions\ndescription: House conventions.\n---\nBe kind.\n",
+	})
+
+	_, _, err := runCLI(t, work, "workflow", "show", "triage", "--cache", t.TempDir())
+	if err == nil {
+		t.Fatal("workflow show succeeded with no workflows resolved")
+	}
+	for _, want := range []string{`"triage"`, "no Workflow Definitions"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error = %q, want it to contain %q", err, want)
+		}
+	}
+	if strings.Contains(err.Error(), "conventions") {
+		t.Errorf("error = %q names a definition that is not a workflow", err)
+	}
+}

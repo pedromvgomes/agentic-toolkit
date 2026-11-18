@@ -1,6 +1,7 @@
 package schemadoc
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -125,5 +126,35 @@ func TestOnlyStructsUnderAYAMLKeyAreDocumentedAsSubStructs(t *testing.T) {
 	want := "`keyed` (EmbeddedUnderKey),`nested` (NamedNested)"
 	if got := strings.Join(titles, ","); got != want {
 		t.Errorf("sub-structs = %s, want %s", got, want)
+	}
+}
+
+type ownFieldsHolder struct {
+	EmbeddedWithoutKey
+	Value    string            `yaml:"value"`
+	Skipped  string            `yaml:"-"`
+	Inlined  map[string]string `yaml:",inline"`
+	Optional string            `yaml:"optional,omitempty" agtkdoc:"An optional field."`
+	Untagged string
+}
+
+// ownFields lists a struct's own document fields only: nothing embedded, and
+// nothing the YAML document does not carry under a key of its own — a `-`
+// field is absent from it, and an inline one is its parent's.
+func TestOwnFieldsListsOnlyTheStructsOwnKeyedFields(t *testing.T) {
+	var got []string
+	for _, f := range ownFields(reflect.TypeOf(ownFieldsHolder{})) {
+		got = append(got, fmt.Sprintf("%s:%t:%s", f.Name, f.Required, f.Description))
+	}
+	want := "value:true:,optional:false:An optional field.,Untagged:true:"
+	if g := strings.Join(got, ","); g != want {
+		t.Errorf("own fields = %s, want %s", g, want)
+	}
+}
+
+func TestAnInlineFieldIsNotDocumentedAsAFieldOfItsOwn(t *testing.T) {
+	f, _ := reflect.TypeOf(ownFieldsHolder{}).FieldByName("Inlined")
+	if fd, ok := fieldDocFor(f); ok {
+		t.Errorf("fieldDocFor(inline) = %+v, want no field", fd)
 	}
 }

@@ -217,3 +217,61 @@ func TestTheHostManifestFilesAreServedAsShipped(t *testing.T) {
 		t.Errorf("files = %s, want %s", got, want)
 	}
 }
+
+func TestARefusalInsideABlockNamesTheStepAndItsBlock(t *testing.T) {
+	_, err := parseWorkflow(t, ""+
+		"blocks:\n"+
+		"  - id: ship\n"+
+		"    steps:\n"+
+		"      - id: deploy\n"+
+		"        use: component.deploy\n"+
+		"steps:\n"+
+		"  - id: call\n"+
+		"    use: block.ship\n")
+	wantRefusal(t, err, `step "deploy" in block "ship": COMPONENT_UNKNOWN`, "component.deploy")
+}
+
+func TestATriggerUsingAComponentNoManifestDeclaresIsRefusedByItsID(t *testing.T) {
+	_, err := parseWorkflow(t, ""+
+		"triggers:\n"+
+		"  - id: cron\n"+
+		"    use: component.cron\n"+
+		"steps: []\n")
+	wantRefusal(t, err, `trigger "cron": COMPONENT_UNKNOWN`, "component.cron")
+}
+
+func TestTwoBlocksSharingAnIDAreRefusedByTheBlock(t *testing.T) {
+	_, err := parseWorkflow(t, ""+
+		"blocks:\n"+
+		"  - id: ship\n"+
+		"    steps: []\n"+
+		"  - id: ship\n"+
+		"    steps: []\n"+
+		"steps: []\n")
+	wantRefusal(t, err, `block "ship": BLOCK_ID_DUPLICATE`)
+	if strings.Contains(err.Error(), "step ") {
+		t.Errorf("a block's refusal names a step: %s", err)
+	}
+}
+
+func TestAConnectionThatIsNotEstablishedIsRefusedByTheConnection(t *testing.T) {
+	_, err := parseWorkflow(t, ""+
+		"connections:\n"+
+		"  - id: llm\n"+
+		"    ref: null\n"+
+		"steps: []\n")
+	wantRefusal(t, err, `connection "llm": CONNECTION_NOT_ESTABLISHED`)
+}
+
+func TestEveryDiagnosticOfARefusedWorkflowIsReportedInOneError(t *testing.T) {
+	_, err := parseWorkflow(t, ""+
+		"triggers:\n"+
+		"  - id: cron\n"+
+		"    use: component.cron\n"+
+		"steps:\n"+
+		"  - id: deploy\n"+
+		"    use: component.deploy\n")
+	wantRefusal(t, err,
+		`step "deploy": COMPONENT_UNKNOWN`,
+		`; trigger "cron": COMPONENT_UNKNOWN`)
+}
