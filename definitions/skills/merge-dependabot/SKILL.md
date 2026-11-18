@@ -535,17 +535,23 @@ rm -rf "$work"
 - **Never requests approval on a red pull request.**
 - **Dependency code never sees the credential.** Every command that runs code from the bumped
   dependency or from the repository under test — tests, `go mod tidy`, `npm install`, a build —
-  runs with no route to a GitHub token: not in its environment and not in any store a process can
-  read. Unsetting `GH_TOKEN` and `GITHUB_TOKEN` alone does not satisfy this, because `gh auth
-  token` and git's credential helper read the token from `gh`'s own configuration. Run it as:
+  runs inside an OS-level sandbox: a container, a separate OS user, or `sandbox-exec` with a
+  profile that denies reads of the user's home configuration (`~/.config/gh`, `~/.ssh`), the
+  keychain or Secret Service, and the checkout's `.git` directory and its linked repository
+  config. The code runs on a copy of the worktree's files without the `.git` link, and its changes
+  are copied back and committed outside the sandbox. Inside it the environment is built from
+  nothing, so no token, `SSH_AUTH_SOCK` or session variable crosses in:
 
   ```bash
   scratch="$(mktemp -d)"
-  env -i PATH="$PATH" HOME="$scratch" XDG_CONFIG_HOME="$scratch/config" GH_CONFIG_DIR="$scratch/gh" \
-    GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null GIT_TERMINAL_PROMPT=0 <command>
+  env -i PATH="$PATH" HOME="$scratch" GH_CONFIG_DIR="$scratch/gh" GIT_CONFIG_GLOBAL=/dev/null \
+    GIT_CONFIG_SYSTEM=/dev/null GIT_TERMINAL_PROMPT=0 <command, inside the sandbox>
+  rm -rf "$scratch"
   ```
 
-  or in a sandbox that cannot reach the user's keyring, which is stronger. The environment is
-  built from nothing, so no `SSH_AUTH_SOCK`, token or session variable crosses into it. Only the
-  `gh`, `git fetch` and `git push` steps hold the credentials.
+  `env -i` alone is not the isolation. The child still runs as the same OS user, so it can read
+  `~/.config/gh/hosts.yml` by absolute path, query the keychain, or pick up a `credential.helper`
+  from the repository's own git config. Where no sandbox can be set up, no dependency code runs
+  and the pull request is **needs a human fix**, saying that no sandbox was available. Only the
+  `gh`, `git fetch`, `git push` and `agtk pr wait` steps hold the credentials.
 - **One pull request never stops the batch.**

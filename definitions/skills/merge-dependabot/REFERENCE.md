@@ -33,9 +33,20 @@ Two file sets feed the table:
   the conflicts it resolved. The base's own changes it carries are the base's, already merged
   there, and are never the run's.
 - **Dependabot's changes.** `git diff --name-only "$mb" "<dependabot's last commit>"`, where
-  dependabot's last commit is the newest commit in the same list whose author is
-  `dependabot[bot]`. Diffing from the merge base leaves out whatever a merge of the base brought
-  in.
+  dependabot's last commit is the `after` of the newest push to the branch whose actor is
+  `dependabot[bot]`, read from the repository's activity log:
+
+  ```bash
+  gh api "repos/$repo/activity?ref=refs/heads/$branch&activity_type=push&activity_type=force_push&per_page=100" \
+    --jq '[.[] | select(.actor.login == "dependabot[bot]")] | first | .after'
+  ```
+
+  Commits are attributed to dependabot by who pushed them, never by the author or the signature
+  on the commit: both are chosen by whoever writes it, and GitHub signs and marks verified a
+  commit created through its API under any author name. The log needs read access to the
+  activity and is paginated for a branch with many pushes; a read that fails or finds no
+  dependabot push leaves no commit dependabot's, which makes every commit foreign. Diffing from
+  the merge base leaves out whatever a merge of the base brought in.
 
 | Case | How it is detected | Reason |
 |---|---|---|
@@ -44,7 +55,7 @@ Two file sets feed the table:
 | A major bump's breaking changes have impact here | The major-bump reading names at least one breaking change with an impact on a use in this repository. A reading that could not be completed — no release notes or changelog reachable for a version in the range, or a usage search that could not run — counts as impact: an unread breaking change is never assumed harmless. | `breaking-change` |
 | New transitive dependencies | The transitive diff names at least one package, read at `$sha`, so a package the run's own lockfile regeneration added counts as much as one dependabot's did. | `new-transitive-deps` |
 | The policy requires a review | Any source of the policy read sets `required_approving_review_count` above 0, `require_code_owner_review` to `true` or `require_last_push_approval` to `true`, or classic protection's `required_pull_request_reviews` is present with a nonzero count or either of those flags; or, when protection cannot be read, `reviewDecision` is `REVIEW_REQUIRED`. | `review-required` |
-| Someone else pushed to the branch | Any commit in the pull request's commit list that is neither one of the run's own (its SHA is in `$work/$n.pushed`) nor dependabot's. A commit is dependabot's only when its REST author is `dependabot[bot]` **and** `.commit.verification.verified` is `true`: an unsigned commit, or one whose signature does not verify, is not, whatever author it claims. A commit of an earlier run is foreign for the same reason, which sends the pull request to a person rather than trusting an author name. A merge of the base in is not such a commit: its changes are the base's. Whatever such a commit changed is unread by the run, so nothing about it is exempt. | `foreign-commit` |
+| Someone else pushed to the branch | Any commit in the pull request's commit list that is none of: one of the run's own (its SHA is in `$work/$n.pushed`), reachable from dependabot's last commit as defined above, or a merge of the base in, whose changes are the base's. A commit of an earlier run is foreign too, which sends the pull request to a person rather than trusting the author a commit claims. A commit pushed after dependabot's last push by anyone else is foreign whatever its author, signature or verified flag says. Whatever such a commit changed is unread by the run, so nothing about it is exempt. | `foreign-commit` |
 | The title is unparseable or ambiguous | The title does not match the version pattern; matches it more than once; or is a grouped pull request whose body yields no `Updates … from … to …` pair, or carries an `Updates` line that does not match the pattern. | `unparseable-title` |
 
 **Exempt files** are recognised conservatively. A path that does not clearly match one of these is
