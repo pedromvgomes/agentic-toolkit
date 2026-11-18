@@ -192,8 +192,9 @@ func isMarkdownCategory(cat Category) bool {
 
 // descriptionOptional reports whether the Common.Description field may
 // be empty for a category. Rules may omit it because their frontmatter
-// is optional; a workflow takes it from hatua's optional display title,
-// since its format has no description field to require.
+// is optional; a workflow takes it from hatua's display title, which
+// hatua's own validation requires, so a missing one is reported as
+// hatua's refusal rather than as a missing description.
 func descriptionOptional(cat Category) bool {
 	return cat == CategoryRule || cat == CategoryWorkflow
 }
@@ -609,7 +610,14 @@ func (m *MCPServer) validate(path string) error {
 	return nil
 }
 
-func (w *Workflow) validate(path string) error { return nil }
+func (w *Workflow) validate(path string) error {
+	doc, err := ValidateWorkflowSource(path, w.Source)
+	if err != nil {
+		return err
+	}
+	w.Document = doc
+	return nil
+}
 
 func (s *Setting) validate(path string) error {
 	if len(s.Value) == 0 {

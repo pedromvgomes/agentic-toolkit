@@ -1,0 +1,56 @@
+# An agentic Step: one model session, run in a worktree, whose final report is
+# the Step's output. Every field but `model`, `uses` and `leases` is required,
+# so a Workflow Definition states each choice a runner would otherwise have to
+# default.
+kind: component
+use: component.agentic
+name: Run an agent
+group: Agentic
+blurb: Run one model session on the workflow's data and keep its final report.
+fields:
+  - k: provider
+    label: Provider
+    kind: enum
+    req: true
+    hint: Which agent runs the session.
+    options:
+      - { value: claude-code, label: Claude Code }
+      - { value: codex, label: Codex }
+  - k: model
+    label: Model
+    kind: mono
+    hint: The model the session runs on. Left empty, the provider's default.
+  - k: prompt
+    label: Prompt
+    kind: textarea
+    req: true
+    hint: What the session is asked to do.
+  - k: worktree
+    label: Worktree
+    kind: enum
+    req: true
+    hint: Whether the session gets a worktree of its own or works in the one it was started in.
+    options:
+      - { value: new, label: New worktree }
+      - { value: inherit, label: Inherit the current worktree }
+  - k: agtk
+    label: Toolkit output
+    kind: enum
+    req: true
+    hint: What runs in the worktree before the session starts.
+    options:
+      - { value: none, label: Nothing, hint: The worktree is used as checked out. }
+      - { value: render, label: agtk render, hint: Rendered from the committed lockfile. }
+      - { value: sync, label: agtk sync, hint: Remote sources are refreshed before rendering. }
+  - k: uses
+    label: Uses
+    kind: mono
+    hint: The definition the session is started with, by name.
+  - k: leases
+    label: Provider leases
+    kind: mono
+    hint: Comma-separated providers the session also needs a lease on, such as codex for a review panel.
+outputs:
+  - k: report
+    label: Final report
+    t: text

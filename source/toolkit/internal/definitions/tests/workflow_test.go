@@ -3,6 +3,7 @@ package tests
 import (
 	"bytes"
 	"io/fs"
+	"strings"
 	"testing"
 	"testing/fstest"
 
@@ -72,7 +73,7 @@ func TestAWorkflowAcceptsHatuaFieldsTheToolkitDoesNotModel(t *testing.T) {
 			"status: draft\n" +
 			"connections:\n" +
 			"  - id: gh\n" +
-			"    ref: null\n" +
+			"    ref: gh-app\n" +
 			"vars:\n" +
 			"  - key: count\n" +
 			"    t: number\n" +
@@ -86,16 +87,16 @@ func TestAWorkflowAcceptsHatuaFieldsTheToolkitDoesNotModel(t *testing.T) {
 	}
 }
 
-func TestAWorkflowWithoutATitleHasNoDescription(t *testing.T) {
+func TestAWorkflowWithoutATitleIsRefusedByHatua(t *testing.T) {
 	fsys := fstest.MapFS{
-		"definitions/workflows/untitled.yaml": &fstest.MapFile{Data: []byte("id: untitled\nsteps: []\n")},
+		"definitions/workflows/untitled.yaml": &fstest.MapFile{Data: []byte("id: untitled\nversion: 1\nstatus: draft\nsteps: []\n")},
 	}
-	def, err := definitions.ParseInCatalog(fsys, "definitions/workflows/untitled.yaml")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	_, err := definitions.ParseInCatalog(fsys, "definitions/workflows/untitled.yaml")
+	if !definitions.IsKind(err, definitions.ErrWorkflowInvalid) {
+		t.Fatalf("got %v, want ErrWorkflowInvalid", err)
 	}
-	if got := def.GetCommon().Description; got != "" {
-		t.Errorf("description = %q, want empty", got)
+	if !strings.Contains(err.Error(), "name is required") {
+		t.Errorf("hatua's reason is missing from the error: %v", err)
 	}
 }
 
@@ -136,7 +137,7 @@ func TestAnEmptyWorkflowFileIsMissingItsID(t *testing.T) {
 
 func TestParseFile_WorkflowIsNamedByItsIDNotItsFilename(t *testing.T) {
 	fsys := fstest.MapFS{
-		"anything.yaml": &fstest.MapFile{Data: []byte("id: release\nname: Release\nsteps: []\n")},
+		"anything.yaml": &fstest.MapFile{Data: []byte("id: release\nname: Release\nversion: 1\nstatus: draft\nsteps: []\n")},
 	}
 	def, err := definitions.ParseFile(fsys, definitions.CategoryWorkflow, "anything.yaml")
 	if err != nil {

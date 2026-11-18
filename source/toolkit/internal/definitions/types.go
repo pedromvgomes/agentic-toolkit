@@ -6,6 +6,8 @@ package definitions
 
 //go:generate go run ../../tools/schemagen
 
+import hatua "hatua.dev/go"
+
 // Category names a definition kind. The category is encoded both by the
 // directory it lives in (definitions/<category>/...) and by the type field
 // in the file's frontmatter. Parser cross-checks the two.
@@ -453,12 +455,14 @@ func (*Setting) Category() Category   { return CategorySetting }
 // filled from the document instead. The document's `id` is the canonical
 // name and its `name` — a display title in hatua's format — is the
 // description. Only those two fields are decoded here; every other field
-// is hatua's to read and validate.
+// is hatua's to read and validate, and Document is the whole file as hatua
+// decoded it once it has passed that validation.
 type Workflow struct {
-	Common `yaml:"-"`
-	ID     string `yaml:"id"   agtkdoc:"required;The Workflow Definition's identifier and its canonical name. Must equal the path-derived name under workflows/."`
-	Title  string `yaml:"name" agtkdoc:"Display title in hatua's format, surfaced as the definition's description."`
-	Source []byte `yaml:"-"`
+	Common   `yaml:"-"`
+	ID       string            `yaml:"id"   agtkdoc:"required;The Workflow Definition's identifier and its canonical name. Must equal the path-derived name under workflows/."`
+	Title    string            `yaml:"name" agtkdoc:"Display title in hatua's format, surfaced as the definition's description."`
+	Source   []byte            `yaml:"-"`
+	Document *hatua.Definition `yaml:"-"`
 }
 
 func (w *Workflow) GetCommon() *Common { return &w.Common }

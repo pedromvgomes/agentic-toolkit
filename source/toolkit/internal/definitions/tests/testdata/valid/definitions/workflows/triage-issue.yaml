@@ -4,9 +4,16 @@ version: 1
 status: published
 triggers:
   - id: opened
-    use: trigger.webhook
+    use: component.webhook
 steps:
   - id: label
     use: component.script
     with:
-      run: echo triage
+      run: echo triage {{triggers.opened.inputs.issue}}
+  - id: summarise
+    use: component.agentic
+    with:
+      provider: claude-code
+      prompt: "Summarise the labels: {{agtk.unwrapped(steps.label.stdout)}}"
+      worktree: inherit
+      agtk: none
