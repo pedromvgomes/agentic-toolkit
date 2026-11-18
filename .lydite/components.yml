@@ -21,3 +21,7 @@ excludes:
 
 # Spike probes are scripts for manual experiments that no suite runs.
   - "docs/spikes/**"
+
+# The release scripts are shell, planned and tested by the release workflow's
+# verify job (pending_test.sh), and no lydite component builds shell.
+  - ".github/scripts/**"
