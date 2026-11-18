@@ -59,8 +59,9 @@ Requires Go 1.26+. The module lives at `source/toolkit/go.mod`, not the repo roo
   `cli`), `updater`/`updatecheck`, `adapters` (per-platform render targets, over the shared
   `adapters/fsops`)
 - `definitions/` — the catalog, one directory per category: `agents/`, `commands/`, `hooks/`,
-  `instructions/`, `mcp/`, `settings/`, `skills/`. `rules/` is a valid category the schema
-  defines and this repo currently ships none of. See
+  `instructions/`, `mcp/`, `settings/`, `skills/`. `rules/` and `workflows/` are valid
+  categories the schema defines and this repo currently ships none of; a workflow definition
+  is validated through the hatua SDK and rendered by no adapter (ADR 0031). See
   [`definitions/SCHEMA.md`](definitions/SCHEMA.md) for the shape each category's files must take.
 - `stacks/` — shareable manifests consumer repos `extends:`: `default.yaml` (the feature flow,
   workflow-agnostic skills, the plan-approval instruction and a session-start hook that runs
