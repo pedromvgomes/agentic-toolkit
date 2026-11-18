@@ -20,9 +20,10 @@ const (
 	CategoryHook        Category = "hook"
 	CategoryMCP         Category = "mcp"
 	CategorySetting     Category = "setting"
+	CategoryWorkflow    Category = "workflow"
 )
 
-// AllCategories lists the eight category kinds in their canonical order.
+// AllCategories lists the nine category kinds in their canonical order.
 var AllCategories = []Category{
 	CategorySkill,
 	CategoryAgent,
@@ -32,6 +33,7 @@ var AllCategories = []Category{
 	CategoryHook,
 	CategoryMCP,
 	CategorySetting,
+	CategoryWorkflow,
 }
 
 // CategoryDir returns the directory name (under definitions/) for a category.
@@ -53,6 +55,8 @@ func (c Category) CategoryDir() string {
 		return "mcp"
 	case CategorySetting:
 		return "settings"
+	case CategoryWorkflow:
+		return "workflows"
 	}
 	return ""
 }
@@ -440,3 +444,22 @@ type Setting struct {
 
 func (s *Setting) GetCommon() *Common { return &s.Common }
 func (*Setting) Category() Category   { return CategorySetting }
+
+// ===== Workflow =====
+
+// Workflow is a Workflow Definition: a document in hatua's Workflow
+// Definition format, kept byte for byte as Source. Hatua rejects unknown
+// top-level fields, so the file carries none of Common's keys; Common is
+// filled from the document instead. The document's `id` is the canonical
+// name and its `name` — a display title in hatua's format — is the
+// description. Only those two fields are decoded here; every other field
+// is hatua's to read and validate.
+type Workflow struct {
+	Common `yaml:"-"`
+	ID     string `yaml:"id"   agtkdoc:"required;The Workflow Definition's identifier and its canonical name. Must equal the path-derived name under workflows/."`
+	Title  string `yaml:"name" agtkdoc:"Display title in hatua's format, surfaced as the definition's description."`
+	Source []byte `yaml:"-"`
+}
+
+func (w *Workflow) GetCommon() *Common { return &w.Common }
+func (*Workflow) Category() Category   { return CategoryWorkflow }

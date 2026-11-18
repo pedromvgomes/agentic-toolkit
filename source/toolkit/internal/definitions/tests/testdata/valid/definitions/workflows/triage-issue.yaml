@@ -1,0 +1,12 @@
+id: triage-issue
+name: Triage an issue
+version: 1
+status: published
+triggers:
+  - id: opened
+    use: trigger.webhook
+steps:
+  - id: label
+    use: component.script
+    with:
+      run: echo triage

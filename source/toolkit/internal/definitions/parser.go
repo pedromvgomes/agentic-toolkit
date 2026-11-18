@@ -74,14 +74,16 @@ func ParseBundle(fsys fs.FS, cat Category, name string) (Definition, error) {
 //
 // The canonical name comes from the file's top-level `name:` field. If
 // absent, it falls back to the filename stem (extension stripped).
-// Per-category nesting rules apply: rule, instruction, hook, mcp must
-// have flat names; command may contain '/'.
+// Per-category nesting rules apply: rule, instruction, hook, mcp,
+// setting and workflow must have flat names; command may contain '/'.
+// A workflow's name is always its `id` field; a file without one is
+// rejected rather than named after its stem.
 //
 // Only file-shaped categories are supported. Skill/agent return
 // ErrUnknownCategory — use ParseBundle.
 func ParseFile(fsys fs.FS, cat Category, filename string) (Definition, error) {
 	switch cat {
-	case CategoryRule, CategoryInstruction, CategoryCommand, CategoryHook, CategoryMCP, CategorySetting:
+	case CategoryRule, CategoryInstruction, CategoryCommand, CategoryHook, CategoryMCP, CategorySetting, CategoryWorkflow:
 		// ok
 	default:
 		return nil, newErr(filename, ErrUnknownCategory,
@@ -103,6 +105,9 @@ func ParseFile(fsys fs.FS, cat Category, filename string) (Definition, error) {
 // strictName=false (ParseFile): the file's `name:` field wins;
 // derivedName is used only as a fallback when the file omits `name:`.
 func parseBytes(path string, cat Category, derivedName string, raw []byte, strictName bool) (Definition, error) {
+	if cat == CategoryWorkflow {
+		return parseWorkflow(path, derivedName, raw, strictName)
+	}
 	def := newDef(cat)
 	if def == nil {
 		return nil, newErr(path, ErrUnknownCategory, "no struct registered for category %q", cat)
@@ -171,6 +176,8 @@ func newDef(cat Category) Definition {
 		return &MCPServer{}
 	case CategorySetting:
 		return &Setting{}
+	case CategoryWorkflow:
+		return &Workflow{}
 	}
 	return nil
 }
@@ -184,11 +191,11 @@ func isMarkdownCategory(cat Category) bool {
 }
 
 // descriptionOptional reports whether the Common.Description field may
-// be empty for a category. Tracks frontmatterOptional today (rules
-// only) — kept as a separate predicate so the two relaxations can
-// diverge if a future category needs one but not the other.
+// be empty for a category. Rules may omit it because their frontmatter
+// is optional; a workflow takes it from hatua's optional display title,
+// since its format has no description field to require.
 func descriptionOptional(cat Category) bool {
-	return cat == CategoryRule
+	return cat == CategoryRule || cat == CategoryWorkflow
 }
 
 // frontmatterOptional reports whether a markdown category accepts files
@@ -222,6 +229,45 @@ func setBody(def Definition, body string) {
 	case *Command:
 		d.Body = body
 	}
+}
+
+// parseWorkflow reads a Workflow Definition. The decode is lenient: the
+// document is hatua's format, so a strict decode against Workflow's two
+// fields would reject every valid one, and its full shape is hatua's to
+// validate. The `id` is required and is the canonical name — under
+// strictName it must equal derivedName, and otherwise derivedName plays
+// no part.
+func parseWorkflow(path, derivedName string, raw []byte, strictName bool) (Definition, error) {
+	w := &Workflow{Source: raw}
+	if len(bytes.TrimSpace(raw)) > 0 {
+		if err := yaml.Unmarshal(raw, w); err != nil {
+			line, col := extractYAMLPos(err)
+			return nil, &ParseError{
+				Path:    path,
+				Line:    line,
+				Column:  col,
+				Kind:    ErrYAMLSyntax,
+				Message: cleanYAMLMessage(err),
+				Wrapped: err,
+			}
+		}
+	}
+	if w.ID == "" {
+		return nil, newErr(path, ErrMissingRequired, "id is required")
+	}
+	if strictName && w.ID != derivedName {
+		return nil, newErr(path, ErrInvalidName,
+			"id %q does not match path-derived name %q", w.ID, derivedName)
+	}
+	w.Name = w.ID
+	w.Description = w.Title
+	if err := validateCommon(path, w, derivedName, strictName); err != nil {
+		return nil, err
+	}
+	if err := w.validate(path); err != nil {
+		return nil, err
+	}
+	return w, nil
 }
 
 // ===== frontmatter =====
@@ -330,7 +376,7 @@ func deriveName(cat Category, path, relWithinCat string) (string, error) {
 				"agents must live at <name>/AGENT.md (got %q)", relWithinCat)
 		}
 		return parts[0], nil
-	case CategoryRule, CategoryInstruction, CategoryHook, CategoryMCP, CategorySetting:
+	case CategoryRule, CategoryInstruction, CategoryHook, CategoryMCP, CategorySetting, CategoryWorkflow:
 		if strings.Contains(relWithinCat, "/") {
 			return "", newErr(path, ErrInvalidName,
 				"%s definitions must be flat (got nested path %q)", cat, relWithinCat)
@@ -562,6 +608,8 @@ func (m *MCPServer) validate(path string) error {
 	}
 	return nil
 }
+
+func (w *Workflow) validate(path string) error { return nil }
 
 func (s *Setting) validate(path string) error {
 	if len(s.Value) == 0 {

@@ -87,7 +87,8 @@ func isEntryPoint(cat Category, relWithinCat string) bool {
 	case CategoryCommand:
 		// any depth, must end in .md
 		return strings.EqualFold(filepath.Ext(parts[len(parts)-1]), ".md")
-	case CategoryHook, CategoryMCP, CategorySetting:
+	case CategoryHook, CategoryMCP, CategorySetting, CategoryWorkflow:
+		// <name>.yaml or <name>.yml, flat. A workflow's <name> is its id.
 		ext := strings.ToLower(filepath.Ext(parts[len(parts)-1]))
 		return len(parts) == 1 && (ext == ".yaml" || ext == ".yml")
 	}
