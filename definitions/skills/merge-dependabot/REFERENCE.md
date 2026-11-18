@@ -12,11 +12,15 @@ listed under section 4.
 
 Two file sets feed the table:
 
-- **The run's own changes.** The commits on the branch whose author, read over REST, is `$me`:
+- **The run's own changes.** The commits on the branch whose SHA the run recorded in
+  `$work/$n.pushed` when it pushed them. The author a commit claims is never the test: whoever
+  writes a commit controls its author email, which is what GitHub maps to a login.
 
   ```bash
+  touch "$work/$n.pushed"   # a pull request the run never pushed to has an empty record
   gh api --paginate "repos/$repo/pulls/$n/commits" \
-    | jq -rs --arg me "$me" 'add | .[] | select(.author.login == $me)
+    | jq -rs --rawfile pushed "$work/$n.pushed" '($pushed | split("\n")) as $mine
+                             | add | .[] | select(.sha as $s | $mine | index($s))
                              | "\(.sha) \(.parents | length)"' >"$work/$n.own"
   while read -r c parents; do
     if [ "$parents" -eq 1 ]; then git diff-tree --no-commit-id --name-only -r "$c"
@@ -40,7 +44,7 @@ Two file sets feed the table:
 | A major bump's breaking changes have impact here | The major-bump reading names at least one breaking change with an impact on a use in this repository. A reading that could not be completed — no release notes or changelog reachable for a version in the range, or a usage search that could not run — counts as impact: an unread breaking change is never assumed harmless. | `breaking-change` |
 | New transitive dependencies | The transitive diff names at least one package, read at `$sha`, so a package the run's own lockfile regeneration added counts as much as one dependabot's did. | `new-transitive-deps` |
 | The policy requires a review | Any source of the policy read sets `required_approving_review_count` above 0, `require_code_owner_review` to `true` or `require_last_push_approval` to `true`, or classic protection's `required_pull_request_reviews` is present with a nonzero count or either of those flags; or, when protection cannot be read, `reviewDecision` is `REVIEW_REQUIRED`. | `review-required` |
-| Someone else pushed to the branch | Any commit in the pull request's commit list whose author, read over REST, is neither `dependabot[bot]` nor `$me`, or whose REST author is null because its email links to no account. A merge of the base in is not such a commit: its changes are the base's. Whatever such a commit changed is unread by the run, so nothing about it is exempt. | `foreign-commit` |
+| Someone else pushed to the branch | Any commit in the pull request's commit list that is neither one of the run's own (its SHA is in `$work/$n.pushed`) nor dependabot's. A commit is dependabot's only when its REST author is `dependabot[bot]` **and** `.commit.verification.verified` is `true`: an unsigned commit, or one whose signature does not verify, is not, whatever author it claims. A commit of an earlier run is foreign for the same reason, which sends the pull request to a person rather than trusting an author name. A merge of the base in is not such a commit: its changes are the base's. Whatever such a commit changed is unread by the run, so nothing about it is exempt. | `foreign-commit` |
 | The title is unparseable or ambiguous | The title does not match the version pattern; matches it more than once; or is a grouped pull request whose body yields no `Updates … from … to …` pair, or carries an `Updates` line that does not match the pattern. | `unparseable-title` |
 
 **Exempt files** are recognised conservatively. A path that does not clearly match one of these is

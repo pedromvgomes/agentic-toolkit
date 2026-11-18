@@ -357,10 +357,12 @@ applies here unchanged. A failure the bump does not explain — an outage, a fla
 the base has too — is not fixed here: the pull request is **needs a human fix**, naming the check.
 
 Each fix is its own conventional commit, `fix(deps): <what it adapts to the bump>`, pushed with a
-plain push:
+plain push. Every commit the run pushes is recorded by its SHA first, because REFERENCE.md
+identifies the run's own commits by that record and never by the author a commit claims:
 
 ```bash
 git commit -m "fix(deps): <subject>"
+git rev-list "origin/$branch..HEAD" >>"$work/$n.pushed"
 git push origin "HEAD:$branch"
 ```
 
@@ -444,9 +446,16 @@ own comment is already there, it is edited for the current head and reasons, nev
 Find it among the comments the run's own account wrote:
 
 ```bash
-gh api --paginate "repos/$repo/issues/$n/comments" \
-  | jq -s --arg me "$me" 'add | .[] | select(.user.login == $me
-        and (.body | startswith("<!-- agtk:merge-dependabot approval-requested"))) | .id'
+comment_id="$(gh api --paginate "repos/$repo/issues/$n/comments" \
+  | jq -rs --arg me "$me" '[add | .[] | select(.user.login == $me
+        and (.body | startswith("<!-- agtk:merge-dependabot approval-requested")))]
+      | sort_by(.created_at) | first | .id // empty')"
+```
+
+The earliest such comment is the request comment, as REFERENCE.md says. An empty `$comment_id` means
+none exists, and the comment is posted; otherwise it is edited:
+
+```bash
 gh api --method PATCH "repos/$repo/issues/comments/$comment_id" -F body=@"$work/$n.request.md"
 ```
 
@@ -526,6 +535,17 @@ rm -rf "$work"
 - **Never requests approval on a red pull request.**
 - **Dependency code never sees the credential.** Every command that runs code from the bumped
   dependency or from the repository under test — tests, `go mod tidy`, `npm install`, a build —
-  runs with the GitHub credentials removed from its environment, as
-  `env -u GH_TOKEN -u GITHUB_TOKEN <command>`. Only the `gh` and `git push` steps hold them.
+  runs with no route to a GitHub token: not in its environment and not in any store a process can
+  read. Unsetting `GH_TOKEN` and `GITHUB_TOKEN` alone does not satisfy this, because `gh auth
+  token` and git's credential helper read the token from `gh`'s own configuration. Run it as:
+
+  ```bash
+  scratch="$(mktemp -d)"
+  env -i PATH="$PATH" HOME="$scratch" XDG_CONFIG_HOME="$scratch/config" GH_CONFIG_DIR="$scratch/gh" \
+    GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null GIT_TERMINAL_PROMPT=0 <command>
+  ```
+
+  or in a sandbox that cannot reach the user's keyring, which is stronger. The environment is
+  built from nothing, so no `SSH_AUTH_SOCK`, token or session variable crosses into it. Only the
+  `gh`, `git fetch` and `git push` steps hold the credentials.
 - **One pull request never stops the batch.**
