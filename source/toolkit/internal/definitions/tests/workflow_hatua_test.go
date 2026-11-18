@@ -54,7 +54,7 @@ func TestAWorkflowUsingEveryHostManifestIsValid(t *testing.T) {
 		"    with:\n"+
 		"      provider: codex\n"+
 		"      model: gpt-5\n"+
-		"      prompt: \"Fix {{triggers.hook.inputs.issue}} given {{agtk.unwrapped(steps.check.stdout)}}\"\n"+
+		"      prompt: \"Fix {{triggers.hook.inputs.issue}} given {{steps.check.stdout}}\"\n"+
 		"      worktree: new\n"+
 		"      agtk: render\n"+
 		"      uses: implement-backlog-item\n"+
@@ -128,16 +128,6 @@ func TestAnAgenticStepMissingARequiredFieldIsRefused(t *testing.T) {
 	wantRefusal(t, err, `field "prompt"`, "FIELD_REQUIRED", "Prompt is required.")
 }
 
-func TestACallToAFunctionNoManifestDeclaresIsRefused(t *testing.T) {
-	_, err := parseWorkflow(t, ""+
-		"steps:\n"+
-		"  - id: check\n"+
-		"    use: component.script\n"+
-		"    with:\n"+
-		"      run: \"echo {{agtk.raw('x')}}\"\n")
-	wantRefusal(t, err, "EXPR_UNKNOWN_FUNCTION", "agtk.raw")
-}
-
 func TestTheHostManifestsLoadAndDeclareTheHostsComponents(t *testing.T) {
 	manifests, err := definitions.HostManifests()
 	if err != nil {
@@ -202,25 +192,12 @@ func TestTheHostManifestsLoadAndDeclareTheHostsComponents(t *testing.T) {
 	}
 }
 
-func TestTheHostFunctionManifestDeclaresTheUnwrappedFunction(t *testing.T) {
-	specs, err := definitions.HostFunctions()
-	if err != nil {
-		t.Fatalf("loading the host functions: %v", err)
-	}
-	if len(specs) != 1 || specs[0].Qualified != "agtk.unwrapped" {
-		t.Fatalf("functions = %+v, want only agtk.unwrapped", specs)
-	}
-	if specs[0].Returns != "text" || len(specs[0].Params) != 1 || specs[0].Params[0].Type != "text" {
-		t.Errorf("agtk.unwrapped signature = %+v, want (text) -> text", specs[0])
-	}
-}
-
 func TestTheHostManifestFilesAreServedAsShipped(t *testing.T) {
 	names, err := fs.Glob(definitions.HostManifestFS(), "*.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "component.agentic.yaml,component.script.yaml,component.webhook.yaml,function.agtk.yaml"
+	want := "component.agentic.yaml,component.script.yaml,component.webhook.yaml"
 	if got := strings.Join(names, ","); got != want {
 		t.Errorf("files = %s, want %s", got, want)
 	}

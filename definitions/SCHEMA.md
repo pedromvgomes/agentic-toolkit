@@ -477,7 +477,7 @@ steps:
     use: component.agentic
     with:
       provider: claude-code
-      prompt: "Summarise the labels: {{agtk.unwrapped(steps.label.stdout)}}"
+      prompt: "Summarise the labels: {{steps.label.stdout}}"
       worktree: inherit
       agtk: none
 ```
