@@ -76,6 +76,7 @@ jobs:
       mode: ${{ steps.resolve.outputs.mode }}
       version: ${{ steps.resolve.outputs.version }}
       sha: ${{ steps.resolve.outputs.sha }}
+      commit: ${{ steps.valid.outputs.commit }}
     steps:
       # The inputs are untrusted text, so they reach the script through the
       # environment and are matched before anything uses them as a ref or a
@@ -120,10 +121,15 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      # In mode `release` the tag must not exist yet and the commit must be on
-      # main; in mode `finish` the tag must exist. Both need the notes at the
-      # commit checked out: the notes are the release.
+      # In mode `release` the tag must not exist yet; in mode `finish` it must
+      # exist as an annotated tag. Either way the commit it names must be on
+      # main, which is the control: a tag pushed by hand on a commit nobody
+      # reviewed releases nothing. The tagger check below is a sanity check, not
+      # provenance, since anyone who can push a tag can set that email. Both
+      # modes need the notes at the commit: the notes are the release. The
+      # commit is an output, and `release` builds exactly it.
       - name: The release is valid
+        id: valid
         env:
           MODE: ${{ steps.resolve.outputs.mode }}
           VERSION: ${{ steps.resolve.outputs.version }}
@@ -136,10 +142,16 @@ jobs:
             if git rev-parse --verify --quiet "refs/tags/${VERSION}" >/dev/null; then
               echo "::error::${VERSION} is already tagged"; exit 1
             fi
-            git merge-base --is-ancestor "$SHA" origin/main || { echo "::error::${SHA} is not on main"; exit 1; }
+            commit="$SHA"
           else
             git rev-parse --verify --quiet "refs/tags/${VERSION}" >/dev/null || { echo "::error::${VERSION} is not tagged"; exit 1; }
+            [[ "$(git cat-file -t "refs/tags/${VERSION}")" == tag ]] || { echo "::error::${VERSION} is not an annotated tag"; exit 1; }
+            tagger="$(git for-each-ref --format='%(taggeremail)' "refs/tags/${VERSION}")"
+            [[ "$tagger" == "<41898282+github-actions[bot]@users.noreply.github.com>" ]] || { echo "::error::${VERSION} was not tagged as github-actions[bot]"; exit 1; }
+            commit="$(git rev-parse "refs/tags/${VERSION}^{commit}")"
           fi
+          git merge-base --is-ancestor "$commit" origin/main || { echo "::error::${commit} is not on main"; exit 1; }
+          echo "commit=${commit}" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -196,12 +208,22 @@ jobs:
     permissions:
       contents: write
     steps:
-      # Built at the tag, which is the commit verify validated and tested.
+      # Built at the commit verify validated and tested, and at the tag only
+      # while the tag still names it: a tag moved between the jobs fails here.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: refs/tags/${{ needs.verify.outputs.version }}
+          ref: ${{ needs.verify.outputs.commit }}
           fetch-depth: 0
           persist-credentials: false
+
+      - name: The tag still names the commit
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+          COMMIT: ${{ needs.verify.outputs.commit }}
+        run: |
+          set -euo pipefail
+          git fetch --tags --force origin
+          [[ "$(git rev-parse "refs/tags/${VERSION}^{commit}")" == "$COMMIT" ]] || { echo "::error::${VERSION} no longer names ${COMMIT}"; exit 1; }
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:

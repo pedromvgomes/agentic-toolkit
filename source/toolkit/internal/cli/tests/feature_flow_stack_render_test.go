@@ -1699,8 +1699,8 @@ func TestImplementBacklogItemBringsABranchCurrentByMergingItsBase(t *testing.T) 
 
 	stops := section(t, item, "### Every stop", "## 1 — Check that agtk can verify")
 	for _, want := range []string{
-		"| 9 | the branch needs a merge of its base whose conflicts need a judgement about which side wins | `agtk:needs-human` |",
-		"| 9 | the branch must be current with its base and the repository requires a linear history, so only a rebase would do | `agtk:needs-human` |",
+		"| 9 | the branch needs a merge of its source whose conflicts need a judgement about which side wins | `agtk:needs-human` |",
+		"| 9 | the branch must be current with its source and the repository requires a linear history, so only a rebase would do | `agtk:needs-human` |",
 	} {
 		if !strings.Contains(stops, want) {
 			t.Errorf("the stop table lacks %q", want)

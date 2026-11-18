@@ -189,8 +189,8 @@ comment and change no label.
 | 9 | the pull request was merged (exit 5) | none: the merge closed the item | the pull request merged before the run finished |
 | 9 | reads failed on three polls in a row (exit 6) | `agtk:needs-human` | GitHub did not answer, and the pull request's state when it last did |
 | 9 | a suppression or a removed test that is genuinely justified | `agtk:needs-human` | the finding, and why a suppression looks justified |
-| 9 | the branch needs a merge of its base whose conflicts need a judgement about which side wins | `agtk:needs-human` | the pull request, and the files in conflict |
-| 9 | the branch must be current with its base and the repository requires a linear history, so only a rebase would do | `agtk:needs-human` | the pull request, and the rule that requires a linear history |
+| 9 | the branch needs a merge of its source whose conflicts need a judgement about which side wins | `agtk:needs-human` | the pull request, and the files in conflict |
+| 9 | the branch must be current with its source and the repository requires a linear history, so only a rebase would do | `agtk:needs-human` | the pull request, and the rule that requires a linear history |
 
 A stub that cannot be filled at step 10 is not a stop of this item: its pull request is fine. It
 keeps `agtk:in-review`, and the closing comment says the stub was not filled and why.

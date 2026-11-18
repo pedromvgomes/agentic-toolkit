@@ -33,8 +33,12 @@ workflow, from the merge commit, and no person.
   dispatch that finishes a release and a sweep never publish one tag at once.
 - **A tag that exists at release time** was made by a concurrent run. A rejected tag push fails that
   run, and the next sweep no longer sees the version as pending.
+- **A tag made by hand.** It triggers nothing. A sweep finishes a tag that has notes and no GitHub
+  Release only when its commit is on `main` and carries the notes, so a tag on a commit nobody
+  reviewed releases nothing, and a tag on a reviewed commit publishes what the merge already
+  approved. The tagger identity is not checked as provenance: anyone who can push a tag can set it.
 - **Edge cases.** A notes file whose name is not a version is ignored, and a tag without notes is
-  never finished, so a tag made by hand releases nothing.
+  never finished.
 
 ## Considered options
 
@@ -44,8 +48,8 @@ workflow, from the merge commit, and no person.
   `release.yml`, which validates at the tag's commit.
 - **Tags signed in CI.** A signing key in the workflow is a publication credential the repository
   does not otherwise hold, and the signature would say only that the CI ran, which the annotated
-  tag's message and the bot identity already say. A tag ruleset on `v*` is repository hardening a
-  person applies.
+  tag's message and the bot identity already say. A tag ruleset on `v*`, which lets only the workflow
+  create one, is repository hardening a person applies.
 - **A single job that tests, tags and publishes.** A job that runs the repository's checks and then
   pushes a tag has the write token in reach of that code. The `verify`, `tag` and `release` seam
   keeps the token out of the job that runs the checks.
