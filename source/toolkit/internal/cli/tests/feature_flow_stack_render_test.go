@@ -1601,6 +1601,29 @@ func TestImplementBacklogItemTrustsItsProgressCommentOnlyWhereGitAgrees(t *testi
 	}
 }
 
+// implement-backlog-item passes the item's source to open-pr as the pull
+// request's base, so open-pr takes a base argument and opens the pull request
+// against it rather than against whatever the default branch is.
+func TestOpenPRTakesTheBaseImplementBacklogItemPasses(t *testing.T) {
+	apply := renderFeatureFlowStack(t)
+
+	pr := readRendered(t, apply, ".claude/skills/open-pr/SKILL.md")
+	flat := strings.Join(strings.Fields(pr), " ")
+	for _, want := range []string{
+		"[--base <branch>]",
+		"`--base <branch>` names the branch the pull request targets",
+		"`gh pr create --base <base>`",
+	} {
+		if !strings.Contains(flat, want) {
+			t.Errorf("open-pr cannot be told its base: it lacks %q", want)
+		}
+	}
+	item := readRendered(t, apply, ".claude/skills/implement-backlog-item/SKILL.md")
+	if !strings.Contains(strings.Join(strings.Fields(item), " "), "and `--base \"$source\"`, the pull request's base") {
+		t.Error("implement-backlog-item does not pass the source to open-pr as its base")
+	}
+}
+
 // A progress comment records the hash of the body the work was last reconciled
 // with. A different verified hash means the work was written against a body
 // that no longer stands: the table is rebuilt first, and an open pull request

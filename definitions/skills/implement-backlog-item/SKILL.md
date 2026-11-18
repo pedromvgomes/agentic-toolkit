@@ -685,7 +685,7 @@ restarted.
 
 ## 8 — Ship it
 
-Clean: invoke `open-pr`, with the body's **PR title**, and `$source` as the pull request's base. That skill updates the documentation,
+Clean: invoke `open-pr`, with the body's **PR title**, and `--base "$source"`, the pull request's base. That skill updates the documentation,
 stages what the work taught into the memory store, pushes, opens the pull request, posts a
 review, and runs `review-pull-request` on it until every thread is answered or, for a lydite mutant
 thread, fixed.

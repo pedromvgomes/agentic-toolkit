@@ -13,7 +13,7 @@ requires:
   - instructions/git
 extensions:
   claude:
-    argument_hint: "[pr title] [--checked-authors]"
+    argument_hint: "[pr title] [--base <branch>] [--checked-authors]"
 ---
 
 # Open PR
@@ -25,12 +25,19 @@ The order matters and is not negotiable: everything that changes the branch happ
 the change it describes, and findings staged afterwards belong to a session that has already
 ended.
 
+## Arguments
+
+`--base <branch>` names the branch the pull request targets and is compared against. Without it
+the base is the repository's default branch. A caller whose work starts from another branch
+passes it; every step below that says "base" means this branch.
+
 ## 0 — Refuse the obvious mistakes
 
 Stop, and say which applies, if any of these hold:
 
 - The current branch is the default branch. A pull request needs somewhere to come from.
-- Nothing separates this branch from its base. There is no change to open.
+- Nothing separates this branch from its base (`--base`, else the default branch). There is no
+  change to open.
 - A pull request is already open for this branch from this repository. Say so, give its URL,
   and stop — re-reviewing an open PR is `panel-code-review`'s to do directly, and opening a
   second is not a thing to recover from.
@@ -51,7 +58,7 @@ from the root `.envrc` before any `gh` call, and never merge.
 
 Dispatch the `wrap-session-reviewer` subagent with:
 
-- `scope`: `branch_commits` — the commits on this branch that are not on the default branch.
+- `scope`: `branch_commits` — the commits on this branch that are not on its base.
   This is the only scope that means anything here. Do not ask which scope to use; `wrap-session`
   asks because a session being wrapped might not be a branch being shipped, and this one is.
 - `repo_root`: the absolute repository root.
@@ -156,7 +163,9 @@ Push the branch and set upstream if it has none.
 
 The title is a conventional-commit subject, because squash merge makes it a subject on the
 default branch and no commit message underneath can correct it. Take it from the argument if
-one was given; otherwise derive it from the branch's commits.
+one was given; otherwise derive it from the branch's commits. The pull request is opened with
+`gh pr create --base <base>`, naming the base explicitly: a pull request that opens against the
+default branch when the work starts from another one carries every commit of the difference.
 
 The body says what the change does and why, and links whatever it closes. When the caller names
 a backlog item, the body carries `Closes #<item>`; on a Feature's last slice it also carries
